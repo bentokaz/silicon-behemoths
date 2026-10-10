@@ -67,7 +67,7 @@ export function NewGame() {
       <div className="flex flex-col justify-between border-r border-line bg-panel p-8">
         <Wordmark />
         <div className="text-[12px] leading-relaxed text-dim">
-          You start as a small phone maker in {2026}. Nine established companies already own the market. Design a device, price it, launch it, read the reviews, and put the money back into research.
+          You start as a small device maker in {2026}. Fourteen established companies already sell phones, tablets, watches and laptops. Design a device, get it built, launch it, read the reviews, and put the money back into research, people and places.
         </div>
         <Btn onClick={() => setScreen('menu')}>Back</Btn>
       </div>

@@ -6,15 +6,26 @@ import { EffectComposer, N8AO } from '@react-three/postprocessing'
 import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import type { DeviceDesign, Face } from '../sim/types'
-import { buildDevice, disposeDevice, pointToFace } from './buildDevice'
+import { buildDevice, deviceBottom, deviceRadius, disposeDevice, pointToFace } from './buildDevice'
 
 export type ViewName = 'back' | 'front' | 'side' | 'bottom'
+/** Camera directions; the distance is set from the size of the device. */
 const VIEWS: Record<ViewName, [number, number, number]> = {
-  back: [-150, 70, -430],
-  front: [150, 70, 430],
-  side: [460, 40, -60],
-  bottom: [60, -400, -230],
+  back: [-0.33, 0.15, -0.93],
+  front: [0.33, 0.15, 0.93],
+  side: [0.98, 0.09, -0.13],
+  bottom: [0.13, -0.86, -0.49],
 }
+/** Laptops sit open on a desk, so they are viewed from higher up. */
+const LAPTOP_VIEWS: Record<ViewName, [number, number, number]> = {
+  back: [-0.4, 0.42, -0.82],
+  front: [0.34, 0.5, 0.8],
+  side: [0.95, 0.28, 0.12],
+  bottom: [0.3, 0.9, 0.3],
+}
+const viewDir = (d: DeviceDesign, v: ViewName) => (d.type === 'laptop' ? LAPTOP_VIEWS : VIEWS)[v]
+/** Camera distance per unit of device radius, for a 26 degree lens. */
+const FRAMING = 5.3
 
 interface Props {
   design: DeviceDesign
@@ -28,20 +39,24 @@ interface Props {
   autoRotate?: boolean
   /** Uploaded company logo, shown on logo parts that ask for it. */
   logo?: string
+  /** Preview one of the design's extra colourways; -1 shows the main colour. */
+  colorIndex?: number
 }
 
-function Rig({ view, nonce }: { view: ViewName; nonce: number }) {
+function Rig({ dir, dist, nonce }: { dir: [number, number, number]; dist: number; nonce: number }) {
   const { camera, controls } = useThree()
   useEffect(() => {
-    camera.position.set(...VIEWS[view])
+    camera.position.set(dir[0] * dist, dir[1] * dist, dir[2] * dist)
     camera.lookAt(0, 0, 0)
     ;(controls as unknown as { update?: () => void } | null)?.update?.()
-  }, [view, nonce, camera, controls])
+    // re-aim only when the view is chosen or the device changes size, not on every edit
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dir, nonce, Math.round(dist / 40), camera, controls])
   return null
 }
 
-function Device({ design, selectedId, onPick, onDrag, logo }: Props) {
-  const group = useMemo(() => buildDevice(design, selectedId, logo), [design, selectedId, logo])
+function Device({ design, selectedId, onPick, onDrag, logo, colorIndex = -1 }: Props) {
+  const group = useMemo(() => buildDevice(design, selectedId, logo, colorIndex), [design, selectedId, logo, colorIndex])
   useEffect(() => () => disposeDevice(group), [group])
   const dragging = useRef(false)
   const controls = useThree((s) => s.controls) as unknown as { enabled: boolean } | null
@@ -81,36 +96,45 @@ function Device({ design, selectedId, onPick, onDrag, logo }: Props) {
 }
 
 export function DeviceView(props: Props) {
-  const floorY = -props.design.body.height / 2 - 8
+  const { design } = props
+  const radius = deviceRadius(design)
+  // everything in the studio scales with the device, so a watch and a laptop are lit alike
+  const k = radius / 87
+  const dist = radius * FRAMING
+  const view = props.view ?? (design.type === 'laptop' ? 'front' : 'back')
+  const dir = viewDir(design, view)
+  // a laptop's deck faces straight up into the key light, so it needs less of it
+  const sun = design.type === 'laptop' ? 0.5 : 1
+  const floorY = -deviceBottom(design) - (design.type === 'laptop' ? 0.3 : 8 * k)
   return (
     <Canvas
       shadows
       dpr={[1, 2]}
-      camera={{ fov: 26, near: 10, far: 4000, position: VIEWS[props.view ?? 'back'] }}
+      camera={{ fov: 26, near: 5 * k, far: 6000 * k, position: [dir[0] * dist, dir[1] * dist, dir[2] * dist] }}
       gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.05 }}
       onPointerMissed={() => props.onPick?.(null)}
     >
       <color attach="background" args={['#0a0c0f']} />
-      <fog attach="fog" args={['#0a0c0f', 900, 2200]} />
+      <fog attach="fog" args={['#0a0c0f', 900 * k, 2200 * k]} />
 
       {/* three-point rig: warm key, cool fill, hard rim */}
       <directionalLight
         color="#ffe3c2"
-        intensity={1.9}
-        position={[220, 320, 380]}
+        intensity={1.9 * sun}
+        position={[220 * k, 320 * k, 380 * k]}
         castShadow
         shadow-mapSize={[2048, 2048]}
         shadow-bias={-0.0004}
-        shadow-normalBias={0.4}
-        shadow-camera-left={-160}
-        shadow-camera-right={160}
-        shadow-camera-top={160}
-        shadow-camera-bottom={-160}
-        shadow-camera-near={50}
-        shadow-camera-far={1200}
+        shadow-normalBias={0.4 * k}
+        shadow-camera-left={-170 * k}
+        shadow-camera-right={170 * k}
+        shadow-camera-top={170 * k}
+        shadow-camera-bottom={-170 * k}
+        shadow-camera-near={50 * k}
+        shadow-camera-far={1200 * k}
       />
-      <directionalLight color="#b9d2ff" intensity={0.9} position={[-320, 80, 260]} />
-      <directionalLight color="#ffffff" intensity={1.5} position={[-160, 260, -380]} />
+      <directionalLight color="#b9d2ff" intensity={0.9} position={[-320 * k, 80 * k, 260 * k]} />
+      <directionalLight color="#ffffff" intensity={1.5 * sun} position={[-160 * k, 260 * k, -380 * k]} />
       <ambientLight intensity={0.12} />
 
       <Environment resolution={256} frames={1} environmentIntensity={0.5}>
@@ -125,16 +149,16 @@ export function DeviceView(props: Props) {
       <Device {...props} />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, floorY, 0]} receiveShadow>
-        <planeGeometry args={[3000, 3000]} />
+        <planeGeometry args={[3000 * k, 3000 * k]} />
         <meshLambertMaterial color="#1b1f25" />
       </mesh>
 
       <EffectComposer multisampling={4}>
-        <N8AO aoRadius={9} distanceFalloff={1} intensity={2.2} quality="medium" />
+        <N8AO aoRadius={9 * k} distanceFalloff={1} intensity={2.2} quality="medium" />
       </EffectComposer>
 
-      <OrbitControls makeDefault enablePan={false} minDistance={140} maxDistance={1100} autoRotate={props.autoRotate} autoRotateSpeed={0.9} />
-      <Rig view={props.view ?? 'back'} nonce={props.viewNonce ?? 0} />
+      <OrbitControls makeDefault enablePan={false} minDistance={dist * 0.3} maxDistance={dist * 2.4} autoRotate={props.autoRotate} autoRotateSpeed={0.9} />
+      <Rig dir={dir} dist={dist} nonce={props.viewNonce ?? 0} />
     </Canvas>
   )
 }

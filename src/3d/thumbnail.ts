@@ -3,7 +3,7 @@
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import type { DeviceDesign } from '../sim/types'
-import { buildDevice, disposeDevice } from './buildDevice'
+import { buildDevice, deviceRadius, disposeDevice } from './buildDevice'
 
 const W = 180
 const H = 220
@@ -37,8 +37,13 @@ export function deviceThumbnail(key: string, design: DeviceDesign, logo?: string
     if (!renderer) setup()
     const device = buildDevice(design, null, logo)
     scene.add(device)
-    const dist = Math.max(design.body.height, design.body.width * 1.6) * 2.75
-    camera.position.set(-dist * 0.36, dist * 0.12, -dist * 0.92)
+    const dist = deviceRadius(design) * 5.4
+    // phones, tablets and watches show their back; a laptop shows its screen and keyboard
+    if (design.type === 'laptop') camera.position.set(dist * 0.38, dist * 0.5, dist * 0.78)
+    else camera.position.set(-dist * 0.36, dist * 0.12, -dist * 0.92)
+    camera.near = dist * 0.05
+    camera.far = dist * 4
+    camera.updateProjectionMatrix()
     camera.lookAt(0, 0, 0)
     renderer!.render(scene, camera)
     const url = renderer!.domElement.toDataURL('image/png')

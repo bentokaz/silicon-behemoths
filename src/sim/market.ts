@@ -1,8 +1,12 @@
-// Demand model: how attractive a product is to each customer segment, and
-// the review scores outlets give it.
-import { OUTLETS, SEGMENTS, SUB_LABELS, type SegmentInfo, marketLevel, refScore } from '../data/catalog'
-import { type RngHolder, clamp, range } from './rng'
-import { type Company, type Product, type Review, SUBS, type SegmentId, type SubScores } from './types'
+// Demand model: how attractive a product is to each customer segment, the
+// review scores outlets give it, and what owners say about it.
+import { marketLevel, refScore } from '../data/catalog'
+import { OUTLETS, type SegmentInfo, TYPES, segmentsOf, subLabel } from '../data/devices'
+import { type RngHolder, clamp, pick, range } from './rng'
+import { type Company, type Feedback, type Product, type Review, SUBS, type SubScores } from './types'
+
+type Probe = Pick<Product, 'raw' | 'featureBonus' | 'price' | 'type'>
+type Maker = Pick<Company, 'brand' | 'software'>
 
 /** Sub-scores relative to what the leading edge of the market offers today. */
 export function normalised(raw: SubScores, day: number): SubScores {
@@ -19,26 +23,27 @@ export function priceFactor(price: number, seg: SegmentInfo): number {
 }
 
 /** Quality as this segment sees it, 1.0 = exactly what the segment expects. */
-export function segmentQuality(n: SubScores, brand: number, featureBonus: number, seg: SegmentInfo): number {
-  let q = seg.weights.brand * brand
+export function segmentQuality(n: SubScores, maker: Maker, featureBonus: number, seg: SegmentInfo): number {
+  let q = seg.weights.brand * maker.brand
   for (const k of SUBS) q += seg.weights[k] * n[k]
-  return (q * (1 + featureBonus)) / seg.expect
+  return (q * (1 + featureBonus + maker.software)) / seg.expect
 }
 
-export function utility(p: Pick<Product, 'raw' | 'featureBonus' | 'price'>, brand: number, seg: SegmentInfo, day: number): number {
-  const q = segmentQuality(normalised(p.raw, day), brand, p.featureBonus, seg)
-  return Math.pow(q, 1.5) * priceFactor(p.price, seg)
+export function utility(p: Probe, maker: Maker, seg: SegmentInfo, day: number): number {
+  const q = segmentQuality(normalised(p.raw, day), maker, p.featureBonus, seg)
+  return Math.pow(Math.max(0, q), 1.5) * priceFactor(p.price, seg)
 }
 
 /** Appeal on a 0-100 scale for the designer readout. 100 = a strong fit. */
-export function appeal(p: Pick<Product, 'raw' | 'featureBonus' | 'price'>, brand: number, seg: SegmentInfo, day: number): number {
-  return clamp(utility(p, brand, seg, day) * 80, 0, 100)
+export function appeal(p: Probe, maker: Maker, seg: SegmentInfo, day: number): number {
+  return clamp(utility(p, maker, seg, day) * 80, 0, 100)
 }
 
-export function bestSegment(p: Pick<Product, 'raw' | 'featureBonus' | 'price'>, brand: number, day: number): { seg: SegmentInfo; u: number } {
-  let best = { seg: SEGMENTS[0], u: -1 }
-  for (const seg of SEGMENTS) {
-    const u = utility(p, brand, seg, day)
+export function bestSegment(p: Probe, maker: Maker, day: number): { seg: SegmentInfo; u: number } {
+  const segs = segmentsOf(p.type)
+  let best = { seg: segs[0], u: -1 }
+  for (const seg of segs) {
+    const u = utility(p, maker, seg, day)
     if (u > best.u) best = { seg, u }
   }
   return best
@@ -48,15 +53,16 @@ export function lifecycle(age: number): number {
   return (1 + 0.6 * Math.exp(-age / 45)) * Math.exp(-Math.max(0, age - 120) / 420)
 }
 
-export function hype(p: Product, day: number): number {
-  return 0.25 * (1 - Math.exp(-p.marketing / 3e6)) * Math.exp(-(day - p.launchDay) / 90)
+/** Launch excitement from the launch budget and any launch event, fading over three months. */
+export function launchHype(p: Product, day: number): number {
+  return (0.25 * (1 - Math.exp(-p.marketing / 3e6)) + 0.35 * p.hype) * Math.exp(-(day - p.launchDay) / 90)
 }
 
 /** Weight of a product in a segment's purchase decision. */
 export function attraction(p: Product, c: Company, seg: SegmentInfo, day: number): number {
-  const u = utility(p, c.brand, seg, day)
-  const aw = Math.min(1, c.awareness + hype(p, day))
-  return Math.pow(u, 3.5) * aw * lifecycle(day - p.launchDay) * (0.6 + 0.08 * p.reviewAvg)
+  const u = utility(p, c, seg, day)
+  const aw = Math.min(1, c.awareness + launchHype(p, day))
+  return Math.pow(u, 3.5) * aw * lifecycle(day - p.launchDay) * (0.6 + 0.08 * p.reviewAvg) * (1 + 0.8 * (p.buzz[seg.id] ?? 0)) * (0.8 + 0.4 * p.satisfaction)
 }
 
 export const OUTSIDE_OPTION = 1.5
@@ -67,9 +73,24 @@ export function segmentDemand(seg: SegmentInfo, day: number): number {
   return (seg.size * growth * SEASON[Math.floor(day / 30) % 12]) / 360
 }
 
-export function makeReviews(r: RngHolder, p: Product, brand: number, day: number, issues: string[]): Review[] {
+/** Share of buyers choosing each storage option, base model first. */
+const TIER_MIX = [[1], [0.65, 0.35], [0.55, 0.3, 0.15], [0.5, 0.27, 0.15, 0.08]]
+
+/** Average price paid and extra cost per unit once storage upgrades are counted. */
+export function tierAverages(p: Pick<Product, 'price' | 'tiers' | 'design'>): { price: number; extraCost: number } {
+  const mix = TIER_MIX[Math.min(p.tiers.length, 3)]
+  let price = p.price * mix[0]
+  let extraCost = 0
+  p.tiers.slice(0, 3).forEach((t, i) => {
+    price += t.price * mix[i + 1]
+    extraCost += Math.max(0, t.storage - p.design.specs.storage) * 0.08 * mix[i + 1]
+  })
+  return { price, extraCost }
+}
+
+export function makeReviews(r: RngHolder, p: Product, maker: Maker, day: number, issues: string[]): Review[] {
   const n = normalised(p.raw, day)
-  const { seg, u } = bestSegment(p, brand, day)
+  const { seg, u } = bestSegment(p, maker, day)
   const pf = priceFactor(p.price, seg)
   return OUTLETS.map((o) => {
     let nw = 0
@@ -81,8 +102,8 @@ export function makeReviews(r: RngHolder, p: Product, brand: number, day: number
     const ranked = [...SUBS].sort((a, b) => n[b] * o.weights[b] - n[a] * o.weights[a])
     for (const k of ranked) {
       const rel = n[k] / seg.expect
-      if (rel > 1.12 && pros.length < 2) pros.push(`${SUB_LABELS[k]} is ahead of the ${seg.name.toLowerCase()} class`)
-      else if (rel < 0.8 && cons.length < 2) cons.push(`${SUB_LABELS[k]} falls short for the price`)
+      if (rel > 1.12 && pros.length < 2) pros.push(`${subLabel(p.type, k)} is ahead of the ${seg.name.toLowerCase()} class`)
+      else if (rel < 0.8 && cons.length < 2) cons.push(`${subLabel(p.type, k)} falls short for the price`)
     }
     if (pf > 1.15) pros.push('Aggressively priced')
     if (pf < 0.85) cons.push('Overpriced for what it offers')
@@ -93,4 +114,49 @@ export function makeReviews(r: RngHolder, p: Product, brand: number, day: number
   })
 }
 
-export type { SegmentId }
+const PRAISE: Record<string, string[]> = {
+  perf: ['Flies through everything I throw at it.', 'Never slows down, even with everything open.'],
+  display: ['The screen is gorgeous.', 'Bright, sharp and smooth. Hard to go back.'],
+  camera: ['Photos come out great, even at night.', 'The camera is the reason I bought it.'],
+  sensors: ['Health tracking is spot on.', 'Tracks everything I care about.'],
+  io: ['Great keyboard and every port I need.', 'Typing on this is a joy.'],
+  battery: ['Easily lasts me the whole day.', 'I keep forgetting to charge it.'],
+  design: ['Feels premium in the hand.', 'People ask me what it is.'],
+  price: ['Worth every cent.', 'Could not find better for the money.'],
+}
+const GRIPES: Record<string, string[]> = {
+  perf: ['Stutters with a few apps open.', 'Feels slow already.'],
+  display: ['Screen looks washed out next to my old one.', 'The display is nothing special.'],
+  camera: ['Camera is a letdown.', 'Photos look soft and noisy.'],
+  sensors: ['Missing sensors my old band had.', 'Health readings are basic.'],
+  io: ['Keyboard feels cheap and I live on dongles.', 'Not enough ports.'],
+  battery: ['Battery is dead by mid-afternoon.', 'Always hunting for a charger.'],
+  design: ['Looks dated and feels bulky.', 'The design is forgettable.'],
+  price: ['Way overpriced for what you get.', 'Should cost a lot less.'],
+  defect: ['Mine arrived faulty and had to be replaced.', 'Had to send it back within a week.'],
+  support: ['Support never answered my ticket.', 'Getting help was painful.'],
+}
+
+/** One owner's comment, picked from what this product does well or badly. */
+export function makeFeedback(r: RngHolder, p: Product, maker: Maker, day: number, supportGap: number): Feedback {
+  const n = normalised(p.raw, day)
+  const { seg } = bestSegment(p, maker, day)
+  const key = (k: keyof SubScores) => (k === 'camera' ? TYPES[p.type].special : k)
+  const good: string[] = []
+  const bad: string[] = []
+  for (const k of SUBS) {
+    const rel = n[k] / seg.expect
+    if (rel > 1.05) good.push(key(k))
+    if (rel < 0.85) bad.push(key(k))
+  }
+  const pf = priceFactor(p.price, seg)
+  if (pf > 1.1) good.push('price')
+  if (pf < 0.9) bad.push('price')
+  if (p.defectRate > 0.02) bad.push('defect')
+  if (supportGap > 0.4) bad.push('support')
+  const stars = clamp(Math.round(1 + 4 * p.satisfaction + range(r, -0.9, 0.9)), 1, 5)
+  const positive = stars >= 4 ? good.length > 0 : stars <= 2 ? bad.length === 0 : range(r, 0, 1) < 0.5 && good.length > 0
+  const pool = positive ? good : bad.length ? bad : good
+  if (!pool.length) return { day, stars, text: stars >= 3 ? 'Does the job.' : 'Not what I hoped for.' }
+  return { day, stars, text: pick(r, (positive ? PRAISE : GRIPES)[pick(r, pool)]) }
+}

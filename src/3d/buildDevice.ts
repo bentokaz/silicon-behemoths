@@ -203,7 +203,8 @@ function mesh(g: THREE.BufferGeometry, m: THREE.Material, shadow = true): THREE.
   return o
 }
 
-function buildPart(p: PlacedPart, d: DeviceDesign, m: Mats, logoUrl?: string): THREE.Group {
+/** `body` is the slab the part sits on: the whole device, or a laptop's lid or base. */
+function buildPart(p: PlacedPart, body: Body, m: Mats, logoUrl?: string): THREE.Group {
   const g = new THREE.Group()
   const side = isSide(p.face)
   const r = Math.min(p.w, p.h) / 2
@@ -260,10 +261,21 @@ function buildPart(p: PlacedPart, d: DeviceDesign, m: Mats, logoUrl?: string): T
       break
     }
     case 'button':
-      g.add(mesh(slab(p.w, p.h, p.h / 2, 0.55, 0.15), m.frame))
+      if (p.crown) {
+        // a watch crown: a knurled cylinder standing off the case
+        g.add(mesh(disc(r * 0.55, 0.9), m.frame))
+        const cap = mesh(new THREE.CylinderGeometry(r, r, 1.9, 28), m.frame)
+        cap.rotation.x = Math.PI / 2
+        cap.position.z = 1.85
+        g.add(cap)
+        const ring = mesh(new THREE.TorusGeometry(r * 0.72, r * 0.09, 8, 28), m.dark, false)
+        ring.position.z = 2.82
+        g.add(ring)
+      } else g.add(mesh(slab(p.w, p.h, p.h / 2, 0.55, 0.15), m.frame))
       break
     case 'port': {
-      const hole = mesh(plate(p.w, p.h, p.h / 2), m.dark, false)
+      // slim ports are pill-shaped; tall ones (USB-A, HDMI) are nearly square-cornered
+      const hole = mesh(plate(p.w, p.h, p.h > 4 && p.w > p.h * 1.5 ? 0.7 : p.h / 2), m.dark, false)
       hole.position.z = 0.03
       const tongue = mesh(plate(p.w * 0.72, p.h * 0.22, 0.1), m.frame, false)
       tongue.position.z = 0.04
@@ -304,31 +316,47 @@ function buildPart(p: PlacedPart, d: DeviceDesign, m: Mats, logoUrl?: string): T
         g.add(l)
         break
       }
-      const mat = new THREE.MeshPhysicalMaterial({ color: '#e9edf2', metalness: 1, roughness: 0.12, alphaMap: logoTexture(p.text || ' '), transparent: true, depthWrite: false })
+      const mat = new THREE.MeshPhysicalMaterial({ color: '#e9edf2', metalness: 1, roughness: 0.3, alphaMap: logoTexture(p.text || ' '), transparent: true, depthWrite: false })
       const l = mesh(new THREE.PlaneGeometry(p.w, p.h), mat, false)
       l.position.z = 0.05
       g.add(l)
       break
     }
   }
-  placeOnFace(g, d.body, p.face, p.x, p.y, p.rot)
+  placeOnFace(g, body, p.face, p.x, p.y, p.rot)
   g.traverse((o) => (o.userData.partId = p.id))
   return g
 }
 
+function highlight(p: PlacedPart): THREE.LineLoop {
+  const w = (p.w + 1.6) / 2
+  const h = (p.h + 1.6) / 2
+  const pts = [new THREE.Vector3(-w, -h, 0), new THREE.Vector3(w, -h, 0), new THREE.Vector3(w, h, 0), new THREE.Vector3(-w, h, 0)]
+  const line = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: themeColor('accent', '#ff6b1a'), depthTest: false }))
+  line.renderOrder = 20
+  line.position.z = 2.6
+  line.raycast = () => {}
+  return line
+}
+
 // ------------------------------------------------------------ device
 
-export function buildDevice(d: DeviceDesign, selectedId?: string | null, logoUrl?: string): THREE.Group {
+function materials(d: DeviceDesign, colorIndex: number): Mats {
   const b = d.body
-  const root = new THREE.Group()
-  const m: Mats = {
-    frame: frameMaterial(b.frameMat, b.frameColor),
-    back: backMaterial(b.backMat, b.backColor, b.backFinish),
+  const alt = colorIndex >= 0 ? d.colors?.[colorIndex] : undefined
+  return {
+    frame: frameMaterial(b.frameMat, alt?.frame ?? b.frameColor),
+    back: backMaterial(b.backMat, alt?.back ?? b.backColor, b.backFinish),
     glass: blackGlass(),
     lens: lensGlass(),
     core: lensCore(),
     dark: darkMatte(),
   }
+}
+
+/** A slab with a screen on its +Z face: a phone, a tablet, a watch case, or a laptop lid. */
+function buildSlab(b: Body, wallpaper: number, m: Mats, screenOn = true): THREE.Group {
+  const root = new THREE.Group()
   const bevel = edgeBevel(b)
   const bodyGeo = slab(b.width, b.height, b.corner, b.thickness, bevel, b.edge === 'round' ? 10 : 3)
   bodyGeo.translate(0, 0, -b.thickness / 2)
@@ -342,31 +370,181 @@ export function buildDevice(d: DeviceDesign, selectedId?: string | null, logoUrl
   const backPlate = mesh(plate(capW, capH, capR), m.back, false)
   backPlate.rotation.y = Math.PI
   backPlate.position.z = -b.thickness / 2 - 0.02
+  root.add(backPlate)
+  if (!screenOn) return root
+
   const frontPlate = mesh(plate(capW, capH, capR), m.glass, false)
   frontPlate.position.z = b.thickness / 2 + 0.02
-  root.add(backPlate, frontPlate)
-
   const scr = screenRect(b)
-  const tex = wallpaperTexture(d.wallpaper)
+  const tex = wallpaperTexture(wallpaper)
   const screenMat = new THREE.MeshPhysicalMaterial({ map: tex, emissiveMap: tex, emissive: '#ffffff', emissiveIntensity: 0.45, roughness: 0.14, metalness: 0, clearcoat: 0.6, clearcoatRoughness: 0.1 })
-  const screen = mesh(plate(Math.min(scr.w, capW - 0.1), Math.min(scr.h, capH - 0.1), scr.r), screenMat, false)
+  const screen = mesh(plate(Math.min(scr.w, capW - 0.1), Math.min(scr.h, capH - 0.1), Math.min(scr.r, capR)), screenMat, false)
   screen.position.set(scr.cx, scr.cy, b.thickness / 2 + 0.04)
-  root.add(screen)
-  for (const o of [backPlate, frontPlate, screen]) o.userData.decor = true
+  root.add(frontPlate, screen)
+  return root
+}
 
-  for (const p of d.parts) {
-    const g = buildPart(p, d, m, logoUrl)
-    root.add(g)
-    if (p.id === selectedId) {
-      const pts = [-1, -1, 1, -1, 1, 1, -1, 1].reduce<THREE.Vector3[]>((acc, v, i, arr) => (i % 2 ? acc : [...acc, new THREE.Vector3((v * (p.w + 1.6)) / 2, (arr[i + 1] * (p.h + 1.6)) / 2, 0)]), [])
-      const line = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: themeColor('accent', '#ff6b1a'), depthTest: false }))
-      line.renderOrder = 20
-      line.position.z = 2.6
-      line.raycast = () => {}
-      g.add(line)
+const STRAP_LOOK: Record<string, THREE.MeshPhysicalMaterialParameters> = {
+  silicone: { roughness: 0.85, metalness: 0 },
+  nylon: { roughness: 1, metalness: 0, sheen: 0.6, sheenRoughness: 0.8 },
+  leather: { roughness: 0.65, metalness: 0, clearcoat: 0.15, clearcoatRoughness: 0.6 },
+  steel: { roughness: 0.3, metalness: 1 },
+  titanium: { roughness: 0.45, metalness: 0.9 },
+}
+export const STRAP_LENGTH = 40
+
+/** Two bands that curl away behind the case, each built from short segments. */
+function buildStrap(b: Body): THREE.Group {
+  const g = new THREE.Group()
+  const id = b.strap ?? 'silicone'
+  const metal = id === 'steel' || id === 'titanium'
+  const mat = new THREE.MeshPhysicalMaterial({ color: metal ? b.frameColor : (b.strapColor ?? '#1b1d21'), ...(STRAP_LOOK[id] ?? STRAP_LOOK.silicone) })
+  const width = Math.min(b.width * 0.66, 28)
+  const thick = metal ? 2.6 : 2.2
+  const segments = metal ? 8 : 5
+  const len = STRAP_LENGTH / segments
+  for (const dir of [1, -1]) {
+    let y = (dir * b.height) / 2 - dir * 1.5
+    let z = -b.thickness * 0.2
+    for (let i = 0; i < segments; i++) {
+      const angle = ((i + 0.5) / segments) * 1.25
+      const geo = slab(width, len + (metal ? -0.5 : 0.6), metal ? 0.6 : 1.2, thick, 0.4, 2)
+      geo.translate(0, 0, -thick / 2)
+      const seg = mesh(geo, mat)
+      const cy = Math.cos(angle) * len
+      const cz = -Math.sin(angle) * len
+      seg.position.set(0, y + (dir * cy) / 2, z + cz / 2)
+      // tilt each link so its length follows the curve away from the case
+      seg.rotation.x = -dir * angle
+      g.add(seg)
+      y += dir * cy
+      z += cz
     }
   }
+  return g
+}
+
+function addParts(target: THREE.Object3D, parts: PlacedPart[], body: Body, m: Mats, selectedId: string | null | undefined, logoUrl?: string) {
+  for (const p of parts) {
+    const g = buildPart(p, body, m, logoUrl)
+    if (p.id === selectedId) g.add(highlight(p))
+    target.add(g)
+  }
+}
+
+/** Lid angle past vertical, in radians. */
+const LID_TILT = 0.3
+const LID_SHARE = 0.38
+
+/**
+ * A laptop, open on the desk. The lid is a slab whose "front" is the screen;
+ * the base carries the keyboard and the ports along its sides.
+ */
+function buildLaptop(d: DeviceDesign, m: Mats, selectedId: string | null | undefined, logoUrl?: string): THREE.Group {
+  const b = d.body
+  const root = new THREE.Group()
+  const lidBody: Body = { ...b, thickness: Math.max(3, b.thickness * LID_SHARE) }
+  const baseBody: Body = { ...b, thickness: b.thickness - lidBody.thickness, bezelTop: 0, bezelBottom: 0, bezelSide: 0 }
+  const baseT = baseBody.thickness
+
+  // ---- base: built as a slab facing +Z, then laid flat so its deck faces up
+  const base = buildSlab(baseBody, 0, { ...m, back: m.frame }, false)
+  const deck = new THREE.Group()
+  const top = baseT / 2
+  const keysW = b.width - 34
+  const cols = Math.max(10, Math.floor(keysW / 19))
+  const pitch = keysW / cols
+  const rows = 5
+  const blockH = rows * pitch * 0.94 + pitch * 0.5
+  const blockY = b.height / 2 - 16 - blockH / 2
+  const well = mesh(plate(keysW + 4, blockH + 4, 2.5), m.dark, false)
+  well.position.set(0, blockY, top + 0.03)
+  deck.add(well)
+  const keyGeo = slab(pitch * 0.86, pitch * 0.8, 1.6, 0.9, 0.25, 2)
+  const keyMat = new THREE.MeshPhysicalMaterial({ color: '#17191c', roughness: 0.6, metalness: 0 })
+  const keys = new THREE.InstancedMesh(keyGeo, keyMat, cols * rows + cols)
+  const mat4 = new THREE.Matrix4()
+  let n = 0
+  for (let row = 0; row < rows; row++) {
+    const y = blockY + blockH / 2 - pitch * 0.5 - pitch * 0.5 - row * pitch * 0.94
+    for (let c = 0; c < cols; c++) {
+      // the bottom row has a wide space bar
+      if (row === rows - 1 && c > 3 && c < cols - 4) continue
+      mat4.makeTranslation(-keysW / 2 + pitch / 2 + c * pitch, y, top + 0.05)
+      keys.setMatrixAt(n++, mat4)
+    }
+  }
+  // function row: half-height keys along the top
+  for (let c = 0; c < cols; c++) {
+    mat4.makeScale(1, 0.5, 1).setPosition(-keysW / 2 + pitch / 2 + c * pitch, blockY + blockH / 2 - pitch * 0.28, top + 0.05)
+    keys.setMatrixAt(n++, mat4)
+  }
+  keys.count = n
+  keys.castShadow = true
+  keys.receiveShadow = true
+  deck.add(keys)
+  const spaceW = (cols - 8) * pitch - pitch * 0.14
+  const space = mesh(slab(spaceW, pitch * 0.8, 1.6, 0.9, 0.25, 2), keyMat)
+  space.position.set(0, blockY + blockH / 2 - pitch - (rows - 1) * pitch * 0.94, top + 0.05)
+  deck.add(space)
+  const padH = Math.max(40, Math.min(90, b.height / 2 + blockY - blockH / 2 - 14))
+  const pad = mesh(plate(Math.min(130, b.width * 0.38), padH, 3), new THREE.MeshPhysicalMaterial({ color: '#0e0f11', roughness: 0.25, metalness: 0, clearcoat: 0.4, transparent: true, opacity: 0.55 }), false)
+  pad.position.set(0, blockY - blockH / 2 - 7 - padH / 2, top + 0.04)
+  deck.add(pad)
+  base.add(deck)
+  addParts(base, d.parts.filter((p) => isSide(p.face)), baseBody, m, selectedId, logoUrl)
+  base.rotation.x = -Math.PI / 2
+  base.position.y = baseT / 2
+  root.add(base)
+
+  // ---- lid: hinged along the back edge of the base
+  const hinge = new THREE.Group()
+  hinge.position.set(0, baseT, -b.height / 2 + lidBody.thickness / 2)
+  hinge.rotation.x = -LID_TILT
+  const lid = buildSlab(lidBody, d.wallpaper, m)
+  addParts(lid, d.parts.filter((p) => !isSide(p.face)), lidBody, m, selectedId, logoUrl)
+  lid.position.y = b.height / 2
+  hinge.add(lid)
+  root.add(hinge)
+  const barrel = mesh(new THREE.CylinderGeometry(baseT * 0.42, baseT * 0.42, b.width * 0.62, 20), m.dark)
+  barrel.rotation.z = Math.PI / 2
+  barrel.position.set(0, baseT * 0.62, -b.height / 2 + lidBody.thickness / 2)
+  root.add(barrel)
+
+  // centre the open laptop on the origin so it orbits nicely
+  root.position.y = -b.height * 0.36
+  const wrap = new THREE.Group()
+  wrap.add(root)
+  return wrap
+}
+
+/**
+ * Builds the model for any device type.
+ * colorIndex >= 0 previews one of the design's extra colourways.
+ */
+export function buildDevice(d: DeviceDesign, selectedId?: string | null, logoUrl?: string, colorIndex = -1): THREE.Group {
+  const m = materials(d, colorIndex)
+  if (d.type === 'laptop') return buildLaptop(d, m, selectedId, logoUrl)
+  const root = buildSlab(d.body, d.wallpaper, m)
+  if (d.type === 'watch') root.add(buildStrap(d.body))
+  addParts(root, d.parts, d.body, m, selectedId, logoUrl)
   return root
+}
+
+/** Radius of a sphere that contains the device, for framing the camera. */
+export function deviceRadius(d: DeviceDesign): number {
+  const b = d.body
+  if (d.type === 'laptop') return Math.hypot(b.width, b.height * 1.15) / 2
+  if (d.type === 'watch') return Math.hypot(b.width, b.height + STRAP_LENGTH * 1.3) / 2
+  return Math.hypot(b.width, b.height) / 2
+}
+
+/** Height of the lowest point of the model below its origin, for placing the floor. */
+export function deviceBottom(d: DeviceDesign): number {
+  const b = d.body
+  if (d.type === 'laptop') return b.height * 0.36
+  if (d.type === 'watch') return b.height / 2 + STRAP_LENGTH * 0.72
+  return b.height / 2
 }
 
 export function disposeDevice(root: THREE.Object3D) {

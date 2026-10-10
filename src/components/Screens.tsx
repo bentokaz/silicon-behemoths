@@ -1,18 +1,19 @@
-// Dashboard screens: overview, products, market, rivals, research, finance.
+// Core screens: overview, devices, market, rivals, finance. Detail lives in
+// the slide-over inspector; these screens stay scannable.
 import { useState } from 'react'
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { sfx } from '../audio/sfx'
-import { MAX_LEVEL, SEGMENTS, TRACK_INFO, marketLevel, researchCost, segmentInfo } from '../data/catalog'
-import { RETAIL_CUT, companyOf, discontinue, fmtDate, monthLabel, player, produce, setPrice, trailingUnits } from '../sim/game'
+import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { MAX_LEVEL, SUPPLY_LABELS, TRACK_INFO, marketLevel, researchCost } from '../data/catalog'
+import { SEGMENTS, TYPES, segmentInfo, segmentsOf } from '../data/devices'
+import { companyOf, fmtDate, monthLabel, player, trailingUnits } from '../sim/game'
 import { OUTSIDE_OPTION, attraction, segmentDemand } from '../sim/market'
-import { type GameState, type Product, TRACKS } from '../sim/types'
-import { useGame, useStore } from '../store/game'
-import { ProductInspector, Thumb } from './Inspector'
-import { Btn, Meter, NumInput, Panel, Row, Stat, TextInput, chart, money, num, pct } from './ui'
+import { factoryLine, marketPrice, pendingUnits } from '../sim/ops'
+import { staffEffects } from '../sim/staff'
+import { COST_KEYS, DEVICE_TYPES, type DeviceType, type GameState, type Product, SUPPLY_CATS, TRACKS, monthCosts } from '../sim/types'
+import { type Tab, useGame, useStore } from '../store/game'
+import { Thumb, statusText, statusTone } from './Inspector'
+import { Btn, Empty, Fold, Kpi, Meter, Mini, Panel, Tabs, Tag, TextInput, chart, money, num, pct } from './ui'
 
-const playerProducts = (g: GameState) => g.products.filter((p) => p.companyId === 'player').sort((a, b) => b.launchDay - a.launchDay)
-const statusTone = (p: Product) => (p.status === 'sale' ? (p.stock <= 0 ? 'text-neg' : 'text-pos') : p.status === 'dev' ? 'text-warn' : 'text-faint')
-const statusText = (p: Product) => (p.status === 'sale' ? (p.stock <= 0 && p.companyId === 'player' ? 'SOLD OUT' : 'ON SALE') : p.status === 'dev' ? `DEV ${p.devDaysLeft}D` : 'ENDED')
+const mine = (g: GameState) => g.products.filter((p) => p.companyId === 'player').sort((a, b) => b.launchDay - a.launchDay)
 
 function shareSeries(g: GameState, months = 36) {
   const rows = g.shareHistory.slice(-months)
@@ -38,24 +39,15 @@ function ShareChart({ g }: { g: GameState }) {
         <Tooltip {...chart.tooltip} formatter={(v, id) => [`${v}%`, companyOf(g, String(id)).name]} />
         {ids.map((id) => {
           const c = companyOf(g, id)
-          return <Area key={id} dataKey={id} stackId="s" stroke={c.color} fill={c.color} fillOpacity={c.isPlayer ? 0.9 : 0.35} strokeWidth={1} isAnimationActive={false} />
+          return <Area key={id} dataKey={id} stackId="s" stroke={c.color} fill={c.color} fillOpacity={c.isPlayer ? 0.9 : 0.3} strokeWidth={1} isAnimationActive={false} />
         })}
       </AreaChart>
     </ResponsiveContainer>
   )
 }
 
-function Empty({ text }: { text: string }) {
-  return <div className="flex h-full items-center justify-center px-6 text-center text-[11px] text-faint">{text}</div>
-}
-
 function FinanceChart({ g, months = 24 }: { g: GameState; months?: number }) {
-  const data = g.reports.slice(-months).map((r) => ({
-    month: monthLabel(r.month),
-    Revenue: Math.round(r.revenue),
-    Costs: Math.round(r.production + r.rd + r.marketing + r.development + r.overhead + r.salaries + r.interest),
-    Cash: Math.round(r.cash),
-  }))
+  const data = g.reports.slice(-months).map((r) => ({ month: monthLabel(r.month), Income: Math.round(r.revenue + r.other), Costs: Math.round(monthCosts(r)), Cash: Math.round(r.cash) }))
   if (data.length < 2) return <Empty text="Monthly figures appear after the first two months." />
   return (
     <ResponsiveContainer width="100%" height="100%">
@@ -64,7 +56,7 @@ function FinanceChart({ g, months = 24 }: { g: GameState; months?: number }) {
         <XAxis dataKey="month" tick={chart.axis} stroke={chart.grid} minTickGap={30} />
         <YAxis tick={chart.axis} stroke={chart.grid} tickFormatter={(v) => money(v, 1)} width={56} />
         <Tooltip {...chart.tooltip} formatter={(v) => money(Number(v))} />
-        <Line dataKey="Revenue" stroke="var(--color-pos)" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+        <Line dataKey="Income" stroke="var(--color-pos)" dot={false} strokeWidth={1.5} isAnimationActive={false} />
         <Line dataKey="Costs" stroke="var(--color-neg)" dot={false} strokeWidth={1.5} isAnimationActive={false} />
         <Line dataKey="Cash" stroke="var(--color-accent)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />
       </LineChart>
@@ -72,7 +64,36 @@ function FinanceChart({ g, months = 24 }: { g: GameState; months?: number }) {
   )
 }
 
-// ------------------------------------------------------------------ dashboard
+// ------------------------------------------------------------------ overview
+
+interface Todo {
+  text: string
+  tab: Tab
+  tone: 'neg' | 'warn' | 'accent'
+  productId?: string
+}
+
+/** Things that need a decision, most urgent first. */
+function todos(g: GameState): Todo[] {
+  const out: Todo[] = []
+  const own = mine(g)
+  const fx = staffEffects(g)
+  if (!own.some((p) => p.status !== 'ended')) out.push({ text: 'You have nothing on sale. Design your first device.', tab: 'products', tone: 'accent' })
+  for (const p of own) {
+    if (p.status === 'sale' && p.stock <= 0 && !pendingUnits(g, p.id)) out.push({ text: `${p.name} is sold out with nothing on order.`, tab: 'products', tone: 'neg', productId: p.id })
+    else if (p.status === 'dev' && !pendingUnits(g, p.id) && p.stock <= 0) out.push({ text: `${p.name} will launch with no stock. Order a production run.`, tab: 'products', tone: 'warn', productId: p.id })
+  }
+  if (g.cash < 0 && !g.config.unlimitedMoney) out.push({ text: `The company has been in debt for ${g.debtDays} days.`, tab: 'finance', tone: 'neg' })
+  const asks = g.staff.filter((e) => e.ask).length
+  if (asks) out.push({ text: `${asks} ${asks === 1 ? 'person is' : 'people are'} asking for a raise.`, tab: 'staff', tone: 'warn' })
+  if (fx.idle) out.push({ text: `${fx.idle} staff have no desk and are doing nothing.`, tab: 'office', tone: 'warn' })
+  if (g.staff.length && fx.morale < 40) out.push({ text: 'Morale is low. People may quit.', tab: 'staff', tone: 'neg' })
+  if (g.factory && g.orders.some((o) => o.mode === 'factory') && !factoryLine(g)?.running) out.push({ text: 'Factory orders are waiting but the line is not working.', tab: 'factory', tone: 'neg' })
+  for (const c of SUPPLY_CATS) if (g.supply.shockDays[c] > 0 && !(g.supply.locks[c] && g.supply.locks[c]!.until > g.day)) out.push({ text: `${SUPPLY_LABELS[c]} are in short supply (prices x${marketPrice(g.supply, c).toFixed(2)}).`, tab: 'factory', tone: 'warn' })
+  if (g.rdBudget > 0 && !g.activeResearch.length) out.push({ text: 'You have a research budget but no project running.', tab: 'research', tone: 'warn' })
+  if (!g.rdBudget && own.length) out.push({ text: 'No research is funded. Rivals keep advancing.', tab: 'research', tone: 'accent' })
+  return out
+}
 
 export function Dashboard() {
   const g = useGame()
@@ -80,257 +101,171 @@ export function Dashboard() {
   const me = player(g)
   const trailing = trailingUnits(g)
   const total = trailing.reduce((a, t) => a + t.units, 0) || 1
-  const mine = trailing[0].units
+  const units = trailing[0].units
   const last = g.reports[g.reports.length - 1]
-  const profit = last ? last.revenue - (last.production + last.rd + last.marketing + last.development + last.overhead + last.salaries + last.interest) : 0
-  const products = playerProducts(g).filter((p) => p.status !== 'ended')
-  const top = g.products.filter((p) => p.status === 'sale').sort((a, b) => (b.history.at(-1) ?? 0) - (a.history.at(-1) ?? 0)).slice(0, 12)
+  const profit = last ? last.revenue + last.other - monthCosts(last) : 0
+  const products = mine(g).filter((p) => p.status !== 'ended')
+  const list = todos(g)
+  const fx = staffEffects(g)
   return (
-    <div className="grid h-full min-h-0 grid-cols-12 grid-rows-[auto_minmax(0,1fr)_minmax(0,1fr)] gap-2 p-2">
-      <div className="col-span-12 grid grid-cols-6 gap-2">
-        <Stat label="Cash" value={g.config.unlimitedMoney ? 'UNLIMITED' : money(g.cash)} tone={g.cash < 0 && !g.config.unlimitedMoney ? 'neg' : 'accent'} sub={g.debtDays > 0 ? `in debt ${g.debtDays} days` : 'available'} />
-        <Stat label="Last month profit" value={last ? money(profit) : '--'} tone={profit >= 0 ? 'pos' : 'neg'} sub={last ? `revenue ${money(last.revenue)}` : 'no data yet'} />
-        <Stat label="Units, 12 months" value={num(mine)} sub={`${num(me.unitsTotal)} lifetime`} />
-        <Stat label="Market share" value={pct(mine / total, 2)} sub={`of ${num(total)} phones`} />
-        <Stat label="Brand reputation" value={Math.round(me.brand * 100)} sub="moved by reviews" />
-        <Stat label="Awareness" value={pct(me.awareness)} sub="grows with sales and marketing" />
+    <div className="grid h-full min-h-0 grid-cols-12 grid-rows-[auto_auto_minmax(0,1fr)_minmax(0,1fr)] gap-2 p-2">
+      <div className="col-span-12 grid grid-cols-4 gap-2">
+        <Kpi label="Cash" value={g.config.unlimitedMoney ? 'UNLIMITED' : money(g.cash)} tone={g.cash < 0 && !g.config.unlimitedMoney ? 'neg' : 'accent'} sub={g.debtDays > 0 ? `in debt ${g.debtDays} days` : `this month +${money(g.cur.revenue + g.cur.other, 1)}`} />
+        <Kpi label="Profit, last month" value={last ? money(profit) : '--'} tone={profit >= 0 ? 'pos' : 'neg'} sub={last ? `income ${money(last.revenue + last.other, 1)}` : 'first month in progress'} />
+        <Kpi label="Market share" value={pct(units / total, 2)} sub={`${num(units)} of ${num(total)} devices in 12 months`} />
+        <Kpi label="Fans" value={num(g.fans)} sub={`${num(g.owners)} people own your devices`} />
+      </div>
+      <div className="col-span-12 grid grid-cols-8 gap-1">
+        <Mini label="Brand" value={Math.round(me.brand * 100)} />
+        <Mini label="Awareness" value={pct(me.awareness)} />
+        <Mini label="Devices on sale" value={products.filter((p) => p.status === 'sale').length} />
+        <Mini label="In development" value={products.filter((p) => p.status === 'dev').length} />
+        <Mini label="Staff" value={`${g.staff.length}${g.staff.length ? ` / morale ${Math.round(fx.morale)}` : ''}`} />
+        <Mini label="Stores" value={g.stores.length} />
+        <Mini label="Industry level" value={marketLevel(g.day).toFixed(1)} />
+        <Mini label="R&D / month" value={money(g.rdBudget, 1)} />
       </div>
 
-      <Panel title="Revenue, costs and cash" className="col-span-5">
+      <Panel title="Needs attention" className="col-span-4" bodyClass="overflow-y-auto">
+        {list.length === 0 && <Empty text="Nothing needs a decision right now." />}
+        {list.map((t, i) => (
+          <button key={i} onClick={() => (t.productId ? focus(t.productId) : setTab(t.tab))} className="flex w-full items-start gap-2 border-b border-line px-2 py-[7px] text-left hover:bg-hover">
+            <span className={`mt-[5px] h-[6px] w-[6px] shrink-0 ${t.tone === 'neg' ? 'bg-neg' : t.tone === 'warn' ? 'bg-warn' : 'bg-accent'}`} />
+            <span className="flex-1 text-[12px] leading-snug text-fg">{t.text}</span>
+            <span className="num text-[9px] uppercase text-faint">{t.productId ? 'open' : t.tab}</span>
+          </button>
+        ))}
+      </Panel>
+      <Panel title="Income, costs and cash" className="col-span-4">
         <FinanceChart g={g} />
       </Panel>
       <Panel title="Market share by units" className="col-span-4">
         <ShareChart g={g} />
       </Panel>
-      <Panel title="Research" right={<Btn small tone="ghost" onClick={() => setTab('research')}>Open</Btn>} className="col-span-3" bodyClass="overflow-y-auto px-2 py-1">
+
+      <Panel title="Your devices" right={<Btn small tone="primary" onClick={() => openDesigner()}>New device</Btn>} className="col-span-8" bodyClass="overflow-auto">
+        {products.length === 0 ? (
+          <Empty text="Design your first device to enter the market. Fourteen rivals are already selling.">
+            <Btn tone="primary" className="h-11 px-8 text-sm" onClick={() => openDesigner()}>
+              Design your first device
+            </Btn>
+          </Empty>
+        ) : (
+          <ProductTable g={g} rows={products} compact />
+        )}
+      </Panel>
+      <Panel title="Research" right={<Btn small tone="ghost" onClick={() => setTab('research')}>Open</Btn>} className="col-span-4" bodyClass="overflow-y-auto px-2 py-1">
         {TRACKS.map((t) => (
           <div key={t} className="flex items-center gap-2 py-[3px]">
             <span className={`w-28 text-[11px] ${g.activeResearch.includes(t) ? 'text-accent' : 'text-dim'}`}>{TRACK_INFO[t].name}</span>
             <Meter value={g.levels[t] >= MAX_LEVEL ? 1 : (g.progress[t] ?? 0) / researchCost(g.levels[t] + 1)} tone={g.activeResearch.includes(t) ? 'accent' : 'dim'} />
-            <span className="num w-8 text-right text-[11px]">L{g.levels[t]}</span>
+            <span className="num w-8 text-right text-[11px] text-fg">L{g.levels[t]}</span>
           </div>
         ))}
-        <Row k="Industry level" v={marketLevel(g.day).toFixed(1)} />
-        <Row k="R&D budget" v={`${money(g.rdBudget)} / mo`} />
-      </Panel>
-
-      <Panel title="Your devices" right={<Btn small tone="primary" onClick={() => openDesigner()}>Design new device</Btn>} className="col-span-5" bodyClass="overflow-auto">
-        {products.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-            <div className="text-lg font-semibold uppercase tracking-[0.16em] text-fg">You have nothing on sale</div>
-            <div className="max-w-xs text-[11px] leading-snug text-dim">Design your first phone to enter the market. Nine rivals are already selling.</div>
-            <Btn tone="primary" className="h-11 px-8 text-sm" onClick={() => openDesigner()}>
-              Design your first device
-            </Btn>
-          </div>
-        ) : (
-          <table className="grid-table">
-            <thead>
-              <tr>
-                <th>Device</th>
-                <th>Status</th>
-                <th className="r">Price</th>
-                <th className="r">Stock</th>
-                <th className="r">Sold</th>
-                <th className="r">Review</th>
-              </tr>
-            </thead>
-            <tbody>
-              {products.map((p) => (
-                <tr key={p.id} className="row cursor-pointer" onClick={() => focus(p.id, 'products')}>
-                  <td>{p.name}</td>
-                  <td className={`num ${statusTone(p)}`}>{statusText(p)}</td>
-                  <td className="num r">{money(p.price)}</td>
-                  <td className="num r">{num(p.stock)}</td>
-                  <td className="num r">{num(p.unitsSold)}</td>
-                  <td className="num r">{p.reviewAvg ? p.reviewAvg.toFixed(1) : '--'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Panel>
-      <Panel title="Best sellers last month" className="col-span-4" bodyClass="overflow-auto">
-        <table className="grid-table">
-          <thead>
-            <tr>
-              <th>Device</th>
-              <th>Maker</th>
-              <th className="r">Price</th>
-              <th className="r">Units</th>
-            </tr>
-          </thead>
-          <tbody>
-            {top.map((p) => {
-              const c = companyOf(g, p.companyId)
-              return (
-                <tr key={p.id} className="row cursor-pointer" onClick={() => focus(p.id, 'market')}>
-                  <td>{p.name}</td>
-                  <td style={{ color: c.color }}>{c.name}</td>
-                  <td className="num r">{money(p.price)}</td>
-                  <td className="num r">{num(p.history.at(-1) ?? 0)}</td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </Panel>
-      <Panel title="Segments" className="col-span-3" bodyClass="overflow-auto">
-        <table className="grid-table">
-          <thead>
-            <tr>
-              <th>Segment</th>
-              <th className="r">Buyers / yr</th>
-              <th className="r">Typical</th>
-            </tr>
-          </thead>
-          <tbody>
-            {SEGMENTS.map((s) => (
-              <tr key={s.id}>
-                <td>{s.name}</td>
-                <td className="num r">{num(segmentDemand(s, g.day) * 360)}</td>
-                <td className="num r">{money(s.priceRef)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </Panel>
     </div>
   )
 }
 
-// ------------------------------------------------------------------ products
+// ------------------------------------------------------------------ devices
 
-function ProductControls({ p }: { p: Product }) {
-  const g = useGame()
-  const { act, say } = useStore.getState()
-  const [qty, setQty] = useState(10000)
-  const [price, setP] = useState(p.price)
-  const margin = p.price * (1 - RETAIL_CUT) - p.unitCost
-  const history = p.history.map((u, i) => ({ m: i + 1, Units: u }))
+function ProductTable({ g, rows, compact = false, showMaker = false, winRate }: { g: GameState; rows: Product[]; compact?: boolean; showMaker?: boolean; winRate?: Map<string, number> }) {
+  const inspect = useStore((s) => s.inspect)
+  const { focus } = useStore.getState()
   return (
-    <>
-      <Panel title="Sales and supply" className="shrink-0" bodyClass="px-2 py-1">
-        <Row k="Unit cost" v={money(p.unitCost)} />
-        <Row k="Margin per unit" v={money(margin)} tone={margin > 0 ? 'text-pos' : 'text-neg'} />
-        <Row k="In stock" v={num(p.stock)} tone={p.stock <= 0 && p.status === 'sale' ? 'text-neg' : undefined} />
-        <Row k="Revenue to date" v={money(p.revenue)} />
-        {p.status !== 'ended' && (
-          <>
-            <div className="flex items-center gap-2 py-1">
-              <span className="flex-1 text-[11px] text-dim">Order units</span>
-              <NumInput value={qty} onChange={setQty} step={1000} className="h-6 w-24 text-right" />
-              <Btn
-                small
-                onClick={() => {
-                  const err = act((s) => produce(s, p.id, qty))
-                  if (err) say(err, 'bad')
-                  else (sfx.cash(), say(`Ordered ${num(qty)} units for ${money(qty * p.unitCost)}.`))
-                }}
-              >
-                Buy {money(qty * p.unitCost, 1)}
-              </Btn>
-            </div>
-            <div className="flex items-center gap-2 py-1">
-              <span className="flex-1 text-[11px] text-dim">Retail price</span>
-              <NumInput value={price} onChange={setP} step={10} className="h-6 w-24 text-right" />
-              <Btn small disabled={price === p.price || price <= 0} onClick={() => (act((s) => setPrice(s, p.id, price)), say(`${p.name} now costs ${money(price)}.`))}>
-                Apply
-              </Btn>
-            </div>
-            <div className="flex justify-end py-1">
-              <Btn small tone="danger" onClick={() => act((s) => discontinue(s, p.id))}>
-                Discontinue
-              </Btn>
-            </div>
-          </>
-        )}
-        {!g.config.unlimitedMoney && p.status === 'sale' && p.stock <= 0 && <div className="py-1 text-[11px] text-neg">Sold out. Customers are buying rival phones instead.</div>}
-      </Panel>
-      {history.length > 1 && (
-        <Panel title="Units per month" className="shrink-0">
-          <div className="h-28">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={history} margin={{ top: 8, right: 8, bottom: 0, left: -8 }}>
-                <CartesianGrid stroke={chart.grid} vertical={false} />
-                <XAxis dataKey="m" tick={chart.axis} stroke={chart.grid} />
-                <YAxis tick={chart.axis} stroke={chart.grid} tickFormatter={(v) => num(v)} />
-                <Tooltip {...chart.tooltip} cursor={{ fill: 'var(--color-hover)' }} formatter={(v) => num(Number(v))} labelFormatter={(m) => `Month ${m}`} />
-                <Bar dataKey="Units" fill="var(--color-accent)" isAnimationActive={false} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </Panel>
-      )}
-    </>
+    <table className="grid-table">
+      <thead>
+        <tr>
+          <th />
+          <th>Device</th>
+          {showMaker && <th>Maker</th>}
+          <th>Status</th>
+          {!compact && <th>Segment</th>}
+          <th className="r">Price</th>
+          {!showMaker && <th className="r">Stock</th>}
+          <th className="r">{showMaker ? 'Last month' : 'Sold'}</th>
+          <th className="r">Review</th>
+          {!compact && <th className="r">Design</th>}
+          {winRate && <th className="r">Win rate</th>}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((p) => {
+          const c = companyOf(g, p.companyId)
+          return (
+            <tr key={p.id} className={`row cursor-pointer ${inspect === p.id ? 'bg-accent/5' : ''}`} onClick={() => focus(p.id)}>
+              <td className="w-10 !p-0">
+                <Thumb product={p} className="h-10 w-9" />
+              </td>
+              <td className={inspect === p.id ? 'text-accent' : 'text-fg'}>
+                {p.name}
+                {!compact && <span className="ml-2 text-[10px] text-faint">{TYPES[p.type].name}</span>}
+              </td>
+              {showMaker && <td style={{ color: c.color }}>{c.name}</td>}
+              <td>
+                <Tag tone={statusTone(p)}>{statusText(p)}</Tag>
+              </td>
+              {!compact && <td className="text-dim">{p.segment ? segmentInfo(p.segment).name : '--'}</td>}
+              <td className="num r text-fg">{money(p.price)}</td>
+              {!showMaker && <td className={`num r ${p.stock <= 0 && p.status === 'sale' ? 'text-neg' : 'text-dim'}`}>{num(p.stock)}</td>}
+              <td className="num r text-dim">{num(showMaker ? (p.history.at(-1) ?? p.monthUnits) : p.unitsSold)}</td>
+              <td className="num r text-fg">{p.reviewAvg ? p.reviewAvg.toFixed(1) : '--'}</td>
+              {!compact && <td className="num r text-dim">{Math.round(p.designPct)}</td>}
+              {winRate && <td className="num r text-accent">{pct(winRate.get(p.id) ?? 0)}</td>}
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
   )
 }
 
 export function Products() {
   const g = useGame()
-  const focusId = useStore((s) => s.focusProduct)
-  const { focus, openDesigner } = useStore.getState()
-  const list = playerProducts(g)
-  const current = list.find((p) => p.id === focusId) ?? list[0]
+  const { openDesigner } = useStore.getState()
+  const [filter, setFilter] = useState<'active' | 'all' | DeviceType>('active')
+  const all = mine(g)
+  const rows = all.filter((p) => (filter === 'active' ? p.status !== 'ended' : filter === 'all' ? true : p.type === filter))
+  // group variants under their family
+  const families = [...new Set(rows.map((p) => p.family))]
   return (
-    <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_400px] gap-2 p-2">
-      <Panel title={`Your devices (${list.length})`} right={<Btn small tone="primary" onClick={() => openDesigner()}>Design new device</Btn>} bodyClass="overflow-auto">
-        {list.length === 0 ? (
-          <Empty text="No devices yet. Use Design new device to open the 3D designer." />
+    <div className="flex h-full min-h-0 flex-col gap-2 p-2">
+      <div className="flex shrink-0 items-center justify-between gap-2">
+        <Tabs
+          value={filter}
+          onChange={setFilter}
+          options={[{ value: 'active', label: 'Current', badge: all.filter((p) => p.status !== 'ended').length }, ...DEVICE_TYPES.map((t) => ({ value: t, label: TYPES[t].plural, badge: all.filter((p) => p.type === t).length })), { value: 'all', label: 'All', badge: all.length }]}
+          className="flex-1"
+        />
+        <div className="flex gap-1">
+          {DEVICE_TYPES.map((t) => (
+            <Btn key={t} tone={t === 'phone' ? 'primary' : 'default'} onClick={() => openDesigner({ type: t })}>
+              New {TYPES[t].name.toLowerCase()}
+            </Btn>
+          ))}
+        </div>
+      </div>
+      <Panel className="flex-1" bodyClass="overflow-auto">
+        {rows.length === 0 ? (
+          <Empty text="No devices here yet. Pick a device type above to open the designer." />
         ) : (
-          <table className="grid-table">
-            <thead>
-              <tr>
-                <th />
-                <th>Device</th>
-                <th>Status</th>
-                <th>Segment</th>
-                <th className="r">Price</th>
-                <th className="r">Cost</th>
-                <th className="r">Stock</th>
-                <th className="r">Sold</th>
-                <th className="r">Revenue</th>
-                <th className="r">Review</th>
-                <th className="r">Design</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((p) => (
-                <tr key={p.id} className={`row cursor-pointer ${current?.id === p.id ? 'bg-accent/5' : ''}`} onClick={() => focus(p.id)}>
-                  <td className="w-10 !p-0">
-                    <Thumb product={p} className="h-11 w-9" />
-                  </td>
-                  <td className={current?.id === p.id ? 'text-accent' : ''}>{p.name}</td>
-                  <td className={`num ${statusTone(p)}`}>{statusText(p)}</td>
-                  <td className="text-dim">{p.segment ? segmentInfo(p.segment).name : '--'}</td>
-                  <td className="num r">{money(p.price)}</td>
-                  <td className="num r text-dim">{money(p.unitCost)}</td>
-                  <td className="num r">{num(p.stock)}</td>
-                  <td className="num r">{num(p.unitsSold)}</td>
-                  <td className="num r">{money(p.revenue)}</td>
-                  <td className="num r">{p.reviewAvg ? p.reviewAvg.toFixed(1) : '--'}</td>
-                  <td className="num r">{Math.round(p.designPct)}</td>
-                  <td className="r">
-                    <Btn small tone="ghost" onClick={(e) => (e.stopPropagation(), openDesigner(p.design))}>
-                      Use as base
-                    </Btn>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          families.map((family) => {
+            const group = rows.filter((p) => p.family === family)
+            return (
+              <div key={family}>
+                <div className="flex items-center justify-between border-b border-line2 bg-raise px-2 py-1">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-fg">{family}</span>
+                  <span className="num text-[10px] text-faint">
+                    {group.length} {group.length === 1 ? 'model' : 'models'} / {num(group.reduce((a, p) => a + p.unitsSold, 0))} sold / {money(group.reduce((a, p) => a + p.revenue, 0), 1)}
+                  </span>
+                </div>
+                <ProductTable g={g} rows={group} />
+              </div>
+            )
+          })
         )}
       </Panel>
-      {current ? (
-        <ProductInspector product={current}>
-          <ProductControls key={current.id} p={current} />
-        </ProductInspector>
-      ) : (
-        <Panel title="Inspector">
-          <Empty text="Select a device to inspect it." />
-        </Panel>
-      )}
+      <div className="shrink-0 text-[10px] text-faint">Click a device to open it. From there you can order production, change the price, or build a Pro, Lite, Max or successor on the same platform.</div>
     </div>
   )
 }
@@ -339,11 +274,11 @@ export function Products() {
 
 export function Market() {
   const g = useGame()
-  const focusId = useStore((s) => s.focusProduct)
-  const { focus } = useStore.getState()
+  const [type, setType] = useState<DeviceType>('phone')
   const [seg, setSeg] = useState<string>('all')
-  const onSale = g.products.filter((p) => p.status === 'sale')
-  const info = SEGMENTS.find((s) => s.id === seg)
+  const segs = segmentsOf(type)
+  const info = segs.find((s) => s.id === seg)
+  const onSale = g.products.filter((p) => p.status === 'sale' && p.type === type)
   // share of the chosen segment each product is winning right now
   const weights = new Map<string, number>()
   if (info) {
@@ -356,69 +291,29 @@ export function Market() {
     for (const [k, w] of weights) weights.set(k, w / total)
   }
   const rows = [...onSale].sort((a, b) => (info ? (weights.get(b.id) ?? 0) - (weights.get(a.id) ?? 0) : (b.history.at(-1) ?? b.monthUnits) - (a.history.at(-1) ?? a.monthUnits)))
-  const current = g.products.find((p) => p.id === focusId) ?? rows[0]
   return (
-    <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_400px] gap-2 p-2">
-      <div className="grid min-h-0 grid-rows-[220px_minmax(0,1fr)] gap-2">
-        <Panel title="Market share by units, last 36 months">
-          <ShareChart g={g} />
-        </Panel>
-        <Panel
-          title={info ? `${info.name}: who wins a buyer today` : 'All phones on sale'}
-          right={
-            <div className="flex">
-              <Btn small tone="ghost" active={seg === 'all'} onClick={() => setSeg('all')}>
-                All
-              </Btn>
-              {SEGMENTS.map((s) => (
-                <Btn key={s.id} small tone="ghost" active={seg === s.id} onClick={() => setSeg(s.id)}>
-                  {s.name}
-                </Btn>
-              ))}
+    <div className="flex h-full min-h-0 flex-col gap-2 p-2">
+      <Tabs value={type} onChange={(t) => (setType(t), setSeg('all'))} options={DEVICE_TYPES.map((t) => ({ value: t, label: TYPES[t].plural, badge: g.products.filter((p) => p.status === 'sale' && p.type === t).length }))} />
+      <div className="grid shrink-0 gap-1" style={{ gridTemplateColumns: `repeat(${segs.length + 1}, minmax(0, 1fr))` }}>
+        <button onClick={() => setSeg('all')} className={`border px-2 py-1 text-left ${seg === 'all' ? 'border-accent bg-accent/10' : 'border-line hover:border-line2'}`}>
+          <div className="text-[11px] uppercase tracking-wider text-fg">All {TYPES[type].plural.toLowerCase()}</div>
+          <div className="num text-[10px] text-faint">{num(segs.reduce((a, s) => a + segmentDemand(s, g.day) * 360, 0))} buyers / yr</div>
+        </button>
+        {segs.map((s) => (
+          <button key={s.id} onClick={() => setSeg(s.id)} className={`border px-2 py-1 text-left ${seg === s.id ? 'border-accent bg-accent/10' : 'border-line hover:border-line2'}`}>
+            <div className="truncate text-[11px] uppercase tracking-wider text-fg">{s.name}</div>
+            <div className="num text-[10px] text-faint">
+              {num(segmentDemand(s, g.day) * 360)} / yr at ~{money(s.priceRef)}
             </div>
-          }
-          bodyClass="overflow-auto"
-        >
-          <table className="grid-table">
-            <thead>
-              <tr>
-                <th />
-                <th>Device</th>
-                <th>Maker</th>
-                <th>Segment</th>
-                <th className="r">Price</th>
-                <th className="r">Review</th>
-                <th className="r">Design</th>
-                <th className="r">Last month</th>
-                {info && <th className="r">Win rate</th>}
-                <th>Released</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((p) => {
-                const c = companyOf(g, p.companyId)
-                return (
-                  <tr key={p.id} className={`row cursor-pointer ${current?.id === p.id ? 'bg-accent/5' : ''}`} onClick={() => focus(p.id)}>
-                    <td className="w-10 !p-0">
-                      <Thumb product={p} className="h-11 w-9" />
-                    </td>
-                    <td className={current?.id === p.id ? 'text-accent' : ''}>{p.name}</td>
-                    <td style={{ color: c.color }}>{c.name}</td>
-                    <td className="text-dim">{p.segment ? segmentInfo(p.segment).name : '--'}</td>
-                    <td className="num r">{money(p.price)}</td>
-                    <td className="num r">{p.reviewAvg.toFixed(1)}</td>
-                    <td className="num r">{Math.round(p.designPct)}</td>
-                    <td className="num r">{num(p.history.at(-1) ?? p.monthUnits)}</td>
-                    {info && <td className="num r text-accent">{pct(weights.get(p.id) ?? 0)}</td>}
-                    <td className="num text-dim">{fmtDate(p.launchDay)}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </Panel>
+          </button>
+        ))}
       </div>
-      {current && <ProductInspector product={current} />}
+      <Panel title={info ? `${info.name}: who wins a buyer today` : `${TYPES[type].plural} on sale, by last month's sales`} className="flex-1" bodyClass="overflow-auto">
+        <ProductTable g={g} rows={rows} showMaker winRate={info ? weights : undefined} />
+      </Panel>
+      <Fold title="Market share by units, all device types" open={false} bodyClass="h-52">
+        <ShareChart g={g} />
+      </Fold>
     </div>
   )
 }
@@ -427,169 +322,139 @@ export function Market() {
 
 export function Rivals() {
   const g = useGame()
-  const { act, focus } = useStore.getState()
-  const focusId = useStore((s) => s.focusProduct)
+  const { act } = useStore.getState()
   const [companyId, setCompanyId] = useState('r0')
   const trailing = trailingUnits(g)
   const total = trailing.reduce((a, t) => a + t.units, 0) || 1
   const company = g.companies.find((c) => c.id === companyId) ?? g.companies[1]
   const products = g.products.filter((p) => p.companyId === company.id).sort((a, b) => b.launchDay - a.launchDay)
-  const current = products.find((p) => p.id === focusId) ?? products[0]
+  const types = (ids: string[]) => [...new Set(ids.map((s) => TYPES[segmentInfo(s).type].plural))].join(', ')
   return (
-    <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_400px] gap-2 p-2">
-      <div className="grid min-h-0 grid-rows-2 gap-2">
-        <Panel title="Companies" bodyClass="overflow-auto">
-          <table className="grid-table">
-            <thead>
-              <tr>
-                <th>Company</th>
-                <th>Status</th>
-                <th>Segments</th>
-                <th className="r">Brand</th>
-                <th className="r">Awareness</th>
-                <th className="r">Units 12 mo</th>
-                <th className="r">Share</th>
-                <th className="r">Lifetime revenue</th>
+    <div className="grid h-full min-h-0 grid-cols-[minmax(0,5fr)_minmax(0,6fr)] gap-2 p-2">
+      <Panel title="Companies" bodyClass="overflow-auto">
+        <table className="grid-table">
+          <thead>
+            <tr>
+              <th>Company</th>
+              <th>Makes</th>
+              <th className="r">Brand</th>
+              <th className="r">Units 12 mo</th>
+              <th className="r">Share</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...trailing].sort((a, b) => b.units - a.units).map(({ company: c, units }) => (
+              <tr key={c.id} className={`row cursor-pointer ${c.id === company.id ? 'bg-accent/5' : ''}`} onClick={() => setCompanyId(c.id)}>
+                <td className={c.alive ? 'text-fg' : 'text-faint line-through'}>
+                  <span className="mr-2 inline-block h-2 w-2" style={{ background: c.color }} />
+                  {c.name}
+                  {c.isPlayer && <span className="ml-2"><Tag tone="accent">you</Tag></span>}
+                </td>
+                <td className="text-dim">{c.isPlayer ? '--' : types(c.segments)}</td>
+                <td className="num r text-dim">{Math.round(c.brand * 100)}</td>
+                <td className="num r text-dim">{num(units)}</td>
+                <td className="num r text-fg">{pct(units / total)}</td>
               </tr>
-            </thead>
-            <tbody>
-              {[...trailing].sort((a, b) => b.units - a.units).map(({ company: c, units }) => (
-                <tr key={c.id} className={`row cursor-pointer ${c.id === company.id ? 'bg-accent/5' : ''}`} onClick={() => setCompanyId(c.id)}>
-                  <td>
-                    <span className="mr-2 inline-block h-2 w-2" style={{ background: c.color }} />
-                    {c.name}
-                    {c.isPlayer && <span className="label ml-2 text-accent">you</span>}
-                  </td>
-                  <td className={`num ${c.alive ? 'text-pos' : 'text-neg'}`}>{c.alive ? 'ACTIVE' : 'BANKRUPT'}</td>
-                  <td className="text-dim">{c.isPlayer ? '--' : c.segments.map((s) => segmentInfo(s).name).join(', ')}</td>
-                  <td className="num r">{Math.round(c.brand * 100)}</td>
-                  <td className="num r">{pct(c.awareness, 0)}</td>
-                  <td className="num r">{num(units)}</td>
-                  <td className="num r">{pct(units / total)}</td>
-                  <td className="num r">{money(c.revenueTotal)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Panel>
+            ))}
+          </tbody>
+        </table>
+      </Panel>
+      <div className="flex min-h-0 flex-col gap-2">
+        <div className="grid shrink-0 grid-cols-4 gap-1">
+          <Mini label="Awareness" value={pct(company.awareness, 0)} />
+          <Mini label="Lifetime revenue" value={money(company.revenueTotal, 1)} />
+          <Mini label="Software edge" value={`${company.software >= 0 ? '+' : ''}${pct(company.software)}`} />
+          <Mini label="Status" value={company.alive ? 'Active' : 'Bankrupt'} tone={company.alive ? 'text-pos' : 'text-neg'} />
+        </div>
         <Panel
           title={`${company.name}: devices`}
           right={
             !company.isPlayer && (
               <label className="flex items-center gap-2">
-                <span className="label">Rename</span>
-                <TextInput value={company.name} maxLength={18} onChange={(v) => act(() => void (company.name = v))} className="h-5 w-32" />
+                <span className="label text-faint">Rename</span>
+                <TextInput value={company.name} maxLength={18} onChange={(v) => act(() => void (company.name = v))} className="h-6 w-32" />
               </label>
             )
           }
+          className="flex-1"
           bodyClass="overflow-auto"
         >
-          <table className="grid-table">
-            <thead>
-              <tr>
-                <th />
-                <th>Device</th>
-                <th>Status</th>
-                <th>Segment</th>
-                <th className="r">Price</th>
-                <th className="r">Review</th>
-                <th className="r">Sold</th>
-                <th>Released</th>
-              </tr>
-            </thead>
-            <tbody>
-              {products.map((p) => (
-                <tr key={p.id} className={`row cursor-pointer ${current?.id === p.id ? 'bg-accent/5' : ''}`} onClick={() => focus(p.id)}>
-                  <td className="w-10 !p-0">
-                    <Thumb product={p} className="h-11 w-9" />
-                  </td>
-                  <td className={current?.id === p.id ? 'text-accent' : ''}>{p.name}</td>
-                  <td className={`num ${statusTone(p)}`}>{statusText(p)}</td>
-                  <td className="text-dim">{p.segment ? segmentInfo(p.segment).name : '--'}</td>
-                  <td className="num r">{money(p.price)}</td>
-                  <td className="num r">{p.reviewAvg ? p.reviewAvg.toFixed(1) : '--'}</td>
-                  <td className="num r">{num(p.unitsSold)}</td>
-                  <td className="num text-dim">{p.status === 'dev' ? '--' : fmtDate(p.launchDay)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {products.length ? <ProductTable g={g} rows={products} /> : <Empty text="This company has no devices." />}
         </Panel>
       </div>
-      {current ? (
-        <ProductInspector product={current} />
-      ) : (
-        <Panel title="Inspector">
-          <Empty text="This company has no devices." />
-        </Panel>
-      )}
     </div>
   )
 }
 
 // ------------------------------------------------------------------ finance
 
+const COST_LABELS: Record<(typeof COST_KEYS)[number], string> = { production: 'Production', rd: 'R&D', marketing: 'Marketing', development: 'Development', overhead: 'Overhead', salaries: 'Salaries', facilities: 'Facilities', interest: 'Interest' }
+
 export function Finance() {
   const g = useGame()
+  const year = g.reports.slice(-12)
+  const income = year.reduce((a, r) => a + r.revenue + r.other, 0)
+  const costs = year.reduce((a, r) => a + monthCosts(r), 0)
+  const stockValue = mine(g).filter((p) => p.status !== 'ended').reduce((a, p) => a + p.stock * p.unitCost, 0)
   const rows = [...g.reports].reverse().slice(0, 36)
-  const sum = (k: 'revenue' | 'production' | 'rd' | 'marketing' | 'development' | 'overhead' | 'salaries' | 'interest') => g.reports.slice(-12).reduce((a, r) => a + r[k], 0)
-  const costs12 = sum('production') + sum('rd') + sum('marketing') + sum('development') + sum('overhead') + sum('salaries') + sum('interest')
-  const stockValue = g.products.filter((p) => p.companyId === 'player' && p.status !== 'ended').reduce((a, p) => a + p.stock * p.unitCost, 0)
   return (
-    <div className="grid h-full min-h-0 grid-rows-[auto_240px_minmax(0,1fr)] gap-2 p-2">
-      <div className="grid grid-cols-6 gap-2">
-        <Stat label="Cash" value={g.config.unlimitedMoney ? 'UNLIMITED' : money(g.cash)} tone="accent" />
-        <Stat label="Revenue, 12 months" value={money(sum('revenue'))} />
-        <Stat label="Costs, 12 months" value={money(costs12)} />
-        <Stat label="Profit, 12 months" value={money(sum('revenue') - costs12)} tone={sum('revenue') - costs12 >= 0 ? 'pos' : 'neg'} />
-        <Stat label="Unsold stock at cost" value={money(stockValue)} />
-        <Stat label="This month so far" value={money(g.cur.revenue)} sub={`${num(g.cur.units)} units`} />
+    <div className="flex h-full min-h-0 flex-col gap-2 p-2">
+      <div className="grid shrink-0 grid-cols-4 gap-2">
+        <Kpi label="Cash" value={g.config.unlimitedMoney ? 'UNLIMITED' : money(g.cash)} tone="accent" />
+        <Kpi label="Income, 12 months" value={money(income)} sub={`of which licensing and services ${money(year.reduce((a, r) => a + r.other, 0), 1)}`} />
+        <Kpi label="Costs, 12 months" value={money(costs)} />
+        <Kpi label="Profit, 12 months" value={money(income - costs)} tone={income - costs >= 0 ? 'pos' : 'neg'} sub={`unsold stock at cost ${money(stockValue, 1)}`} />
       </div>
-      <Panel title="Revenue, costs and cash, last 36 months">
+      <div className="grid shrink-0 grid-cols-8 gap-1">
+        {COST_KEYS.map((k) => (
+          <Mini key={k} label={`${COST_LABELS[k]}, 12 mo`} value={money(year.reduce((a, r) => a + r[k], 0), 1)} />
+        ))}
+      </div>
+      <Panel title="Income, costs and cash, last 36 months" className="h-56 shrink-0">
         <FinanceChart g={g} months={36} />
       </Panel>
-      <Panel title="Monthly statement" bodyClass="overflow-auto">
+      <Panel title="Monthly statement" className="flex-1" bodyClass="overflow-auto">
         <table className="grid-table">
           <thead>
             <tr>
               <th>Month</th>
               <th className="r">Units</th>
-              <th className="r">Revenue</th>
-              <th className="r">Production</th>
-              <th className="r">R&D</th>
-              <th className="r">Marketing</th>
-              <th className="r">Development</th>
-              <th className="r">Salaries</th>
-              <th className="r">Overhead</th>
-              <th className="r">Interest</th>
+              <th className="r">Sales</th>
+              <th className="r">Other income</th>
+              {COST_KEYS.map((k) => (
+                <th key={k} className="r">
+                  {COST_LABELS[k]}
+                </th>
+              ))}
               <th className="r">Profit</th>
               <th className="r">Cash at close</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => {
-              const profit = r.revenue - r.production - r.rd - r.marketing - r.development - r.overhead - r.salaries - r.interest
+              const profit = r.revenue + r.other - monthCosts(r)
               return (
                 <tr key={r.month} className="row">
-                  <td className="num">{monthLabel(r.month)}</td>
-                  <td className="num r">{num(r.units)}</td>
-                  <td className="num r">{money(r.revenue)}</td>
-                  <td className="num r text-dim">{money(r.production)}</td>
-                  <td className="num r text-dim">{money(r.rd)}</td>
-                  <td className="num r text-dim">{money(r.marketing)}</td>
-                  <td className="num r text-dim">{money(r.development)}</td>
-                  <td className="num r text-dim">{money(r.salaries)}</td>
-                  <td className="num r text-dim">{money(r.overhead)}</td>
-                  <td className="num r text-dim">{money(r.interest)}</td>
+                  <td className="num text-fg">{monthLabel(r.month)}</td>
+                  <td className="num r text-dim">{num(r.units)}</td>
+                  <td className="num r text-fg">{money(r.revenue)}</td>
+                  <td className="num r text-dim">{money(r.other)}</td>
+                  {COST_KEYS.map((k) => (
+                    <td key={k} className="num r text-faint">
+                      {money(r[k])}
+                    </td>
+                  ))}
                   <td className={`num r ${profit >= 0 ? 'text-pos' : 'text-neg'}`}>{money(profit)}</td>
-                  <td className="num r">{money(r.cash)}</td>
+                  <td className="num r text-fg">{money(r.cash)}</td>
                 </tr>
               )
             })}
           </tbody>
         </table>
-        {rows.length === 0 && <div className="p-4 text-center text-[11px] text-faint">The first statement closes at the end of the month.</div>}
+        {rows.length === 0 && <Empty text="The first statement closes at the end of the month." />}
       </Panel>
     </div>
   )
 }
+
+export { SEGMENTS, fmtDate }

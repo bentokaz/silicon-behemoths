@@ -1,5 +1,5 @@
 // Game content as data: research tracks, parts, materials, customer segments.
-import type { Lens, Levels, SegmentId, SubScores, Track } from '../sim/types'
+import type { Lens, Levels, SupplyCat, Track } from '../sim/types'
 
 export const MAX_LEVEL = 8
 export const DAYS_PER_MONTH = 30
@@ -183,67 +183,6 @@ export const MATERIALS: MaterialInfo[] = [
 ]
 export const materialInfo = (id: string) => MATERIALS.find((m) => m.id === id) ?? MATERIALS[0]
 
-export interface SegmentInfo {
-  id: SegmentId
-  name: string
-  size: number
-  priceRef: number
-  sens: number
-  expect: number
-  weights: SubScores & { brand: number }
-}
-// size = buyers per year at game start. Weights sum to 1.
-export const SEGMENTS: SegmentInfo[] = [
-  { id: 'budget', name: 'Budget', size: 20e6, priceRef: 180, sens: 2.2, expect: 0.56, weights: { perf: 0.2, display: 0.15, camera: 0.15, battery: 0.3, design: 0.1, brand: 0.1 } },
-  { id: 'mainstream', name: 'Mainstream', size: 20e6, priceRef: 450, sens: 1.5, expect: 0.8, weights: { perf: 0.2, display: 0.2, camera: 0.2, battery: 0.15, design: 0.15, brand: 0.1 } },
-  { id: 'flagship', name: 'Flagship', size: 8e6, priceRef: 1050, sens: 0.8, expect: 0.95, weights: { perf: 0.2, display: 0.18, camera: 0.2, battery: 0.1, design: 0.2, brand: 0.12 } },
-  { id: 'gamer', name: 'Gamer', size: 4e6, priceRef: 700, sens: 1.2, expect: 0.9, weights: { perf: 0.48, display: 0.25, camera: 0.02, battery: 0.15, design: 0.06, brand: 0.04 } },
-  { id: 'business', name: 'Business', size: 5e6, priceRef: 800, sens: 1.0, expect: 0.8, weights: { perf: 0.2, display: 0.13, camera: 0.07, battery: 0.28, design: 0.14, brand: 0.18 } },
-  { id: 'camera', name: 'Camera fan', size: 3.5e6, priceRef: 900, sens: 1.0, expect: 0.88, weights: { perf: 0.1, display: 0.14, camera: 0.52, battery: 0.1, design: 0.1, brand: 0.04 } },
-]
-export const segmentInfo = (id: SegmentId) => SEGMENTS.find((s) => s.id === id)!
-
-export const OUTLETS: { name: string; weights: SubScores; value: number }[] = [
-  { name: 'TechVerdict', weights: { perf: 0.2, display: 0.2, camera: 0.2, battery: 0.2, design: 0.2 }, value: 0.45 },
-  { name: 'Benchmark Daily', weights: { perf: 0.45, display: 0.25, camera: 0.05, battery: 0.2, design: 0.05 }, value: 0.35 },
-  { name: 'LensLab', weights: { perf: 0.08, display: 0.17, camera: 0.45, battery: 0.05, design: 0.25 }, value: 0.35 },
-  { name: 'The Wallet', weights: { perf: 0.2, display: 0.2, camera: 0.2, battery: 0.25, design: 0.15 }, value: 0.65 },
-]
-
-export const SUB_LABELS: Record<keyof SubScores, string> = {
-  perf: 'Performance',
-  display: 'Display',
-  camera: 'Camera',
-  battery: 'Battery',
-  design: 'Design',
-}
-
-export interface RivalSeed {
-  name: string
-  color: string
-  brand: number
-  awareness: number
-  techOffset: number
-  priceMult: number
-  segments: SegmentId[]
-  layout: number
-  palette: string[]
-  series: Partial<Record<SegmentId, string>>
-  counter: number
-}
-// Parody companies. Names are stored in the save and can be edited in Settings.
-export const RIVALS: RivalSeed[] = [
-  { name: 'Pear', color: '#c9ccd1', brand: 0.92, awareness: 0.95, techOffset: 0.4, priceMult: 1.2, segments: ['flagship', 'mainstream'], layout: 1, palette: ['#3b3d42', '#e8e4dc', '#5b6470', '#c8b89a'], series: { flagship: 'pPhone Pro', mainstream: 'pPhone' }, counter: 18 },
-  { name: 'Samsong', color: '#3d7be0', brand: 0.82, awareness: 0.95, techOffset: 0.3, priceMult: 1.05, segments: ['budget', 'mainstream', 'flagship', 'camera'], layout: 4, palette: ['#1c1f26', '#b9c7d8', '#d9d3e6', '#2e4a3c'], series: { budget: 'Cosmos A', mainstream: 'Cosmos FE', flagship: 'Cosmos S', camera: 'Cosmos Ultra' }, counter: 26 },
-  { name: 'Xiaomy', color: '#f0802a', brand: 0.6, awareness: 0.8, techOffset: 0, priceMult: 0.85, segments: ['budget', 'mainstream', 'gamer'], layout: 2, palette: ['#14161a', '#3a5f8a', '#e9e9e9', '#2a6e58'], series: { budget: 'Redmo', mainstream: 'Mi Note', gamer: 'Poko F' }, counter: 15 },
-  { name: 'Gooble', color: '#35b06a', brand: 0.75, awareness: 0.7, techOffset: 0.2, priceMult: 1, segments: ['camera', 'mainstream'], layout: 3, palette: ['#e6e1d6', '#22262b', '#9fb6a5', '#d9a7a0'], series: { camera: 'Pixl Pro', mainstream: 'Pixl a' }, counter: 11 },
-  { name: 'OnePlum', color: '#e0403c', brand: 0.65, awareness: 0.55, techOffset: 0, priceMult: 0.9, segments: ['mainstream', 'gamer'], layout: 2, palette: ['#16181c', '#2c5a4a', '#c9c9cc'], series: { mainstream: 'Nord', gamer: 'Plum R' }, counter: 14 },
-  { name: 'Nokai', color: '#2f5fb5', brand: 0.55, awareness: 0.7, techOffset: -0.8, priceMult: 0.9, segments: ['budget', 'business'], layout: 0, palette: ['#20242b', '#39506b', '#6b7078'], series: { budget: 'Brick G', business: 'Brick X' }, counter: 40 },
-  { name: 'Sonny', color: '#8a8f98', brand: 0.7, awareness: 0.6, techOffset: 0, priceMult: 1.15, segments: ['camera', 'flagship'], layout: 0, palette: ['#111214', '#3d4a3f', '#bfc2c7'], series: { camera: 'Xperion Pro', flagship: 'Xperion 1 Mk' }, counter: 7 },
-  { name: 'Azus', color: '#d43a5a', brand: 0.62, awareness: 0.45, techOffset: 0.1, priceMult: 1, segments: ['gamer'], layout: 3, palette: ['#0f1012', '#2a2d33', '#e6e6e8'], series: { gamer: 'ROC Phone' }, counter: 10 },
-  { name: 'BlockBerry', color: '#6c7a89', brand: 0.6, awareness: 0.5, techOffset: -0.4, priceMult: 1.05, segments: ['business'], layout: 0, palette: ['#101114', '#2b2f36', '#4a3b2c'], series: { business: 'Key' }, counter: 4 },
-]
-
 // ---------------------------------------------------------------- tech tree
 // Each track is a trunk of nine levels. Features branch off a trunk level and
 // are researched separately. Some trunk levels also need another track first.
@@ -285,3 +224,11 @@ export const TRUNK_REQS: Partial<Record<Track, Record<number, Partial<Levels>>>>
 
 /** Features a company owns if it simply has everything up to its levels (used for rivals). */
 export const featuresAtLevels = (lv: Levels) => FEATURES.filter((f) => lv[f.track] >= f.level).map((f) => f.id)
+
+export const SUPPLY_LABELS: Record<SupplyCat, string> = {
+  semis: 'Chips and sensors',
+  displays: 'Displays',
+  memory: 'Memory',
+  batteries: 'Batteries',
+  materials: 'Materials',
+}

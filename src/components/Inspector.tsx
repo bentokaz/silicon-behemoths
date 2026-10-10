@@ -1,30 +1,51 @@
-// Read-only product view: 3D model, specs, scores against today's market, reviews.
+// The slide-over product inspector: 3D model, key numbers, and tabs for
+// details that are only shown when asked for.
 import { useEffect, useState } from 'react'
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { DeviceView, type ViewName } from '../3d/DeviceView'
 import { deviceThumbnail } from '../3d/thumbnail'
-import { CHARGE_W, EXTRAS, LENSES, SUB_LABELS, chipInfo, materialInfo, panelInfo, segmentInfo, sensorInfo } from '../data/catalog'
-import { companyOf, fmtDate, player } from '../sim/game'
-import { normalised } from '../sim/market'
-import { type DeviceDesign, type Product, SUBS } from '../sim/types'
+import { sfx } from '../audio/sfx'
+import { CHARGE_W, EXTRAS, LENSES, SUPPLY_LABELS, materialInfo, panelInfo, sensorInfo } from '../data/catalog'
+import { GPUS, KEYBOARDS, PORTS, SENSORS, STRAPS, TYPES, segmentInfo, subLabel } from '../data/devices'
+import { RETAIL_CUT, companyOf, discontinue, fmtDate, orderProduction, player, setPrice } from '../sim/game'
+import { normalised, tierAverages } from '../sim/market'
+import { CONTRACT, buildCost, factoryLine, pendingUnits, supplyPrice } from '../sim/ops'
+import { VARIANTS } from '../sim/rivals'
+import { batteryLabel, chipFor } from '../sim/scoring'
+import { type DeviceDesign, type GameState, type Product, type ProductionOrder, SUBS, SUPPLY_CATS } from '../sim/types'
 import { useGame, useStore } from '../store/game'
-import { Btn, Meter, Panel, Row, money, num } from './ui'
+import { Btn, Drawer, Meter, Mini, NumInput, Row, Tabs, Tag, chart, money, num, pct } from './ui'
 
-export function specLines(d: DeviceDesign, diag: number): [string, string][] {
+export function specLines(d: DeviceDesign, diag: number, g?: GameState): [string, string][] {
   const s = d.specs
   const rear = d.parts.filter((p) => p.kind === 'camera' && p.face === 'back')
   const selfie = d.parts.filter((p) => p.kind === 'camera' && p.face === 'front')
   const extras = s.extras.map((id) => EXTRAS.find((e) => e.id === id)?.name).filter(Boolean)
-  return [
-    ['Display', `${diag.toFixed(2)}" ${panelInfo(s.panel).name} ${s.refresh} Hz`],
-    ['Chipset', chipInfo(s.chipGen, s.chipTier).name],
-    ['Memory', `${s.ram} GB / ${s.storage >= 1024 ? s.storage / 1024 + ' TB' : s.storage + ' GB'}`],
-    ['Battery', `${s.battery} mAh, ${CHARGE_W[s.charging]} W`],
-    ['Rear cameras', rear.length ? rear.map((p) => `${sensorInfo(p.sensor ?? 0).name} ${LENSES[p.lens ?? 'wide'].name.split(' ')[0].toLowerCase()}`).join(' + ') : 'none'],
-    ['Front camera', selfie.length ? selfie.map((p) => sensorInfo(p.sensor ?? 0).name + (p.underDisplay ? ' under-display' : '')).join(' + ') : 'none'],
-    ['Body', `${d.body.width} x ${d.body.height} x ${d.body.thickness} mm`],
-    ['Materials', `${materialInfo(d.body.frameMat).name} frame, ${materialInfo(d.body.backMat).name.toLowerCase()} back`],
-    ['Extras', extras.length ? extras.join(', ') : 'none'],
+  const size = `${d.body.width} x ${d.body.height} x ${d.body.thickness} mm`
+  const lines: [string, string][] = [
+    ['Display', `${diag.toFixed(d.type === 'watch' ? 2 : 1)}" ${panelInfo(s.panel).name}${d.type === 'watch' ? '' : ` ${s.refresh} Hz`}`],
+    ['Chipset', chipFor(s, g?.chips).name + (d.type === 'laptop' && s.gpu ? ` + ${GPUS[s.gpu].name}` : '')],
   ]
+  if (TYPES[d.type].memory) lines.push(['Memory', `${s.ram} GB / ${s.storage >= 1024 ? s.storage / 1024 + ' TB' : s.storage + ' GB'}`])
+  lines.push(['Battery', `${batteryLabel(d.type, s.battery)}, ${CHARGE_W[s.charging]} W`])
+  if (d.type === 'phone' || d.type === 'tablet') {
+    lines.push(['Rear cameras', rear.length ? rear.map((p) => `${sensorInfo(p.sensor ?? 0).name} ${LENSES[p.lens ?? 'wide'].name.split(' ')[0].toLowerCase()}`).join(' + ') : 'none'])
+    lines.push(['Front camera', selfie.length ? selfie.map((p) => sensorInfo(p.sensor ?? 0).name + (p.underDisplay ? ' under-display' : '')).join(' + ') : 'none'])
+  }
+  if (d.type === 'watch') {
+    lines.push(['Sensors', (s.io ?? []).map((id) => SENSORS.find((x) => x.id === id)?.name).filter(Boolean).join(', ') || 'none'])
+    lines.push(['Strap', STRAPS.find((x) => x.id === d.body.strap)?.name ?? 'Silicone'])
+  }
+  if (d.type === 'laptop') {
+    lines.push(['Keyboard', KEYBOARDS[s.keyboard ?? 0].name])
+    lines.push(['Ports', (s.io ?? []).map((id) => PORTS.find((x) => x.id === id)?.name).filter(Boolean).join(', ') || 'none'])
+    lines.push(['Webcam', selfie.length ? sensorInfo(selfie[0].sensor ?? 0).name : 'none'])
+  }
+  lines.push(['Body', size])
+  lines.push(['Materials', d.type === 'laptop' ? materialInfo(d.body.frameMat).name : `${materialInfo(d.body.frameMat).name} frame, ${materialInfo(d.body.backMat).name.toLowerCase()} back`])
+  if (extras.length) lines.push(['Extras', extras.join(', ')])
+  if (d.colors?.length) lines.push(['Colours', [`Standard`, ...d.colors.map((c) => c.name)].join(', ')])
+  return lines
 }
 
 export function Thumb({ product, className = '' }: { product: Product; className?: string }) {
@@ -33,20 +54,23 @@ export function Thumb({ product, className = '' }: { product: Product; className
   useEffect(() => {
     const id = window.setTimeout(() => setSrc(deviceThumbnail(product.id, product.design, logo)), 0)
     return () => window.clearTimeout(id)
-  }, [product.id, product.design])
+  }, [product.id, product.design, logo])
   return src ? <img src={src} alt="" draggable={false} className={`object-contain ${className}`} /> : <div className={className} />
 }
 
-export function ScoreBars({ product }: { product: Product }) {
+export const statusTone = (p: Product) => (p.status === 'sale' ? (p.stock <= 0 && p.companyId === 'player' ? 'neg' : 'pos') : p.status === 'dev' ? 'warn' : 'dim') as 'neg' | 'pos' | 'warn' | 'dim'
+export const statusText = (p: Product) => (p.status === 'sale' ? (p.stock <= 0 && p.companyId === 'player' ? 'Sold out' : 'On sale') : p.status === 'dev' ? `Dev ${p.devDaysLeft}d` : 'Ended')
+
+function ScoreBars({ product }: { product: Product }) {
   const g = useGame()
   const n = normalised(product.raw, g.day)
   return (
     <div>
       {SUBS.map((k) => (
         <div key={k} className="flex items-center gap-2 py-[3px]">
-          <span className="w-20 text-[11px] text-dim">{SUB_LABELS[k]}</span>
+          <span className="w-32 text-[11px] text-dim">{subLabel(product.type, k)}</span>
           <Meter value={n[k]} max={1.1} tone={n[k] > 0.9 ? 'pos' : n[k] > 0.6 ? 'accent' : 'warn'} />
-          <span className="num w-8 text-right text-[11px]">{Math.round(n[k] * 100)}</span>
+          <span className="num w-8 text-right text-[11px] text-fg">{Math.round(n[k] * 100)}</span>
         </div>
       ))}
       <div className="mt-1 text-[10px] text-faint">100 = level with the best the market can build today</div>
@@ -54,14 +78,16 @@ export function ScoreBars({ product }: { product: Product }) {
   )
 }
 
-export function Reviews({ product }: { product: Product }) {
-  if (!product.reviews.length) return <div className="p-2 text-[11px] text-dim">Reviews are published on release day.</div>
+function Voices({ product }: { product: Product }) {
+  const stars = product.feedback.length ? product.feedback.reduce((a, f) => a + f.stars, 0) / product.feedback.length : 0
   return (
-    <div className="divide-y divide-line">
+    <div className="p-2">
+      <div className="label mb-1 text-faint">Press reviews</div>
+      {!product.reviews.length && <div className="py-2 text-[11px] text-faint">Reviews are published on release day.</div>}
       {product.reviews.map((r) => (
-        <div key={r.outlet} className="flex gap-3 px-2 py-2">
+        <div key={r.outlet} className="mb-1 flex gap-3 border border-line p-2">
           <div className={`num w-10 shrink-0 text-xl leading-none ${r.score >= 8 ? 'text-pos' : r.score >= 6 ? 'text-fg' : 'text-neg'}`}>{r.score.toFixed(1)}</div>
-          <div className="min-w-0 whitespace-normal">
+          <div className="min-w-0">
             <div className="label">{r.outlet}</div>
             {r.pros.map((t) => (
               <div key={t} className="text-[11px] text-fg">
@@ -78,68 +104,259 @@ export function Reviews({ product }: { product: Product }) {
           </div>
         </div>
       ))}
+      {product.companyId === 'player' && (
+        <>
+          <div className="label mb-1 mt-3 flex items-center justify-between text-faint">
+            <span>What owners say</span>
+            {stars > 0 && <span className="num text-fg">{stars.toFixed(1)} / 5</span>}
+          </div>
+          {!product.feedback.length && <div className="py-2 text-[11px] text-faint">Owner comments arrive weekly once the device is selling.</div>}
+          {product.feedback.map((f, i) => (
+            <div key={i} className="flex items-start gap-2 border-b border-line py-[5px] last:border-0">
+              <span className={`num w-8 shrink-0 text-[11px] ${f.stars >= 4 ? 'text-pos' : f.stars <= 2 ? 'text-neg' : 'text-dim'}`}>{f.stars}/5</span>
+              <span className="flex-1 text-[11px] text-fg">{f.text}</span>
+              <span className="num shrink-0 text-[9px] text-faint">{fmtDate(f.day)}</span>
+            </div>
+          ))}
+        </>
+      )}
     </div>
   )
 }
 
-export function ProductInspector({ product, children }: { product: Product; children?: React.ReactNode }) {
+/** Controls only the owner of a product gets: supply, price, and what to build next. */
+function Manage({ p }: { p: Product }) {
   const g = useGame()
-  const [view, setView] = useState<ViewName>('back')
-  const [nonce, setNonce] = useState(0)
-  const company = companyOf(g, product.companyId)
-  const status = product.status === 'dev' ? `In development, ${product.devDaysLeft} days left` : product.status === 'sale' ? `On sale since ${fmtDate(product.launchDay)}` : 'Discontinued'
+  const { act, say, openDesigner } = useStore.getState()
+  const line = factoryLine(g)
+  const [qty, setQty] = useState(10000)
+  const [mode, setMode] = useState<ProductionOrder['mode']>(line?.running ? 'factory' : 'contract')
+  const [price, setP] = useState(p.price)
+  const avg = tierAverages(p)
+  const cost = buildCost(g, p, mode)
+  const margin = avg.price * (1 - RETAIL_CUT) - cost - avg.extraCost
+  const pending = pendingUnits(g, p.id)
+  const orders = g.orders.filter((o) => o.productId === p.id)
+  const ended = p.status === 'ended'
   return (
-    <div className="flex h-full min-h-0 flex-col gap-2 overflow-y-auto pr-1">
-      <Panel
-        title={
-          <span>
-            <span style={{ color: company.color }}>{company.name}</span> / {product.name}
-          </span>
-        }
-        right={
+    <div className="space-y-3 p-2">
+      <div className="grid grid-cols-3 gap-1">
+        <Mini label="In stock" value={num(p.stock)} tone={p.stock <= 0 && p.status === 'sale' ? 'text-neg' : 'text-fg'} />
+        <Mini label="On order" value={num(pending)} />
+        <Mini label="Margin / unit" value={money(margin)} tone={margin > 0 ? 'text-pos' : 'text-neg'} />
+      </div>
+
+      {!ended && (
+        <div className="border border-line p-2">
+          <div className="label mb-1 text-faint">Order a production run</div>
           <div className="flex gap-1">
-            {(['back', 'front', 'side'] as ViewName[]).map((v) => (
-              <Btn key={v} small tone="ghost" active={view === v} onClick={() => (setView(v), setNonce((x) => x + 1))}>
-                {v}
+            {(['contract', 'factory'] as const).map((m) => (
+              <Btn key={m} small className="flex-1" active={mode === m} disabled={m === 'factory' && !line?.running} onClick={() => setMode(m)} title={m === 'factory' && !line?.running ? 'Needs a working line in your factory' : ''}>
+                {m === 'contract' ? 'Contract maker' : 'Own factory'}
               </Btn>
             ))}
           </div>
-        }
-        className="shrink-0"
-      >
-        <div className="h-[300px]">
-          <DeviceView key={product.id} design={product.design} view={view} viewNonce={nonce} autoRotate logo={player(g).logo} />
-        </div>
-        <div className="grid grid-cols-4 border-t border-line">
-          {[
-            ['Price', money(product.price)],
-            ['Review', product.reviewAvg ? product.reviewAvg.toFixed(1) : '--'],
-            ['Sold', num(product.unitsSold)],
-            ['Design', Math.round(product.designPct) + ''],
-          ].map(([k, v]) => (
-            <div key={k} className="border-r border-line px-2 py-1 last:border-0">
-              <div className="label">{k}</div>
-              <div className="num text-sm">{v}</div>
+          <div className="mt-2 flex items-center gap-2">
+            <NumInput value={qty} onChange={setQty} step={1000} className="h-7 w-28 text-right" />
+            <span className="num flex-1 text-[11px] text-dim">x {money(cost)}</span>
+            <Btn
+              small
+              tone="primary"
+              onClick={() => {
+                const err = act((s) => orderProduction(s, p.id, qty, mode))
+                if (err) say(err, 'bad')
+                else (sfx.cash(), say(`Ordered ${num(qty)} units. You pay as they are built.`))
+              }}
+            >
+              Order {money(qty * cost, 1)}
+            </Btn>
+          </div>
+          <div className="mt-1 text-[10px] leading-snug text-faint">
+            {mode === 'contract' ? `Starts after ${CONTRACT.leadDays} days, then about ${num(CONTRACT.perDay / TYPES[p.type].capacity)} a day. ${pct(CONTRACT.defectRate)} arrive faulty.` : `About ${num((line?.throughput ?? 0) / TYPES[p.type].capacity)} a day, shared with other orders. ${pct(line?.defectRate ?? 0)} arrive faulty.`}
+          </div>
+          {orders.map((o) => (
+            <div key={o.id} className="mt-2">
+              <div className="num flex justify-between text-[10px] text-dim">
+                <span>{o.mode === 'contract' ? 'CONTRACT' : 'FACTORY'}</span>
+                <span>
+                  {num(o.done)} / {num(o.quantity)}
+                </span>
+              </div>
+              <Meter value={o.done} max={o.quantity} />
             </div>
           ))}
         </div>
-      </Panel>
-      {children}
-      <Panel title="Specification" className="shrink-0" bodyClass="px-2 py-1">
-        <Row k="Status" v={status} />
-        {product.segment && <Row k="Target segment" v={segmentInfo(product.segment).name} />}
-        {specLines(product.design, product.diag).map(([k, v]) => (
-          <Row key={k} k={k} v={<span className="whitespace-normal text-right">{v}</span>} />
+      )}
+
+      {!ended && (
+        <div className="border border-line p-2">
+          <div className="label mb-1 text-faint">Retail price</div>
+          <div className="flex items-center gap-2">
+            <NumInput value={price} onChange={setP} step={10} className="h-7 w-28 text-right" />
+            <span className="flex-1 text-[10px] text-faint">{p.tiers.length ? `Storage options move with it (avg paid ${money(avg.price)})` : 'Retailers keep 15%'}</span>
+            <Btn small disabled={price === p.price || price <= 0} onClick={() => (act((s) => setPrice(s, p.id, price)), say(`${p.name} now costs ${money(price)}.`))}>
+              Apply
+            </Btn>
+          </div>
+        </div>
+      )}
+
+      <div className="border border-line p-2">
+        <div className="label mb-1 text-faint">Build on this device</div>
+        <div className="grid grid-cols-3 gap-1">
+          {VARIANTS.map((v) => (
+            <Btn key={v.id} small title={v.note} onClick={() => openDesigner({ from: p, variant: v.id })}>
+              {v.id}
+            </Btn>
+          ))}
+          <Btn small title="Start the next generation from this design" onClick={() => openDesigner({ from: p, variant: 'next' })}>
+            Successor
+          </Btn>
+        </div>
+        <div className="mt-1 text-[10px] leading-snug text-faint">A variant in the same family reuses the platform: about 45% cheaper and 40% faster to develop.</div>
+      </div>
+
+      <div className="border border-line p-2">
+        <div className="label mb-1 text-faint">Cost to build one, today</div>
+        {SUPPLY_CATS.map((c) => (
+          <Row key={c} k={SUPPLY_LABELS[c]} v={`${money(p.costParts[c] * supplyPrice(g, c))}${supplyPrice(g, c) > 1.08 ? '  (prices up)' : ''}`} tone={supplyPrice(g, c) > 1.08 ? 'text-warn' : undefined} />
         ))}
-        <Row k="Weight" v={`${Math.round(product.weight)} g`} />
-        <Row k="Battery life" v={`${product.lifeHours.toFixed(1)} h`} />
-      </Panel>
-      <Panel title="Scores vs market today" className="shrink-0" bodyClass="px-2 py-1">
-        <ScoreBars product={product} />
-      </Panel>
-      <Panel title="Reviews" className="shrink-0">
-        <Reviews product={product} />
-      </Panel>
+        <Row k="Assembly and extras" v={money(p.costParts.other)} />
+        <Row k="Fault rate" v={pct(p.defectRate)} tone={p.defectRate > 0.03 ? 'text-warn' : undefined} />
+      </div>
+
+      {!ended && (
+        <Btn small tone="danger" className="w-full" onClick={() => act((s) => discontinue(s, p.id))}>
+          Discontinue {p.name}
+        </Btn>
+      )}
     </div>
+  )
+}
+
+type InspectTab = 'overview' | 'manage' | 'specs' | 'voices'
+
+/** Global slide-over: opens whenever a product is focused anywhere in the game. */
+export function ProductDrawer() {
+  const g = useGame()
+  const id = useStore((s) => s.inspect)
+  const { focus } = useStore.getState()
+  const product = g.products.find((p) => p.id === id)
+  const [tab, setTab] = useState<InspectTab>('overview')
+  const [view, setView] = useState<ViewName | undefined>(undefined)
+  const [nonce, setNonce] = useState(0)
+  const [color, setColor] = useState(-1)
+
+  useEffect(() => {
+    setView(undefined)
+    setColor(-1)
+    setTab('overview')
+  }, [id])
+  useEffect(() => {
+    if (!id) return
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && focus(null)
+    window.addEventListener('keydown', key)
+    return () => window.removeEventListener('keydown', key)
+  }, [id, focus])
+
+  if (!product) return null
+  const company = companyOf(g, product.companyId)
+  const mine = company.isPlayer
+  const seg = product.segment ? segmentInfo(product.segment) : undefined
+  const history = product.history.map((u, i) => ({ m: i + 1, Units: u }))
+  const tabs: { value: InspectTab; label: string }[] = [{ value: 'overview', label: 'Overview' }, ...(mine ? [{ value: 'manage' as const, label: 'Manage' }] : []), { value: 'specs', label: 'Specs' }, { value: 'voices', label: 'Reviews' }]
+  return (
+    <Drawer
+      open
+      onClose={() => focus(null)}
+      width={440}
+      title={
+        <span>
+          <span style={{ color: company.color }}>{company.name}</span> <span className="text-faint">/</span> {product.name}
+        </span>
+      }
+    >
+      <div className="relative h-[270px] border-b border-line">
+        <DeviceView key={product.id} design={product.design} view={view} viewNonce={nonce} autoRotate logo={player(g).logo} colorIndex={color} />
+        <div className="absolute left-2 top-2 flex border border-line bg-panel/90">
+          {(['back', 'front', 'side'] as ViewName[]).map((v) => (
+            <Btn key={v} small tone="ghost" active={view === v} onClick={() => (setView(v), setNonce((x) => x + 1))}>
+              {v}
+            </Btn>
+          ))}
+        </div>
+        {!!product.design.colors?.length && (
+          <div className="absolute bottom-2 left-2 flex gap-1">
+            {[{ back: product.design.body.backColor, name: 'Standard' }, ...product.design.colors].map((c, i) => (
+              <button key={i} title={c.name} onClick={() => setColor(i - 1)} className={`h-4 w-4 border ${color === i - 1 ? 'border-accent' : 'border-line2'}`} style={{ background: c.back }} />
+            ))}
+          </div>
+        )}
+        <div className="absolute right-2 top-2 flex gap-1">
+          <Tag tone={statusTone(product)}>{statusText(product)}</Tag>
+          <Tag>{TYPES[product.type].name}</Tag>
+        </div>
+      </div>
+      <div className="grid grid-cols-4 gap-px border-b border-line bg-line">
+        {[
+          ['Price', money(product.price)],
+          ['Review', product.reviewAvg ? product.reviewAvg.toFixed(1) : '--'],
+          ['Sold', num(product.unitsSold)],
+          ['Design', Math.round(product.designPct)],
+        ].map(([k, v]) => (
+          <div key={k} className="bg-panel px-2 py-[6px]">
+            <div className="text-[9px] uppercase tracking-[0.12em] text-faint">{k}</div>
+            <div className="num text-sm font-semibold text-fg">{v}</div>
+          </div>
+        ))}
+      </div>
+      <Tabs value={tab} options={tabs} onChange={setTab} className="bg-panel" />
+      {tab === 'overview' && (
+        <div className="space-y-3 p-2">
+          <div className="grid grid-cols-3 gap-1">
+            <Mini label="Segment" value={seg?.name ?? '--'} />
+            <Mini label={product.status === 'dev' ? 'Release in' : 'Released'} value={product.status === 'dev' ? `${product.devDaysLeft} days` : fmtDate(product.launchDay)} />
+            <Mini label="Revenue" value={money(product.revenue)} />
+            {mine && <Mini label="Owner mood" value={pct(product.satisfaction, 0)} tone={product.satisfaction > 0.7 ? 'text-pos' : product.satisfaction < 0.5 ? 'text-neg' : 'text-fg'} />}
+            {mine && <Mini label="Weight" value={`${Math.round(product.weight)} g`} />}
+            {mine && <Mini label="Battery life" value={`${product.lifeHours.toFixed(0)} h`} />}
+          </div>
+          <div className="border border-line p-2">
+            <div className="label mb-1 text-faint">Scores against the market today</div>
+            <ScoreBars product={product} />
+          </div>
+          {history.length > 1 && (
+            <div className="border border-line p-2">
+              <div className="label mb-1 text-faint">Units per month</div>
+              <div className="h-28">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={history} margin={{ top: 4, right: 4, bottom: 0, left: -10 }}>
+                    <CartesianGrid stroke={chart.grid} vertical={false} />
+                    <XAxis dataKey="m" tick={chart.axis} stroke={chart.grid} />
+                    <YAxis tick={chart.axis} stroke={chart.grid} tickFormatter={(v) => num(v)} />
+                    <Tooltip {...chart.tooltip} cursor={{ fill: 'var(--color-hover)' }} formatter={(v) => num(Number(v))} labelFormatter={(m) => `Month ${m}`} />
+                    <Bar dataKey="Units" fill="var(--color-accent)" isAnimationActive={false} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {tab === 'manage' && mine && <Manage key={product.id} p={product} />}
+      {tab === 'specs' && (
+        <div className="p-2">
+          {specLines(product.design, product.diag, mine ? g : undefined).map(([k, v]) => (
+            <Row key={k} k={k} v={<span className="whitespace-normal text-right">{v}</span>} />
+          ))}
+          <Row k="Weight" v={`${Math.round(product.weight)} g`} />
+          <Row k="Battery life" v={`${product.lifeHours.toFixed(1)} h`} />
+          {product.tiers.map((t) => (
+            <Row key={t.storage} k={`${t.storage >= 1024 ? t.storage / 1024 + ' TB' : t.storage + ' GB'} option`} v={money(t.price)} />
+          ))}
+        </div>
+      )}
+      {tab === 'voices' && <Voices product={product} />}
+    </Drawer>
   )
 }

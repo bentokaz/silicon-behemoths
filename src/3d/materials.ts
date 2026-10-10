@@ -26,7 +26,7 @@ export function frameMaterial(mat: string, color: string): THREE.MeshPhysicalMat
 }
 
 export function backMaterial(mat: string, color: string, finish: 'gloss' | 'matte'): THREE.MeshPhysicalMaterial {
-  const p = { ...(BACK[mat] ?? BACK.glass) }
+  const p = { ...(BACK[mat] ?? FRAME[mat] ?? BACK.glass) }
   if (finish === 'matte') {
     // frosted / bead-blasted variant of the same material
     p.roughness = Math.max(p.roughness ?? 0.3, mat === 'aluminium' ? 0.45 : 0.55)
