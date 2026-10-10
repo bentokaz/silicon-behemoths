@@ -1,13 +1,14 @@
 // Game state, the daily tick, and every action the player can take.
 // All functions mutate the GameState passed in and use only its seeded RNG.
-import { DAYS_PER_MONTH, DAYS_PER_YEAR, MAX_LEVEL, RIVALS, type RivalSeed, SEGMENTS, START_YEAR, TRACK_INFO, marketLevel, researchCost, segmentInfo } from '../data/catalog'
+import { DAYS_PER_MONTH, DAYS_PER_YEAR, FEATURES, MAX_LEVEL, RIVALS, type RivalSeed, SEGMENTS, START_YEAR, TRACK_INFO, TRUNK_REQS, featureCost, featureInfo, featuresAtLevels, marketLevel, researchCost, segmentInfo } from '../data/catalog'
 import { OUTSIDE_OPTION, attraction, bestSegment, makeReviews, segmentDemand } from './market'
 import { generateDesign } from './rivals'
 import { clamp, int, pick, rand, range } from './rng'
 import { evaluate } from './scoring'
-import { type Company, type DeviceDesign, type Difficulty, type GameConfig, type GameState, type Levels, type MonthReport, type NewsItem, type Product, type SegmentId, TRACKS, type Track } from './types'
+import { ITEM_INFO, OFFICE_TIERS, defaultOffice, monthlyRent, monthlySalaries, refreshCandidates, seatedStaff, staffEffects } from './staff'
+import { type Company, type DeviceDesign, type Difficulty, type GameConfig, type GameState, type Levels, type MonthReport, type NewsItem, type OfficeItemKind, type Product, type SegmentId, TRACKS, type Track } from './types'
 
-export const SAVE_VERSION = 1
+export const SAVE_VERSION = 2
 export const RETAIL_CUT = 0.15
 
 export const DIFFICULTY: Record<Difficulty, { label: string; blurb: string; startCash: number; rivalOffset: number; awareness: number; overhead: number; debtDays: number; overdraft: number }> = {
@@ -18,7 +19,7 @@ export const DIFFICULTY: Record<Difficulty, { label: string; blurb: string; star
 
 export const defaultConfig = (): GameConfig => ({
   companyName: 'Behemoth Labs',
-  color: '#36c5d6',
+  color: '#ff6b1a',
   difficulty: 'normal',
   startCash: DIFFICULTY.normal.startCash,
   researchSpeed: 1,
@@ -46,7 +47,7 @@ function news(s: GameState, kind: NewsItem['kind'], text: string, productId?: st
   if (s.news.length > 80) s.news.length = 80
 }
 
-const emptyReport = (month: number): MonthReport => ({ month, revenue: 0, production: 0, rd: 0, marketing: 0, development: 0, overhead: 0, interest: 0, units: 0, cash: 0 })
+const emptyReport = (month: number): MonthReport => ({ month, revenue: 0, production: 0, rd: 0, marketing: 0, development: 0, overhead: 0, salaries: 0, interest: 0, units: 0, cash: 0 })
 
 export function rivalLevels(s: GameState, c: Company): Levels {
   const base = marketLevel(s.day) + c.techOffset + (s.config.rivalStrength - 1) * 1.5 + DIFFICULTY[s.config.difficulty].rivalOffset
@@ -63,8 +64,8 @@ function roundPrice(v: number): number {
   return v < 300 ? Math.round(v / 10) * 10 - 1 : Math.round(v / 50) * 50 - 1
 }
 
-function createProduct(s: GameState, c: Company, name: string, design: DeviceDesign, price: number, levels: Levels, segment?: SegmentId): { product: Product; issues: string[] } {
-  const ev = evaluate(design, levels, marketLevel(s.day))
+function createProduct(s: GameState, c: Company, name: string, design: DeviceDesign, price: number, levels: Levels, segment?: SegmentId, feats?: string[]): { product: Product; issues: string[] } {
+  const ev = evaluate(design, levels, marketLevel(s.day), feats)
   const product: Product = {
     id: `p${s.nextId++}`,
     companyId: c.id,
@@ -151,8 +152,12 @@ export function newGame(cfg: GameConfig): GameState {
     companies: [],
     products: [],
     levels: {} as Levels,
-    progress: {} as Levels,
+    features: [],
+    progress: {},
     activeResearch: [],
+    staff: [],
+    candidates: [],
+    office: defaultOffice(),
     rdBudget: 0,
     cur: emptyReport(0),
     reports: [],
@@ -164,9 +169,11 @@ export function newGame(cfg: GameConfig): GameState {
     s.levels[t] = clamp(Math.round(cfg.techLevel), 0, MAX_LEVEL)
     s.progress[t] = 0
   }
+  s.features = featuresAtLevels(s.levels)
   s.companies.push({
     ...makeCompany('player', { name: cfg.companyName, color: cfg.color, brand: 0.35, awareness: 0.01, techOffset: 0, priceMult: 1, segments: [], layout: 0, palette: [], series: {}, counter: 1 }),
     isPlayer: true,
+    logo: cfg.logo,
   })
   RIVALS.forEach((seed, i) => {
     const c = makeCompany(`r${i}`, seed)
@@ -177,6 +184,7 @@ export function newGame(cfg: GameConfig): GameState {
     }
     c.counter++
   })
+  refreshCandidates(s)
   news(s, 'finance', `${cfg.companyName} is founded with ${cfg.unlimitedMoney ? 'unlimited funds' : '$' + (cfg.startCash / 1e6).toFixed(1) + 'M'}.`)
   return s
 }
@@ -187,17 +195,18 @@ export function canAfford(s: GameState, amount: number): boolean {
   return s.config.unlimitedMoney || s.cash - amount >= -DIFFICULTY[s.config.difficulty].overdraft
 }
 
-function spend(s: GameState, amount: number, bucket: 'production' | 'rd' | 'marketing' | 'development' | 'overhead' | 'interest') {
+function spend(s: GameState, amount: number, bucket: 'production' | 'rd' | 'marketing' | 'development' | 'overhead' | 'salaries' | 'interest') {
   s.cash -= amount
   s.cur[bucket] += amount
 }
 
-export function devPlan(design: DeviceDesign): { cost: number; days: number } {
+/** Development cost and time. Pass the game to include the engineering team's speed-up. */
+export function devPlan(design: DeviceDesign, s?: GameState): { cost: number; days: number } {
   const sp = design.specs
   const cams = design.parts.filter((p) => p.kind === 'camera')
   const camLevel = cams.reduce((m, p) => Math.max(m, p.sensor ?? 0), 0)
   const avg = (sp.panel + sp.chipGen + camLevel + sp.charging) / 4
-  return { cost: Math.round(150e3 * Math.pow(1.35, avg)), days: Math.round(45 + 5 * avg) }
+  return { cost: Math.round(150e3 * Math.pow(1.35, avg)), days: Math.max(10, Math.round((45 + 5 * avg) * (s ? staffEffects(s).devTime : 1))) }
 }
 
 export interface LaunchOrder {
@@ -210,16 +219,16 @@ export interface LaunchOrder {
 
 /** Start developing a device. Returns an error message, or null on success. */
 export function startProduct(s: GameState, o: LaunchOrder): string | null {
-  const ev = evaluate(o.design, s.levels, marketLevel(s.day))
+  const ev = evaluate(o.design, s.levels, marketLevel(s.day), s.features)
   const blocking = ev.report.issues.find((i) => i.level === 'error')
   if (blocking) return blocking.text
   if (!o.name.trim()) return 'The device needs a name'
   if (o.price <= 0) return 'Set a price'
-  const plan = devPlan(o.design)
+  const plan = devPlan(o.design, s)
   const total = plan.cost + o.quantity * ev.unitCost + o.marketing
   if (!canAfford(s, total)) return 'Not enough cash for development, production and marketing'
   const c = player(s)
-  const { product } = createProduct(s, c, o.name.trim(), JSON.parse(JSON.stringify(o.design)), Math.round(o.price), s.levels)
+  const { product } = createProduct(s, c, o.name.trim(), JSON.parse(JSON.stringify(o.design)), Math.round(o.price), s.levels, undefined, s.features)
   product.devDaysLeft = plan.days
   product.stock = Math.floor(o.quantity)
   product.marketing = o.marketing
@@ -254,10 +263,106 @@ export function discontinue(s: GameState, productId: string) {
   }
 }
 
-export function toggleResearch(s: GameState, t: Track) {
-  const i = s.activeResearch.indexOf(t)
-  if (i >= 0) s.activeResearch.splice(i, 1)
-  else if (s.levels[t] < MAX_LEVEL) s.activeResearch.push(t)
+// ---------------------------------------------------------------- research
+// A research id is a track name (meaning that track's next level) or
+// 'f:' + feature id for a branch feature.
+
+export interface ResearchItem {
+  id: string
+  name: string
+  cost: number
+  done: boolean
+  available: boolean
+  /** Why it cannot be started, when it cannot. */
+  blocked?: string
+}
+
+export function trunkBlocked(s: GameState, t: Track, level: number): string | undefined {
+  const req = TRUNK_REQS[t]?.[level]
+  if (!req) return undefined
+  for (const k of TRACKS) {
+    const need = req[k]
+    if (need !== undefined && s.levels[k] < need) return `Needs ${TRACK_INFO[k].name} level ${need}`
+  }
+  return undefined
+}
+
+export function researchItem(s: GameState, id: string): ResearchItem {
+  if (id.startsWith('f:')) {
+    const f = featureInfo(id.slice(2))!
+    const done = s.features.includes(f.id)
+    const blocked = s.levels[f.track] < f.level ? `Needs ${TRACK_INFO[f.track].name} level ${f.level}` : undefined
+    return { id, name: f.name, cost: featureCost(f), done, available: !done && !blocked, blocked }
+  }
+  const t = id as Track
+  const next = s.levels[t] + 1
+  const done = s.levels[t] >= MAX_LEVEL
+  const blocked = done ? undefined : trunkBlocked(s, t, next)
+  return { id, name: done ? TRACK_INFO[t].name : `${TRACK_INFO[t].name} L${next}: ${TRACK_INFO[t].unlocks[next]}`, cost: done ? 0 : researchCost(next), done, available: !done && !blocked, blocked }
+}
+
+export function toggleResearch(s: GameState, id: string): string | null {
+  const i = s.activeResearch.indexOf(id)
+  if (i >= 0) {
+    s.activeResearch.splice(i, 1)
+    return null
+  }
+  const item = researchItem(s, id)
+  if (item.done) return 'Already researched'
+  if (!item.available) return item.blocked ?? 'Not available yet'
+  s.activeResearch.push(id)
+  return null
+}
+
+// ---------------------------------------------------------------- staff and office
+
+export function hire(s: GameState, candidateId: string): string | null {
+  const c = s.candidates.find((e) => e.id === candidateId)
+  if (!c) return 'That candidate is gone'
+  if (!canAfford(s, c.salary)) return 'Not enough cash for the signing bonus'
+  spend(s, c.salary, 'salaries')
+  s.candidates = s.candidates.filter((e) => e !== c)
+  s.staff.push({ ...c, hiredDay: s.day })
+  return null
+}
+
+export function fire(s: GameState, employeeId: string) {
+  s.staff = s.staff.filter((e) => e.id !== employeeId)
+}
+
+export function placeItem(s: GameState, kind: OfficeItemKind, x: number, y: number, rot: number): string | null {
+  const o = s.office
+  if (x < 0 || y < 0 || x >= o.w || y >= o.h) return 'Outside the office'
+  if (o.items.some((i) => i.x === x && i.y === y)) return 'That tile is taken'
+  const cost = ITEM_INFO[kind].cost
+  if (!canAfford(s, cost)) return 'Not enough cash'
+  spend(s, cost, 'overhead')
+  o.items.push({ id: `o${s.nextId++}`, kind, x, y, rot: ((rot % 4) + 4) % 4 })
+  return null
+}
+
+export function removeItem(s: GameState, itemId: string) {
+  const item = s.office.items.find((i) => i.id === itemId)
+  if (!item) return
+  s.office.items = s.office.items.filter((i) => i !== item)
+  // second-hand furniture sells for half
+  s.cash += ITEM_INFO[item.kind].cost / 2
+  s.cur.overhead -= ITEM_INFO[item.kind].cost / 2
+}
+
+export function rotateItem(s: GameState, itemId: string) {
+  const item = s.office.items.find((i) => i.id === itemId)
+  if (item) item.rot = (item.rot + 1) % 4
+}
+
+export function expandOffice(s: GameState): string | null {
+  const next = OFFICE_TIERS[s.office.tier + 1]
+  if (!next) return 'This is the largest office'
+  if (!canAfford(s, next.cost)) return 'Not enough cash'
+  spend(s, next.cost, 'overhead')
+  s.office = { ...s.office, tier: s.office.tier + 1, w: next.w, h: next.h }
+  news(s, 'finance', `The company moved into a larger space: ${next.name}.`)
+  return null
 }
 
 // ---------------------------------------------------------------- tick
@@ -281,8 +386,10 @@ function stepPlayerDev(s: GameState) {
   for (const p of s.products) {
     if (p.companyId !== 'player' || p.status !== 'dev') continue
     if (--p.devDaysLeft > 0) continue
-    const ev = evaluate(p.design, s.levels, marketLevel(s.day))
+    const ev = evaluate(p.design, s.levels, marketLevel(s.day), s.features)
     p.raw = ev.raw
+    // designers polish the product before it ships
+    p.raw.design *= 1 + staffEffects(s).polish
     p.designPct = ev.report.pct
     release(s, p, c, ev.report.issues.filter((i) => i.level === 'warn').map((i) => i.text))
     c.awareness += (1 - c.awareness) * (1 - Math.exp(-p.marketing / 25e6))
@@ -293,7 +400,7 @@ function stepPlayerDev(s: GameState) {
 function stepSales(s: GameState) {
   const onSale = s.products.filter((p) => p.status === 'sale')
   const companies = new Map(s.companies.map((c) => [c.id, c]))
-  const gain = DIFFICULTY[s.config.difficulty].awareness
+  const gain = DIFFICULTY[s.config.difficulty].awareness * staffEffects(s).marketing
   for (const seg of SEGMENTS) {
     const demand = segmentDemand(seg, s.day)
     const weights = onSale.map((p) => (p.stock <= 0 ? 0 : attraction(p, companies.get(p.companyId)!, seg, s.day)))
@@ -336,17 +443,29 @@ function stepResearch(s: GameState) {
   const daily = s.rdBudget / DAYS_PER_MONTH
   if (!canAfford(s, daily)) return
   spend(s, daily, 'rd')
-  const each = (daily * s.config.researchSpeed) / s.activeResearch.length
-  for (const t of [...s.activeResearch]) {
-    s.progress[t] += each
-    const cost = researchCost(s.levels[t] + 1)
-    if (s.progress[t] >= cost) {
-      s.progress[t] -= cost
+  const each = (daily * s.config.researchSpeed * staffEffects(s).research) / s.activeResearch.length
+  for (const id of [...s.activeResearch]) {
+    const item = researchItem(s, id)
+    if (item.done || !item.available) {
+      s.activeResearch = s.activeResearch.filter((x) => x !== id)
+      continue
+    }
+    s.progress[id] = (s.progress[id] ?? 0) + each
+    if (s.progress[id] < item.cost) continue
+    if (id.startsWith('f:')) {
+      s.progress[id] = 0
+      s.features.push(id.slice(2))
+      s.activeResearch = s.activeResearch.filter((x) => x !== id)
+      news(s, 'research', `Research complete: ${item.name}.`)
+    } else {
+      const t = id as Track
+      s.progress[id] -= item.cost
       s.levels[t]++
       news(s, 'research', `Research complete: ${TRACK_INFO[t].name} level ${s.levels[t]} (${TRACK_INFO[t].unlocks[s.levels[t]]}).`)
-      if (s.levels[t] >= MAX_LEVEL) {
-        s.progress[t] = 0
-        s.activeResearch = s.activeResearch.filter((x) => x !== t)
+      // the track keeps going to its next level unless that one is blocked
+      if (!researchItem(s, id).available) {
+        s.progress[id] = 0
+        s.activeResearch = s.activeResearch.filter((x) => x !== id)
       }
     }
   }
@@ -355,7 +474,8 @@ function stepResearch(s: GameState) {
 function stepFinance(s: GameState) {
   const d = DIFFICULTY[s.config.difficulty]
   const selling = s.products.filter((p) => p.companyId === 'player' && p.status !== 'ended').length
-  spend(s, ((40e3 + 15e3 * selling) * d.overhead) / DAYS_PER_MONTH, 'overhead')
+  spend(s, ((40e3 + 15e3 * selling) * d.overhead + monthlyRent(s.office)) / DAYS_PER_MONTH, 'overhead')
+  if (s.staff.length) spend(s, monthlySalaries(s) / DAYS_PER_MONTH, 'salaries')
   if (s.config.unlimitedMoney) return
   if (s.cash < 0) {
     spend(s, (-s.cash * 0.12) / DAYS_PER_YEAR, 'interest')
@@ -390,6 +510,9 @@ function closeMonth(s: GameState) {
     }
   }
   s.monthShare = {}
+  // people with a desk learn on the job; a new batch of applicants arrives
+  for (const e of seatedStaff(s)) e.skill = Math.min(100, e.skill + 0.25)
+  refreshCandidates(s)
   for (const p of s.products) {
     if (p.status === 'ended' && p.monthUnits === 0) continue
     p.history.push(p.monthUnits)
@@ -437,5 +560,22 @@ export function trailingUnits(s: GameState): { company: Company; units: number }
 export function starterDesign(s: GameState): DeviceDesign {
   const holder = { rng: s.config.seed + s.products.length * 7919 }
   const c = player(s)
-  return generateDesign(holder, { segment: 'mainstream', levels: s.levels, mLevel: marketLevel(s.day), layout: 1, palette: ['#b9c7d8'], logo: c.name.split(' ')[0].slice(0, 10).toUpperCase() })
+  return generateDesign(holder, { segment: 'mainstream', levels: s.levels, mLevel: marketLevel(s.day), layout: 1, palette: ['#b9c7d8'], logo: c.name.split(' ')[0].slice(0, 10).toUpperCase(), logoImage: !!c.logo })
 }
+
+/** Bring a save from an older version up to date. */
+export function migrate(s: GameState): GameState {
+  if (s.version < 2) {
+    s.features = featuresAtLevels(s.levels)
+    s.staff = []
+    s.candidates = []
+    s.office = defaultOffice()
+    s.cur.salaries = 0
+    for (const r of s.reports) r.salaries = 0
+    refreshCandidates(s)
+    s.version = 2
+  }
+  return s
+}
+
+export { FEATURES }

@@ -5,19 +5,19 @@ type Params = THREE.MeshPhysicalMaterialParameters
 
 const FRAME: Record<string, Params> = {
   plastic: { metalness: 0, roughness: 0.42, clearcoat: 0.35, clearcoatRoughness: 0.3 },
-  aluminium: { metalness: 0.9, roughness: 0.25, anisotropy: 0.5 },
-  steel: { metalness: 1, roughness: 0.07 },
-  titanium: { metalness: 0.9, roughness: 0.3, anisotropy: 0.7 },
-  liquidmetal: { metalness: 1, roughness: 0.14, clearcoat: 0.6, clearcoatRoughness: 0.05 },
+  aluminium: { metalness: 0.85, roughness: 0.42, anisotropy: 0.4 },
+  steel: { metalness: 1, roughness: 0.22 },
+  titanium: { metalness: 0.85, roughness: 0.46, anisotropy: 0.6 },
+  liquidmetal: { metalness: 1, roughness: 0.26, clearcoat: 0.3, clearcoatRoughness: 0.15 },
   graphene: { metalness: 0.45, roughness: 0.5, sheen: 0.6, sheenRoughness: 0.4 },
 }
 
 const BACK: Record<string, Params> = {
-  plastic: { metalness: 0, roughness: 0.3, clearcoat: 0.5, clearcoatRoughness: 0.25 },
-  aluminium: { metalness: 0.9, roughness: 0.25, anisotropy: 0.5 },
-  glass: { metalness: 0, roughness: 0.04, clearcoat: 1, clearcoatRoughness: 0.02, ior: 1.52, reflectivity: 0.6 },
-  ceramic: { metalness: 0.05, roughness: 0.1, clearcoat: 1, clearcoatRoughness: 0.04, reflectivity: 0.7 },
-  sapphire: { metalness: 0, roughness: 0.02, clearcoat: 1, clearcoatRoughness: 0, ior: 1.77, reflectivity: 0.9 },
+  plastic: { metalness: 0, roughness: 0.45, clearcoat: 0.25, clearcoatRoughness: 0.4 },
+  aluminium: { metalness: 0.85, roughness: 0.42, anisotropy: 0.4 },
+  glass: { metalness: 0, roughness: 0.16, clearcoat: 0.6, clearcoatRoughness: 0.12, ior: 1.52, reflectivity: 0.4 },
+  ceramic: { metalness: 0.05, roughness: 0.22, clearcoat: 0.6, clearcoatRoughness: 0.14, reflectivity: 0.5 },
+  sapphire: { metalness: 0, roughness: 0.1, clearcoat: 0.8, clearcoatRoughness: 0.06, ior: 1.77, reflectivity: 0.6 },
   graphene: { metalness: 0.45, roughness: 0.5, sheen: 0.6, sheenRoughness: 0.4 },
 }
 
@@ -37,7 +37,7 @@ export function backMaterial(mat: string, color: string, finish: 'gloss' | 'matt
   return new THREE.MeshPhysicalMaterial({ color, ...p })
 }
 
-export const blackGlass = () => new THREE.MeshPhysicalMaterial({ color: '#040506', metalness: 0, roughness: 0.04, clearcoat: 1, clearcoatRoughness: 0.02, reflectivity: 0.7 })
+export const blackGlass = () => new THREE.MeshPhysicalMaterial({ color: '#040506', metalness: 0, roughness: 0.12, clearcoat: 0.7, clearcoatRoughness: 0.08, reflectivity: 0.5 })
 
 export const lensGlass = () =>
   new THREE.MeshPhysicalMaterial({ color: '#05070c', metalness: 0.2, roughness: 0, clearcoat: 1, clearcoatRoughness: 0, reflectivity: 1, ior: 1.9, iridescence: 0.6, iridescenceIOR: 1.6 })

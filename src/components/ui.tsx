@@ -24,8 +24,11 @@ export function Panel({ title, right, children, className = '', bodyClass = '' }
   return (
     <section className={`flex min-h-0 flex-col border border-line bg-panel ${className}`}>
       {title !== undefined && (
-        <header className="flex h-7 shrink-0 items-center justify-between border-b border-line px-2">
-          <span className="label">{title}</span>
+        <header className="flex h-8 shrink-0 items-center justify-between border-b border-line px-2">
+          <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-fg">
+            <span className="h-3 w-[3px] bg-accent" />
+            {title}
+          </span>
           {right}
         </header>
       )}
@@ -38,7 +41,7 @@ type BtnProps = ButtonHTMLAttributes<HTMLButtonElement> & { tone?: 'default' | '
 export function Btn({ tone = 'default', active, small, className = '', ...rest }: BtnProps) {
   const tones = {
     default: 'border-line2 bg-raise text-fg hover:border-accent hover:text-accent',
-    primary: 'border-accent bg-accent text-carbon hover:bg-transparent hover:text-accent',
+    primary: 'border-accent bg-accent font-semibold text-carbon hover:bg-transparent hover:text-accent',
     danger: 'border-neg/60 bg-transparent text-neg hover:bg-neg hover:text-carbon',
     ghost: 'border-transparent bg-transparent text-dim hover:text-fg',
   }
@@ -123,11 +126,11 @@ export function NumInput({ value, onChange, className = '', min = 0, step = 1 }:
 }
 
 export const chart = {
-  axis: { stroke: '#4c5662', fontSize: 10, fontFamily: 'Cascadia Mono, Consolas, monospace' },
-  grid: '#1a2028',
+  axis: { fill: 'var(--color-dim)', fontSize: 10, fontFamily: 'Cascadia Mono, Consolas, monospace' },
+  grid: 'var(--color-line)',
   tooltip: {
-    contentStyle: { background: '#0c0f13', border: '1px solid #303b48', borderRadius: 0, fontSize: 11, fontFamily: 'Cascadia Mono, Consolas, monospace' },
-    labelStyle: { color: '#808b98' },
+    contentStyle: { background: 'var(--color-panel)', border: '1px solid var(--color-line2)', borderRadius: 0, fontSize: 11, fontFamily: 'Cascadia Mono, Consolas, monospace' },
+    labelStyle: { color: 'var(--color-dim)' },
     itemStyle: { padding: 0 },
   },
 }

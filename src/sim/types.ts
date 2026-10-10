@@ -24,6 +24,8 @@ export interface PlacedPart {
   sensor?: number
   lens?: Lens
   underDisplay?: boolean
+  /** Logo parts only: show the uploaded company logo instead of text. */
+  useImage?: boolean
   finish?: 'frame' | 'back' | 'black'
 }
 
@@ -155,6 +157,40 @@ export interface Company {
   weakMonths: number
   revenueTotal: number
   unitsTotal: number
+  /** Uploaded logo as a small PNG data URL (player only). */
+  logo?: string
+}
+
+export type Role = 'engineer' | 'designer' | 'researcher' | 'marketer'
+export const ROLES: Role[] = ['engineer', 'designer', 'researcher', 'marketer']
+
+export interface Employee {
+  id: string
+  name: string
+  role: Role
+  skill: number
+  /** Monthly salary. */
+  salary: number
+  hiredDay: number
+  look: number
+}
+
+export type OfficeItemKind = 'desk' | 'bench' | 'server' | 'meeting' | 'coffee' | 'sofa' | 'plant' | 'wall'
+
+export interface OfficeItem {
+  id: string
+  kind: OfficeItemKind
+  x: number
+  y: number
+  /** Quarter turns, 0-3. */
+  rot: number
+}
+
+export interface Office {
+  tier: number
+  w: number
+  h: number
+  items: OfficeItem[]
 }
 
 export type Difficulty = 'relaxed' | 'normal' | 'tough'
@@ -169,6 +205,7 @@ export interface GameConfig {
   techLevel: number
   unlimitedMoney: boolean
   seed: number
+  logo?: string
 }
 
 export interface MonthReport {
@@ -179,6 +216,7 @@ export interface MonthReport {
   marketing: number
   development: number
   overhead: number
+  salaries: number
   interest: number
   units: number
   cash: number
@@ -204,8 +242,14 @@ export interface GameState {
   companies: Company[]
   products: Product[]
   levels: Levels
-  progress: Levels
-  activeResearch: Track[]
+  /** Researched branch features (ids from FEATURES). */
+  features: string[]
+  /** Money invested so far, keyed by track name or 'f:' + feature id. */
+  progress: Record<string, number>
+  activeResearch: string[]
+  staff: Employee[]
+  candidates: Employee[]
+  office: Office
   rdBudget: number
   cur: MonthReport
   reports: MonthReport[]

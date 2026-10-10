@@ -3,9 +3,9 @@
 import * as THREE from 'three'
 import { edgeBevel, isSide, screenRect } from '../sim/geometry'
 import type { Body, DeviceDesign, Face, PlacedPart } from '../sim/types'
+import { themeColor } from '../store/theme'
 import { backMaterial, blackGlass, darkMatte, flashMaterial, frameMaterial, lensCore, lensGlass } from './materials'
 
-export const ACCENT = '#36c5d6'
 
 export function roundedRectShape(w: number, h: number, radius: number): THREE.Shape {
   const r = Math.max(0.01, Math.min(radius, w / 2 - 0.001, h / 2 - 0.001))
@@ -172,6 +172,19 @@ function logoTexture(text: string): THREE.CanvasTexture {
   return t
 }
 
+const imageCache = new Map<string, THREE.Texture>()
+/** Texture for an uploaded logo (a data URL). Loads asynchronously, then stays cached. */
+export function imageTexture(url: string): THREE.Texture {
+  const hit = imageCache.get(url)
+  if (hit) return hit
+  const t = new THREE.TextureLoader().load(url)
+  t.colorSpace = THREE.SRGBColorSpace
+  t.anisotropy = 8
+  imageCache.set(url, t)
+  if (imageCache.size > 8) imageCache.delete(imageCache.keys().next().value!)
+  return t
+}
+
 // ------------------------------------------------------------ parts
 
 interface Mats {
@@ -190,7 +203,7 @@ function mesh(g: THREE.BufferGeometry, m: THREE.Material, shadow = true): THREE.
   return o
 }
 
-function buildPart(p: PlacedPart, d: DeviceDesign, m: Mats): THREE.Group {
+function buildPart(p: PlacedPart, d: DeviceDesign, m: Mats, logoUrl?: string): THREE.Group {
   const g = new THREE.Group()
   const side = isSide(p.face)
   const r = Math.min(p.w, p.h) / 2
@@ -285,6 +298,12 @@ function buildPart(p: PlacedPart, d: DeviceDesign, m: Mats): THREE.Group {
       break
     }
     case 'logo': {
+      if (p.useImage && logoUrl) {
+        const l = mesh(new THREE.PlaneGeometry(p.w, p.h), new THREE.MeshPhysicalMaterial({ map: imageTexture(logoUrl), transparent: true, alphaTest: 0.05, roughness: 0.5, metalness: 0 }), false)
+        l.position.z = 0.05
+        g.add(l)
+        break
+      }
       const mat = new THREE.MeshPhysicalMaterial({ color: '#e9edf2', metalness: 1, roughness: 0.12, alphaMap: logoTexture(p.text || ' '), transparent: true, depthWrite: false })
       const l = mesh(new THREE.PlaneGeometry(p.w, p.h), mat, false)
       l.position.z = 0.05
@@ -299,7 +318,7 @@ function buildPart(p: PlacedPart, d: DeviceDesign, m: Mats): THREE.Group {
 
 // ------------------------------------------------------------ device
 
-export function buildDevice(d: DeviceDesign, selectedId?: string | null): THREE.Group {
+export function buildDevice(d: DeviceDesign, selectedId?: string | null, logoUrl?: string): THREE.Group {
   const b = d.body
   const root = new THREE.Group()
   const m: Mats = {
@@ -329,18 +348,18 @@ export function buildDevice(d: DeviceDesign, selectedId?: string | null): THREE.
 
   const scr = screenRect(b)
   const tex = wallpaperTexture(d.wallpaper)
-  const screenMat = new THREE.MeshPhysicalMaterial({ map: tex, emissiveMap: tex, emissive: '#ffffff', emissiveIntensity: 0.45, roughness: 0.06, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.02 })
+  const screenMat = new THREE.MeshPhysicalMaterial({ map: tex, emissiveMap: tex, emissive: '#ffffff', emissiveIntensity: 0.45, roughness: 0.14, metalness: 0, clearcoat: 0.6, clearcoatRoughness: 0.1 })
   const screen = mesh(plate(Math.min(scr.w, capW - 0.1), Math.min(scr.h, capH - 0.1), scr.r), screenMat, false)
   screen.position.set(scr.cx, scr.cy, b.thickness / 2 + 0.04)
   root.add(screen)
   for (const o of [backPlate, frontPlate, screen]) o.userData.decor = true
 
   for (const p of d.parts) {
-    const g = buildPart(p, d, m)
+    const g = buildPart(p, d, m, logoUrl)
     root.add(g)
     if (p.id === selectedId) {
       const pts = [-1, -1, 1, -1, 1, 1, -1, 1].reduce<THREE.Vector3[]>((acc, v, i, arr) => (i % 2 ? acc : [...acc, new THREE.Vector3((v * (p.w + 1.6)) / 2, (arr[i + 1] * (p.h + 1.6)) / 2, 0)]), [])
-      const line = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: ACCENT, depthTest: false }))
+      const line = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: themeColor('accent', '#ff6b1a'), depthTest: false }))
       line.renderOrder = 20
       line.position.z = 2.6
       line.raycast = () => {}

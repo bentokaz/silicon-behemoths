@@ -7,7 +7,9 @@ import type { NewsItem } from '../sim/types'
 import { DAYS_PER_SECOND, type Speed, type Tab, useGame, useStore } from '../store/game'
 import { saveGame } from '../store/saves'
 import { Designer } from './Designer'
-import { Dashboard, Finance, Market, Products, Research, Rivals } from './Screens'
+import { OfficeScreen, Staff } from './Company'
+import { Research } from './ResearchTree'
+import { Dashboard, Finance, Market, Products, Rivals } from './Screens'
 import { System } from './System'
 import { Btn, money } from './ui'
 
@@ -17,8 +19,10 @@ const TABS: { id: Tab; label: string; key: string }[] = [
   { id: 'market', label: 'Market', key: 'F3' },
   { id: 'rivals', label: 'Rivals', key: 'F4' },
   { id: 'research', label: 'Research', key: 'F5' },
-  { id: 'finance', label: 'Finance', key: 'F6' },
-  { id: 'system', label: 'System', key: 'F7' },
+  { id: 'staff', label: 'Staff', key: 'F6' },
+  { id: 'office', label: 'Office', key: 'F7' },
+  { id: 'finance', label: 'Finance', key: 'F8' },
+  { id: 'system', label: 'System', key: 'F9' },
 ]
 const SPEEDS: { speed: Speed; label: string }[] = [
   { speed: 0, label: 'II' },
@@ -96,8 +100,8 @@ export function Shell() {
           </span>
         </div>
         <div className="flex items-center gap-2 border-r border-line px-3">
-          <span className="h-2 w-2" style={{ background: me.color }} />
-          <span className="text-xs">{me.name}</span>
+          {me.logo ? <img src={me.logo} alt="" className="h-6 w-6 object-contain" /> : <span className="h-2 w-2" style={{ background: me.color }} />}
+          <span className="text-xs font-semibold">{me.name}</span>
         </div>
         <div className="flex items-center gap-2 border-r border-line px-3">
           <span className="label">Date</span>
@@ -132,6 +136,15 @@ export function Shell() {
 
       <div className="flex min-h-0 flex-1">
         <nav className="flex w-[184px] shrink-0 flex-col border-r border-line bg-panel">
+          <div className="border-b border-line p-2">
+            <button
+              onClick={() => useStore.getState().openDesigner()}
+              className={`flex h-12 w-full items-center justify-between border px-3 text-left text-[13px] font-semibold uppercase tracking-wider transition-colors ${designing ? 'border-accent bg-transparent text-accent' : 'border-accent bg-accent text-carbon hover:bg-transparent hover:text-accent'}`}
+            >
+              {designing ? 'Designing' : 'New device'}
+              <span className="num text-lg leading-none">+</span>
+            </button>
+          </div>
           {TABS.map((t) => (
             <button
               key={t.id}
@@ -142,12 +155,6 @@ export function Shell() {
               <span className="num text-[9px] text-faint">{t.key}</span>
             </button>
           ))}
-          <button
-            onClick={() => useStore.getState().openDesigner()}
-            className={`mt-2 flex h-9 items-center border-y border-l-2 border-y-line px-3 text-left text-xs uppercase tracking-wider ${designing ? 'border-l-accent bg-accent/10 text-accent' : 'border-l-transparent text-fg hover:bg-hover hover:text-accent'}`}
-          >
-            + Design device
-          </button>
           <div className="flex-1" />
           <div className="border-t border-line p-3 text-[10px] leading-relaxed text-faint">
             <div className="label mb-1">Sandbox</div>
@@ -166,6 +173,8 @@ export function Shell() {
               {tab === 'market' && <Market />}
               {tab === 'rivals' && <Rivals />}
               {tab === 'research' && <Research />}
+              {tab === 'staff' && <Staff />}
+              {tab === 'office' && <OfficeScreen />}
               {tab === 'finance' && <Finance />}
               {tab === 'system' && <System />}
             </>

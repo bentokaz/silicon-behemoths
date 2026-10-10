@@ -1,22 +1,60 @@
 @import 'tailwindcss';
 
 @theme {
+  /* Ember (default): warm graphite with a signal-orange accent */
+  --color-carbon: #0a0908;
+  --color-panel: #12100f;
+  --color-raise: #1b1816;
+  --color-hover: #25211e;
+  --color-midnight: #171311;
+  --color-line: #2b2622;
+  --color-line2: #453d37;
+  --color-fg: #f1ece6;
+  --color-dim: #a39a91;
+  --color-faint: #655c54;
+  --color-accent: #ff6b1a;
+  --color-pos: #5fd08a;
+  --color-neg: #ff4d4f;
+  --color-warn: #f2b631;
+  --font-sans: Bahnschrift, 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'Cascadia Mono', 'JetBrains Mono', Consolas, ui-monospace, monospace;
+}
+
+[data-theme='volt'] {
+  --color-carbon: #090a08;
+  --color-panel: #10120e;
+  --color-raise: #181b15;
+  --color-hover: #21251c;
+  --color-line: #262a20;
+  --color-line2: #3c4232;
+  --color-fg: #eef0e8;
+  --color-dim: #979d8a;
+  --color-faint: #5b6050;
+  --color-accent: #c6f135;
+}
+[data-theme='ice'] {
   --color-carbon: #07080a;
   --color-panel: #0c0f13;
   --color-raise: #12161c;
   --color-hover: #181e26;
-  --color-midnight: #0c1524;
   --color-line: #1e252e;
   --color-line2: #303b48;
   --color-fg: #d9dfe7;
   --color-dim: #808b98;
   --color-faint: #4c5662;
   --color-accent: #36c5d6;
-  --color-pos: #4cc38a;
-  --color-neg: #e5484d;
-  --color-warn: #e2a336;
-  --font-sans: Bahnschrift, 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
-  --font-mono: 'Cascadia Mono', 'JetBrains Mono', Consolas, ui-monospace, monospace;
+}
+[data-theme='rose'] {
+  --color-carbon: #0a0809;
+  --color-panel: #120f11;
+  --color-raise: #1b1619;
+  --color-hover: #251e22;
+  --color-line: #2b2327;
+  --color-line2: #45383e;
+  --color-fg: #f2e9ec;
+  --color-dim: #a3959b;
+  --color-faint: #65575d;
+  --color-accent: #ff4f81;
 }
 
 html,

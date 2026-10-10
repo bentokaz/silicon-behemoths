@@ -6,6 +6,7 @@ import { sfx } from '../audio/sfx'
 import { CHARGE_W, CHIP_TIERS, EXTRAS, LENSES, MATERIALS, MIN_BEZEL, MIN_THICKNESS, PANEL_NAMES, RAM_OPTIONS, REFRESH, SEGMENTS, SENSOR_NAMES, STORAGE_OPTIONS, chipInfo, marketLevel, sensorInfo } from '../data/catalog'
 import { RETAIL_CUT, canAfford, devPlan, player, startProduct } from '../sim/game'
 import { ALLOWED_FACES, PART_LABELS, faceSize, isSide } from '../sim/geometry'
+import { type FingerprintStyle, type FrontStyle, LAYOUT_NAMES } from '../sim/rivals'
 import { appeal, bestSegment } from '../sim/market'
 import { evaluate, selfieMinDia } from '../sim/scoring'
 import type { Face, Lens, PartKind, PlacedPart } from '../sim/types'
@@ -41,7 +42,71 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
   )
 }
 
-function BodyTab() {
+const SIZES = [
+  { name: 'Compact', width: 67, height: 142 },
+  { name: 'Standard', width: 72, height: 152 },
+  { name: 'Large', width: 76, height: 161 },
+  { name: 'Max', width: 79, height: 168 },
+]
+
+/** Simple editor: pick the parts from lists; they are placed automatically. */
+function LayoutTab() {
+  const g = useGame()
+  const o = useStore((s) => s.simple)
+  const hasLogo = !!player(g).logo
+  const { setSimple } = useStore.getState()
+  const owned = (id: string) => g.features.includes(id)
+  return (
+    <>
+      <Group title="Rear cameras">
+        <Choice label="Arrangement" value={o.layout} options={LAYOUT_NAMES.map((n, i) => ({ value: i, label: n }))} onChange={(v) => setSimple({ layout: v })} />
+        <Slider label="Number of cameras" value={o.cams} min={1} max={4} onChange={(v) => setSimple({ cams: v })} />
+        <Choice label="Main sensor" value={o.sensor} options={SENSOR_NAMES.map((n, i) => ({ value: i, label: `${n} (${money(sensorInfo(i).cost)})`, locked: i > g.levels.camera }))} onChange={(v) => setSimple({ sensor: v })} />
+        <label className="flex items-center py-1 text-[11px]">
+          <input type="checkbox" className="mr-2 accent-accent" checked={o.flash} onChange={(e) => setSimple({ flash: e.target.checked })} />
+          Flash
+        </label>
+        <div className="text-[10px] leading-snug text-faint">Extra cameras are added in this order: ultrawide, telephoto{owned('periscope') ? ' (periscope from 108 MP up)' : ''}, macro.</div>
+      </Group>
+      <Group title="Front">
+        <Choice<FrontStyle>
+          label="Front camera"
+          value={o.front}
+          options={[
+            { value: 'notch', label: 'Notch' },
+            { value: 'punch', label: 'Punch-hole', locked: !owned('punch') },
+            { value: 'under', label: 'Under-display', locked: !owned('udc') },
+          ]}
+          onChange={(v) => setSimple({ front: v })}
+        />
+        <Choice<FingerprintStyle>
+          label="Fingerprint"
+          value={o.fingerprint}
+          options={[
+            { value: 'side', label: 'Side button' },
+            { value: 'back', label: 'Back' },
+            { value: 'display', label: 'Under display', locked: !owned('fpdisplay') },
+            { value: 'none', label: 'None' },
+          ]}
+          onChange={(v) => setSimple({ fingerprint: v })}
+        />
+      </Group>
+      <Group title="Branding">
+        {hasLogo ? (
+          <div className="py-1 text-[11px] text-dim">Your uploaded company logo is placed on the back.</div>
+        ) : (
+          <label className="flex items-center justify-between gap-2 py-1">
+            <span className="text-[11px] text-dim">Logo text</span>
+            <TextInput value={o.logo} maxLength={14} onChange={(v) => setSimple({ logo: v })} className="h-6 w-40" />
+          </label>
+        )}
+      </Group>
+      <div className="px-2 py-2 text-[10px] leading-snug text-faint">Buttons, port and speakers are placed for you. Switch to Advanced to drag any part anywhere; your layout carries over.</div>
+    </>
+  )
+}
+
+function BodyTab({ simple }: { simple: boolean }) {
   const g = useGame()
   const body = useStore((s) => s.draft!.body)
   const wallpaper = useStore((s) => s.draft!.wallpaper)
@@ -50,7 +115,25 @@ function BodyTab() {
   const mats = (use: 'frame' | 'back') => MATERIALS.filter((m) => m.use === use || m.use === 'both').map((m) => ({ value: m.id, label: m.name, locked: m.level > g.levels.materials }))
   return (
     <>
-      <Group title="Chassis">
+      {simple && (
+        <Group title="Chassis">
+          <Choice label="Size" value={SIZES.findIndex((z) => z.width === body.width && z.height === body.height)} options={[{ value: -1, label: 'Custom', locked: true }, ...SIZES.map((z, i) => ({ value: i, label: `${z.name} (${z.width} x ${z.height} mm)` }))]} onChange={(i) => i >= 0 && setBody({ width: SIZES[i].width, height: SIZES[i].height })} />
+          <Slider label="Thickness" value={body.thickness} min={MIN_THICKNESS[g.levels.design]} max={14} step={0.1} format={mm} onChange={(v) => setBody({ thickness: v })} hint="Thinner scores better on design but leaves less room for the battery" />
+          <Slider label="Bezels" value={body.bezelSide} min={minBez} max={8} step={0.05} format={mm} onChange={(v) => setBody({ bezelSide: v, bezelTop: v, bezelBottom: v })} />
+          <Slider label="Corner radius" value={body.corner} min={0} max={24} step={0.5} format={mm} onChange={(v) => setBody({ corner: v })} />
+          <div className="flex items-center justify-between py-1">
+            <span className="text-[11px] text-dim">Edge profile</span>
+            <div className="flex">
+              {(['flat', 'round'] as const).map((e) => (
+                <Btn key={e} small active={body.edge === e} onClick={() => setBody({ edge: e })}>
+                  {e}
+                </Btn>
+              ))}
+            </div>
+          </div>
+        </Group>
+      )}
+      {!simple && <Group title="Chassis">
         <Slider label="Width" value={body.width} min={58} max={92} step={0.5} format={mm} onChange={(v) => setBody({ width: v })} />
         <Slider label="Height" value={body.height} min={120} max={185} step={0.5} format={mm} onChange={(v) => setBody({ height: v })} />
         <Slider label="Thickness" value={body.thickness} min={MIN_THICKNESS[g.levels.design]} max={14} step={0.1} format={mm} onChange={(v) => setBody({ thickness: v })} hint="Thinner scores better on design but leaves less room for the battery" />
@@ -65,13 +148,13 @@ function BodyTab() {
             ))}
           </div>
         </div>
-      </Group>
-      <Group title="Screen bezels">
+      </Group>}
+      {!simple && <Group title="Screen bezels">
         <Slider label="Top" value={body.bezelTop} min={minBez} max={16} step={0.05} format={mm} onChange={(v) => setBody({ bezelTop: v })} />
         <Slider label="Bottom" value={body.bezelBottom} min={minBez} max={20} step={0.05} format={mm} onChange={(v) => setBody({ bezelBottom: v })} />
         <Slider label="Sides" value={body.bezelSide} min={minBez} max={10} step={0.05} format={mm} onChange={(v) => setBody({ bezelSide: v })} />
         <div className="text-[10px] text-faint">Minimum {minBez} mm at Industrial design level {g.levels.design}</div>
-      </Group>
+      </Group>}
       <Group title="Frame">
         <Choice label="Material" value={body.frameMat} options={mats('frame')} onChange={(v) => setBody({ frameMat: v })} />
         <ColorPick label="Colour" value={body.frameColor} onChange={(v) => setBody({ frameColor: v })} />
@@ -149,7 +232,7 @@ function InternalsTab({ maxBattery }: { maxBattery: number }) {
     <>
       <Group title="Display">
         <Choice label="Panel" value={s.panel} options={PANEL_NAMES.map((n, i) => ({ value: i, label: n, locked: i > lv.display }))} onChange={(v) => setSpecs({ panel: v })} />
-        <Choice label="Refresh rate" value={s.refresh} options={REFRESH.map((r) => ({ value: r.hz, label: `${r.hz} Hz`, locked: r.level > lv.display }))} onChange={(v) => setSpecs({ refresh: v })} />
+        <Choice label="Refresh rate" value={s.refresh} options={REFRESH.map((r) => ({ value: r.hz, label: `${r.hz} Hz`, locked: !!r.feat && !g.features.includes(r.feat) }))} onChange={(v) => setSpecs({ refresh: v })} />
       </Group>
       <Group title="Compute">
         <Choice label="Chip generation" value={s.chipGen} options={Array.from({ length: 9 }, (_, i) => ({ value: i, label: `Helix x${i}0`, locked: i > lv.chipset }))} onChange={(v) => setSpecs({ chipGen: v })} />
@@ -164,11 +247,11 @@ function InternalsTab({ maxBattery }: { maxBattery: number }) {
       </Group>
       <Group title="Extras">
         {EXTRAS.map((e) => {
-          const locked = e.level > lv[e.track]
+          const locked = !g.features.includes(e.id)
           return (
             <label key={e.id} className={`flex items-center justify-between py-[3px] text-[11px] ${locked ? 'text-faint' : 'text-fg'}`}>
               <span>
-                <input type="checkbox" className="mr-2 accent-[#36c5d6]" disabled={locked} checked={s.extras.includes(e.id)} onChange={() => toggle(e.id)} />
+                <input type="checkbox" className="mr-2 accent-accent" disabled={locked} checked={s.extras.includes(e.id)} onChange={() => toggle(e.id)} />
                 {e.name}
               </span>
               <span className="num text-dim">{locked ? 'locked' : `+${money(e.cost)}`}</span>
@@ -204,7 +287,13 @@ function PartInspector({ part }: { part: PlacedPart }) {
       )}
       {(part.kind === 'island' || part.kind === 'notch') && <Slider label="Corner radius" value={part.r ?? 0} min={0} max={Math.min(part.w, part.h) / 2} step={0.25} format={mm} onChange={(v) => set({ r: v })} />}
       {part.kind === 'island' && <Choice label="Finish" value={part.finish ?? 'back'} options={[{ value: 'back', label: 'Match back' }, { value: 'frame', label: 'Match frame' }, { value: 'black', label: 'Black glass' }]} onChange={(v) => set({ finish: v as PlacedPart['finish'] })} />}
-      {part.kind === 'logo' && (
+      {part.kind === 'logo' && player(g).logo && (
+        <label className="flex items-center py-1 text-[11px]">
+          <input type="checkbox" className="mr-2 accent-accent" checked={!!part.useImage} onChange={(e) => set(e.target.checked ? { useImage: true, w: Math.max(part.w, part.h), h: Math.max(part.w, part.h) } : { useImage: false })} />
+          Use the uploaded company logo
+        </label>
+      )}
+      {part.kind === 'logo' && !part.useImage && (
         <label className="flex items-center justify-between gap-2 py-1">
           <span className="text-[11px] text-dim">Text</span>
           <TextInput value={part.text ?? ''} maxLength={14} onChange={(v) => set({ text: v })} className="h-6 w-40" />
@@ -221,11 +310,11 @@ function PartInspector({ part }: { part: PlacedPart }) {
               set({ sensor: v, w: Math.max(part.w, need), h: Math.max(part.h, need) })
             }}
           />
-          {!front && <Choice label="Lens" value={part.lens ?? 'wide'} options={(Object.keys(LENSES) as Lens[]).map((l) => ({ value: l, label: LENSES[l].name, locked: LENSES[l].level > g.levels.camera }))} onChange={(v) => set({ lens: v })} />}
+          {!front && <Choice label="Lens" value={part.lens ?? 'wide'} options={(Object.keys(LENSES) as Lens[]).map((l) => ({ value: l, label: LENSES[l].name, locked: l === 'periscope' && !g.features.includes('periscope') }))} onChange={(v) => set({ lens: v })} />}
           {front && (
-            <label className={`flex items-center py-1 text-[11px] ${g.levels.design < 5 ? 'text-faint' : ''}`}>
-              <input type="checkbox" className="mr-2 accent-[#36c5d6]" disabled={g.levels.design < 5} checked={!!part.underDisplay} onChange={(e) => set({ underDisplay: e.target.checked })} />
-              Under-display {g.levels.design < 5 ? '(Industrial design 5)' : ''}
+            <label className={`flex items-center py-1 text-[11px] ${g.features.includes('udc') ? '' : 'text-faint'}`}>
+              <input type="checkbox" className="mr-2 accent-accent" disabled={!g.features.includes('udc')} checked={!!part.underDisplay} onChange={(e) => set({ underDisplay: e.target.checked })} />
+              Under-display {g.features.includes('udc') ? '' : '(not researched)'}
             </label>
           )}
           <div className="text-[10px] text-faint">Needs a lens of at least {front ? selfieMinDia(part.sensor ?? 0) : sensorInfo(part.sensor ?? 0).minDia} mm</div>
@@ -257,8 +346,10 @@ export function Designer() {
   const g = useGame()
   const draft = useStore((s) => s.draft!)
   const selected = useStore((s) => s.selectedPart)
-  const { selectPart, patchPart, removePart, closeDesigner, act, say, setTab, setSpecs } = useStore.getState()
+  const mode = useStore((s) => s.editorMode)
+  const { selectPart, patchPart, removePart, closeDesigner, act, say, setTab, setSpecs, setEditorMode } = useStore.getState()
   const [tab, setTabLocal] = useState<'body' | 'parts' | 'internals'>('body')
+  const simple = mode === 'simple'
   const [view, setView] = useState<ViewName>('back')
   const [nonce, setNonce] = useState(0)
   const [price, setPrice] = useState(399)
@@ -267,14 +358,14 @@ export function Designer() {
   const [quantity, setQuantity] = useState(10000)
   const [marketing, setMarketing] = useState(250e3)
 
-  const ev = useMemo(() => evaluate(draft, g.levels, marketLevel(g.day)), [draft, g.levels, g.day])
+  const ev = useMemo(() => evaluate(draft, g.levels, marketLevel(g.day), g.features), [draft, g.levels, g.day, g.features])
   const part = draft.parts.find((p) => p.id === selected)
   const errors = ev.report.issues.filter((i) => i.level === 'error')
   const warns = ev.report.issues.filter((i) => i.level === 'warn')
   const probe = { raw: ev.raw, featureBonus: ev.featureBonus, price }
   const brand = player(g).brand
   const best = bestSegment(probe, brand, g.day)
-  const plan = devPlan(draft)
+  const plan = devPlan(draft, g)
   const total = plan.cost + quantity * ev.unitCost + marketing
   const margin = price * (1 - RETAIL_CUT) - ev.unitCost
 
@@ -325,23 +416,33 @@ export function Designer() {
     <div className="relative grid h-full min-h-0 grid-cols-[290px_minmax(0,1fr)_320px]">
       {/* left drawer */}
       <div className="flex min-h-0 flex-col border-r border-line bg-panel">
+        <div className="flex shrink-0 items-center gap-2 border-b border-line p-2">
+          <span className="label">Editor</span>
+          <div className="flex flex-1">
+            {(['simple', 'advanced'] as const).map((m) => (
+              <Btn key={m} small className="flex-1" active={mode === m} onClick={() => setEditorMode(m)} title={m === 'simple' ? 'Choose parts from lists; they are placed for you' : 'Drag every part freely on the 3D model'}>
+                {m}
+              </Btn>
+            ))}
+          </div>
+        </div>
         <div className="flex shrink-0 border-b border-line">
           {(['body', 'parts', 'internals'] as const).map((t) => (
             <button key={t} onClick={() => setTabLocal(t)} className={`label h-8 flex-1 border-b-2 ${tab === t ? 'border-accent text-accent' : 'border-transparent hover:text-fg'}`}>
-              {t}
+              {t === 'parts' && simple ? 'layout' : t}
             </button>
           ))}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {tab === 'body' && <BodyTab />}
-          {tab === 'parts' && <PartsTab />}
+          {tab === 'body' && <BodyTab simple={simple} />}
+          {tab === 'parts' && (simple ? <LayoutTab /> : <PartsTab />)}
           {tab === 'internals' && <InternalsTab maxBattery={ev.report.maxBattery} />}
         </div>
       </div>
 
       {/* studio */}
       <div className="relative min-h-0 min-w-0">
-        <DeviceView design={draft} selectedId={selected} view={view} viewNonce={nonce} onPick={selectPart} onDrag={drag} />
+        <DeviceView design={draft} selectedId={simple ? null : selected} view={view} viewNonce={nonce} onPick={simple ? undefined : selectPart} onDrag={simple ? undefined : drag} logo={player(g).logo} />
         <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-2">
           <div className="pointer-events-auto flex border border-line bg-panel/90">
             {(['back', 'front', 'side', 'bottom'] as ViewName[]).map((v) => (
@@ -350,7 +451,7 @@ export function Designer() {
               </Btn>
             ))}
           </div>
-          <div className="label pointer-events-none border border-line bg-panel/90 px-2 py-1">Drag to orbit / scroll to zoom / drag a part to move it</div>
+          <div className="label pointer-events-none border border-line bg-panel/90 px-2 py-1">{simple ? 'Drag to orbit / scroll to zoom' : 'Drag to orbit / scroll to zoom / drag a part to move it'}</div>
         </div>
         <div className="absolute inset-x-0 bottom-0 max-h-32 overflow-y-auto border-t border-line bg-panel/95">
           {errors.length + warns.length === 0 ? (
@@ -368,7 +469,7 @@ export function Designer() {
 
       {/* right drawer */}
       <div className="flex min-h-0 flex-col gap-2 overflow-y-auto border-l border-line bg-carbon p-2">
-        {part && <PartInspector part={part} />}
+        {part && !simple && <PartInspector part={part} />}
         <Panel title="Readout" className="shrink-0" bodyClass="px-2 py-1">
           <Row k="Unit cost" v={money(ev.unitCost)} tone="text-accent" />
           <Row k="Screen" v={`${ev.report.diag.toFixed(2)}" / ${pct(ev.report.sbr)} of front`} />

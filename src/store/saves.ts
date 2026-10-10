@@ -1,6 +1,6 @@
 // Save slots in IndexedDB, plus export/import as a JSON file.
 import { del, get, keys, set } from 'idb-keyval'
-import { SAVE_VERSION, player } from '../sim/game'
+import { SAVE_VERSION, migrate, player } from '../sim/game'
 import type { GameState } from '../sim/types'
 
 const PREFIX = 'sb-save:'
@@ -40,7 +40,7 @@ export function validate(state: unknown): GameState {
   const s = state as GameState
   if (!s || typeof s !== 'object' || !Array.isArray(s.companies) || !Array.isArray(s.products) || typeof s.day !== 'number') throw new Error('This file is not a Silicon Behemoths save')
   if (s.version > SAVE_VERSION) throw new Error('This save comes from a newer version of the game')
-  return s
+  return migrate(s)
 }
 
 export function exportGame(state: GameState) {

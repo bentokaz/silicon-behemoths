@@ -26,6 +26,8 @@ interface Props {
   /** Called while a part is dragged across the body surface. */
   onDrag?: (face: Face, x: number, y: number) => void
   autoRotate?: boolean
+  /** Uploaded company logo, shown on logo parts that ask for it. */
+  logo?: string
 }
 
 function Rig({ view, nonce }: { view: ViewName; nonce: number }) {
@@ -38,8 +40,8 @@ function Rig({ view, nonce }: { view: ViewName; nonce: number }) {
   return null
 }
 
-function Device({ design, selectedId, onPick, onDrag }: Props) {
-  const group = useMemo(() => buildDevice(design, selectedId), [design, selectedId])
+function Device({ design, selectedId, onPick, onDrag, logo }: Props) {
+  const group = useMemo(() => buildDevice(design, selectedId, logo), [design, selectedId, logo])
   useEffect(() => () => disposeDevice(group), [group])
   const dragging = useRef(false)
   const controls = useThree((s) => s.controls) as unknown as { enabled: boolean } | null
@@ -94,7 +96,7 @@ export function DeviceView(props: Props) {
       {/* three-point rig: warm key, cool fill, hard rim */}
       <directionalLight
         color="#ffe3c2"
-        intensity={2.4}
+        intensity={1.9}
         position={[220, 320, 380]}
         castShadow
         shadow-mapSize={[2048, 2048]}
@@ -108,10 +110,10 @@ export function DeviceView(props: Props) {
         shadow-camera-far={1200}
       />
       <directionalLight color="#b9d2ff" intensity={0.9} position={[-320, 80, 260]} />
-      <directionalLight color="#ffffff" intensity={3.2} position={[-160, 260, -380]} />
+      <directionalLight color="#ffffff" intensity={1.5} position={[-160, 260, -380]} />
       <ambientLight intensity={0.12} />
 
-      <Environment resolution={256} frames={1}>
+      <Environment resolution={256} frames={1} environmentIntensity={0.5}>
         <color attach="background" args={['#050608']} />
         <Lightformer form="rect" intensity={5} color="#fff1e0" position={[4, 6, 6]} scale={[8, 5, 1]} target={[0, 0, 0]} />
         <Lightformer form="rect" intensity={2.2} color="#cfe0ff" position={[-8, 1, 3]} scale={[3, 9, 1]} target={[0, 0, 0]} />

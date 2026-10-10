@@ -20,7 +20,7 @@ function setup() {
   scene = new THREE.Scene()
   const pmrem = new THREE.PMREMGenerator(renderer)
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
-  scene.environmentIntensity = 0.9
+  scene.environmentIntensity = 0.55
   const key = new THREE.DirectionalLight('#ffe3c2', 2.2)
   key.position.set(-200, 300, -380)
   const rim = new THREE.DirectionalLight('#ffffff', 2)
@@ -30,12 +30,12 @@ function setup() {
 }
 
 /** Data URL of a device seen from the back at three-quarter angle. */
-export function deviceThumbnail(key: string, design: DeviceDesign): string {
+export function deviceThumbnail(key: string, design: DeviceDesign, logo?: string): string {
   const hit = cache.get(key)
   if (hit) return hit
   try {
     if (!renderer) setup()
-    const device = buildDevice(design)
+    const device = buildDevice(design, null, logo)
     scene.add(device)
     const dist = Math.max(design.body.height, design.body.width * 1.6) * 2.75
     camera.position.set(-dist * 0.36, dist * 0.12, -dist * 0.92)

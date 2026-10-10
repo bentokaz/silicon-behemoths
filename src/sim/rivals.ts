@@ -1,10 +1,10 @@
-// Procedural device generation, used for AI rivals and for the player's
-// starting template. Produces a complete DeviceDesign that renders in 3D.
+// Procedural device generation, used for AI rivals, for the player's starting
+// template and for the simple editor. Produces designs that render in 3D.
 import { CHARGE_W, MATERIALS, MIN_BEZEL, MIN_THICKNESS, RAM_OPTIONS, REFRESH, STORAGE_OPTIONS, idealRam, idealStorage, sensorInfo } from '../data/catalog'
 import { clampPart, screenRect } from './geometry'
 import { type RngHolder, clamp, int, pick, range } from './rng'
 import { maxBattery, selfieMinDia } from './scoring'
-import type { DeviceDesign, Lens, Levels, PlacedPart, SegmentId } from './types'
+import type { Body, DeviceDesign, Lens, Levels, PlacedPart, SegmentId } from './types'
 
 interface Tier {
   drop: number
@@ -23,6 +23,120 @@ const TIERS: Record<SegmentId, Tier> = {
   camera: { drop: 1, chipTier: 1, cams: 4, thick: 1.3, bezel: 1.2, matRank: 2 },
 }
 
+export const LAYOUT_NAMES = ['Vertical pill', 'Square island', 'Loose column', 'Centre circle', 'Full-width bar']
+export type FrontStyle = 'notch' | 'punch' | 'under'
+export type FingerprintStyle = 'side' | 'back' | 'display' | 'none'
+
+/** Everything the simple editor (and the rival generator) decides about parts. */
+export interface LayoutOptions {
+  layout: number
+  cams: number
+  sensor: number
+  periscope: boolean
+  front: FrontStyle
+  fingerprint: FingerprintStyle
+  flash: boolean
+  stereo: boolean
+  logo: string
+  logoImage: boolean
+}
+
+/** Places a full, tidy set of parts on a body. Deterministic. */
+export function layoutParts(body: Body, o: LayoutOptions): PlacedPart[] {
+  const { width, height } = body
+  const count = clamp(Math.round(o.cams), 1, 4)
+  const lensSets: Lens[][] = [['wide'], ['wide', 'ultrawide'], ['wide', 'ultrawide', 'tele'], ['wide', 'ultrawide', 'tele', 'macro']]
+  const lenses = [...lensSets[count - 1]]
+  if (o.periscope && count >= 3) lenses[2] = 'periscope'
+  const parts: PlacedPart[] = []
+  let n = 0
+  const add = (p: Omit<PlacedPart, 'id'>) => parts.push(clampPart(body, { ...p, id: `k${++n}` }))
+  const dia = sensorInfo(o.sensor).minDia + 1.5
+  const gap = 2.5
+  const pad = 3
+  const top = height / 2 - 7
+  const cam = (x: number, y: number, i: number) =>
+    add({ kind: 'camera', face: 'back', x, y, rot: 0, w: i === 0 ? dia : dia - 0.5, h: i === 0 ? dia : dia - 0.5, sensor: Math.max(0, o.sensor - (i === 0 ? 0 : 1)), lens: lenses[i] })
+  const flash = (x: number, y: number, size = 4) => o.flash && add({ kind: 'flash', face: 'back', x, y, rot: 0, w: size, h: size })
+  const left = -width / 2 + 7
+  switch (((o.layout % 5) + 5) % 5) {
+    case 0: {
+      const w = dia + 2 * pad
+      const h = count * dia + (count - 1) * gap + 2 * pad
+      const cx = left + w / 2
+      add({ kind: 'island', face: 'back', x: cx, y: top - h / 2, rot: 0, w, h, r: w / 2, finish: 'back' })
+      for (let i = 0; i < count; i++) cam(cx, top - pad - dia / 2 - i * (dia + gap), i)
+      flash(cx + w / 2 + 5, top - pad - dia / 2)
+      break
+    }
+    case 1: {
+      const side = 2 * dia + gap + 2 * pad
+      const cx = left + side / 2
+      const cy = top - side / 2
+      add({ kind: 'island', face: 'back', x: cx, y: cy, rot: 0, w: side, h: side, r: 9, finish: 'back' })
+      const off = (dia + gap) / 2
+      const cells = [[-off, off], [-off, -off], [off, off], [off, -off]]
+      for (let i = 0; i < count; i++) cam(cx + cells[i][0], cy + cells[i][1], i)
+      const free = cells[Math.min(count, 3)]
+      if (count < 4) flash(cx + free[0], cy + free[1], 4.5)
+      else flash(cx + side / 2 + 5, cy + off)
+      break
+    }
+    case 2: {
+      const cx = left + dia / 2 + 1
+      for (let i = 0; i < count; i++) cam(cx, top - dia / 2 - 2 - i * (dia + gap + 1), i)
+      flash(cx + dia / 2 + 6, top - dia / 2 - 2)
+      break
+    }
+    case 3: {
+      const side = 2 * dia + gap + 2 * pad + 4
+      const cy = top - side / 2 - 1
+      add({ kind: 'island', face: 'back', x: 0, y: cy, rot: 0, w: side, h: side, r: side / 2, finish: 'black' })
+      const off = (dia + gap) / 2
+      const cells = count === 1 ? [[0, 0]] : count === 2 ? [[-off, 0], [off, 0]] : [[-off, off], [off, off], [-off, -off], [off, -off]]
+      for (let i = 0; i < count; i++) cam(cells[i][0], cy + cells[i][1], i)
+      flash(0, cy - side / 2 - 5)
+      break
+    }
+    default: {
+      const h = dia + 2 * pad
+      const cy = top - h / 2 - 4
+      add({ kind: 'island', face: 'back', x: 0, y: cy, rot: 0, w: width - 8, h, r: h / 2, finish: 'black' })
+      const span = (count - 1) * (dia + gap)
+      for (let i = 0; i < count; i++) cam(-span / 2 + i * (dia + gap) - (count < 4 ? 8 : 0), cy, i)
+      if (count < 4) flash(width / 2 - 14, cy)
+      else flash(0, cy - h / 2 - 5)
+    }
+  }
+  if (o.logoImage) add({ kind: 'logo', face: 'back', x: 0, y: -4, rot: 0, w: 15, h: 15, text: o.logo, useImage: true })
+  else if (o.logo) add({ kind: 'logo', face: 'back', x: 0, y: -4, rot: 0, w: Math.min(34, 5.2 * o.logo.length + 4), h: 7, text: o.logo })
+
+  // ---- front
+  const scr = screenRect(body)
+  const selfieLevel = Math.max(0, o.sensor - 1)
+  const selfieDia = selfieMinDia(selfieLevel) + 0.4
+  if (o.front === 'under') {
+    add({ kind: 'camera', face: 'front', x: 0, y: scr.cy + scr.h / 2 - 5, rot: 0, w: selfieDia, h: selfieDia, sensor: selfieLevel, lens: 'wide', underDisplay: true })
+  } else if (o.front === 'punch') {
+    add({ kind: 'camera', face: 'front', x: 0, y: scr.cy + scr.h / 2 - 4.5, rot: 0, w: selfieDia, h: selfieDia, sensor: selfieLevel, lens: 'wide' })
+  } else {
+    const ny = scr.cy + scr.h / 2 - 3
+    add({ kind: 'notch', face: 'front', x: 0, y: ny, rot: 0, w: 26, h: 6.5, r: 3 })
+    add({ kind: 'camera', face: 'front', x: 0, y: ny, rot: 0, w: selfieDia, h: selfieDia, sensor: selfieLevel, lens: 'wide' })
+  }
+  if (o.fingerprint === 'display') add({ kind: 'fingerprint', face: 'front', x: 0, y: scr.cy - scr.h * 0.3, rot: 0, w: 8, h: 8 })
+  else if (o.fingerprint === 'back') add({ kind: 'fingerprint', face: 'back', x: 0, y: 22, rot: 0, w: 9, h: 9 })
+  else if (o.fingerprint === 'side') add({ kind: 'fingerprint', face: 'right', x: 2, y: 0, rot: 0, w: 11, h: 2.2 })
+
+  // ---- edges
+  add({ kind: 'button', face: 'right', x: 22, y: 0, rot: 0, w: 11, h: 2.2 })
+  add({ kind: 'button', face: 'right', x: 44, y: 0, rot: 0, w: 19, h: 2.2 })
+  add({ kind: 'port', face: 'bottom', x: 0, y: 0, rot: 0, w: 8.6, h: 2.8 })
+  add({ kind: 'grille', face: 'bottom', x: 18, y: 0, rot: 0, w: 12, h: 1.4 })
+  if (o.stereo) add({ kind: 'grille', face: 'top', x: -16, y: 0, rot: 0, w: 8, h: 1.2 })
+  return parts
+}
+
 export interface GenOptions {
   segment: SegmentId
   levels: Levels
@@ -30,6 +144,7 @@ export interface GenOptions {
   layout: number
   palette: string[]
   logo: string
+  logoImage?: boolean
 }
 
 const largestAtMost = (opts: number[], v: number) => opts.filter((o) => o <= v).pop() ?? opts[0]
@@ -88,102 +203,19 @@ export function generateDesign(r: RngHolder, o: GenOptions): DeviceDesign {
   if (o.levels.charging >= 2 && t.matRank >= 2) s.extras.push('wireless')
   if (o.levels.chipset >= 4 && o.segment === 'flagship') s.extras.push('sat')
 
-  // ---- rear cameras
   const camLevel = L('camera', o.segment === 'camera' ? 0 : o.segment === 'gamer' ? 2 : t.drop)
-  const lensSets: Lens[][] = [['wide'], ['wide', 'ultrawide'], ['wide', 'ultrawide', 'tele'], ['wide', 'ultrawide', 'tele', 'macro']]
-  const lenses = [...lensSets[t.cams - 1]]
-  if (camLevel >= 3 && t.cams >= 3) lenses[2] = 'periscope'
-  const parts: PlacedPart[] = []
-  let n = 0
-  const add = (p: Omit<PlacedPart, 'id'>) => parts.push(clampPart(design.body, { ...p, id: `k${++n}` }))
-  const dia = sensorInfo(camLevel).minDia + 1.5
-  const gap = 2.5
-  const pad = 3
-  const top = height / 2 - 7
-  const cam = (x: number, y: number, i: number) =>
-    add({ kind: 'camera', face: 'back', x, y, rot: 0, w: i === 0 ? dia : dia - 0.5, h: i === 0 ? dia : dia - 0.5, sensor: Math.max(0, camLevel - (i === 0 ? 0 : 1)), lens: lenses[i] })
-  const count = lenses.length
-  const left = -width / 2 + 7
-  switch (o.layout % 5) {
-    case 0: {
-      // vertical pill, top-left
-      const w = dia + 2 * pad
-      const h = count * dia + (count - 1) * gap + 2 * pad
-      const cx = left + w / 2
-      add({ kind: 'island', face: 'back', x: cx, y: top - h / 2, rot: 0, w, h, r: w / 2, finish: 'back' })
-      for (let i = 0; i < count; i++) cam(cx, top - pad - dia / 2 - i * (dia + gap), i)
-      add({ kind: 'flash', face: 'back', x: cx + w / 2 + 5, y: top - pad - dia / 2, rot: 0, w: 4, h: 4 })
-      break
-    }
-    case 1: {
-      // square island with a 2x2 grid, top-left
-      const side = 2 * dia + gap + 2 * pad
-      const cx = left + side / 2
-      const cy = top - side / 2
-      add({ kind: 'island', face: 'back', x: cx, y: cy, rot: 0, w: side, h: side, r: 9, finish: 'back' })
-      const off = (dia + gap) / 2
-      const cells = [[-off, off], [-off, -off], [off, off], [off, -off]]
-      for (let i = 0; i < count; i++) cam(cx + cells[i][0], cy + cells[i][1], i)
-      const free = cells[Math.min(count, 3)]
-      if (count < 4) add({ kind: 'flash', face: 'back', x: cx + free[0], y: cy + free[1], rot: 0, w: 4.5, h: 4.5 })
-      else add({ kind: 'flash', face: 'back', x: cx + side / 2 + 5, y: cy + off, rot: 0, w: 4, h: 4 })
-      break
-    }
-    case 2: {
-      // loose lenses in a column, no island
-      const cx = left + dia / 2 + 1
-      for (let i = 0; i < count; i++) cam(cx, top - dia / 2 - 2 - i * (dia + gap + 1), i)
-      add({ kind: 'flash', face: 'back', x: cx + dia / 2 + 6, y: top - dia / 2 - 2, rot: 0, w: 4, h: 4 })
-      break
-    }
-    case 3: {
-      // centred circular island
-      const side = 2 * dia + gap + 2 * pad + 4
-      const cy = top - side / 2 - 1
-      add({ kind: 'island', face: 'back', x: 0, y: cy, rot: 0, w: side, h: side, r: side / 2, finish: 'black' })
-      const off = (dia + gap) / 2
-      const cells = count <= 2 ? [[-off, 0], [off, 0]] : [[-off, off], [off, off], [-off, -off], [off, -off]]
-      for (let i = 0; i < count; i++) cam(cells[i][0], cy + cells[i][1], i)
-      add({ kind: 'flash', face: 'back', x: 0, y: cy - side / 2 - 5, rot: 0, w: 4, h: 4 })
-      break
-    }
-    default: {
-      // full-width bar
-      const h = dia + 2 * pad
-      const cy = top - h / 2 - 4
-      add({ kind: 'island', face: 'back', x: 0, y: cy, rot: 0, w: width - 8, h, r: h / 2, finish: 'black' })
-      const span = (count - 1) * (dia + gap)
-      for (let i = 0; i < count; i++) cam(-span / 2 + i * (dia + gap) - (count < 4 ? 8 : 0), cy, i)
-      if (count < 4) add({ kind: 'flash', face: 'back', x: width / 2 - 14, y: cy, rot: 0, w: 4, h: 4 })
-      else add({ kind: 'flash', face: 'back', x: 0, y: cy - h / 2 - 5, rot: 0, w: 4, h: 4 })
-    }
-  }
-  add({ kind: 'logo', face: 'back', x: 0, y: -4, rot: 0, w: Math.min(34, 5.2 * o.logo.length + 4), h: 7, text: o.logo })
-
-  // ---- front
-  const scr = screenRect(design.body)
-  const selfieLevel = Math.max(0, camLevel - 1)
-  const selfieDia = selfieMinDia(selfieLevel) + 0.4
-  if (dLevel >= 5 && o.segment === 'flagship') {
-    add({ kind: 'camera', face: 'front', x: 0, y: scr.cy + scr.h / 2 - 5, rot: 0, w: selfieDia, h: selfieDia, sensor: selfieLevel, lens: 'wide', underDisplay: true })
-  } else if (dLevel >= 1) {
-    add({ kind: 'camera', face: 'front', x: 0, y: scr.cy + scr.h / 2 - 4.5, rot: 0, w: selfieDia, h: selfieDia, sensor: selfieLevel, lens: 'wide' })
-  } else {
-    const ny = scr.cy + scr.h / 2 - 3
-    add({ kind: 'notch', face: 'front', x: 0, y: ny, rot: 0, w: 26, h: 6.5, r: 3 })
-    add({ kind: 'camera', face: 'front', x: 0, y: ny, rot: 0, w: selfieDia, h: selfieDia, sensor: selfieLevel, lens: 'wide' })
-  }
-  if (dLevel >= 2 && t.matRank >= 1) add({ kind: 'fingerprint', face: 'front', x: 0, y: scr.cy - scr.h * 0.3, rot: 0, w: 8, h: 8 })
-  else add({ kind: 'fingerprint', face: 'right', x: 2, y: 0, rot: 0, w: 11, h: 2.2 })
-
-  // ---- edges
-  add({ kind: 'button', face: 'right', x: 22, y: 0, rot: 0, w: 11, h: 2.2 })
-  add({ kind: 'button', face: 'right', x: 44, y: 0, rot: 0, w: 19, h: 2.2 })
-  add({ kind: 'port', face: 'bottom', x: 0, y: 0, rot: 0, w: 8.6, h: 2.8 })
-  add({ kind: 'grille', face: 'bottom', x: 18, y: 0, rot: 0, w: 12, h: 1.4 })
-  if (s.extras.includes('stereo')) add({ kind: 'grille', face: 'top', x: -16, y: 0, rot: 0, w: 8, h: 1.2 })
-
-  design.parts = parts
+  design.parts = layoutParts(design.body, {
+    layout: o.layout,
+    cams: t.cams,
+    sensor: camLevel,
+    periscope: camLevel >= 3,
+    front: dLevel >= 5 && o.segment === 'flagship' ? 'under' : dLevel >= 1 ? 'punch' : 'notch',
+    fingerprint: dLevel >= 2 && t.matRank >= 1 ? 'display' : 'side',
+    flash: true,
+    stereo: s.extras.includes('stereo'),
+    logo: o.logo,
+    logoImage: !!o.logoImage,
+  })
   return design
 }
 

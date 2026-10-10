@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SEGMENTS, marketLevel } from '../data/catalog'
-import { defaultConfig, newGame, player, startProduct, starterDesign, tick, trailingUnits } from './game'
+import { defaultConfig, expandOffice, hire, migrate, newGame, placeItem, player, startProduct, starterDesign, tick, toggleResearch, trailingUnits } from './game'
+import { staffEffects } from './staff'
 import { utility } from './market'
 import { evaluate } from './scoring'
 import type { GameState } from './types'
@@ -107,5 +108,63 @@ describe('simulation', () => {
       expect(best, seg.id).toBeGreaterThan(0.6)
       expect(best, seg.id).toBeLessThan(2.2)
     }
+  })
+})
+
+describe('research tree, staff and office', () => {
+  it('researches a branch feature and unlocks it for designs', () => {
+    const s = newGame({ ...defaultConfig(), seed: 7, unlimitedMoney: true })
+    expect(s.features).toContain('hz90')
+    expect(s.features).not.toContain('sat')
+    expect(toggleResearch(s, 'f:sat')).toMatch(/Chipset level 4/)
+    const d = starterDesign(s)
+    d.specs.extras.push('wireless')
+    expect(startProduct(s, { design: d, name: 'X', price: 500, quantity: 10, marketing: 0 })).toBeNull()
+    s.features = s.features.filter((f) => f !== 'wireless')
+    expect(startProduct(s, { design: d, name: 'Y', price: 500, quantity: 10, marketing: 0 })).toMatch(/Wireless charging/)
+    expect(toggleResearch(s, 'f:wireless')).toBeNull()
+    s.rdBudget = 5e6
+    tick(s, 60)
+    expect(s.features).toContain('wireless')
+    expect(s.activeResearch).not.toContain('f:wireless')
+  })
+
+  it('blocks a trunk level until the track it depends on is ready', () => {
+    const s = newGame({ ...defaultConfig(), seed: 7, unlimitedMoney: true })
+    s.levels.display = 2
+    s.levels.chipset = 1
+    expect(toggleResearch(s, 'display')).toMatch(/Chipset level 2/)
+    s.levels.chipset = 2
+    expect(toggleResearch(s, 'display')).toBeNull()
+  })
+
+  it('makes seated staff useful and charges salaries', () => {
+    const s = newGame({ ...defaultConfig(), seed: 7 })
+    expect(staffEffects(s).research).toBe(1)
+    for (let i = 0; i < 3; i++) expect(hire(s, s.candidates[0].id)).toBeNull()
+    for (const e of s.staff) e.role = 'researcher'
+    const fx = staffEffects(s)
+    expect(fx.seated).toBe(2)
+    expect(fx.idle).toBe(1)
+    expect(fx.research).toBeGreaterThan(1)
+    expect(placeItem(s, 'desk', 6, 4, 0)).toBeNull()
+    expect(placeItem(s, 'desk', 6, 4, 0)).toMatch(/taken/)
+    expect(staffEffects(s).idle).toBe(0)
+    tick(s, 30)
+    expect(s.reports[0].salaries).toBeGreaterThan(0)
+    expect(expandOffice(s)).toBeNull()
+    expect(s.office.w).toBe(12)
+  })
+
+  it('upgrades a version 1 save', () => {
+    const s = tick(fresh(), 40) as unknown as Record<string, unknown>
+    s.version = 1
+    for (const k of ['features', 'staff', 'candidates', 'office']) delete s[k]
+    const m = migrate(JSON.parse(JSON.stringify(s)) as GameState)
+    expect(m.version).toBe(2)
+    expect(m.features.length).toBeGreaterThan(3)
+    expect(m.candidates).toHaveLength(8)
+    tick(m, 60)
+    expect(Number.isFinite(m.cash)).toBe(true)
   })
 })

@@ -2,9 +2,11 @@
 // used by the main menu.
 import { useEffect, useRef, useState } from 'react'
 import { getVolume, setVolume, sfx } from '../audio/sfx'
-import { fmtDate } from '../sim/game'
+import { fmtDate, player } from '../sim/game'
 import { useGame, useStore } from '../store/game'
 import { AUTOSAVE, type SaveMeta, deleteSave, exportGame, importGame, listSaves, loadGame, saveGame } from '../store/saves'
+import { THEMES, type ThemeId, applyTheme, getTheme } from '../store/theme'
+import { LogoPicker } from './Company'
 import { Btn, Panel, Row, Slider, TextInput, money } from './ui'
 
 export function SaveList({ onChange, nonce = 0 }: { onChange?: () => void; nonce?: number }) {
@@ -53,6 +55,20 @@ export function SaveList({ onChange, nonce = 0 }: { onChange?: () => void; nonce
         ))}
       </tbody>
     </table>
+  )
+}
+
+export function ThemePicker() {
+  const [theme, setTheme] = useState<ThemeId>(getTheme())
+  return (
+    <div className="grid grid-cols-4 gap-1">
+      {THEMES.map((t) => (
+        <button key={t.id} onClick={() => (applyTheme(t.id), setTheme(t.id))} className={`flex h-8 items-center gap-2 border px-2 text-[11px] uppercase tracking-wider transition-colors ${theme === t.id ? 'border-accent text-fg' : 'border-line2 text-dim hover:text-fg'}`}>
+          <span className="h-3 w-3 shrink-0" style={{ background: t.swatch }} />
+          {t.name}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -111,6 +127,13 @@ export function System() {
         </Panel>
       </div>
       <div className="flex min-h-0 flex-col gap-2 overflow-y-auto">
+        <Panel title="Company logo" className="shrink-0" bodyClass="p-2">
+          <LogoPicker value={player(g).logo} onChange={(logo) => act((s) => void (player(s).logo = logo))} />
+          <div className="mt-2 text-[10px] leading-snug text-faint">Shown in the top bar and on new devices. On an existing draft, select the logo part in the advanced editor to switch it to the image.</div>
+        </Panel>
+        <Panel title="Interface colours" className="shrink-0" bodyClass="p-2">
+          <ThemePicker />
+        </Panel>
         <Panel title="Audio" className="shrink-0" bodyClass="px-2 py-1">
           <Slider label="Interface volume" value={vol} min={0} max={1} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => (setVol(v), setVolume(v), sfx.click())} />
         </Panel>

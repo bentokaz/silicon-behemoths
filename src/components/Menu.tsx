@@ -5,7 +5,8 @@ import { TRACK_INFO } from '../data/catalog'
 import { DIFFICULTY, defaultConfig } from '../sim/game'
 import { type Difficulty, type GameConfig, TRACKS } from '../sim/types'
 import { useStore } from '../store/game'
-import { ImportButton, SaveList } from './System'
+import { LogoPicker } from './Company'
+import { ImportButton, SaveList, ThemePicker } from './System'
 import { Btn, Panel, Row, Slider, TextInput, money } from './ui'
 
 function Wordmark() {
@@ -33,6 +34,10 @@ export function MainMenu() {
             New company
           </Btn>
           <ImportButton label="Load from file" />
+          <div className="mt-4">
+            <div className="label mb-1">Interface colours</div>
+            <ThemePicker />
+          </div>
         </div>
         <div className="num text-[10px] leading-relaxed text-faint">
           DESIGN / LAUNCH / OUTSELL / REINVEST
@@ -73,6 +78,10 @@ export function NewGame() {
               <span className="text-[11px] text-dim">Name</span>
               <TextInput value={cfg.companyName} maxLength={18} onChange={(v) => up({ companyName: v })} className="w-48" />
             </label>
+            <div className="flex items-center justify-between gap-2 py-1">
+              <span className="text-[11px] text-dim">Logo</span>
+              <LogoPicker value={cfg.logo} onChange={(logo) => up({ logo })} />
+            </div>
             <label className="flex items-center justify-between gap-2 py-1">
               <span className="text-[11px] text-dim">Brand colour</span>
               <input type="color" value={cfg.color} onChange={(e) => up({ color: e.target.value })} />
@@ -120,7 +129,7 @@ export function NewGame() {
               <Slider label="Starting tech level" value={cfg.techLevel} min={0} max={4} step={1} format={(v) => `L${v} on every track`} onChange={(v) => up({ techLevel: v })} hint="Leading rivals start around level 3" />
             </div>
             <label className="mt-1 flex items-center text-[11px]">
-              <input type="checkbox" className="mr-2 accent-[#36c5d6]" checked={cfg.unlimitedMoney} onChange={(e) => up({ unlimitedMoney: e.target.checked })} />
+              <input type="checkbox" className="mr-2 accent-accent" checked={cfg.unlimitedMoney} onChange={(e) => up({ unlimitedMoney: e.target.checked })} />
               Unlimited money (no bankruptcy; research still takes time)
             </label>
             <div className="mt-3 border-t border-line pt-2">

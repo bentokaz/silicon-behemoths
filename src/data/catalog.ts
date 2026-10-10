@@ -1,5 +1,5 @@
 // Game content as data: research tracks, parts, materials, customer segments.
-import type { Lens, SegmentId, SubScores, Track } from '../sim/types'
+import type { Lens, Levels, SegmentId, SubScores, Track } from '../sim/types'
 
 export const MAX_LEVEL = 8
 export const DAYS_PER_MONTH = 30
@@ -17,13 +17,13 @@ export const TRACK_INFO: Record<Track, { name: string; unlocks: string[] }> = {
   display: {
     name: 'Display',
     unlocks: [
-      'LCD panel, 60 Hz',
-      'OLED panel, 90 Hz',
-      'OLED+ panel, 120 Hz',
+      'LCD panel',
+      'OLED panel',
+      'OLED+ panel',
       'LTPO OLED (adaptive refresh)',
-      'Tandem OLED, 144 Hz',
+      'Tandem OLED',
       'MicroLED panel',
-      'QD-MicroLED, 240 Hz',
+      'QD-MicroLED panel',
       'Nano-emissive panel',
       'Holo-layer panel',
     ],
@@ -35,7 +35,7 @@ export const TRACK_INFO: Record<Track, { name: string; unlocks: string[] }> = {
       'Helix x10 series',
       'Helix x20 series',
       'Helix x30 series',
-      'Helix x40 series, satellite link',
+      'Helix x40 series',
       'Helix x50 series',
       'Helix x60 series',
       'Helix x70 series',
@@ -48,7 +48,7 @@ export const TRACK_INFO: Record<Track, { name: string; unlocks: string[] }> = {
       '12 MP sensor',
       '48 MP sensor',
       '50 MP large sensor',
-      '108 MP sensor, periscope lens',
+      '108 MP sensor',
       '200 MP sensor',
       '1-inch sensor',
       'Stacked 1-inch sensor',
@@ -72,13 +72,13 @@ export const TRACK_INFO: Record<Track, { name: string; unlocks: string[] }> = {
   },
   charging: {
     name: 'Charging',
-    unlocks: ['10 W', '18 W', '33 W, wireless charging', '65 W', '100 W', '150 W', '240 W', '320 W', '500 W'],
+    unlocks: ['10 W', '18 W', '33 W', '65 W', '100 W', '150 W', '240 W', '320 W', '500 W'],
   },
   materials: {
     name: 'Materials',
     unlocks: [
       'Plastic, aluminium, glass',
-      'Stainless steel, IP68 sealing',
+      'Stainless steel',
       'Ceramic back',
       'Titanium frame',
       'Refined tooling (no new material)',
@@ -92,11 +92,11 @@ export const TRACK_INFO: Record<Track, { name: string; unlocks: string[] }> = {
     name: 'Industrial design',
     unlocks: [
       '3.5 mm bezels, 8.0 mm body',
-      'Punch-hole camera, 2.5 mm bezels',
-      'Under-display fingerprint, 1.8 mm bezels',
+      '2.5 mm bezels, 7.5 mm body',
+      '1.8 mm bezels, 7.0 mm body',
       '1.3 mm bezels, 6.5 mm body',
       '0.9 mm bezels, 6.0 mm body',
-      'Under-display camera, 0.7 mm bezels',
+      '0.7 mm bezels, 5.5 mm body',
       '0.55 mm bezels, 5.0 mm body',
       '0.5 mm bezels, 4.5 mm body',
       '0.45 mm bezels, 4.0 mm body',
@@ -116,11 +116,11 @@ export const panelInfo = (level: number) => ({
 })
 
 export const REFRESH = [
-  { hz: 60, level: 0, bonus: 0, power: 1 },
-  { hz: 90, level: 1, bonus: 0.08, power: 1.08 },
-  { hz: 120, level: 2, bonus: 0.14, power: 1.15 },
-  { hz: 144, level: 4, bonus: 0.17, power: 1.2 },
-  { hz: 240, level: 6, bonus: 0.2, power: 1.3 },
+  { hz: 60, level: 0, bonus: 0, power: 1, feat: '' },
+  { hz: 90, level: 1, bonus: 0.08, power: 1.08, feat: 'hz90' },
+  { hz: 120, level: 2, bonus: 0.14, power: 1.15, feat: 'hz120' },
+  { hz: 144, level: 4, bonus: 0.17, power: 1.2, feat: 'hz144' },
+  { hz: 240, level: 6, bonus: 0.2, power: 1.3, feat: 'hz240' },
 ]
 
 export const CHIP_TIERS = ['Entry', 'Mid', 'Flagship']
@@ -243,3 +243,45 @@ export const RIVALS: RivalSeed[] = [
   { name: 'Azus', color: '#d43a5a', brand: 0.62, awareness: 0.45, techOffset: 0.1, priceMult: 1, segments: ['gamer'], layout: 3, palette: ['#0f1012', '#2a2d33', '#e6e6e8'], series: { gamer: 'ROC Phone' }, counter: 10 },
   { name: 'BlockBerry', color: '#6c7a89', brand: 0.6, awareness: 0.5, techOffset: -0.4, priceMult: 1.05, segments: ['business'], layout: 0, palette: ['#101114', '#2b2f36', '#4a3b2c'], series: { business: 'Key' }, counter: 4 },
 ]
+
+// ---------------------------------------------------------------- tech tree
+// Each track is a trunk of nine levels. Features branch off a trunk level and
+// are researched separately. Some trunk levels also need another track first.
+
+export interface FeatureInfo {
+  id: string
+  name: string
+  track: Track
+  level: number
+  note: string
+}
+export const FEATURES: FeatureInfo[] = [
+  { id: 'hz90', name: '90 Hz refresh', track: 'display', level: 1, note: 'Smoother scrolling, slightly more power draw.' },
+  { id: 'hz120', name: '120 Hz refresh', track: 'display', level: 2, note: 'The mainstream standard for fluid displays.' },
+  { id: 'hz144', name: '144 Hz refresh', track: 'display', level: 4, note: 'Favoured by the gamer segment.' },
+  { id: 'hz240', name: '240 Hz refresh', track: 'display', level: 6, note: 'Top display score at a power cost.' },
+  { id: 'nfc', name: 'NFC', track: 'chipset', level: 0, note: 'Contactless payments. A cheap extra.' },
+  { id: 'sat', name: 'Satellite link', track: 'chipset', level: 4, note: 'Emergency messaging without coverage.' },
+  { id: 'periscope', name: 'Periscope zoom lens', track: 'camera', level: 3, note: 'The strongest telephoto option.' },
+  { id: 'wireless', name: 'Wireless charging', track: 'charging', level: 2, note: 'Also allows a phone with no port at all.' },
+  { id: 'ip68', name: 'IP68 sealing', track: 'materials', level: 1, note: 'Water and dust resistance.' },
+  { id: 'stereo', name: 'Stereo speakers', track: 'design', level: 0, note: 'A second speaker in the earpiece.' },
+  { id: 'punch', name: 'Punch-hole camera', track: 'design', level: 1, note: 'A front camera inside the screen with no notch.' },
+  { id: 'fpdisplay', name: 'Under-display fingerprint', track: 'design', level: 2, note: 'Fingerprint sensor placed on the front.' },
+  { id: 'udc', name: 'Under-display camera', track: 'design', level: 5, note: 'An invisible front camera.' },
+]
+export const featureInfo = (id: string) => FEATURES.find((f) => f.id === id)
+export const featureCost = (f: FeatureInfo) => Math.max(250e3, Math.round((researchCost(f.level) * 0.35) / 1e4) * 1e4)
+
+/** Trunk levels that also need other tracks: TRUNK_REQS[track][level] = required levels. */
+export const TRUNK_REQS: Partial<Record<Track, Record<number, Partial<Levels>>>> = {
+  display: { 3: { chipset: 2 }, 5: { materials: 4 }, 7: { chipset: 6 } },
+  chipset: { 5: { battery: 3 } },
+  camera: { 3: { chipset: 2 }, 5: { chipset: 4 }, 7: { display: 5 } },
+  battery: { 4: { materials: 3 }, 7: { materials: 6 } },
+  charging: { 3: { battery: 2 }, 5: { battery: 4 }, 7: { battery: 6 } },
+  design: { 3: { materials: 2 }, 5: { display: 4 }, 7: { materials: 6 } },
+}
+
+/** Features a company owns if it simply has everything up to its levels (used for rivals). */
+export const featuresAtLevels = (lv: Levels) => FEATURES.filter((f) => lv[f.track] >= f.level).map((f) => f.id)

@@ -3,10 +3,10 @@ import { useEffect, useState } from 'react'
 import { DeviceView, type ViewName } from '../3d/DeviceView'
 import { deviceThumbnail } from '../3d/thumbnail'
 import { CHARGE_W, EXTRAS, LENSES, SUB_LABELS, chipInfo, materialInfo, panelInfo, segmentInfo, sensorInfo } from '../data/catalog'
-import { companyOf, fmtDate } from '../sim/game'
+import { companyOf, fmtDate, player } from '../sim/game'
 import { normalised } from '../sim/market'
 import { type DeviceDesign, type Product, SUBS } from '../sim/types'
-import { useGame } from '../store/game'
+import { useGame, useStore } from '../store/game'
 import { Btn, Meter, Panel, Row, money, num } from './ui'
 
 export function specLines(d: DeviceDesign, diag: number): [string, string][] {
@@ -29,8 +29,9 @@ export function specLines(d: DeviceDesign, diag: number): [string, string][] {
 
 export function Thumb({ product, className = '' }: { product: Product; className?: string }) {
   const [src, setSrc] = useState('')
+  const logo = useStore((s) => (s.game ? player(s.game).logo : undefined))
   useEffect(() => {
-    const id = window.setTimeout(() => setSrc(deviceThumbnail(product.id, product.design)), 0)
+    const id = window.setTimeout(() => setSrc(deviceThumbnail(product.id, product.design, logo)), 0)
     return () => window.clearTimeout(id)
   }, [product.id, product.design])
   return src ? <img src={src} alt="" draggable={false} className={`object-contain ${className}`} /> : <div className={className} />
@@ -107,7 +108,7 @@ export function ProductInspector({ product, children }: { product: Product; chil
         className="shrink-0"
       >
         <div className="h-[300px]">
-          <DeviceView key={product.id} design={product.design} view={view} viewNonce={nonce} autoRotate />
+          <DeviceView key={product.id} design={product.design} view={view} viewNonce={nonce} autoRotate logo={player(g).logo} />
         </div>
         <div className="grid grid-cols-4 border-t border-line">
           {[

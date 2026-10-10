@@ -3,12 +3,12 @@ import { useState } from 'react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { sfx } from '../audio/sfx'
 import { MAX_LEVEL, SEGMENTS, TRACK_INFO, marketLevel, researchCost, segmentInfo } from '../data/catalog'
-import { RETAIL_CUT, companyOf, discontinue, fmtDate, monthLabel, player, produce, setPrice, toggleResearch, trailingUnits } from '../sim/game'
+import { RETAIL_CUT, companyOf, discontinue, fmtDate, monthLabel, player, produce, setPrice, trailingUnits } from '../sim/game'
 import { OUTSIDE_OPTION, attraction, segmentDemand } from '../sim/market'
 import { type GameState, type Product, TRACKS } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { ProductInspector, Thumb } from './Inspector'
-import { Btn, Meter, NumInput, Panel, Row, Slider, Stat, TextInput, chart, money, num, pct } from './ui'
+import { Btn, Meter, NumInput, Panel, Row, Stat, TextInput, chart, money, num, pct } from './ui'
 
 const playerProducts = (g: GameState) => g.products.filter((p) => p.companyId === 'player').sort((a, b) => b.launchDay - a.launchDay)
 const statusTone = (p: Product) => (p.status === 'sale' ? (p.stock <= 0 ? 'text-neg' : 'text-pos') : p.status === 'dev' ? 'text-warn' : 'text-faint')
@@ -53,7 +53,7 @@ function FinanceChart({ g, months = 24 }: { g: GameState; months?: number }) {
   const data = g.reports.slice(-months).map((r) => ({
     month: monthLabel(r.month),
     Revenue: Math.round(r.revenue),
-    Costs: Math.round(r.production + r.rd + r.marketing + r.development + r.overhead + r.interest),
+    Costs: Math.round(r.production + r.rd + r.marketing + r.development + r.overhead + r.salaries + r.interest),
     Cash: Math.round(r.cash),
   }))
   if (data.length < 2) return <Empty text="Monthly figures appear after the first two months." />
@@ -64,9 +64,9 @@ function FinanceChart({ g, months = 24 }: { g: GameState; months?: number }) {
         <XAxis dataKey="month" tick={chart.axis} stroke={chart.grid} minTickGap={30} />
         <YAxis tick={chart.axis} stroke={chart.grid} tickFormatter={(v) => money(v, 1)} width={56} />
         <Tooltip {...chart.tooltip} formatter={(v) => money(Number(v))} />
-        <Line dataKey="Revenue" stroke="#4cc38a" dot={false} strokeWidth={1.5} isAnimationActive={false} />
-        <Line dataKey="Costs" stroke="#e5484d" dot={false} strokeWidth={1.5} isAnimationActive={false} />
-        <Line dataKey="Cash" stroke="#36c5d6" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />
+        <Line dataKey="Revenue" stroke="var(--color-pos)" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+        <Line dataKey="Costs" stroke="var(--color-neg)" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+        <Line dataKey="Cash" stroke="var(--color-accent)" dot={false} strokeWidth={1} strokeDasharray="3 3" isAnimationActive={false} />
       </LineChart>
     </ResponsiveContainer>
   )
@@ -82,7 +82,7 @@ export function Dashboard() {
   const total = trailing.reduce((a, t) => a + t.units, 0) || 1
   const mine = trailing[0].units
   const last = g.reports[g.reports.length - 1]
-  const profit = last ? last.revenue - (last.production + last.rd + last.marketing + last.development + last.overhead + last.interest) : 0
+  const profit = last ? last.revenue - (last.production + last.rd + last.marketing + last.development + last.overhead + last.salaries + last.interest) : 0
   const products = playerProducts(g).filter((p) => p.status !== 'ended')
   const top = g.products.filter((p) => p.status === 'sale').sort((a, b) => (b.history.at(-1) ?? 0) - (a.history.at(-1) ?? 0)).slice(0, 12)
   return (
@@ -106,7 +106,7 @@ export function Dashboard() {
         {TRACKS.map((t) => (
           <div key={t} className="flex items-center gap-2 py-[3px]">
             <span className={`w-28 text-[11px] ${g.activeResearch.includes(t) ? 'text-accent' : 'text-dim'}`}>{TRACK_INFO[t].name}</span>
-            <Meter value={g.levels[t] >= MAX_LEVEL ? 1 : g.progress[t] / researchCost(g.levels[t] + 1)} tone={g.activeResearch.includes(t) ? 'accent' : 'dim'} />
+            <Meter value={g.levels[t] >= MAX_LEVEL ? 1 : (g.progress[t] ?? 0) / researchCost(g.levels[t] + 1)} tone={g.activeResearch.includes(t) ? 'accent' : 'dim'} />
             <span className="num w-8 text-right text-[11px]">L{g.levels[t]}</span>
           </div>
         ))}
@@ -116,7 +116,13 @@ export function Dashboard() {
 
       <Panel title="Your devices" right={<Btn small tone="primary" onClick={() => openDesigner()}>Design new device</Btn>} className="col-span-5" bodyClass="overflow-auto">
         {products.length === 0 ? (
-          <Empty text="No devices yet. Design your first phone to enter the market." />
+          <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+            <div className="text-lg font-semibold uppercase tracking-[0.16em] text-fg">You have nothing on sale</div>
+            <div className="max-w-xs text-[11px] leading-snug text-dim">Design your first phone to enter the market. Nine rivals are already selling.</div>
+            <Btn tone="primary" className="h-11 px-8 text-sm" onClick={() => openDesigner()}>
+              Design your first device
+            </Btn>
+          </div>
         ) : (
           <table className="grid-table">
             <thead>
@@ -249,8 +255,8 @@ function ProductControls({ p }: { p: Product }) {
                 <CartesianGrid stroke={chart.grid} vertical={false} />
                 <XAxis dataKey="m" tick={chart.axis} stroke={chart.grid} />
                 <YAxis tick={chart.axis} stroke={chart.grid} tickFormatter={(v) => num(v)} />
-                <Tooltip {...chart.tooltip} cursor={{ fill: '#181e26' }} formatter={(v) => num(Number(v))} labelFormatter={(m) => `Month ${m}`} />
-                <Bar dataKey="Units" fill="#36c5d6" isAnimationActive={false} />
+                <Tooltip {...chart.tooltip} cursor={{ fill: 'var(--color-hover)' }} formatter={(v) => num(Number(v))} labelFormatter={(m) => `Month ${m}`} />
+                <Bar dataKey="Units" fill="var(--color-accent)" isAnimationActive={false} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -521,93 +527,13 @@ export function Rivals() {
   )
 }
 
-// ------------------------------------------------------------------ research
-
-export function Research() {
-  const g = useGame()
-  const { act } = useStore.getState()
-  const industry = marketLevel(g.day)
-  const perTrack = g.activeResearch.length ? (g.rdBudget * g.config.researchSpeed) / g.activeResearch.length : 0
-  return (
-    <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_320px] gap-2 p-2">
-      <Panel title="Research tracks" bodyClass="overflow-auto">
-        <table className="grid-table">
-          <thead>
-            <tr>
-              <th>Track</th>
-              <th>Level</th>
-              <th>You have</th>
-              <th>Next unlock</th>
-              <th className="r">Cost</th>
-              <th className="w-48">Progress</th>
-              <th className="r">ETA</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {TRACKS.map((t) => {
-              const lv = g.levels[t]
-              const maxed = lv >= MAX_LEVEL
-              const cost = maxed ? 0 : researchCost(lv + 1)
-              const active = g.activeResearch.includes(t)
-              const eta = active && perTrack > 0 ? Math.ceil(((cost - g.progress[t]) / perTrack) * 30) : 0
-              return (
-                <tr key={t} className="row">
-                  <td className={active ? 'text-accent' : ''}>{TRACK_INFO[t].name}</td>
-                  <td>
-                    <div className="flex items-center gap-[2px]">
-                      {Array.from({ length: MAX_LEVEL + 1 }, (_, i) => (
-                        <span key={i} title={TRACK_INFO[t].unlocks[i]} className={`h-3 w-2 border ${i <= lv ? 'border-accent bg-accent' : i <= industry ? 'border-warn/70' : 'border-line2'}`} />
-                      ))}
-                      <span className="num ml-2">L{lv}</span>
-                    </div>
-                  </td>
-                  <td className="text-dim">{TRACK_INFO[t].unlocks[lv]}</td>
-                  <td>{maxed ? <span className="text-faint">Complete</span> : TRACK_INFO[t].unlocks[lv + 1]}</td>
-                  <td className="num r">{maxed ? '--' : money(cost, 1)}</td>
-                  <td>{!maxed && <Meter value={g.progress[t]} max={cost} tone={active ? 'accent' : 'dim'} />}</td>
-                  <td className="num r text-dim">{eta ? `${eta}d` : '--'}</td>
-                  <td className="r">
-                    <Btn small disabled={maxed} active={active} onClick={() => act((s) => toggleResearch(s, t))}>
-                      {active ? 'Researching' : 'Start'}
-                    </Btn>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-        <div className="px-2 py-2 text-[11px] leading-snug text-dim">
-          Filled blocks are levels you own. Amber outlines are levels the leading rivals already ship. The budget is split evenly between the tracks being researched, so fewer tracks finish sooner.
-        </div>
-      </Panel>
-      <div className="flex min-h-0 flex-col gap-2">
-        <Panel title="R&D budget" className="shrink-0" bodyClass="px-2 py-1">
-          <Slider label="Monthly budget" value={g.rdBudget} min={0} max={Math.max(2e6, Math.ceil((g.cash * 0.25) / 1e5) * 1e5, g.rdBudget)} step={10e3} format={(v) => money(v)} onChange={(v) => act((s) => void (s.rdBudget = v))} />
-          <Row k="Tracks in progress" v={g.activeResearch.length} />
-          <Row k="Per track, per month" v={money(perTrack)} />
-          <Row k="Research speed" v={`${g.config.researchSpeed.toFixed(2)}x`} />
-          <Row k="Spent this month" v={money(g.cur.rd)} />
-          {g.rdBudget > 0 && !g.activeResearch.length && <div className="py-1 text-[11px] text-warn">Pick at least one track, or no money is spent.</div>}
-          {g.rdBudget === 0 && g.activeResearch.length > 0 && <div className="py-1 text-[11px] text-warn">Set a budget to make progress.</div>}
-        </Panel>
-        <Panel title="Industry" className="shrink-0" bodyClass="px-2 py-1">
-          <Row k="Leading-edge level" v={industry.toFixed(2)} />
-          <Row k="Your average level" v={(TRACKS.reduce((a, t) => a + g.levels[t], 0) / TRACKS.length).toFixed(2)} />
-          <div className="py-1 text-[11px] leading-snug text-dim">The industry gains a level roughly every 30 months. Devices are scored against the leading edge, so an unchanged phone slowly loses appeal.</div>
-        </Panel>
-      </div>
-    </div>
-  )
-}
-
 // ------------------------------------------------------------------ finance
 
 export function Finance() {
   const g = useGame()
   const rows = [...g.reports].reverse().slice(0, 36)
-  const sum = (k: 'revenue' | 'production' | 'rd' | 'marketing' | 'development' | 'overhead' | 'interest') => g.reports.slice(-12).reduce((a, r) => a + r[k], 0)
-  const costs12 = sum('production') + sum('rd') + sum('marketing') + sum('development') + sum('overhead') + sum('interest')
+  const sum = (k: 'revenue' | 'production' | 'rd' | 'marketing' | 'development' | 'overhead' | 'salaries' | 'interest') => g.reports.slice(-12).reduce((a, r) => a + r[k], 0)
+  const costs12 = sum('production') + sum('rd') + sum('marketing') + sum('development') + sum('overhead') + sum('salaries') + sum('interest')
   const stockValue = g.products.filter((p) => p.companyId === 'player' && p.status !== 'ended').reduce((a, p) => a + p.stock * p.unitCost, 0)
   return (
     <div className="grid h-full min-h-0 grid-rows-[auto_240px_minmax(0,1fr)] gap-2 p-2">
@@ -633,6 +559,7 @@ export function Finance() {
               <th className="r">R&D</th>
               <th className="r">Marketing</th>
               <th className="r">Development</th>
+              <th className="r">Salaries</th>
               <th className="r">Overhead</th>
               <th className="r">Interest</th>
               <th className="r">Profit</th>
@@ -641,7 +568,7 @@ export function Finance() {
           </thead>
           <tbody>
             {rows.map((r) => {
-              const profit = r.revenue - r.production - r.rd - r.marketing - r.development - r.overhead - r.interest
+              const profit = r.revenue - r.production - r.rd - r.marketing - r.development - r.overhead - r.salaries - r.interest
               return (
                 <tr key={r.month} className="row">
                   <td className="num">{monthLabel(r.month)}</td>
@@ -651,6 +578,7 @@ export function Finance() {
                   <td className="num r text-dim">{money(r.rd)}</td>
                   <td className="num r text-dim">{money(r.marketing)}</td>
                   <td className="num r text-dim">{money(r.development)}</td>
+                  <td className="num r text-dim">{money(r.salaries)}</td>
                   <td className="num r text-dim">{money(r.overhead)}</td>
                   <td className="num r text-dim">{money(r.interest)}</td>
                   <td className={`num r ${profit >= 0 ? 'text-pos' : 'text-neg'}`}>{money(profit)}</td>

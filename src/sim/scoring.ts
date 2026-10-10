@@ -9,6 +9,7 @@ import {
   REFRESH,
   batteryDensity,
   chipInfo,
+  featuresAtLevels,
   idealRam,
   idealStorage,
   materialInfo,
@@ -46,7 +47,12 @@ export function deviceWeight(d: DeviceDesign): number {
   return d.specs.battery * 0.011 + frameVol * frame.density + plateVol * back.density + plateVol * 2.5 + volume * 0.55
 }
 
-export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number): Evaluation {
+/**
+ * feats = researched branch features. Leave it out for a company that owns
+ * everything up to its levels (rivals).
+ */
+export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: string[]): Evaluation {
+  const owned = new Set(feats ?? featuresAtLevels(lv))
   const b = d.body
   const s = d.specs
   const issues: Issue[] = []
@@ -65,14 +71,14 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number): Evaluatio
 
   // ---- tech locks and physical limits
   if (s.panel > lv.display) err(`${panel.name} panel needs Display level ${s.panel}`)
-  if (rf.level > lv.display) err(`${rf.hz} Hz needs Display level ${rf.level}`)
+  if (rf.feat && !owned.has(rf.feat)) err(`${rf.hz} Hz refresh is not researched yet`)
   if (s.chipGen > lv.chipset) err(`${chip.name} needs Chipset level ${s.chipGen}`)
   if (s.charging > lv.charging) err(`${CHARGE_W[s.charging]} W charging needs Charging level ${s.charging}`)
   if (frame.level > lv.materials) err(`${frame.name} needs Materials level ${frame.level}`)
   if (back.level > lv.materials) err(`${back.name} needs Materials level ${back.level}`)
   for (const id of s.extras) {
     const ex = EXTRAS.find((e) => e.id === id)
-    if (ex && ex.level > lv[ex.track]) err(`${ex.name} is not researched yet`)
+    if (ex && !owned.has(ex.id)) err(`${ex.name} is not researched yet`)
   }
   const minBez = MIN_BEZEL[lv.design]
   if (Math.min(b.bezelSide, b.bezelTop, b.bezelBottom) < minBez - 1e-6) err(`Bezels below ${minBez} mm need better Industrial design`)
@@ -88,7 +94,7 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number): Evaluatio
   const camQ = (p: PlacedPart) => {
     const sn = sensorInfo(p.sensor ?? 0)
     if ((p.sensor ?? 0) > lv.camera) err(`${sn.name} sensor needs Camera level ${p.sensor}`, p.id)
-    if (p.lens === 'periscope' && lv.camera < LENSES.periscope.level) err('Periscope lens needs Camera level 3', p.id)
+    if (p.lens === 'periscope' && !owned.has('periscope')) err('The periscope lens is not researched yet', p.id)
     const dia = Math.min(p.w, p.h)
     const minDia = p.face === 'front' ? selfieMinDia(p.sensor ?? 0) : sn.minDia
     if (dia < minDia - 0.05) warn(`Lens is too small for the ${sn.name} sensor (needs ${minDia} mm)`, p.id)
@@ -110,13 +116,13 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number): Evaluatio
     const inScreen = Math.abs(p.x - scr.cx) < scr.w / 2 && Math.abs(p.y - scr.cy) < scr.h / 2
     if (!inScreen) continue
     if (p.underDisplay) {
-      if (lv.design < 5) err('Under-display camera needs Industrial design level 5', p.id)
-    } else if (lv.design < 1 && !notches.some((n) => contains(n, p))) {
-      err('A camera inside the screen needs a notch, or Industrial design level 1', p.id)
+      if (!owned.has('udc')) err('Under-display camera is not researched yet', p.id)
+    } else if (!owned.has('punch') && !notches.some((n) => contains(n, p))) {
+      err('A camera inside the screen needs a notch until Punch-hole camera is researched', p.id)
     }
   }
   for (const p of d.parts) {
-    if (p.kind === 'fingerprint' && p.face === 'front' && lv.design < 2) err('Under-display fingerprint needs Industrial design level 2', p.id)
+    if (p.kind === 'fingerprint' && p.face === 'front' && !owned.has('fpdisplay')) err('Under-display fingerprint is not researched yet', p.id)
   }
   const ports = d.parts.filter((p) => p.kind === 'port')
   if (ports.length === 0 && !has('wireless')) err('No charging port and no wireless charging')
