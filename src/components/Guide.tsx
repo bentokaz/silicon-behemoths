@@ -28,8 +28,8 @@ const mine = (s: GameState) => s.products.filter((p) => p.companyId === 'player'
 const desks = (s: GameState) => reachable(s.office).filter((i) => ITEMS.office[i.kind]?.seats).length
 
 export const STEPS: Step[] = [
-  { title: 'Welcome', text: 'This is your company: two desks in a garage. The next few steps take you from here to a device on sale. You can leave the guide at any time and bring it back from System.' },
-  { title: 'Look around', tab: 'office', text: 'This is the campus. Drag to turn the view, right-drag or use W A S D to move, scroll to zoom. The buttons at the top right switch between a cutaway, full walls and the outside.' },
+  { title: 'Welcome', tab: 'city', text: 'This is the city, and the small building in the middle is your company: two desks in a garage. Everything you build later appears here, and clicking a place takes you inside it. The next few steps take you from here to a device on sale. You can leave the guide at any time and bring it back from System.' },
+  { title: 'Look around', tab: 'office', text: 'This is the campus, seen from inside. People come in each morning, work, eat and go home; click one, or a desk or a screen, to see what is going on. Drag to turn the view, right-drag or use W A S D to move, scroll to zoom. The buttons at the top right switch between a cutaway, full walls and the outside.' },
   { title: 'Add a desk', tab: 'office', text: 'Open Build, choose Furnish, pick a Desk and click an empty spot inside the room. R turns it before you place it. Each desk seats one person.', done: (s) => desks(s) >= 3 },
   { title: 'Hire two people', tab: 'staff', text: 'Open Staff, go to Applicants and hire an engineer and one other. Engineers shorten development; designers, researchers and marketers each help in their own way. Hiring costs one month of their salary.', done: (s) => s.staff.length >= 2 },
   { title: 'Design a device', text: 'Press New device. Shape the body, choose what goes inside, and watch the cost and the appeal to each kind of buyer. When you are happy, press Launch, set a price a fair way above the unit cost, and order a first production run.', done: (s) => mine(s).length >= 1 },

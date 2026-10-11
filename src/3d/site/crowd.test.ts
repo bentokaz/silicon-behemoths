@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { autoTeams, defaultConfig, hire, newGame, placeItem, setEdge, tick, zoneRoom } from '../../sim/game'
+import { autoTeams, defaultConfig, hire, newGame, placeItem, setEdge, tick, upgradeOffice, zoneRoom } from '../../sim/game'
 import { factoryLife, officeLife } from '../../sim/life'
 import { refreshCandidates, seatedStaff } from '../../sim/staff'
 import type { GameState } from '../../sim/types'
@@ -123,5 +123,18 @@ describe('what the rooms show', () => {
     officeLife(s)
     factoryLife(s)
     expect(JSON.stringify(s)).toBe(before)
+  })
+})
+
+describe('curved rooms', () => {
+  it('can be walked into through the door in the curved wall', () => {
+    const s = newGame({ ...defaultConfig(), unlimitedMoney: true, seed: 11 })
+    for (let i = 0; i < 2; i++) upgradeOffice(s)
+    const free = s.office.h - 12
+    expect(zoneRoom(s, 'office', 'lounge', 1, free, 9, free + 8, 'round')).toBeNull()
+    const nav = buildNav(s.office)
+    const middle = (free + 4) * s.office.w + 5
+    expect(nav.walk[middle]).toBe(1)
+    expect(nav.reach[middle]).toBe(1)
   })
 })

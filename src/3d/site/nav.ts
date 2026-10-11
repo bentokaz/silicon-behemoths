@@ -1,6 +1,7 @@
 // Where people can walk on a site, and how to get from one tile to another.
 // Tiles are joined through doors and openings only; furniture, water and
 // walls are in the way. Used for looks alone: nothing here touches the game.
+import { curveTiles, geomOf } from '../../sim/curves'
 import { ITEMS, cutAt, faceId, gridAt, itemTiles } from '../../sim/sites'
 import type { Site } from '../../sim/types'
 
@@ -55,6 +56,24 @@ export function buildNav(site: Site): Nav {
     if (!def || def.flat) continue
     for (const [x, y] of itemTiles(site, it)) if (x >= 0 && y >= 0 && x < w && y < h) walk[y * w + x] = 0
   }
+  // a curved wall runs through its tiles, so nobody stands on them; a door or
+  // opening in the curve makes its tiles a way through
+  const portal = new Uint8Array(n)
+  for (const key of curveTiles(site).keys()) {
+    const [x, y] = key.split(',').map(Number)
+    walk[y * w + x] = 0
+  }
+  site.curves?.forEach((c) => {
+    for (const [bay, kind] of Object.entries(c.walls ?? {})) {
+      if (kind === 'glass') continue
+      for (const key of geomOf(c).bays.get(bay)?.tiles ?? []) {
+        const [x, y] = key.split(',').map(Number)
+        if (x < 0 || y < 0 || x >= w || y >= h || site.grid[y * w + x] !== c.room) continue
+        portal[y * w + x] = 1
+        walk[y * w + x] = 1
+      }
+    }
+  })
   const gaps = new Set<string>()
   const doors: Nav['doors'] = []
   for (const wl of site.walls) {
@@ -66,7 +85,10 @@ export function buildNav(site: Site): Nav {
   const open = (x: number, y: number, side: 'n' | 'w') => {
     const a = side === 'n' ? faceId(site, x, y, 'n') : faceId(site, x, y, 'w')
     const b = side === 'n' ? faceId(site, x, y - 1, 's') : faceId(site, x - 1, y, 'e')
-    return a === b || gaps.has(`${x},${y},${side}`)
+    if (a === b || gaps.has(`${x},${y},${side}`)) return true
+    const here = x < w && y < h ? portal[y * w + x] : 0
+    const there = side === 'n' ? (y > 0 && x < w ? portal[(y - 1) * w + x] : 0) : x > 0 && y < h ? portal[y * w + x - 1] : 0
+    return here === 1 || there === 1
   }
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
