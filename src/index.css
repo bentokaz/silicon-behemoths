@@ -75,11 +75,14 @@ body {
   user-select: none;
 }
 
-input,
-select,
-button {
-  font: inherit;
-  color: inherit;
+/* in the base layer, so the size and colour classes on a control still win */
+@layer base {
+  input,
+  select,
+  button {
+    font: inherit;
+    color: inherit;
+  }
 }
 
 ::-webkit-scrollbar {

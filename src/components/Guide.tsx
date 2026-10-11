@@ -12,7 +12,7 @@ import { type GameState, monthCosts } from '../sim/types'
 import { INCIDENTS, INCIDENT_WAIT } from '../sim/world'
 import { type Tab, useGame, useStore } from '../store/game'
 import { Icon, type IconName, TAB_ICON } from './icons'
-import { Btn, money, num, pct } from './ui'
+import { Btn, Lead, money, num, pct } from './ui'
 
 // ---------------------------------------------------------------- guided start
 
@@ -77,7 +77,7 @@ export function Coach() {
         ))}
       </div>
       <div className="flex items-center justify-between gap-2 px-3 py-2">
-        <Btn small tone="ghost" onClick={() => act((s) => void (s.guide = -1))}>
+        <Btn small tone="ghost" icon="close" onClick={() => act((s) => void (s.guide = -1))}>
           Leave the guide
         </Btn>
         <div className="flex gap-1">
@@ -88,16 +88,21 @@ export function Coach() {
             </Btn>
           ) : null}
           {!step.done && (
-            <Btn small tone="primary" onClick={() => act((s) => void (s.guide = last ? -1 : s.guide + 1))}>
+            <Btn small tone="primary" icon={last ? 'check' : 'arrowRight'} onClick={() => act((s) => void (s.guide = last ? -1 : s.guide + 1))}>
               {last ? 'Finish' : 'Next'}
             </Btn>
           )}
           {step.done && !done && (
-            <Btn small onClick={() => act((s) => void (s.guide = s.guide + 1))} title="Skip this step">
+            <Btn small icon="fast" onClick={() => act((s) => void (s.guide = s.guide + 1))} title="Skip this step">
               Skip
             </Btn>
           )}
-          {done && <span className="num px-2 text-[11px] text-pos">DONE</span>}
+          {done && (
+            <span className="num flex items-center gap-1 px-2 text-[11px] text-pos">
+              <Icon name="check" size={12} />
+              DONE
+            </span>
+          )}
         </div>
       </div>
     </div>
@@ -125,7 +130,10 @@ export function Decision() {
         <div className="flex items-center gap-2 border-b border-line px-3 py-2">
           <Icon name={INCIDENT_ICON[i.kind] ?? 'alert'} className="text-warn" />
           <span className="text-[12px] font-semibold uppercase tracking-[0.14em] text-fg">{def.title}</span>
-          <span className="num ml-auto text-[10px] text-faint">{Math.max(0, INCIDENT_WAIT - (g.day - i.day))} days to decide</span>
+          <span className="num ml-auto text-[10px] text-faint">
+            <Lead icon="hourglass" size={10} />
+            {Math.max(0, INCIDENT_WAIT - (g.day - i.day))} days to decide
+          </span>
         </div>
         <div className="px-3 py-3 text-[13px] leading-relaxed text-fg">{def.text(g, i)}</div>
         <div className="space-y-1 px-3 pb-3">
@@ -173,13 +181,13 @@ export function YearEnd() {
   const best = [...g.products.filter((p) => p.companyId === 'player')].sort((a, b) => b.history.slice(-12).reduce((x, y) => x + y, 0) - a.history.slice(-12).reduce((x, y) => x + y, 0))[0]
   const start = (year - START_YEAR) * DAYS_PER_YEAR
   const goals = Object.values(g.goals).filter((d) => d >= start && d < start + DAYS_PER_YEAR).length
-  const cells: [string, string, string?][] = [
-    ['Income', money(revenue, 1), before.length === 12 && lastRevenue > 0 ? `${revenue >= lastRevenue ? '+' : ''}${pct(revenue / lastRevenue - 1, 0)} on last year` : undefined],
-    ['Profit', money(profit, 1), profit >= 0 ? 'in the black' : 'a loss'],
-    ['Devices sold', num(units), `${pct((all[0]?.units ?? 0) / total)} of the market, ranked ${rank} of ${all.filter((t) => t.company.alive).length}`],
-    ['Company value', marketCap(g) >= 1e9 ? `$${(marketCap(g) / 1e9).toFixed(2)}B` : money(marketCap(g), 1), g.stock.listed ? `$${g.stock.price.toFixed(2)} a share` : 'private'],
-    ['Fans', num(g.fans), `${num(g.owners)} owners`],
-    ['People', String(g.staff.length), `${goals} goal${goals === 1 ? '' : 's'} reached this year`],
+  const cells: [string, string, string | undefined, IconName][] = [
+    ['Income', money(revenue, 1), before.length === 12 && lastRevenue > 0 ? `${revenue >= lastRevenue ? '+' : ''}${pct(revenue / lastRevenue - 1, 0)} on last year` : undefined, 'coins'],
+    ['Profit', money(profit, 1), profit >= 0 ? 'in the black' : 'a loss', profit >= 0 ? 'trendUp' : 'trendDown'],
+    ['Devices sold', num(units), `${pct((all[0]?.units ?? 0) / total)} of the market, ranked ${rank} of ${all.filter((t) => t.company.alive).length}`, 'package'],
+    ['Company value', marketCap(g) >= 1e9 ? `$${(marketCap(g) / 1e9).toFixed(2)}B` : money(marketCap(g), 1), g.stock.listed ? `$${g.stock.price.toFixed(2)} a share` : 'private', 'chart'],
+    ['Fans', num(g.fans), `${num(g.owners)} owners`, 'heart'],
+    ['People', String(g.staff.length), `${goals} goal${goals === 1 ? '' : 's'} reached this year`, 'staff'],
   ]
   return (
     <div className="absolute inset-0 z-40 flex items-center justify-center bg-carbon/80">
@@ -191,9 +199,12 @@ export function YearEnd() {
           </div>
         </div>
         <div className="grid grid-cols-3 gap-px bg-line">
-          {cells.map(([label, value, sub]) => (
+          {cells.map(([label, value, sub, icon]) => (
             <div key={label} className="bg-panel px-4 py-3">
-              <div className="label text-faint">{label}</div>
+              <div className="label flex items-center gap-[5px] text-faint">
+                <Icon name={icon} size={12} />
+                {label}
+              </div>
               <div className="num text-lg text-fg">{value}</div>
               {sub && <div className="text-[10px] text-dim">{sub}</div>}
             </div>
@@ -201,12 +212,15 @@ export function YearEnd() {
         </div>
         {best && (
           <div className="border-t border-line px-4 py-2 text-[12px] text-dim">
+            <Lead icon="star" size={12} />
             Best seller: <span className="text-fg">{best.name}</span>, {num(best.history.slice(-12).reduce((a, b) => a + b, 0))} units, reviews {best.reviewAvg.toFixed(1)}.
           </div>
         )}
         <div className="flex justify-end gap-2 border-t border-line px-4 py-3">
-          <Btn onClick={() => (close(), useStore.getState().setTab('goals'))}>See goals</Btn>
-          <Btn tone="primary" onClick={() => (close(), sfx.confirm())}>
+          <Btn icon="goals" onClick={() => (close(), useStore.getState().setTab('goals'))}>
+            See goals
+          </Btn>
+          <Btn tone="primary" icon="arrowRight" onClick={() => (close(), sfx.confirm())}>
             On to {year + 1}
           </Btn>
         </div>

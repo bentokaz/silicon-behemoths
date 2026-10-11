@@ -11,7 +11,8 @@ import { useStore } from '../store/game'
 import { LogoPicker } from './Company'
 import { ImportButton, SaveList, ThemePicker } from './System'
 import { KeysPanel, SettingsPanel } from './Settings'
-import { Btn, Panel, Row, Slider, Tabs, TextInput, money } from './ui'
+import { Icon, trackIcon, typeIcon } from './icons'
+import { Btn, Head, Lead, Panel, Row, Slider, Tabs, TextInput, money } from './ui'
 
 function Wordmark() {
   return (
@@ -36,15 +37,17 @@ export function MainMenu() {
       <div className="flex flex-col justify-between border-r border-line bg-panel p-8">
         <Wordmark />
         <div className="flex flex-col gap-2">
-          <Btn tone="primary" className="h-10 text-left" onClick={() => setScreen('new')}>
+          <Btn tone="primary" icon="plus" className="h-10 !justify-start text-left" onClick={() => setScreen('new')}>
             New company
           </Btn>
           <ImportButton label="Load from file" />
-          <Btn active={prefs} onClick={() => setPrefs(!prefs)}>
+          <Btn icon="gear" active={prefs} onClick={() => setPrefs(!prefs)}>
             Settings and keys
           </Btn>
           <div className="mt-4">
-            <div className="label mb-1">Interface colours</div>
+            <Head icon="theme" className="mb-1">
+              Interface colours
+            </Head>
             <ThemePicker />
           </div>
         </div>
@@ -60,11 +63,11 @@ export function MainMenu() {
       <div className="flex min-h-0 flex-col gap-2 p-8">
         {prefs ? (
           <>
-            <Tabs value={view} onChange={setView} options={[{ value: 'settings', label: 'Settings' }, { value: 'keys', label: 'Keys' }]} />
+            <Tabs value={view} onChange={setView} options={[{ value: 'settings', label: 'Settings', icon: 'gear' }, { value: 'keys', label: 'Keys', icon: 'keys' }]} />
             <div className="min-h-0 flex-1">{view === 'settings' ? <SettingsPanel /> : <KeysPanel />}</div>
           </>
         ) : (
-          <Panel title="Continue" bodyClass="overflow-auto" className="max-h-full">
+          <Panel title="Continue" icon="folder" bodyClass="overflow-auto" className="max-h-full">
             <SaveList />
           </Panel>
         )}
@@ -88,25 +91,39 @@ export function NewGame() {
         <div className="text-[12px] leading-relaxed text-dim">
           You start as a small maker of one kind of device in {2026}. More than twenty established companies already sell phones, tablets, watches, laptops, desktops, consoles, earbuds and TVs, and a few are trying their hand at foldables, headsets, smart speakers and handhelds. Design a device, get it built, launch it, read the reviews, and put the money back into research, people and places.
         </div>
-        <Btn onClick={() => setScreen('menu')}>Back</Btn>
+        <Btn icon="arrowLeft" onClick={() => setScreen('menu')}>
+          Back
+        </Btn>
       </div>
       <div className="min-h-0 overflow-y-auto p-8">
         <div className="grid max-w-[900px] grid-cols-2 gap-2">
-          <Panel title="Company" bodyClass="p-3">
+          <Panel title="Company" icon="campus" bodyClass="p-3">
             <label className="flex items-center justify-between gap-2 py-1">
-              <span className="text-[11px] text-dim">Name</span>
+              <span className="text-[11px] text-dim">
+                <Lead icon="edit" />
+                Name
+              </span>
               <TextInput value={cfg.companyName} maxLength={18} onChange={(v) => up({ companyName: v })} className="w-48" />
             </label>
             <div className="flex items-center justify-between gap-2 py-1">
-              <span className="text-[11px] text-dim">Logo</span>
+              <span className="text-[11px] text-dim">
+                <Lead icon="brand" />
+                Logo
+              </span>
               <LogoPicker value={cfg.logo} onChange={(logo) => up({ logo })} />
             </div>
             <label className="flex items-center justify-between gap-2 py-1">
-              <span className="text-[11px] text-dim">Brand colour</span>
+              <span className="text-[11px] text-dim">
+                <Lead icon="theme" />
+                Brand colour
+              </span>
               <input type="color" value={cfg.color} onChange={(e) => up({ color: e.target.value })} />
             </label>
             <label className="flex items-center justify-between gap-2 py-1">
-              <span className="text-[11px] text-dim">Home market</span>
+              <span className="text-[11px] text-dim">
+                <Lead icon="home" />
+                Home market
+              </span>
               <select value={cfg.home ?? 'na'} onChange={(e) => up({ home: e.target.value })} className="h-7 w-48 rounded-none border border-line2 bg-raise px-2 text-xs text-fg outline-none focus:border-accent">
                 {REGIONS.map((r) => (
                   <option key={r.id} value={r.id}>
@@ -116,22 +133,31 @@ export function NewGame() {
               </select>
             </label>
             <label className="flex items-center justify-between gap-2 py-1">
-              <span className="text-[11px] text-dim">World seed</span>
+              <span className="text-[11px] text-dim">
+                <Lead icon="dice" />
+                World seed
+              </span>
               <input type="number" value={cfg.seed} onChange={(e) => up({ seed: Math.max(1, Math.floor(Number(e.target.value)) || 1) })} className="num h-7 w-48 rounded-none border border-line2 bg-raise px-2 text-xs outline-none focus:border-accent" />
             </label>
           </Panel>
 
-          <Panel title="What your company makes" bodyClass="p-3" className="col-span-2">
-            <div className="grid grid-cols-6 gap-1">
+          <Panel title="What your company makes" icon="devices" bodyClass="p-3" className="col-span-2">
+            <div className="grid grid-cols-4 gap-1">
               {START_TYPES.map((type) => (
                 <button key={type} onClick={() => (up({ startType: type }), sfx.toggle())} className={`border px-2 py-2 text-left transition-colors ${cfg.startType === type ? 'border-accent bg-accent/10' : 'border-line2 bg-raise hover:border-accent'}`}>
-                  <div className={`text-xs uppercase tracking-wider ${cfg.startType === type ? 'text-accent' : 'text-fg'}`}>{TYPES[type].plural}</div>
-                  <div className="num text-[10px] text-faint">{segmentsOf(type).length} markets{['console', 'handheld', 'speaker'].includes(type) ? ' / slow start' : ''}</div>
+                  <div className={`flex items-center gap-2 text-xs uppercase tracking-wider ${cfg.startType === type ? 'text-accent' : 'text-fg'}`}>
+                    <Icon name={typeIcon(type)} size={18} className={cfg.startType === type ? '' : 'text-dim'} />
+                    <span className="min-w-0 truncate">{TYPES[type].plural}</span>
+                  </div>
+                  <div className="num pl-[26px] text-[10px] text-faint">{segmentsOf(type).length} markets{['console', 'handheld', 'speaker'].includes(type) ? ' / slow start' : ''}</div>
                 </button>
               ))}
               <button onClick={() => (up({ startType: 'all' }), sfx.toggle())} className={`border px-2 py-2 text-left transition-colors ${cfg.startType === 'all' ? 'border-accent bg-accent/10' : 'border-line2 bg-raise hover:border-accent'}`}>
-                <div className={`text-xs uppercase tracking-wider ${cfg.startType === 'all' ? 'text-accent' : 'text-fg'}`}>Everything</div>
-                <div className="num text-[10px] text-faint">nothing to unlock</div>
+                <div className={`flex items-center gap-2 text-xs uppercase tracking-wider ${cfg.startType === 'all' ? 'text-accent' : 'text-fg'}`}>
+                  <Icon name="overview" size={18} className={cfg.startType === 'all' ? '' : 'text-dim'} />
+                  <span className="min-w-0 truncate">Everything</span>
+                </div>
+                <div className="num pl-[26px] text-[10px] text-faint">nothing to unlock</div>
               </button>
             </div>
             <div className="mt-2 text-[11px] leading-snug text-dim">You begin as a maker of one kind of device and open other lines under Research as you grow. Related lines are cheaper to open; the most demanding need your technology to be far enough along. "Everything" starts with every line open.</div>
@@ -141,19 +167,19 @@ export function NewGame() {
             </label>
           </Panel>
 
-          <Panel title="Mode" bodyClass="p-3">
+          <Panel title="Mode" icon="box" bodyClass="p-3">
             <div className="flex gap-2">
-              <Btn active className="flex-1">
+              <Btn active icon="box" className="flex-1">
                 Sandbox
               </Btn>
-              <Btn disabled className="flex-1" title="Planned for a later build">
+              <Btn disabled icon="clock" className="flex-1" title="Planned for a later build">
                 Timeline 1970+
               </Btn>
             </div>
             <div className="mt-2 text-[11px] leading-snug text-dim">Sandbox starts in the present day. Every technology exists and is unlocked through research. Timeline mode is not built yet.</div>
           </Panel>
 
-          <Panel title="Difficulty" bodyClass="p-3" className="col-span-2">
+          <Panel title="Difficulty" icon="gauge" bodyClass="p-3" className="col-span-2">
             <div className="grid grid-cols-3 gap-2">
               {(Object.keys(DIFFICULTY) as Difficulty[]).map((k) => (
                 <button key={k} onClick={() => up({ difficulty: k, startCash: DIFFICULTY[k].startCash })} className={`border p-3 text-left transition-colors ${cfg.difficulty === k ? 'border-accent bg-accent/10' : 'border-line2 bg-raise hover:border-accent'}`}>
@@ -163,36 +189,38 @@ export function NewGame() {
               ))}
             </div>
             <div className="mt-2 grid grid-cols-4 gap-x-6">
-              <Row k="Overdraft" v={money(d.overdraft, 1)} />
-              <Row k="Days in debt allowed" v={d.debtDays} />
-              <Row k="Overhead" v={`${d.overhead}x`} />
-              <Row k="Brand growth" v={`${d.awareness}x`} />
+              <Row icon="bank" k="Overdraft" v={money(d.overdraft, 1)} />
+              <Row icon="hourglass" k="Days in debt allowed" v={d.debtDays} />
+              <Row icon="receipt" k="Overhead" v={`${d.overhead}x`} />
+              <Row icon="brand" k="Brand growth" v={`${d.awareness}x`} />
             </div>
           </Panel>
 
-          <Panel title="Sandbox settings" bodyClass="p-3" className="col-span-2">
+          <Panel title="Sandbox settings" icon="system" bodyClass="p-3" className="col-span-2">
             <div className="grid grid-cols-2 gap-x-8">
-              <Slider label="Starting cash" value={Math.log10(cfg.startCash)} min={logMin} max={logMax} step={0.02} format={() => money(cfg.startCash, 1)} onChange={(v) => up({ startCash: Math.round(Math.pow(10, v) / 1e5) * 1e5 })} disabled={cfg.unlimitedMoney} />
-              <Slider label="Research speed" value={cfg.researchSpeed} min={0.5} max={4} step={0.25} format={(v) => `${v.toFixed(2)}x`} onChange={(v) => up({ researchSpeed: v })} />
-              <Slider label="Rival strength" value={cfg.rivalStrength} min={0.5} max={1.5} step={0.05} format={(v) => `${v.toFixed(2)}x`} onChange={(v) => up({ rivalStrength: v })} hint="Raises or lowers the tech level rivals build with" />
-              <Slider label="Starting tech level" value={cfg.techLevel} min={0} max={4} step={1} format={(v) => `L${v} on every track`} onChange={(v) => up({ techLevel: v })} hint="Leading rivals start around level 3" />
+              <Slider label="Starting cash" icon="cash" value={Math.log10(cfg.startCash)} min={logMin} max={logMax} step={0.02} format={() => money(cfg.startCash, 1)} onChange={(v) => up({ startCash: Math.round(Math.pow(10, v) / 1e5) * 1e5 })} disabled={cfg.unlimitedMoney} />
+              <Slider label="Research speed" icon="research" value={cfg.researchSpeed} min={0.5} max={4} step={0.25} format={(v) => `${v.toFixed(2)}x`} onChange={(v) => up({ researchSpeed: v })} />
+              <Slider label="Rival strength" icon="rivals" value={cfg.rivalStrength} min={0.5} max={1.5} step={0.05} format={(v) => `${v.toFixed(2)}x`} onChange={(v) => up({ rivalStrength: v })} hint="Raises or lowers the tech level rivals build with" />
+              <Slider label="Starting tech level" icon="layers" value={cfg.techLevel} min={0} max={4} step={1} format={(v) => `L${v} on every track`} onChange={(v) => up({ techLevel: v })} hint="Leading rivals start around level 3" />
             </div>
             <label className="mt-1 flex items-center text-[11px]">
               <input type="checkbox" className="mr-2 accent-accent" checked={cfg.unlimitedMoney} onChange={(e) => up({ unlimitedMoney: e.target.checked })} />
               Unlimited money (no bankruptcy; research still takes time)
             </label>
             <div className="mt-3 border-t border-line pt-2">
-              <div className="label mb-1">You start with</div>
+              <Head icon="research" className="mb-1">
+                You start with
+              </Head>
               <div className="grid grid-cols-2 gap-x-8">
                 {TRACKS.map((t) => (
-                  <Row key={t} k={TRACK_INFO[t].name} v={TRACK_INFO[t].unlocks[cfg.techLevel]} />
+                  <Row key={t} icon={trackIcon(t)} k={TRACK_INFO[t].name} v={TRACK_INFO[t].unlocks[cfg.techLevel]} />
                 ))}
               </div>
             </div>
           </Panel>
 
           <div className="col-span-2 flex justify-end">
-            <Btn tone="primary" className="h-10 w-64" disabled={!cfg.companyName.trim()} onClick={() => (sfx.confirm(), begin({ ...cfg, companyName: cfg.companyName.trim() }))}>
+            <Btn tone="primary" icon="arrowRight" className="h-10 w-64" disabled={!cfg.companyName.trim()} onClick={() => (sfx.confirm(), begin({ ...cfg, companyName: cfg.companyName.trim() }))}>
               Found company
             </Btn>
           </div>

@@ -9,7 +9,8 @@ import { DEVICE_TYPES, type DeviceType, TRACKS } from '../sim/types'
 import { hasType, unlockBlocked, unlockCost, unlockOf } from '../sim/world'
 import { useGame, useStore } from '../store/game'
 import { Research } from './ResearchTree'
-import { Btn, Tabs, Tag, money, num } from './ui'
+import { Icon, trackIcon, typeIcon } from './icons'
+import { Btn, Lead, Tabs, Tag, money, num } from './ui'
 
 function DeviceLines() {
   const g = useGame()
@@ -31,9 +32,22 @@ function DeviceLines() {
           const made = g.products.filter((p) => p.companyId === 'player' && p.type === type).length
           return (
             <div key={type} className={`flex flex-col border bg-panel p-3 ${have ? 'border-line2' : 'border-line'}`}>
-              <div className="flex items-baseline justify-between">
-                <span className={`text-[12px] font-semibold uppercase tracking-[0.14em] ${have ? 'text-fg' : 'text-dim'}`}>{T.plural}</span>
-                {have ? <Tag tone="pos">open</Tag> : blocked ? <Tag>locked</Tag> : <Tag tone="accent">available</Tag>}
+              <div className="flex items-center justify-between gap-2">
+                <span className={`flex min-w-0 items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.14em] ${have ? 'text-fg' : 'text-dim'}`}>
+                  <Icon name={typeIcon(type)} size={18} className={have ? 'text-accent' : 'text-faint'} />
+                  <span className="truncate">{T.plural}</span>
+                </span>
+                {have ? (
+                  <Tag tone="pos" icon="check">
+                    open
+                  </Tag>
+                ) : blocked ? (
+                  <Tag icon="lock">locked</Tag>
+                ) : (
+                  <Tag tone="accent" icon="unlock">
+                    available
+                  </Tag>
+                )}
               </div>
               <div className="num mt-1 text-[10px] text-faint">
                 {segmentsOf(type).length} markets / {num(segmentsOf(type).reduce((a, s) => a + s.size, 0))} buyers a year
@@ -45,22 +59,24 @@ function DeviceLines() {
                   <>
                     {TRACKS.filter((t) => u.needs[t] !== undefined).map((t) => (
                       <div key={t} className={g.levels[t] >= (u.needs[t] ?? 0) ? 'text-pos' : 'text-warn'}>
+                        <Lead icon={trackIcon(t)} />
                         Needs {TRACK_INFO[t].name} level {u.needs[t]} (you have {g.levels[t]})
                       </div>
                     ))}
-                    {related.length > 0 && <div className="text-pos">40% off: you already make {related.map((t) => TYPES[t].plural.toLowerCase()).join(' and ')}</div>}
+                    {related.length > 0 && <div className="text-pos"><Lead icon="tag" />40% off: you already make {related.map((t) => TYPES[t].plural.toLowerCase()).join(' and ')}</div>}
                     {!related.length && u.from.length > 0 && <div>Cheaper once you make {u.from.map((t) => TYPES[t]?.plural.toLowerCase()).filter(Boolean).join(' or ')}</div>}
                   </>
                 )}
               </div>
               {have ? (
-                <Btn small className="mt-2" onClick={() => openDesigner({ type })}>
+                <Btn small icon="edit" className="mt-2" onClick={() => openDesigner({ type })}>
                   Design one
                 </Btn>
               ) : (
                 <Btn
                   small
                   tone="primary"
+                  icon={blocked ? 'lock' : 'unlock'}
                   className="mt-2"
                   disabled={!!blocked}
                   onClick={() => {
@@ -88,7 +104,7 @@ export function ResearchScreen() {
   if (!closed.length && view === 'tech') return <Research />
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <Tabs value={view} onChange={setView} options={[{ value: 'tech', label: 'Technology' }, { value: 'lines', label: 'Device lines', badge: ready || undefined }]} className="shrink-0 bg-panel" />
+      <Tabs value={view} onChange={setView} options={[{ value: 'tech', label: 'Technology', icon: 'research' }, { value: 'lines', label: 'Device lines', icon: 'devices', badge: ready || undefined }]} className="shrink-0 bg-panel" />
       <div className={`min-h-0 flex-1 ${view === 'lines' ? 'p-2' : ''}`}>{view === 'tech' ? <Research /> : <DeviceLines />}</div>
     </div>
   )

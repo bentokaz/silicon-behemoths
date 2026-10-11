@@ -7,7 +7,8 @@ import { researchItem, toggleResearch, trunkBlocked } from '../sim/game'
 import { staffEffects } from '../sim/staff'
 import { type GameState, TRACKS, type Track } from '../sim/types'
 import { useGame, useStore } from '../store/game'
-import { Btn, Meter, Panel, Row, Slider, money } from './ui'
+import { Icon, trackIcon } from './icons'
+import { Btn, IconBtn, Lead, Meter, Panel, Row, Slider, money } from './ui'
 
 const LABEL_W = 132
 const COL_W = 150
@@ -89,13 +90,14 @@ export function Research() {
     if (sel.kind === 'feature') {
       const f = FEATURES.find((x) => x.id === sel.id)!
       const item = researchItem(g, `f:${f.id}`)
-      return { id: item.id, title: f.name, sub: `Branch of ${TRACK_INFO[f.track].name} level ${f.level}`, note: f.note, cost: featureCost(f), item, startable: true }
+      return { id: item.id, icon: trackIcon(f.track), title: f.name, sub: `Branch of ${TRACK_INFO[f.track].name} level ${f.level}`, note: f.note, cost: featureCost(f), item, startable: true }
     }
     const state = trunkState(g, sel.track, sel.level)
     const item = researchItem(g, sel.track)
     const blocked = trunkBlocked(g, sel.track, sel.level)
     return {
       id: sel.track,
+      icon: trackIcon(sel.track),
       title: `${TRACK_INFO[sel.track].name} level ${sel.level}`,
       sub: TRACK_INFO[sel.track].unlocks[sel.level],
       note: state === 'owned' ? 'You own this level.' : state === 'future' ? `Research level ${sel.level - 1} first.${blocked ? ' ' + blocked + '.' : ''}` : (blocked ?? 'Ready to research.'),
@@ -110,7 +112,7 @@ export function Research() {
 
   return (
     <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_320px] gap-2 p-2">
-      <Panel title="Technology tree" right={<span className="label">click a node to inspect it</span>} bodyClass="overflow-auto">
+      <Panel title="Technology tree" icon="research" right={<span className="label">click a node to inspect it</span>} bodyClass="overflow-auto">
         <div className="relative" style={{ width, height }}>
           <svg width={width} height={height} className="absolute inset-0">
             {/* where the leading rivals are */}
@@ -129,8 +131,11 @@ export function Research() {
             <div key={t}>
               <div className="absolute border-t border-line" style={{ left: 0, top: bandY(row), width }} />
               <div className="absolute px-2" style={{ left: 0, top: trunkY(row) + 2, width: LABEL_W }}>
-                <div className={`text-xs font-semibold uppercase tracking-wider ${g.activeResearch.includes(t) ? 'text-accent' : 'text-fg'}`}>{TRACK_INFO[t].name}</div>
-                <div className="num text-[10px] text-dim">
+                <div className={`flex items-center gap-[6px] text-xs font-semibold uppercase tracking-wider ${g.activeResearch.includes(t) ? 'text-accent' : 'text-fg'}`}>
+                  <Icon name={trackIcon(t)} size={14} className={g.activeResearch.includes(t) ? '' : 'text-dim'} />
+                  {TRACK_INFO[t].name}
+                </div>
+                <div className="num pl-5 text-[10px] text-dim">
                   L{g.levels[t]} / {MAX_LEVEL}
                 </div>
               </div>
@@ -142,7 +147,26 @@ export function Research() {
                 return (
                   <button key={l} onClick={() => setSel({ kind: 'trunk', track: t, level: l })} title={TRACK_INFO[t].unlocks[l]} className={`absolute overflow-hidden border px-2 text-left transition-colors hover:border-accent ${cls} ${picked ? 'outline outline-1 outline-offset-2 outline-accent' : ''}`} style={{ left: trunkX(l), top: trunkY(row), width: NODE_W, height: NODE_H }}>
                     <div className="truncate text-[11px] leading-tight">{TRACK_INFO[t].unlocks[l]}</div>
-                    <div className="num text-[9px] leading-tight text-dim">{st === 'owned' ? 'OWNED' : running ? 'RESEARCHING' : st === 'next' ? money(researchCost(l), 1) : st === 'blocked' ? 'NEEDS OTHER TECH' : money(researchCost(l), 1)}</div>
+                    <div className="num whitespace-nowrap text-[9px] leading-tight text-dim">
+                      {st === 'owned' ? (
+                        <>
+                          <Lead icon="check" size={9} />
+                          OWNED
+                        </>
+                      ) : running ? (
+                        <>
+                          <Lead icon="play" size={9} />
+                          RESEARCHING
+                        </>
+                      ) : st === 'blocked' ? (
+                        <>
+                          <Lead icon="lock" size={9} />
+                          NEEDS OTHER TECH
+                        </>
+                      ) : (
+                        money(researchCost(l), 1)
+                      )}
+                    </div>
                     {running && <div className="absolute bottom-0 left-0 h-[3px] bg-accent" style={{ width: `${Math.min(100, ((g.progress[t] ?? 0) / researchCost(l)) * 100)}%` }} />}
                   </button>
                 )
@@ -161,7 +185,7 @@ export function Research() {
               <button key={f.id} onClick={() => setSel({ kind: 'feature', id: f.id })} title={f.note} className={`absolute overflow-hidden border px-2 text-left transition-colors hover:border-accent ${cls} ${picked ? 'outline outline-1 outline-offset-2 outline-accent' : ''}`} style={{ left: featX(f.level), top: featY(row), width: FEAT_W, height: FEAT_H }}>
                 <div className="flex items-center justify-between gap-1">
                   <span className="truncate text-[11px]">{f.name}</span>
-                  <span className="num shrink-0 text-[9px] text-dim">{owned ? 'OWNED' : running ? 'RUN' : money(featureCost(f), 1)}</span>
+                  <span className="num shrink-0 text-[9px] text-dim">{owned ? <Icon name="check" size={10} className="text-accent" /> : running ? <Icon name="play" size={10} className="text-accent" /> : money(featureCost(f), 1)}</span>
                 </div>
                 {running && <div className="absolute bottom-0 left-0 h-[3px] bg-accent" style={{ width: `${Math.min(100, ((g.progress[id] ?? 0) / featureCost(f)) * 100)}%` }} />}
               </button>
@@ -171,32 +195,45 @@ export function Research() {
       </Panel>
 
       <div className="flex min-h-0 flex-col gap-2 overflow-y-auto">
-        <Panel title={detail.title} className="shrink-0" bodyClass="px-2 py-2">
+        <Panel title={detail.title} icon={detail.icon} className="shrink-0" bodyClass="px-2 py-2">
           <div className="text-sm text-fg">{detail.sub}</div>
           <div className="mt-1 text-[11px] leading-snug text-dim">{detail.note}</div>
           <div className="mt-2">
-            <Row k="Cost" v={detail.cost ? money(detail.cost) : 'starting tech'} />
-            {!detail.item.done && detail.startable && <Row k="Invested" v={`${money(progress)} (${Math.round((progress / detail.cost) * 100)}%)`} />}
-            {eta > 0 && <Row k="Finishes in about" v={`${eta} days`} />}
+            <Row icon="cash" k="Cost" v={detail.cost ? money(detail.cost) : 'starting tech'} />
+            {!detail.item.done && detail.startable && <Row icon="coins" k="Invested" v={`${money(progress)} (${Math.round((progress / detail.cost) * 100)}%)`} />}
+            {eta > 0 && <Row icon="hourglass" k="Finishes in about" v={`${eta} days`} />}
           </div>
           {detail.item.done ? (
-            <div className="num mt-2 border border-accent px-2 py-1 text-center text-[11px] text-accent">OWNED</div>
+            <div className="num mt-2 border border-accent px-2 py-1 text-center text-[11px] text-accent">
+              <Lead icon="check" />
+              OWNED
+            </div>
           ) : (
-            <Btn tone={active ? 'default' : 'primary'} className="mt-2 h-9 w-full" disabled={!active && !(detail.startable && detail.item.available)} onClick={() => toggle(detail.id)}>
+            <Btn tone={active ? 'default' : 'primary'} icon={active ? 'stop' : detail.startable && detail.item.available ? 'play' : 'lock'} className="mt-2 h-9 w-full" disabled={!active && !(detail.startable && detail.item.available)} onClick={() => toggle(detail.id)}>
               {active ? 'Stop researching' : detail.startable && detail.item.available ? 'Start research' : 'Locked'}
             </Btn>
           )}
         </Panel>
-        <Panel title="R&D budget" className="shrink-0" bodyClass="px-2 py-1">
-          <Slider label="Monthly budget" value={g.rdBudget} min={0} max={Math.max(2e6, Math.ceil((g.cash * 0.25) / 1e5) * 1e5, g.rdBudget)} step={10e3} format={(v) => money(v)} onChange={(v) => act((s) => void (s.rdBudget = v))} />
-          <Row k="Projects running" v={g.activeResearch.length} />
-          <Row k="Per project, per month" v={money(perItem)} />
-          <Row k="Staff bonus" v={`${fx.research.toFixed(2)}x`} tone={fx.research > 1 ? 'text-pos' : undefined} />
-          <Row k="Spent this month" v={money(g.cur.rd)} />
-          {g.rdBudget > 0 && !g.activeResearch.length && <div className="py-1 text-[11px] text-warn">Start at least one project, or no money is spent.</div>}
-          {g.rdBudget === 0 && g.activeResearch.length > 0 && <div className="py-1 text-[11px] text-warn">Set a budget to make progress.</div>}
+        <Panel title="R&D budget" icon="cash" className="shrink-0" bodyClass="px-2 py-1">
+          <Slider label="Monthly budget" icon="cash" value={g.rdBudget} min={0} max={Math.max(2e6, Math.ceil((g.cash * 0.25) / 1e5) * 1e5, g.rdBudget)} step={10e3} format={(v) => money(v)} onChange={(v) => act((s) => void (s.rdBudget = v))} />
+          <Row icon="play" k="Projects running" v={g.activeResearch.length} />
+          <Row icon="coins" k="Per project, per month" v={money(perItem)} />
+          <Row icon="staff" k="Staff bonus" v={`${fx.research.toFixed(2)}x`} tone={fx.research > 1 ? 'text-pos' : undefined} />
+          <Row icon="receipt" k="Spent this month" v={money(g.cur.rd)} />
+          {g.rdBudget > 0 && !g.activeResearch.length && (
+            <div className="py-1 text-[11px] text-warn">
+              <Lead icon="alert" />
+              Start at least one project, or no money is spent.
+            </div>
+          )}
+          {g.rdBudget === 0 && g.activeResearch.length > 0 && (
+            <div className="py-1 text-[11px] text-warn">
+              <Lead icon="alert" />
+              Set a budget to make progress.
+            </div>
+          )}
         </Panel>
-        <Panel title="Running projects" className="shrink-0" bodyClass="px-2 py-1">
+        <Panel title="Running projects" icon="play" className="shrink-0" bodyClass="px-2 py-1">
           {g.activeResearch.length === 0 && <div className="py-1 text-[11px] text-faint">Nothing is being researched.</div>}
           {g.activeResearch.map((id) => {
             const item = researchItem(g, id)
@@ -204,16 +241,14 @@ export function Research() {
               <div key={id} className="py-1">
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-[11px]">{item.name}</span>
-                  <button className="num text-[10px] text-dim hover:text-neg" onClick={() => toggle(id)}>
-                    STOP
-                  </button>
+                  <IconBtn icon="stop" tone="ghost" title={`Stop researching ${item.name}`} className="!h-5 !w-5 hover:!text-neg" onClick={() => toggle(id)} />
                 </div>
                 <Meter value={g.progress[id] ?? 0} max={item.cost || 1} />
               </div>
             )
           })}
         </Panel>
-        <Panel title="How it works" className="shrink-0" bodyClass="px-2 py-2 text-[11px] leading-snug text-dim">
+        <Panel title="How it works" icon="info" className="shrink-0" bodyClass="px-2 py-2 text-[11px] leading-snug text-dim">
           Each row is a track that climbs level by level. Smaller boxes below are optional features that branch off a level. Dashed links show a level that also needs another track. The amber line is where leading rivals are today. The budget is split evenly between running projects.
         </Panel>
       </div>
