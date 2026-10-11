@@ -251,11 +251,11 @@ export function FactoryFloor({ site, life, sparks, plan }: { site: Site; life: F
       if (r.fly >= 0) {
         r.fly += dt / TIP
         const k = Math.min(1, r.fly)
-        // from the test bed, up and over the front edge, down into the bin
+        // from the test bed, out under the gantry, over the front edge and down into the bin
         const x = 0.22 * k
         const z = 0.1 + 0.46 * k
         const top = 0.3 + 0.05 * Math.min(BIN, r.bin)
-        const y = 0.92 + (top - 0.92) * k * k + Math.sin(k * Math.PI) * 0.32
+        const y = 0.92 + (top - 0.92) * k * k + Math.sin(k * Math.PI) * 0.1
         Q.setFromEuler(E.set(k * 2.4, f.a, k * 1.1))
         M.compose(V.set(frameX(f, x, z), y, frameZ(f, x, z)), Q, S.set(0.2, 0.14, 0.2))
         cartons.setMatrixAt(slot, M)

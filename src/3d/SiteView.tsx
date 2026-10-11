@@ -1186,7 +1186,7 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
         {crowd && <People crowd={crowd} cap={site.kind === 'store' ? cap : cap + 8} neg={neg} />}
         {crowd && site.kind === 'office' && <DeskScreens site={site} items={liveDesks} crowd={crowd} glow={M.glow} />}
         {/* after dark the rooms are lit from within, the ones with people in them brightest */}
-        <RoomLights site={site} crowd={crowd} mood={mood} lamps={ROOM_LAMPS[prefs.quality]} busy={lively && site.kind === 'factory' ? () => running : undefined} onDark={mode === 'cut' ? undefined : setDarkRooms} />
+        <RoomLights site={site} crowd={crowd} mood={mood} lamps={site.kind === 'venue' ? 0 : ROOM_LAMPS[prefs.quality]} gain={site.kind === 'venue' ? 0.15 : 1} busy={lively && site.kind === 'factory' ? () => running : undefined} onDark={mode === 'cut' ? undefined : setDarkRooms} />
         {site.kind === 'venue' && <Audience site={site} state={houseState} skip={crowd ? skipSeat : undefined} />}
         {stage && !crowd && <Presenter site={site} cheer={!!show?.cheer} />}
         <SparksView sparks={sparks} />

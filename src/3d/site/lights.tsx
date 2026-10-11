@@ -138,6 +138,8 @@ interface Props {
   /** The people on site, when they are drawn: rooms with someone in them are lit. Without it every room is. */
   crowd: Crowd | null
   mood: Mood
+  /** How strong the glow on the floor is: a venue, lit from its stage, wants less of it. */
+  gain?: number
   /** How many real lamps there are to hand round. */
   lamps: number
   /** Rooms that count as occupied whoever is drawn in them: a factory hall with its line running, say. */
@@ -146,7 +148,7 @@ interface Props {
   onDark?: (rooms: ReadonlySet<number>) => void
 }
 
-export function RoomLights({ site, crowd, mood, lamps, busy, onDark }: Props) {
+export function RoomLights({ site, crowd, mood, lamps, busy, onDark, gain = 1 }: Props) {
   const camera = useThree((s) => s.camera)
   const controls = useThree((s) => s.controls) as unknown as { target: THREE.Vector3 } | null
   const { w, h } = site
@@ -291,7 +293,7 @@ export function RoomLights({ site, crowd, mood, lamps, busy, onDark }: Props) {
       st.drawn = stamp
       let k = 0
       for (const r of plan.rooms) {
-        const level = (st.level.get(r.n) ?? 0) * night * 0.26
+        const level = (st.level.get(r.n) ?? 0) * night * 0.26 * gain
         for (const t of r.tiles) {
           // a little brighter under the lamp than in the corners
           const d = Math.hypot((t % w) + 0.5 - w / 2 - r.x, Math.floor(t / w) + 0.5 - h / 2 - r.z) / (r.radius * 1.6 + 2)
