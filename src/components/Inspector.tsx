@@ -11,12 +11,15 @@ import { RECALL_DEADLINE, RETAIL_CUT, companyOf, discontinue, fmtDate, orderProd
 import { normalised, tierAverages } from '../sim/market'
 import { CONTRACT, buildCost, factoryLine, pendingUnits, supplyPrice } from '../sim/ops'
 import { VARIANTS } from '../sim/rivals'
-import { coverScreen } from '../sim/geometry'
+import { coverScreen, isCoverCam, isFlip } from '../sim/geometry'
 import { batteryLabel, chargeWatts, chipFor, foldedThickness, panelName } from '../sim/scoring'
 import { type DeviceDesign, type DeviceType, type GameState, type Product, type ProductionOrder, SUBS, SUPPLY_CATS } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { Icon, type IconName, supplyIcon, typeIcon } from './icons'
 import { Btn, Drawer, Head, Lead, Meter, Mini, NumInput, Row, Tabs, Tag, chart, money, num, pct } from './ui'
+
+/** Where to look from when a device is opened up: at the side that comes off. */
+const TEAR_VIEW: Partial<Record<DeviceType, ViewName>> = { laptop: 'front', console: 'front', earbuds: 'front', headset: 'front', speaker: 'front' }
 
 /** The icon beside each line of a spec sheet. Lines not listed here get the plain list mark. */
 const SPEC_ICON: Record<string, IconName> = {
@@ -54,7 +57,7 @@ export function specLines(d: DeviceDesign, diag: number, g?: GameState): [string
   const s = d.specs
   const type = d.type
   const T = TYPES[type]
-  const rear = d.parts.filter((p) => p.kind === 'camera' && p.face === 'back')
+  const rear = d.parts.filter((p) => p.kind === 'camera' && p.face === 'back' && !isCoverCam(d, p))
   const selfie = d.parts.filter((p) => p.kind === 'camera' && p.face === 'front')
   const extras = s.extras.map((id) => EXTRAS.find((e) => e.id === id)?.name).filter(Boolean)
   const size = `${d.body.width} x ${d.body.height} x ${d.body.thickness} mm`
@@ -66,6 +69,7 @@ export function specLines(d: DeviceDesign, diag: number, g?: GameState): [string
   else if (!T.noScreen) lines.push(['Display', `${diag.toFixed(type === 'watch' ? 2 : 1)}" ${panelInfo(s.panel).name}${type === 'watch' ? '' : ` ${s.refresh} Hz`}`])
   if (type === 'foldable') {
     const cover = coverScreen(d.body)
+    lines.push(['Form', isFlip(d.body) ? 'Flip: folds in half across the middle' : 'Book: opens sideways'])
     lines.push(['Cover screen', `${(Math.hypot(cover.w, cover.h) / 25.4).toFixed(1)}"`])
     lines.push(['Hinge', `${HINGES[s.hinge ?? 0].name}, ${foldedThickness(d).toFixed(1)} mm thick when shut`])
   }
@@ -330,11 +334,13 @@ export function ProductDrawer() {
   const [view, setView] = useState<ViewName | undefined>(undefined)
   const [nonce, setNonce] = useState(0)
   const [color, setColor] = useState(-1)
+  const [torn, setTorn] = useState(false)
 
   useEffect(() => {
     setView(undefined)
     setColor(-1)
     setTab('overview')
+    setTorn(false)
   }, [id])
   useEffect(() => {
     if (!id) return
@@ -361,13 +367,16 @@ export function ProductDrawer() {
       }
     >
       <div className="relative h-[270px] border-b border-line">
-        <DeviceView key={product.id} design={product.design} view={view} viewNonce={nonce} autoRotate logo={player(g).logo} colorIndex={color} />
+        <DeviceView key={product.id} design={product.design} view={view} viewNonce={nonce} autoRotate={!torn} logo={player(g).logo} colorIndex={color} teardown={torn} />
         <div className="absolute left-2 top-2 flex border border-line bg-panel/90">
           {(['back', 'front', 'side'] as ViewName[]).map((v) => (
             <Btn key={v} small tone="ghost" active={view === v} onClick={() => (setView(v), setNonce((x) => x + 1))}>
               {v}
             </Btn>
           ))}
+          <Btn small tone="ghost" icon="layers" active={torn} title="Open it up and see what is inside" onClick={() => (setTorn(!torn), setView(TEAR_VIEW[product.type] ?? 'back'), setNonce((x) => x + 1))}>
+            Teardown
+          </Btn>
         </div>
         {!!product.design.colors?.length && (
           <div className="absolute bottom-2 left-2 flex gap-1">

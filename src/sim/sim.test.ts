@@ -45,7 +45,7 @@ import {
   trailingUnits,
   upgradeOffice,
 } from './game'
-import { GRIP, HINGE_CLEAR, SHOULDER, clampPart, coverScreen, designFace, faceSize, facesFor, isEdge, isRing, kindsFor, mountOf, newPart, partExtent, speakerShape, standMount } from './geometry'
+import { GRIP, HINGE_CLEAR, SHOULDER, clampPart, coverScreen, isCoverCam, designFace, faceSize, facesFor, isEdge, isRing, kindsFor, mountOf, newPart, partExtent, speakerShape, standMount } from './geometry'
 import { bestSegment, utility } from './market'
 import { pendingUnits, supplyPrice } from './ops'
 import { type LayoutOptions, VARIANTS, deriveVariant, fitInside, fitSpeaker, layoutParts, speakerSockets, syncSockets } from './rivals'
@@ -1212,14 +1212,22 @@ describe('foldables, headsets, speakers and handhelds', () => {
     expect(cover.w).toBeLessThan(d.body.width / 2)
     for (const p of d.parts) {
       const e = partExtent(p)
-      // everything on the back is on the half that is not the cover screen
-      if (p.face === 'back') expect(p.x + e.w / 2, p.kind).toBeLessThanOrEqual(-HINGE_CLEAR + 1e-6)
+      // everything on the back is on the half that is not the cover screen, but for the camera that looks out through it
+      if (p.face === 'back' && isCoverCam(d, p)) expect(Math.abs(p.x - cover.x), 'cover camera').toBeLessThan(cover.w / 2)
+      else if (p.face === 'back') expect(p.x + e.w / 2, p.kind).toBeLessThanOrEqual(-HINGE_CLEAR + 1e-6)
       if (p.face === 'top' || p.face === 'bottom') expect(Math.abs(p.x) - e.w / 2, p.kind).toBeGreaterThanOrEqual(HINGE_CLEAR - 1e-6)
     }
-    expect(d.parts.some((p) => p.kind === 'camera' && p.face === 'back')).toBe(true)
-    // dragging a camera onto the cover screen puts it back on its own half
-    const cam = d.parts.find((p) => p.kind === 'camera' && p.face === 'back')!
-    expect(clampPart(d.body, { ...cam, x: cover.x }, 'foldable').x).toBeLessThan(0)
+    expect(d.parts.some((p) => p.kind === 'camera' && p.face === 'back' && !isCoverCam(d, p))).toBe(true)
+    // the cover screen's camera is a part, and counts as a front camera
+    expect(d.parts.filter((p) => isCoverCam(d, p)).length).toBe(1)
+    // a camera dragged onto the cover half becomes one, and stays inside the cover screen
+    const cam = d.parts.find((p) => p.kind === 'camera' && p.face === 'back' && !isCoverCam(d, p))!
+    const moved = clampPart(d.body, { ...cam, x: d.body.width / 2, y: d.body.height }, 'foldable')
+    expect(Math.abs(moved.x - cover.x)).toBeLessThan(cover.w / 2)
+    expect(Math.abs(moved.y - cover.y)).toBeLessThan(cover.h / 2)
+    // anything else dragged there goes back to its own half
+    const logo = d.parts.find((p) => p.kind === 'logo') ?? { ...cam, kind: 'flash' as const }
+    expect(clampPart(d.body, { ...logo, face: 'back', x: cover.x }, 'foldable').x).toBeLessThan(0)
     const plain = structuredClone(d)
     plain.specs.hinge = 0
     const best = structuredClone(d)

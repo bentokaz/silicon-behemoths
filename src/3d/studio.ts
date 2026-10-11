@@ -19,9 +19,28 @@ interface Studio {
   hint: string | null
   /** A foldable is being shown shut. */
   folded: boolean
+  /** The Internals panel is open, so the device opens up to show what is inside. */
+  internals: boolean
+  /** The player would rather it stayed shut while they work under Internals. */
+  keepClosed: boolean
+  /** How far the layers are pulled apart, 0 (lid off) to 1 (fully exploded). */
+  explode: number
+  /** The row of the Internals panel the pointer is on: its components light up. A key such as 'battery' or 'io:usbc'. */
+  hover: string | null
+  /** The component picked on the opened device. */
+  pick: Picked | null
 }
 
-export const useStudio = create<Studio>(() => ({ caption: null, guides: [], hint: null, folded: false }))
+/** A component of the opened device that has been clicked: enough of it to label it and find its row. */
+export interface Picked {
+  id: string
+  label: string
+  figure: string
+  specs: string[]
+  partId?: string
+}
+
+export const useStudio = create<Studio>(() => ({ caption: null, guides: [], hint: null, folded: false, internals: false, keepClosed: false, explode: 0, hover: null, pick: null }))
 
 let hintTimer = 0
 /** Show a hint over the studio for a moment. */
@@ -32,4 +51,4 @@ export function studioHint(text: string) {
 }
 
 /** Development only: freezes demonstrations at a moment in time so single frames can be inspected. */
-export const studioDebug: { time: number | null } = { time: null }
+export const studioDebug: { time: number | null; open: number | null; explode: number | null } = { time: null, open: null, explode: null }

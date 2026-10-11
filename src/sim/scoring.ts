@@ -1,8 +1,8 @@
 // Turns a DeviceDesign into raw sub-scores, a design report derived from the
 // physical model, and a unit cost. No randomness: same design, same result.
 import { CHARGE_W, EXTRAS, LENSES, MIN_BEZEL, MIN_THICKNESS, PANEL_NAMES, REFRESH, batteryDensity, chipInfo, featuresAtLevels, idealRam, idealStorage, materialInfo, panelInfo, refScore, sensorInfo } from '../data/catalog'
-import { ANC, COOLERS, DRIVERS, GPUS, HEADSET_PANELS, HINGES, MIC_ARRAYS, OPTICS, SPEAKERS, SPEAKER_DRIVERS, STRAPS, TYPES, VIDEO_OUT, headStrap, inputOptions, ioInfo, standInfo } from '../data/devices'
-import { contains, coverScreen, isEdge, isRing, rectsOverlap, screenRect, speakerShape, standMount } from './geometry'
+import { ANC, COOLERS, DRIVERS, FLIP, GPUS, HEADSET_PANELS, HINGES, MIC_ARRAYS, OPTICS, SPEAKERS, SPEAKER_DRIVERS, STRAPS, TYPES, VIDEO_OUT, headStrap, inputOptions, ioInfo, standInfo } from '../data/devices'
+import { contains, coverScreen, isCoverCam, isEdge, isFlip, isRing, rectsOverlap, screenRect, speakerShape, speakerSockets, standMount } from './geometry'
 import { clamp } from './rng'
 import type { Body, CostParts, CustomChip, DeviceDesign, DeviceType, Evaluation, Issue, Levels, PlacedPart, Specs } from './types'
 
@@ -24,7 +24,8 @@ export const foldedThickness = (d: DeviceDesign) => 2 * d.body.thickness + (HING
 
 export function maxBattery(b: Body, batteryLevel: number, type: DeviceType = 'phone'): number {
   if (TYPES[type].mains) return 0
-  const m = TYPES[type].batt
+  // a flip's hinge crosses its width, not its height, so the room it takes comes off the other way
+  const m = type === 'foldable' && isFlip(b) ? { ...TYPES[type].batt, mx: 8, my: 34 } : TYPES[type].batt
   // a headset with a battery on the back of its band has half as much room again
   const room = type === 'headset' && b.strap === 'pack' ? 1.5 : 1
   const vol = (Math.max(0, b.width - m.mx) * Math.max(0, b.height - m.my) * Math.max(0, b.thickness - m.mt) * room) / 1000
@@ -196,15 +197,16 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
   }
 
   // ---- parts
-  const rear = d.parts.filter((p) => p.kind === 'camera' && p.face === 'back')
-  const selfie = d.parts.filter((p) => p.kind === 'camera' && p.face === 'front')
+  // a camera in a book foldable's cover screen is a front camera in all but where it is
+  const rear = d.parts.filter((p) => p.kind === 'camera' && p.face === 'back' && !isCoverCam(d, p))
+  const selfie = d.parts.filter((p) => p.kind === 'camera' && (p.face === 'front' || isCoverCam(d, p)))
   const notches = d.parts.filter((p) => p.kind === 'notch')
   const camQ = (p: PlacedPart) => {
     const sn = sensorInfo(p.sensor ?? 0)
     if ((p.sensor ?? 0) > lv.camera) err(`${sn.name} sensor needs Camera level ${p.sensor}`, p.id)
     if (p.lens === 'periscope' && !owned.has('periscope')) err('The periscope lens is not researched yet', p.id)
     const dia = Math.min(p.w, p.h)
-    const need = p.face === 'front' ? selfieMinDia(p.sensor ?? 0) : sn.minDia
+    const need = p.face === 'front' || isCoverCam(d, p) ? selfieMinDia(p.sensor ?? 0) : sn.minDia
     if (dia < need - 0.05) warn(`Lens is too small for the ${sn.name} sensor (needs ${need} mm)`, p.id)
     return sn.quality * clamp(dia / need, 0.4, 1)
   }
@@ -216,7 +218,7 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
   const selfieQ = best(selfie)
 
   for (const p of selfie) {
-    const inScreen = hasScreen && Math.abs(p.x - scr.cx) < scr.w / 2 && Math.abs(p.y - scr.cy) < scr.h / 2
+    const inScreen = p.face === 'front' && hasScreen && Math.abs(p.x - scr.cx) < scr.w / 2 && Math.abs(p.y - scr.cy) < scr.h / 2
     if (!inScreen) continue
     if (p.underDisplay) {
       if (!owned.has('udc')) err('Under-display camera is not researched yet', p.id)
@@ -314,6 +316,11 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
     special = (0.12 + 0.88 * Math.min(1, ioValue / 5.2)) * ref * 1.1
   }
 
+  const crowded = !!spk && !speakerSockets(b, io).fits
+  if (crowded) {
+    const held = sockets.filter((p) => p.face === 'back').length
+    warn(`The back panel is too small for its ${held} sockets: make the body larger, or fit fewer`)
+  }
   // overlaps: parts may sit on an island, and a camera may sit in a notch
   let overlaps = 0
   for (let i = 0; i < d.parts.length; i++) {
@@ -327,7 +334,8 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
       if (oneIsland || oneNotch || isRing(p, type) || isRing(q, type)) continue
       if (rectsOverlap(p, q)) {
         overlaps++
-        warn('Parts are clipping into each other', q.id)
+        // sockets squeezed onto a speaker's panel have been named already
+        if (!(crowded && p.face === 'back' && (p.kind === 'port' || q.kind === 'port'))) warn('Parts are clipping into each other', q.id)
       }
     }
   }
@@ -367,7 +375,9 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
     // the assistant is as good as what it hears and how fast it thinks, and a screen lets it show its answers
     display = (0.5 * refScore(mics.tech) + 0.5 * chip.perf) * (spk.screen ? 0.84 + 0.3 * Math.min(1, panel.quality / ref) : 0.84)
   } else {
-    const sizeF = diag < T.diag[0] ? 1 - Math.min(0.15, ((T.diag[0] - diag) / T.diag[0]) * 0.6) : diag <= T.diag[1] ? 1 : 0.93
+    // a flip is judged as the tall phone it opens into, not as a small tablet
+    const want = type === 'foldable' && isFlip(b) ? FLIP.diag : T.diag
+    const sizeF = diag < want[0] ? 1 - Math.min(0.15, ((want[0] - diag) / want[0]) * 0.6) : diag <= want[1] ? 1 : 0.93
     display = panel.quality * (0.8 + rf.bonus) * sizeF * (type === 'foldable' ? hinge.crease : 1)
   }
 
@@ -423,7 +433,7 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
   const judged = type === 'console' || type === 'earbuds' || type === 'headset' ? 'front' : type === 'speaker' ? 'top' : 'back'
   const backParts = d.parts.filter((p) => p.face === judged)
   // a foldable's back is judged about the middle of the half that is not a screen
-  const mid = type === 'foldable' ? -b.width / 4 : 0
+  const mid = type === 'foldable' && !isFlip(b) ? -b.width / 4 : 0
   let tidy = 0
   for (const p of backParts) {
     const centred = Math.abs(p.x - mid) < 0.75
@@ -447,7 +457,8 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
     const camMass = rear.reduce((a, p) => a + p.w * p.h, 0)
     const camOffset = camMass ? Math.abs(rear.reduce((a, p) => a + p.x * p.w * p.h, 0) / camMass) / (b.width / 2) : 0
     // a foldable is held shut most of the time: half as wide, but twice as thick
-    ergo = type === 'foldable' ? 0.4 * (1 - lerp01(b.width / 2, 74, 86)) + 0.3 * reach + 0.3 * (1 - lerp01(foldedThickness(d), 10.5, 16.5)) : 0.5 * (1 - lerp01(b.width, 78, 90)) + 0.3 * reach + 0.2 * (1 - lerp01(camOffset * (camMass / backArea), 0.03, 0.12))
+    // a flip shut is as wide as it is open, and is forgiven a little more thickness for being half as tall
+    ergo = type === 'foldable' && isFlip(b) ? 0.4 * (1 - lerp01(b.width, 76, 88)) + 0.3 * reach + 0.3 * (1 - lerp01(foldedThickness(d), 13.5, 19.5)) : type === 'foldable' ? 0.4 * (1 - lerp01(b.width / 2, 74, 86)) + 0.3 * reach + 0.3 * (1 - lerp01(foldedThickness(d), 10.5, 16.5)) : 0.5 * (1 - lerp01(b.width, 78, 90)) + 0.3 * reach + 0.2 * (1 - lerp01(camOffset * (camMass / backArea), 0.03, 0.12))
   } else if (type === 'handheld') {
     // light enough to hold up for an hour, and not so wide that the thumbs have to stretch
     ergo = 0.5 * (1 - lerp01(weight, 430, 780)) + 0.3 * (1 - lerp01(b.width, 268, 308)) + 0.2 * (buttons.length ? 1 : 0)

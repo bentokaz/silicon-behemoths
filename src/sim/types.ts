@@ -60,6 +60,10 @@ export interface Body {
   /** Speakers: the shape of the body, and whether a touch screen is set into its front. */
   form?: 'column' | 'orb' | 'block'
   screen?: boolean
+  /** Foldables: how it folds. A book opens sideways about its long axis; a flip is a tall phone that folds in half about its short one. Missing means a book. */
+  fold?: 'book' | 'flip'
+  /** Flips: size of the cover screen on the outside of the upper half, an index into FLIP_COVERS. */
+  cover?: number
 }
 
 export interface Specs {

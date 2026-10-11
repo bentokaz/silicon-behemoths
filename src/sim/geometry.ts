@@ -1,6 +1,6 @@
 // Pure geometry helpers shared by the scoring code and the 3D builder.
 import { sensorInfo } from '../data/catalog'
-import { TYPES, standInfo } from '../data/devices'
+import { TYPES, ioInfo, standInfo } from '../data/devices'
 import { clamp } from './rng'
 import type { Body, DeviceDesign, DeviceType, Face, PartKind, PlacedPart } from './types'
 
@@ -155,6 +155,11 @@ export function laptopDeck(b: Body): { x: number; y: number; w: number; h: numbe
 
 // ---- foldables
 
+/** True for a foldable that folds like a flip phone, about its short axis. */
+export const isFlip = (b: Pick<Body, 'fold'>) => b.fold === 'flip'
+/** True for the camera set into a book foldable's cover screen: a camera on the back of the half that folds over. */
+export const isCoverCam = (d: Pick<DeviceDesign, 'type' | 'body'>, p: Pick<PlacedPart, 'kind' | 'face' | 'x'>) => d.type === 'foldable' && !isFlip(d.body) && p.kind === 'camera' && p.face === 'back' && p.x > 0
+
 /** Half the width of the strip down the middle of a foldable's edges and back that parts keep clear of: the hinge. */
 export const HINGE_CLEAR = 4
 
@@ -164,10 +169,48 @@ export const HINGE_CLEAR = 4
  */
 export function coverScreen(b: Body): { x: number; y: number; w: number; h: number; r: number } {
   const m = Math.max(b.bezelSide, 1.2) + 1.4
+  if (isFlip(b)) {
+    // a flip carries it on the back of its upper half, beside the cameras or right across them
+    const top = b.height / 2 - m
+    const bottom = HINGE_CLEAR + 2.5
+    const size = clamp(Math.round(b.cover ?? 1), 0, 2)
+    const wide = b.width - 2 * m
+    if (size === 2) return { x: 0, y: (top + bottom) / 2, w: Math.max(10, wide), h: Math.max(10, top - bottom), r: Math.max(b.corner - m, 0.6) }
+    const w = Math.max(10, wide * (size === 1 ? 0.56 : 0.5))
+    const h = size === 1 ? Math.max(10, Math.min((top - bottom) * 0.62, w)) : 13
+    return { x: b.width / 2 - m - w / 2, y: size === 1 ? (top + bottom) / 2 : top - h / 2 - 4, w, h, r: size === 1 ? 5 : 3 }
+  }
   return { x: b.width / 4, y: 0, w: Math.max(10, b.width / 2 - 2 * m), h: Math.max(10, b.height - 2 * m), r: Math.max(b.corner - m, 0.6) }
 }
 
+// ---- consoles
+
+/** The panels set into the front and back of a console's shell: the rounding of the shell's edges, the rim left round a panel, and the size of the panel. */
+export function consoleShape(b: Body): { bevel: number; rim: number; pw: number; ph: number } {
+  const small = Math.min(b.width, b.height)
+  const bevel = b.edge === 'round' ? Math.min(6, Math.max(1.5, small * 0.07)) : 0.9
+  const rim = small < 60 ? 1.6 : 3
+  return { bevel, rim, pw: b.width - 2 * bevel - 2 * rim, ph: b.height - 2 * bevel - 2 * rim }
+}
+
+/** The exhaust fans in a console's rear panel, in back-face coordinates: one for the simplest cooling, more for the rest. */
+export function consoleFans(b: Body, cooling: number): { x: number; y: number; r: number }[] {
+  const { pw, ph } = consoleShape(b)
+  const n = [1, 2, 2, 3][cooling] ?? 1
+  const r = Math.min(ph * 0.3, pw * 0.085, 30)
+  return Array.from({ length: n }, (_, i) => ({ x: -pw * 0.2 + (i - (n - 1) / 2) * r * 2.5, y: ph * 0.5 - r * 1.25, r }))
+}
+
 // ---- headsets
+
+/** Where a headset's two lenses sit on its face side: the size of the cushion round them, the lens radius and half the distance between their centres. */
+export function headsetEyes(b: Body, optics: number): { gw: number; gh: number; wall: number; lr: number; apart: number } {
+  const gw = b.width - 8
+  const gh = b.height - 6
+  const wall = Math.min(13, b.height * 0.14)
+  const lr = Math.min((gh - 2 * wall) * 0.44, (gw - 2 * wall) * 0.2) * (optics >= 2 ? 0.9 : 1)
+  return { gw, gh, wall, lr, apart: Math.min(Math.max(32, lr + 2.5), (gw - 2 * wall) / 2 - lr - 2) }
+}
 
 /** Rim of shell around a headset's front plate, and rounding of the visor's edges. */
 export function visorShape(b: Body): { bevel: number; rim: number } {
@@ -393,9 +436,23 @@ export function clampPart(b: Body, p: PlacedPart, type: DeviceType = 'phone'): P
   }
   q.x = clamp(q.x, -maxX, maxX)
   q.y = clamp(q.y, -maxY, maxY)
-  if (type === 'foldable' && !(face === 'left' || face === 'right')) {
-    if (face === 'back') {
-      // the half that folds over carries the cover screen, so everything on the back shares the other half
+  if (type === 'foldable' && isFlip(b)) {
+    // the hinge runs across the middle: nothing sits on it, on the faces or on the two long edges
+    if (face === 'front' || face === 'back') {
+      const clear = (face === 'front' ? 3 : HINGE_CLEAR) + e.h / 2
+      if (Math.abs(q.y) < clear && clear <= maxY) q.y = q.y < 0 ? -clear : clear
+    } else if (face === 'left' || face === 'right') {
+      const clear = HINGE_CLEAR + e.w / 2
+      if (Math.abs(q.x) < clear && clear <= maxX) q.x = q.x < 0 ? -clear : clear
+    }
+  } else if (type === 'foldable' && !(face === 'left' || face === 'right')) {
+    if (face === 'back' && q.kind === 'camera' && q.x > 0) {
+      // a camera on the half that folds over looks out through the cover screen, so it stays inside it
+      const cov = coverScreen(b)
+      q.x = clamp(q.x, cov.x - cov.w / 2 + e.w / 2 + 1, cov.x + cov.w / 2 - e.w / 2 - 1)
+      q.y = clamp(q.y, cov.y - cov.h / 2 + e.h / 2 + 1, cov.y + cov.h / 2 - e.h / 2 - 1)
+    } else if (face === 'back') {
+      // the half that folds over carries the cover screen, so everything else on the back shares the other half
       q.x = Math.max(-maxX, Math.min(q.x, -(HINGE_CLEAR + e.w / 2)))
     } else {
       // nothing sits across the hinge
@@ -529,4 +586,38 @@ export function rectsOverlap(a: PlacedPart, b: PlacedPart, tol = 0.2): boolean {
 export function contains(outer: PlacedPart, inner: PlacedPart): boolean {
   const eo = partExtent(outer)
   return Math.abs(inner.x - outer.x) <= eo.w / 2 && Math.abs(inner.y - outer.y) <= eo.h / 2
+}
+
+/**
+ * Where the sockets go on a speaker's back panel: the power inlet and whatever
+ * else was chosen, in centred rows from the bottom up. `fits` is false if the
+ * panel has no room for them all, and `top` is where the last row ends.
+ */
+export function speakerSockets(body: Body, io: string[] | undefined): { sockets: { id: string; x: number; y: number; w: number; h: number }[]; top: number; fits: boolean } {
+  const back = faceSize(body, 'back', 'speaker')
+  const list = [{ id: 'power', size: [9, 9] }, ...(io ?? []).flatMap((id) => {
+      const info = ioInfo('speaker', id)
+      return info?.size && (info.face ?? 'back') === 'back' ? Array.from({ length: info.count ?? 1 }, () => ({ id, size: info.size as number[] })) : []
+    })]
+  const gap = 5
+  const wide = back.w - 4
+  const rows: (typeof list)[] = [[]]
+  for (const p of list) {
+    const row = rows[rows.length - 1]
+    const used = row.reduce((a, q) => a + q.size[0] + gap, 0)
+    if (row.length && used + p.size[0] > wide) rows.push([p])
+    else row.push(p)
+  }
+  const out: { id: string; x: number; y: number; w: number; h: number }[] = []
+  let y = -back.h / 2 + 2.5
+  for (const row of rows) {
+    const rowH = Math.max(...row.map((p) => p.size[1]))
+    let x = -(row.reduce((a, p) => a + p.size[0], 0) + gap * (row.length - 1)) / 2
+    for (const p of row) {
+      out.push({ id: p.id, x: x + p.size[0] / 2, y: y + rowH / 2, w: p.size[0], h: p.size[1] })
+      x += p.size[0] + gap
+    }
+    y += rowH + 3
+  }
+  return { sockets: out, top: y, fits: y - 3 <= back.h / 2 - 2 && list.every((p) => p.size[0] <= wide) }
 }

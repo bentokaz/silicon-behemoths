@@ -8,13 +8,29 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { sfx } from '../audio/sfx'
 import { TYPES } from '../data/devices'
-import { type Carrier, carrierBody, clampPart, faceBasis, faceLabel, faceSize, facesFor, isEdge, kindsFor, mountOf, onKeyboard, partLabel } from '../sim/geometry'
-import type { Body, DeviceDesign, DeviceType, Face, PartKind, PlacedPart } from '../sim/types'
+import { sizeLimits } from '../data/devices'
+import { type Carrier, carrierBody, clampPart, faceBasis, faceLabel, faceSize, facesFor, isEdge, isFlip, kindsFor, mountOf, onKeyboard, partLabel } from '../sim/geometry'
+import { type Comp, cameraCost, layoutInternals } from '../sim/internals'
+import type { Body, CustomChip, DeviceDesign, DeviceType, Face, Levels, PartKind, PlacedPart } from '../sim/types'
 import { useStore } from '../store/game'
 import { themeColor } from '../store/theme'
 import { buildDevice, deviceFrame, disposeDevice, layerScaleOf, placeOnFace, pointToFace, setFold } from './buildDevice'
 import { DEMO_SOUND, type Demo, type DemoHints, type DemoSpec, type Pose, buildDemo, diffDesign, disposeDemo } from './demos'
 import { type Guide, studioDebug, studioHint, useStudio } from './studio'
+import { type Rig, newRigMemory, openFace, rigTeardown } from './teardown'
+
+/** What the studio needs to open the device up and say what each component is worth. */
+export interface TearInfo {
+  levels: Levels
+  chips: CustomChip[]
+  shares: Record<string, { cost: number; grams?: number }>
+  unitCost: number
+  weight: number
+}
+/** True if a component stands for a row of the Internals panel. */
+const standsFor = (c: Comp, key: string) => c.specs.includes(key) || (key === 'camera' && c.kind === 'camera')
+const usd = (v: number) => (v >= 100 ? `$${Math.round(v)}` : `$${v.toFixed(2)}`)
+const weigh = (g: number) => (g >= 1000 ? `${(g / 1000).toFixed(2)} kg` : g >= 10 ? `${Math.round(g)} g` : `${g.toFixed(1)} g`)
 
 interface Props {
   design: DeviceDesign
@@ -27,6 +43,8 @@ interface Props {
   /** True when parts and the body can be worked on directly (the advanced editor). */
   editable: boolean
   hints?: DemoHints
+  /** Given in the designer: lets the device open up while the Internals panel is. */
+  tear?: TearInfo
 }
 
 // ---------------------------------------------------------------- easing the body
@@ -144,7 +162,7 @@ type HandleData = { kind: 'resize' } | { kind: 'rotate' } | { kind: 'body'; axis
 const sizeCarrier = (type: DeviceType): Carrier => (type === 'laptop' ? 'lid' : 'body')
 
 /** Draws the selection outline, the handles and the snap guides onto a built model. Returns what it added. */
-function decorate(group: THREE.Object3D, d: DeviceDesign, selectedId: string | null | undefined, guides: Guide[], editable: boolean): THREE.Object3D[] {
+function decorate(group: THREE.Object3D, d: DeviceDesign, selectedId: string | null | undefined, guides: Guide[], editable: boolean, shut = false): THREE.Object3D[] {
   const made: THREE.Object3D[] = []
   const ls = layerScaleOf(d)
   const accent = themeColor('accent', '#ff6b1a')
@@ -198,13 +216,23 @@ function decorate(group: THREE.Object3D, d: DeviceDesign, selectedId: string | n
     const s = carrierBody(d.body, d.type, carrier)
     const parent = carrierRoot(group, carrier)
     const out = BODY_OUT * ls
-    const spots: [number, number, 'x' | 'y' | 'xy'][] = d.type === 'earbuds' ? [[1, 0, 'x'], [-1, 0, 'x']] : [[1, 0, 'x'], [-1, 0, 'x'], [0, 1, 'y'], [1, 1, 'xy']]
-    for (const [sx, sy, axis] of spots) {
+    // each handle: which way it pulls, and where along the edge it sits. A shut foldable is half the size, so its
+    // handles gather round the half that is left: the edge that has gone under the other half has none
+    const flip = isFlip(d.body)
+    const spots: [number, number, 'x' | 'y' | 'xy', number, number][] =
+      d.type === 'earbuds'
+        ? [[1, 0, 'x', 0, 0], [-1, 0, 'x', 0, 0]]
+        : d.type === 'foldable' && shut
+          ? flip
+            ? [[1, 0, 'x', 0, -s.height / 4], [-1, 0, 'x', 0, -s.height / 4], [0, -1, 'y', 0, 0], [1, -1, 'xy', 0, 0]]
+            : [[1, 0, 'x', 0, 0], [0, 1, 'y', s.width / 4, 0], [0, -1, 'y', s.width / 4, 0], [1, 1, 'xy', 0, 0]]
+          : [[1, 0, 'x', 0, 0], [-1, 0, 'x', 0, 0], [0, 1, 'y', 0, 0], [1, 1, 'xy', 0, 0]]
+    for (const [sx, sy, axis, ox, oy] of spots) {
       const box = handleBox(2.6 * ls, axis === 'xy' ? accent : '#d6d9de', { kind: 'body', axis })
-      box.position.set(sx * (s.width / 2 + out), sy * (s.height / 2 + out), 0)
+      box.position.set(sx * (s.width / 2 + out) + ox, sy * (s.height / 2 + out) + oy, 0)
       put(parent, box)
       // a short tick from the body to the handle shows what it pulls on
-      const from = new THREE.Vector3(sx * (s.width / 2), sy * (s.height / 2), 0)
+      const from = new THREE.Vector3(sx * (s.width / 2) + ox, sy * (s.height / 2) + oy, 0)
       put(parent, lineOf([from, box.position.clone()], '#d6d9de', false, 0.45))
     }
   }
@@ -228,21 +256,29 @@ function onPlaneOf(obj: THREE.Object3D, ray: THREE.Ray): THREE.Vector3 | null {
   return t > 0 ? local.at(t, new THREE.Vector3()) : null
 }
 
-export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, scale, editable, hints }: Props) {
+export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, scale, editable, hints, tear }: Props) {
   const shown = useEased(design)
   const group = useMemo(() => buildDevice(shown, null, logo, colorIndex), [shown, logo, colorIndex])
   useEffect(() => () => disposeDevice(group), [group])
   const guides = useStudio((s) => s.guides)
+  const folded = useStudio((s) => s.folded)
+  const pick = useStudio((s) => s.pick)
   const three = useThree()
   const controls = three.controls as unknown as { enabled: boolean } | null
   const turn = useRef<THREE.Group>(null)
   const bar = useRef<THREE.Group>(null)
-  const live = useRef({ design, group, hints })
-  live.current = { design, group, hints }
+  const tip = useRef<THREE.Group>(null)
+  const live = useRef({ design, group, hints, shown, tear })
+  live.current = { design, group, hints, shown, tear }
+  /** How far open the device is drawn, and how far its layers are pulled apart, both easing towards what is asked for. */
+  const opened = useRef(0)
+  const exploded = useRef(0)
+  const mem = useRef(newRigMemory())
+  const said = useRef(0)
 
   // ---- selection outline, handles and guides, redrawn onto each rebuilt model
   useEffect(() => {
-    const made = decorate(group, shown, selectedId, guides, editable)
+    const made = decorate(group, shown, selectedId, guides, editable, folded && design.type === 'foldable')
     return () =>
       made.forEach((o) => {
         o.removeFromParent()
@@ -250,7 +286,7 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
       })
     // `shown` and `group` change together
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [group, selectedId, guides, editable])
+  }, [group, selectedId, guides, editable, folded])
 
   // ---- parts that move: new ones pop in, a dragged one lifts, a dropped one knocks down
   const pops = useRef(new Map<string, number>())
@@ -266,6 +302,8 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
   const fold = useRef(0)
   useEffect(() => {
     if (design.type !== 'foldable' && useStudio.getState().folded) useStudio.setState({ folded: false })
+    mem.current = newRigMemory()
+    useStudio.setState({ pick: null })
   }, [design.type])
 
   const enqueue = (list: DemoSpec[]) => {
@@ -296,7 +334,31 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
     }
     if (pops.current.size && editable) sfx.drop()
 
-    const specs = diffDesign(a, design)
+    let specs = diffDesign(a, design)
+    const stu = useStudio.getState()
+    if (tear && stu.internals && !stu.keepClosed) {
+      // the device is open: a change to something that can be seen in there is shown on the component itself, which
+      // hops in its place, and only what cannot be seen from the inside is acted out, with the device shut again
+      const comps = layoutInternals(design, tear.levels, tear.chips).comps
+      const rest: DemoSpec[] = []
+      let named: DemoSpec | null = null
+      for (const sp of specs) {
+        if (sp.kind === 'gone') continue
+        const key = sp.key.replace(/^extra-/, 'extra:').replace(/^io-/, 'io:')
+        const hits = comps.filter((c) => standsFor(c, key))
+        if (!hits.length) rest.push(sp)
+        else {
+          if (sp.kind !== 'battery') for (const c of hits) mem.current.pulse.set(c.id, performance.now() + 80)
+          named = sp
+        }
+      }
+      if (named) {
+        window.clearTimeout(said.current)
+        useStudio.setState({ caption: { title: named.title, note: named.note } })
+        said.current = window.setTimeout(() => !playing.current && useStudio.setState({ caption: null }), 1800)
+      }
+      specs = rest
+    }
     const slow = specs.find((s) => s.kind === 'battery')
     if (slow) {
       // a slider sends a stream of small steps: wait for it to rest, and show the whole move
@@ -313,9 +375,10 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
   useEffect(
     () => () => {
       window.clearTimeout(battery.current?.timer)
+      window.clearTimeout(said.current)
       if (playing.current) disposeDemo(playing.current.demo)
       playing.current = null
-      useStudio.setState({ caption: null, guides: [], hint: null, folded: false })
+      useStudio.setState({ caption: null, guides: [], hint: null, folded: false, hover: null, pick: null })
     },
     [],
   )
@@ -323,7 +386,7 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
   useEffect(() => {
     if (!import.meta.env.DEV) return
     // in development the studio can be driven and photographed from the console
-    Object.assign(window, { sbStudio: { three: three.get, debug: studioDebug, play: (spec: DemoSpec) => enqueue([spec]), playing } })
+    Object.assign(window, { sbStudio: { three: three.get, debug: studioDebug, play: (spec: DemoSpec) => enqueue([spec]), playing, studio: useStudio, rig: () => live.current.group.userData.rig as Rig | undefined, model: () => live.current.group, opened } })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [three.get])
 
@@ -359,7 +422,8 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
 
     // ---- the demonstration that is playing, or the next one waiting
     let cur = playing.current
-    if (!cur && queue.current.length) {
+    // a demonstration happens on the outside: if the device is open it waits for it to shut
+    if (!cur && queue.current.length && opened.current < 0.04) {
       const spec = queue.current.shift()!
       const demo = buildDemo(spec, d, deviceFrame(d).radius, live.current.hints)
       if (demo) {
@@ -391,13 +455,39 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
     } else xray(g, 0)
 
     // ---- what the model itself is doing: a foldable easing open or shut, a handheld shaking in the hands
-    const rest = d.type === 'foldable' && useStudio.getState().folded ? 1 : 0
+    const st = useStudio.getState()
+    const info = live.current.tear
+    const tearing = !!info && st.internals && !st.keepClosed
+    // a foldable is opened flat before it is opened up
+    const rest = d.type === 'foldable' && st.folded && !tearing ? 1 : 0
     fold.current += (rest - fold.current) * (1 - Math.exp(-dt * 6))
     if (Math.abs(rest - fold.current) < 0.001) fold.current = rest
     // a demonstration swings it towards the other state and back
     const swung = fold.current + ((rest ? 0 : 1) - fold.current) * (pose.fold ?? 0)
     setFold(g, swung * swung * (3 - 2 * swung))
     if (turn.current) turn.current.position.x = pose.shake ?? 0
+
+    // ---- the teardown: open while the Internals panel is, unless a demonstration needs the outside
+    const wantOpen = tearing && !cur && !queue.current.length && fold.current < 0.02
+    const target = studioDebug.open ?? (wantOpen ? 1 : 0)
+    opened.current += (target - opened.current) * (1 - Math.exp(-dt * (d.type === 'laptop' ? 1.9 : 3.2)))
+    if (Math.abs(target - opened.current) < 0.002 || studioDebug.open !== null) opened.current = target
+    const apart = studioDebug.explode ?? (wantOpen ? st.explode : 0)
+    exploded.current += (apart - exploded.current) * (1 - Math.exp(-dt * 4))
+    if (Math.abs(apart - exploded.current) < 0.002 || studioDebug.explode !== null) exploded.current = apart
+    let rig = g.userData.rig as Rig | undefined
+    // the insides are built only when a model is first opened
+    if (!rig && info && (opened.current > 0.002 || target > 0)) rig = g.userData.rig = rigTeardown(g, live.current.shown, layoutInternals(live.current.shown, info.levels, info.chips))
+    if (rig) {
+      rig.pose(opened.current, exploded.current, Math.min(dt, 0.1), mem.current, now)
+      const key = st.hover
+      rig.highlight(key && opened.current > 0.3 ? (c) => standsFor(c, key) : null, opened.current > 0.3 ? (st.pick?.id ?? null) : null)
+    }
+    if (opened.current < 0.3 && st.pick) useStudio.setState({ pick: null })
+    // the dock would hide whatever is being worked on underneath
+    const underneath = d.parts.find((p) => p.id === selectedId)?.face === 'bottom'
+    g.traverse((o) => o.userData.prop === 'dock' && (o.visible = !underneath))
+    if (!face && opened.current > 0.03) face = openFace(d)
 
     // ---- turn the device so the face that matters can be seen, then turn it back
     let want = 0
@@ -411,6 +501,8 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
         if (Math.abs(diff) > 1.05) want = diff - Math.sign(diff) * 0.5
       }
     }
+    // pulled apart, the layers are seen better from a little to one side
+    if (!cur && openFace(d)) want += 0.5 * exploded.current
     yaw.current += (want - yaw.current) * (1 - Math.exp(-dt * 8))
     if (Math.abs(yaw.current) < 0.0005 && !want) yaw.current = 0
     if (turn.current) turn.current.rotation.y = yaw.current
@@ -422,7 +514,61 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
       sel.updateWorldMatrix(true, false)
       bar.current.position.copy(turn.current.worldToLocal(sel.localToWorld(v3.set(0, -part.h / 2 - 5 * ls, 2.6))))
     }
+    const picked = st.pick && rig?.comps.get(st.pick.id)
+    if (tip.current && picked && turn.current) {
+      picked.g.updateWorldMatrix(true, false)
+      tip.current.position.copy(turn.current.worldToLocal(picked.g.localToWorld(v3.set(0, 0, picked.size[2] / 2))))
+    }
   })
+
+  /** A press on the opened device: pick the component under it, if there is one. */
+  const pickComp = (e: ThreeEvent<PointerEvent>): boolean => {
+    if (opened.current < 0.5) return false
+    const rig = live.current.group.userData.rig as Rig | undefined
+    const seen = (o: THREE.Object3D | null): boolean => !o || (o.visible && seen(o.parent))
+    const hit = e.intersections.find((i) => i.object.userData.comp && seen(i.object))
+    const it = hit && rig?.comps.get(hit.object.userData.comp as string)
+    useStudio.setState({ pick: it ? { id: it.c.id, label: it.c.label, figure: it.c.figure ?? '', specs: it.c.specs, partId: it.c.partId } : null })
+    if (it) {
+      e.stopPropagation()
+      sfx.pick()
+    }
+    return !!it
+  }
+  // what the picked component is, and what share of the device it is
+  const camPart = pick?.partId ? design.parts.find((p) => p.id === pick.partId && p.kind === 'camera') : undefined
+  const rows = pick && tear ? [...new Set(pick.specs.map((k) => (k === 'refresh' ? 'panel' : k)))].map((k) => tear.shares[k]).filter((x) => !!x) : []
+  const cost = camPart ? cameraCost(design, camPart) : rows.reduce((a, x) => a + x.cost, 0)
+  const grams = rows.reduce((a, x) => a + (x.grams ?? 0), 0)
+  const label = pick && tear && (
+    <group ref={tip}>
+      <Html zIndexRange={[7, 0]} style={{ pointerEvents: 'none' }}>
+        <div className="ml-3 -translate-y-1/2 whitespace-nowrap border border-line2 bg-panel/95">
+          <div className="flex items-stretch">
+            <span className="w-[3px] bg-accent" />
+            <div className="px-2 py-[5px]">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-fg">{pick.label}</div>
+              {pick.figure && <div className="num text-[10px] text-dim">{pick.figure}</div>}
+              {(cost > 0 || grams > 0) && (
+                <div className="num mt-[3px] flex gap-3 border-t border-line pt-[3px] text-[10px] text-faint">
+                  {cost > 0 && (
+                    <span>
+                      <span className="text-accent">{usd(cost)}</span> {Math.round((cost / Math.max(tear.unitCost, 0.01)) * 100)}% of cost
+                    </span>
+                  )}
+                  {grams > 0 && (
+                    <span>
+                      <span className="text-fg">{weigh(grams)}</span> {Math.round((grams / Math.max(tear.weight, 0.01)) * 100)}% of weight
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </Html>
+    </group>
+  )
 
   // ---- dragging a part across the body
   const dragging = useRef(false)
@@ -447,7 +593,8 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
   if (!editable || !onPick) {
     return (
       <group ref={turn}>
-        <primitive object={group} />
+        <primitive object={group} onPointerDown={pickComp} />
+        {label}
       </group>
     )
   }
@@ -506,7 +653,7 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
       if (data.kind === 'body') {
         const at = onPlaneOf(carrierRoot(live.current.group, sizeCarrier(d.type)), caster.ray)
         if (!at) return
-        const T = TYPES[d.type]
+        const T = sizeLimits(d.type, d.body.fold)
         const step = isBig(d.type) ? 1 : 0.5
         const fit = (v: number, [lo, hi]: [number, number, number]) => Math.min(hi, Math.max(lo, Math.round((2 * (Math.abs(v) - BODY_OUT * ls)) / step) * step))
         const patch: Partial<Body> = {}
@@ -514,7 +661,7 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
         if (data.axis !== 'x') patch.height = fit(at.y, T.height)
         if ((patch.width ?? d.body.width) === d.body.width && (patch.height ?? d.body.height) === d.body.height) return
         // a speaker keeps its proportions seen from above: its depth follows its width
-        if (d.type === 'speaker' && patch.width !== undefined) patch.thickness = Math.min(T.maxThickness, Math.max(T.thickBase, d.body.thickness + patch.width - d.body.width))
+        if (d.type === 'speaker' && patch.width !== undefined) patch.thickness = Math.min(TYPES.speaker.maxThickness, Math.max(TYPES.speaker.thickBase, d.body.thickness + patch.width - d.body.width))
         sfx.stretch()
         useStore.getState().setBody(patch)
         return
@@ -556,6 +703,7 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
   }
 
   const down = (e: ThreeEvent<PointerEvent>) => {
+    if (pickComp(e)) return
     e.stopPropagation()
     setAdding(null)
     const handle = e.intersections.find((i) => i.object.userData.handle)
@@ -603,6 +751,7 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
   return (
     <group ref={turn}>
       <primitive object={group} onPointerDown={down} onPointerMove={move} onDoubleClick={twice} />
+      {label}
       {part && (
         <group ref={bar}>
           <Html center zIndexRange={[5, 0]} style={{ pointerEvents: 'none' }}>

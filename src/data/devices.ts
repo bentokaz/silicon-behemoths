@@ -181,6 +181,13 @@ export const TYPES: Record<DeviceType, TypeSpec> = {
   },
 }
 
+/** A flip is a tall phone that folds in half, so it has its own size range: [min, max, default] in mm. */
+export const FLIP = { width: [64, 84, 74] as [number, number, number], height: [150, 184, 168] as [number, number, number], diag: [6.3, 7.1] as [number, number] }
+/** Cover screens a flip can carry on the outside of its upper half. */
+export const FLIP_COVERS = [{ name: 'Ticker strip' }, { name: 'Half-width window' }, { name: 'Full cover screen' }]
+/** The width and height a body may have: those of its type, or of a flip. */
+export const sizeLimits = (type: DeviceType, fold?: 'book' | 'flip'): { width: [number, number, number]; height: [number, number, number] } => (type === 'foldable' && fold === 'flip' ? FLIP : TYPES[type])
+
 const SUB_NAMES: Record<keyof SubScores, string> = { perf: 'Performance', display: 'Display', camera: 'Camera', battery: 'Battery', design: 'Design' }
 export const subLabel = (type: DeviceType, key: keyof SubScores): string => TYPES[type].labels?.[key] ?? (key === 'camera' ? TYPES[type].specialLabel : SUB_NAMES[key])
 

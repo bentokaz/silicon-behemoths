@@ -1,15 +1,18 @@
 // The 3D studio: an isolated canvas that shows one device under a three-point
 // lighting rig. Used read-only in the dashboard and interactively in the designer.
 import { Environment, Lightformer, OrbitControls } from '@react-three/drei'
-import { Canvas, useThree } from '@react-three/fiber'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { EffectComposer, N8AO } from '@react-three/postprocessing'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { TYPES } from '../data/devices'
 import type { DeviceDesign, DeviceType } from '../sim/types'
-import { LiveDevice } from './LiveDevice'
+import { layoutInternals } from '../sim/internals'
+import { LiveDevice, type TearInfo } from './LiveDevice'
 import { buildDevice, deviceFrame, disposeDevice } from './buildDevice'
 import type { DemoHints } from './demos'
+import { useStudio } from './studio'
+import { type Rig, newRigMemory, rigTeardown } from './teardown'
 
 export type ViewName = 'back' | 'front' | 'side' | 'bottom'
 type Views = Record<ViewName, [number, number, number]>
@@ -48,7 +51,9 @@ interface Props {
    * be seen are acted out. With `editable`, parts and the body can also be
    * dragged, resized and turned on the model itself.
    */
-  studio?: { editable: boolean; hints?: DemoHints }
+  studio?: { editable: boolean; hints?: DemoHints; tear?: TearInfo }
+  /** Outside the designer: show the device opened up, as a teardown. */
+  teardown?: boolean
   autoRotate?: boolean
   /** Uploaded company logo, shown on logo parts that ask for it. */
   logo?: string
@@ -69,9 +74,20 @@ function Rig({ dir, dist, nonce }: { dir: [number, number, number]; dist: number
 }
 
 /** The model as a still object, for the dashboard. The designer uses LiveDevice instead. */
-function Device({ design, selectedId, logo, colorIndex = -1 }: Props) {
+function Device({ design, selectedId, logo, colorIndex = -1, teardown }: Props) {
   const group = useMemo(() => buildDevice(design, selectedId, logo, colorIndex), [design, selectedId, logo, colorIndex])
   useEffect(() => () => disposeDevice(group), [group])
+  const opened = useRef(0)
+  const mem = useRef(newRigMemory())
+  useFrame((_, dt) => {
+    const target = teardown ? 1 : 0
+    if (!target && opened.current === 0) return
+    opened.current += (target - opened.current) * (1 - Math.exp(-dt * (design.type === 'laptop' ? 1.9 : 3.2)))
+    if (Math.abs(target - opened.current) < 0.002) opened.current = target
+    // the insides are built the first time the device is opened, and without research levels: a rival's device fits as built
+    const rig = (group.userData.rig ??= rigTeardown(group, design, layoutInternals(design))) as Rig
+    rig.pose(opened.current, 0, Math.min(dt, 0.1), mem.current, performance.now())
+  })
   return <primitive object={group} />
 }
 
@@ -95,7 +111,7 @@ export function DeviceView(props: Props) {
       dpr={[1, 2]}
       camera={{ fov: 26, near: 5 * k, far: 6000 * k, position: [dir[0] * dist, dir[1] * dist, dir[2] * dist] }}
       gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.05 }}
-      onPointerMissed={() => props.onPick?.(null)}
+      onPointerMissed={() => (props.onPick?.(null), props.studio && useStudio.getState().pick && useStudio.setState({ pick: null }))}
     >
       <color attach="background" args={['#0a0c0f']} />
       <fog attach="fog" args={['#0a0c0f', 900 * k, 2200 * k]} />
@@ -130,7 +146,7 @@ export function DeviceView(props: Props) {
         <Lightformer form="ring" intensity={1.2} color="#9fb4c8" position={[0, -7, 0]} scale={6} target={[0, 0, 0]} />
       </Environment>
 
-      {props.studio ? <LiveDevice design={design} selectedId={props.selectedId} onPick={props.onPick} logo={props.logo} colorIndex={props.colorIndex} scale={k} editable={props.studio.editable} hints={props.studio.hints} /> : <Device {...props} />}
+      {props.studio ? <LiveDevice design={design} selectedId={props.selectedId} onPick={props.onPick} logo={props.logo} colorIndex={props.colorIndex} scale={k} editable={props.studio.editable} hints={props.studio.hints} tear={props.studio.tear} /> : <Device {...props} />}
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, floorY, 0]} receiveShadow>
         <planeGeometry args={[3000 * k, 3000 * k]} />
