@@ -15,7 +15,9 @@ const RING = 14
 const AXLE = 2.3
 /** Half the length of a bay, from where the lorry stands to its open end. */
 const BAY_HALF = 4
-const TURN = 4.2
+const TURN = 3.8
+/** Tiles of open ground round a factory plot before the neighbouring sheds begin. */
+const APRON = 10
 
 export interface Manoeuvre {
   /** The marked truck bay this uses, if there is one for the dock. */
@@ -43,6 +45,8 @@ interface Grid {
   gh: number
   /** 1 where the middle of a lorry may be. */
   ok: Uint8Array
+  /** 1 where it also has room to swing: routes keep to these where they can, so a long vehicle does not clip a corner as it turns. */
+  wide: Uint8Array
   x(cell: number): number
   z(cell: number): number
   at(x: number, z: number): number
@@ -67,11 +71,11 @@ function buildGrid(site: Site, free: Set<string>): Grid {
       let ok: boolean
       if (x >= 0 && y >= 0 && x < w && y < h) ok = !site.grid[y * w + x] && !blocked[y * w + x] && site.floor[`${x},${y}`] !== 'water'
       else {
-        // off the plot: the pavement round it, the drive in the middle of the south side, and the road
+        // off the plot: the open apron round it (the nearest sheds stand further back), the drive in the middle of the south side, and the road
         const beyond = Math.max(-x, x - (w - 1), -y, y - (h - 1))
         const road = y >= h + 3 && y <= h + 10
         const drive = y >= h && Math.abs(x + 0.5 - w / 2) <= 3
-        ok = beyond <= 2 || road || drive
+        ok = beyond <= APRON || road || drive
       }
       open[gy * gw + gx] = ok ? 1 : 0
     }
@@ -85,10 +89,19 @@ function buildGrid(site: Site, free: Set<string>): Grid {
       ok[gy * gw + gx] = clear
     }
   }
+  const wide = new Uint8Array(gw * gh)
+  for (let gy = 1; gy < gh - 1; gy++) {
+    for (let gx = 1; gx < gw - 1; gx++) {
+      let clear = 1
+      for (let dy = -1; dy <= 1 && clear; dy++) for (let dx = -1; dx <= 1; dx++) if (!ok[(gy + dy) * gw + gx + dx]) clear = 0
+      wide[gy * gw + gx] = clear
+    }
+  }
   return {
     gw,
     gh,
     ok,
+    wide,
     x: (c) => (c % gw) - RING - w / 2 + 0.5,
     z: (c) => Math.floor(c / gw) - RING - h / 2 + 0.5,
     at: (x, z) => {
@@ -105,20 +118,23 @@ const clearAt = (g: Grid, x: number, z: number) => {
 }
 
 /** True if a lorry could drive straight from one point to the other. */
-function clearLine(g: Grid, a: Pt, b: Pt): boolean {
+function clearLine(g: Grid, a: Pt, b: Pt, mask: Uint8Array = g.ok): boolean {
   const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.4))
-  for (let i = 0; i <= n; i++) if (!clearAt(g, a[0] + ((b[0] - a[0]) * i) / n, a[1] + ((b[1] - a[1]) * i) / n)) return false
+  for (let i = 0; i <= n; i++) {
+    const c = g.at(a[0] + ((b[0] - a[0]) * i) / n, a[1] + ((b[1] - a[1]) * i) / n)
+    if (c < 0 || !mask[c]) return false
+  }
   return true
 }
 
 /** The nearest cell a lorry can be in to a point, within a few tiles. */
-function nearestClear(g: Grid, x: number, z: number): number {
+function nearestClear(g: Grid, x: number, z: number, mask: Uint8Array = g.ok): number {
   let best = -1
   let bestD = Infinity
   for (let dz = -4; dz <= 4; dz++) {
     for (let dx = -4; dx <= 4; dx++) {
       const c = g.at(x + dx, z + dz)
-      if (c < 0 || !g.ok[c]) continue
+      if (c < 0 || !mask[c]) continue
       const d = (g.x(c) - x) ** 2 + (g.z(c) - z) ** 2
       if (d < bestD) {
         bestD = d
@@ -131,8 +147,13 @@ function nearestClear(g: Grid, x: number, z: number): number {
 
 /** A way for a lorry from one point to another, as a few straight runs, or null if there is none. */
 function drive(g: Grid, from: Pt, to: Pt): Pt[] | null {
-  const a = nearestClear(g, from[0], from[1])
-  const b = nearestClear(g, to[0], to[1])
+  // with room to spare where there is a way that has it; otherwise as tight as a lorry can go
+  return search(g, from, to, g.wide) ?? search(g, from, to, g.ok)
+}
+
+function search(g: Grid, from: Pt, to: Pt, mask: Uint8Array): Pt[] | null {
+  const a = nearestClear(g, from[0], from[1], mask)
+  const b = nearestClear(g, to[0], to[1], mask)
   if (a < 0 || b < 0) return null
   const n = g.gw * g.gh
   const cost = new Float32Array(n).fill(Infinity)
@@ -169,8 +190,8 @@ function drive(g: Grid, from: Pt, to: Pt): Pt[] | null {
         const y = cy + dy
         if (x < 0 || y < 0 || x >= g.gw || y >= g.gh) continue
         const j = y * g.gw + x
-        if (!g.ok[j] || done[j]) continue
-        if (dx && dy && (!g.ok[cy * g.gw + x] || !g.ok[y * g.gw + cx])) continue
+        if (!mask[j] || done[j]) continue
+        if (dx && dy && (!mask[cy * g.gw + x] || !mask[y * g.gw + cx])) continue
         const ng = cost[c] + (dx && dy ? 1.4142 : 1)
         if (ng < cost[j]) {
           cost[j] = ng
@@ -190,7 +211,7 @@ function drive(g: Grid, from: Pt, to: Pt): Pt[] | null {
   let i = 0
   while (i < pts.length - 1) {
     let j = pts.length - 1
-    while (j > i + 1 && !clearLine(g, pts[i], pts[j])) j--
+    while (j > i + 1 && !clearLine(g, pts[i], pts[j], mask)) j--
     out.push(pts[j])
     i = j
   }
@@ -260,14 +281,56 @@ function wallBay(site: Site, f: ItemFrame): BayDef {
   return best ?? { park: [f.cx, f.cz - 6], out: [0, -1] }
 }
 
+/** How a lorry gets into and out of one bay, or null if nothing can be driven there cleanly. */
+function manoeuvre(site: Site, g: Grid, bay: BayDef): Manoeuvre | null {
+  const { w, h } = site
+  const road = h / 2 + 7
+  const [ox, oz] = bay.out
+  const at = (along: number, across: number, side: number): Pt => [bay.park[0] + ox * along + -oz * side * across, bay.park[1] + oz * along + ox * side * across]
+  // the lorry goes back by whichever end of the road is nearer the bay
+  const near = bay.park[0] < 0 ? -1 : 1
+  const end = (sign: number): Pt => [sign * (w / 2 + RING - 2), road]
+  const beyond = (sign: number): Pt => [sign * (w / 2 + 70), road]
+  const from = end(near)
+  const far = beyond(near)
+  const mouth = BAY_HALF + 0.8
+  // it pulls across the front of the bay in the direction it was already going, where there is room to
+  const along = (bay.park[0] - from[0]) * -oz + (bay.park[1] - from[1]) * ox
+  for (const side of along >= 0 ? [1, -1] : [-1, 1]) {
+    // pull up across the front of the bay, past it, then back round a quarter turn into it
+    const lane = mouth + TURN
+    const q0 = at(lane, -3.2, side)
+    const q1 = at(lane, TURN + 2.4, side)
+    const arc: Pt[] = []
+    for (let k = 0; k <= 8; k++) {
+      const t = (k / 8) * (Math.PI / 2)
+      arc.push(at(mouth + TURN * Math.sin(t), TURN - TURN * Math.cos(t), side))
+    }
+    // the last of the arc is the mouth of the bay, hard against whatever the bay stands beside: only the swing has to be clear
+    // the whole length of the lorry has to fit on the lane at both ends of the pull-up
+    if (!clearLine(g, at(lane, -3.2 - 3.6, side), at(lane, TURN + 2.4 + 3.6, side)) || arc.slice(3).some((p) => !clearAt(g, p[0], p[1]))) continue
+    // it comes from the end of the road that lets it pull across the bay without turning back on itself
+    const heading = -oz * side
+    const sign = heading > 0.3 ? -1 : heading < -0.3 ? 1 : near
+    const route = drive(g, end(sign), q0)
+    if (!route) continue
+    const exit = drive(g, at(mouth + 1.5, 0, side), from)
+    if (!exit) continue
+    return { truck: bay.truck, park: bay.park, out: bay.out, arrive: [beyond(sign), ...soften([...route, q0, q1], 3)], back: [bay.park, at(mouth, 0, side), ...arc, q1], leave: [bay.park, ...soften([at(mouth + 1.5, 0, side), ...exit]), far] }
+  }
+  // no room to swing round: nose in along the bay, and back out the way it came
+  const front = at(mouth + 1.5, 0, 1)
+  const route = clearAt(g, front[0], front[1]) ? drive(g, from, front) : null
+  if (route) return { truck: bay.truck, park: bay.park, out: [-ox, -oz], arrive: [far, ...soften([...route, front]), at(0.2, 0, 1)], back: [], leave: [] }
+  return null
+}
+
 /** Works out how each shipping dock's lorry comes and goes. `docks` are the docks with a line behind them. */
 export function planYard(site: Site, docks: SiteItem[]): YardPlan {
   const plan: YardPlan = { docks: new Map(), managed: new Set() }
   if (site.kind !== 'factory' || !docks.length) return plan
-  const { w, h } = site
   const trucks = site.items.filter((i) => i.kind === 'truck')
   const used = new Set<string>()
-  const road = h / 2 + 7
   for (const dock of docks) {
     const f = frameOf(site, dock)
     // the nearest marked bay nobody else is using
@@ -282,51 +345,28 @@ export function planYard(site: Site, docks: SiteItem[]): YardPlan {
         truck = t
       }
     }
-    if (truck) used.add(truck.id)
-    // every other bay's parked lorry is in the way; this one's own bay is not
-    const g = buildGrid(site, new Set(truck ? [truck.id] : []))
-    let bay: BayDef
+    let move: Manoeuvre | null = null
     if (truck) {
+      // every other bay's parked lorry is in the way; this one's own bay is not
+      const g = buildGrid(site, new Set([truck.id]))
       const tf = frameOf(site, truck)
       // a bay is open at whichever end has room to drive up to it: the cab end if both do
       const front: Pt = [tf.sin, tf.cos]
       const openEnd = (d: Pt) => clearAt(g, tf.cx + d[0] * (BAY_HALF + 2), tf.cz + d[1] * (BAY_HALF + 2))
-      bay = { truck, park: [tf.cx, tf.cz], out: openEnd(front) || !openEnd([-front[0], -front[1]]) ? front : [-front[0], -front[1]] }
-    } else bay = wallBay(site, f)
-
-    const [ox, oz] = bay.out
-    const at = (along: number, across: number, side: number): Pt => [bay.park[0] + ox * along + -oz * side * across, bay.park[1] + oz * along + ox * side * across]
-    // the lorry comes from whichever end of the road is nearer the bay, and goes back the same way
-    const from: Pt = [(bay.park[0] < 0 ? -1 : 1) * (w / 2 + RING - 2), road]
-    const far: Pt = [(bay.park[0] < 0 ? -1 : 1) * (w / 2 + 70), road]
-    const mouth = BAY_HALF + 1.2
-    let done = false
-    for (const side of [1, -1]) {
-      // pull up across the front of the bay, past it, then back round a quarter turn into it
-      const lane = mouth + TURN
-      const q0 = at(lane, -5.5, side)
-      const q1 = at(lane, TURN + 2.6, side)
-      const arc: Pt[] = []
-      for (let k = 0; k <= 8; k++) {
-        const a = (k / 8) * (Math.PI / 2)
-        arc.push(at(mouth + TURN * Math.sin(a), TURN - TURN * Math.cos(a), side))
+      move = manoeuvre(site, g, { truck, park: [tf.cx, tf.cz], out: openEnd(front) || !openEnd([-front[0], -front[1]]) ? front : [-front[0], -front[1]] })
+      if (move) {
+        used.add(truck.id)
+        plan.managed.add(truck.id)
       }
-      if (!clearLine(g, q0, q1) || arc.some((p) => !clearAt(g, p[0], p[1]))) continue
-      const route = drive(g, from, q0)
-      if (!route) continue
-      const exit = drive(g, at(mouth + 1.5, 0, side), from)
-      if (!exit) continue
-      plan.docks.set(dock.id, { truck, park: bay.park, out: bay.out, arrive: [far, ...soften([...route, q0]), q1], back: [bay.park, at(mouth, 0, side), ...arc, q1], leave: [bay.park, ...soften([at(mouth + 1.5, 0, side), ...exit]), far] })
-      done = true
-      break
     }
-    if (!done) {
-      // no room to swing round: nose in along the bay, and back out the way it came
-      const route = drive(g, from, at(mouth + 1.5, 0, 1))
-      const arrive: Pt[] = route ? [far, ...soften([...route, at(mouth + 1.5, 0, 1)]), at(0.2, 0, 1)] : [at(46, 0, 1), at(0.2, 0, 1)]
-      plan.docks.set(dock.id, { truck, park: bay.park, out: route ? [-ox, -oz] : bay.out, arrive: route ? arrive : [], back: route ? [] : [bay.park, at(46, 0, 1)], leave: route ? [] : [bay.park, at(46, 0, 1)] })
+    // no marked bay, or one that nothing can be driven into cleanly (its lorry then stays standing in it): up to the wall behind the dock
+    if (!move) {
+      const bay = wallBay(site, f)
+      const [ox, oz] = bay.out
+      const away: Pt = [bay.park[0] + ox * 46, bay.park[1] + oz * 46]
+      move = manoeuvre(site, buildGrid(site, new Set()), bay) ?? { park: bay.park, out: bay.out, arrive: [], back: [bay.park, away], leave: [bay.park, away] }
     }
-    if (truck) plan.managed.add(truck.id)
+    plan.docks.set(dock.id, move)
   }
   return plan
 }

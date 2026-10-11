@@ -1327,7 +1327,8 @@ export class Crowd {
       }
     }
     const there = this.toward(b, mx + ox, mz + oz, dt, last ? 0.07 : 0.3, true)
-    if (there || (!last && cur === tile && b.still > 0.3) || (last && b.still > 0.8 && (b.x - mx) ** 2 + (b.z - mz) ** 2 < 0.3)) {
+    // someone on the way out is through as soon as they set foot on the tile at the way out: nobody queues for its middle
+    if (there || (!last && cur === tile && b.still > 0.3) || (last && b.leaving && cur === tile) || (last && b.still > 0.8 && (b.x - mx) ** 2 + (b.z - mz) ** 2 < 0.3)) {
       if (last) this.arrive(b, false)
       else {
         b.pathAt++

@@ -1,28 +1,22 @@
 import { it } from 'vitest'
-import type { Body } from './crowd'
-import { bigOffice, crowdFor } from './scene.fixture'
+import { autoVenue, buildVenue, defaultConfig, newGame } from '../../sim/game'
+import { Kind } from './crowd'
+import { buildNav } from './nav'
+import { buildSpots } from './spots'
+import { SHOW, VenueCrowd } from './venuecrowd'
 
 it('dbg', () => {
-  for (let seed = 1; seed < 6; seed++) one(seed)
+  const s = newGame({ ...defaultConfig(), unlimitedMoney: true, seed: 4 })
+  buildVenue(s)
+  autoVenue(s)
+  const site = s.venue!
+  const nav = buildNav(site)
+  const crowd = new VenueCrowd()
+  crowd.setSite(site, nav, buildSpots(site, nav))
+  crowd.setProgramme({ booked: true, live: false, draw: 0.9 })
+  crowd.walkers = 30
+  for (let t = SHOW.doors - 0.2; t < SHOW.cleared + 0.6; t += 1 / 30 / 45) crowd.step(1 / 30, 1, t)
+  for (const b of crowd.bodies.filter((x) => x.kind === Kind.Guest))
+    console.log(`${b.id} m${b.mode} stage=${b.stage} (${b.x.toFixed(1)},${b.z.toFixed(1)}) tile=${nav.tileAt(b.x, b.z)} path ${b.pathAt}/${b.pathLen} still=${b.still.toFixed(1)} pat=${b.patience.toFixed(1)} slow=${b.slow.toFixed(2)} leaving=${b.leaving} gate=${b.gate}/${b.waitGate} ghost=${b.ghost.toFixed(1)}`)
+  console.log(`entry=${nav.entry} (${nav.cx(nav.entry)},${nav.cz(nav.entry)}) outside=${nav.outside} ghosts=${crowd.ghosts} phase=${crowd.phase}`)
 })
-function one(seed: number) {
-  const s = bigOffice(60, seed)
-  const { crowd, nav } = crowdFor(s)
-  const walking = new Map<Body, number>()
-  let longest = 0
-  let where = ''
-  for (let t = 7; t < 23; t += 1 / 30 / 45) {
-    crowd.step(1 / 30, 1, t)
-    for (const b of crowd.bodies) {
-      if (b.mode === 2 || b.mode === 1 || b.mode === 6) {
-        const w = (walking.get(b) ?? 0) + 1 / 30
-        walking.set(b, w)
-        if (w > longest) {
-          longest = w
-          where = `${b.id} at ${t.toFixed(2)} tile ${nav.tileAt(b.x, b.z) % nav.w},${Math.floor(nav.tileAt(b.x, b.z) / nav.w)} path ${b.pathAt}/${b.pathLen}`
-        }
-      } else walking.set(b, 0)
-    }
-  }
-  console.log(`seed ${seed} ghosts=${crowd.ghosts} longest walk ${longest.toFixed(1)}s (${where}) on site at 23h: ${crowd.bodies.filter((b) => b.mode !== 0).length}`)
-}

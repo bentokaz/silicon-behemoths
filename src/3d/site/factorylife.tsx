@@ -126,6 +126,12 @@ export function FactoryFloor({ site, life, sparks, plan }: { site: Site; life: F
       d.idle = lf.producing ? 0 : d.idle + dt
       const lorry = lorries.current[i]
       const ready = d.units >= load || (d.idle > 2.5 && d.units > load * 0.12)
+      if (!m && ready) {
+        // no lorry can get to this dock: the load goes out by the door behind it, unseen
+        d.t += dt
+        if (d.t > 1.2) d.units = Math.max(0, d.units - (load * dt) / LOAD)
+        if (d.units <= 0) d.t = 0
+      }
       if (lorry && m) {
         // a lorry with a marked bay waits in it between loads; one without only turns up when there is a load
         const based = !!m.truck

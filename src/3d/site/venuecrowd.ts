@@ -268,7 +268,9 @@ export class VenueCrowd extends Crowd {
   }
 
   private thinkHost(b: Body) {
-    const on = this.phase === 'rehearsal' || this.phase === 'show' || this.phase === 'ovation' || (this.phase === 'doors' && this.now % 24 > SHOW.start - 0.25)
+    // in good time: on stage well before the house has finished coming in
+    const hour = ((this.now % 24) + 24) % 24
+    const on = this.phase === 'rehearsal' || this.phase === 'show' || this.phase === 'ovation' || (this.phase === 'doors' && hour > SHOW.doors + 0.2)
     if (!on || !this.hostSpots.length) {
       if (b.mode === Mode.Do && !b.leaving) {
         b.cheer = false
@@ -280,7 +282,9 @@ export class VenueCrowd extends Crowd {
       const spot = this.hostSpots[0]
       b.act = Act.Host
       b.wait = 9 + rnd(this.seq + b.roams++) * 10
-      if (this.nav.entry < 0 || !this.nav.reach[spot.access] || this.programme.live) return this.place(b, spot)
+      // a show never starts without its presenter: if it is already under way, they are on stage
+      const late = this.phase === 'ovation' || (this.phase === 'show' && hour > SHOW.start + 0.03)
+      if (this.nav.entry < 0 || !this.nav.reach[spot.access] || this.programme.live || late) return this.place(b, spot)
       this.arriveOutside(b)
       this.aim(b, spot)
       return

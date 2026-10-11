@@ -291,7 +291,7 @@ export function RoomLights({ site, crowd, mood, lamps, busy, onDark }: Props) {
       st.drawn = stamp
       let k = 0
       for (const r of plan.rooms) {
-        const level = (st.level.get(r.n) ?? 0) * night * 0.2
+        const level = (st.level.get(r.n) ?? 0) * night * 0.26
         for (const t of r.tiles) {
           // a little brighter under the lamp than in the corners
           const d = Math.hypot((t % w) + 0.5 - w / 2 - r.x, Math.floor(t / w) + 0.5 - h / 2 - r.z) / (r.radius * 1.6 + 2)
@@ -330,14 +330,14 @@ export function RoomLights({ site, crowd, mood, lamps, busy, onDark }: Props) {
       const light = lights.current[i]
       if (!light) continue
       const r = owner[i] ? plan.rooms.find((x) => x.n === owner[i]) : undefined
-      const want = r ? (st.level.get(r.n) ?? 0) * night * (5 + 3.2 * r.radius) : 0
+      const want = r ? (st.level.get(r.n) ?? 0) * night * (3.4 + 2.3 * r.radius) : 0
       // a lamp that has been given a new room fades out where it was before it comes up where it is going
       if (r && light.userData.room !== r.n) {
         if (light.intensity > 0.05) light.intensity = Math.max(0, light.intensity - dt * 30)
         else {
           light.userData.room = r.n
-          light.position.set(r.x, 2.5, r.z)
-          light.distance = r.radius * 2.2 + 4
+          light.position.set(r.x, 3.1, r.z)
+          light.distance = r.radius * 2.6 + 5
         }
         continue
       }
