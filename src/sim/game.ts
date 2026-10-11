@@ -67,6 +67,8 @@ function makeCompany(id: string, seed: RivalSeed): Company {
 }
 
 function roundPrice(v: number): number {
+  // cheap devices (earbuds, fitness bands) round up in small steps, or the rounding eats the whole margin
+  if (v < 100) return Math.ceil(v / 5) * 5 - 1
   return v < 300 ? Math.round(v / 10) * 10 - 1 : Math.round(v / 50) * 50 - 1
 }
 
@@ -334,7 +336,9 @@ export function discontinue(s: GameState, productId: string) {
   }
 }
 
-const STARTER_SEGMENT: Record<DeviceType, SegmentId> = { phone: 'mainstream', tablet: 't-main', watch: 'w-smart', laptop: 'l-ultra' }
+const STARTER_SEGMENT: Record<DeviceType, SegmentId> = { phone: 'mainstream', tablet: 't-main', watch: 'w-smart', laptop: 'l-ultra', desktop: 'd-home', console: 'c-core', earbuds: 'e-anc', tv: 'tv-home' }
+/** Body colour of the starting template for each device type. */
+const STARTER_COLOR: Partial<Record<DeviceType, string>> = { laptop: '#8f959d', watch: '#3a3d42', desktop: '#c3c7cc', console: '#e4e5e7', earbuds: '#ecebe6', tv: '#25282d' }
 
 /** Starting template for a new design, using only what the company has researched. */
 export function starterDesign(s: GameState, type: DeviceType = 'phone'): DeviceDesign {
@@ -342,7 +346,7 @@ export function starterDesign(s: GameState, type: DeviceType = 'phone'): DeviceD
   const c = player(s)
   const logo = c.name.split(' ')[0].slice(0, 10).toUpperCase()
   const segment = STARTER_SEGMENT[type]
-  const d = generateDesign(holder, { segment, levels: s.levels, mLevel: marketLevel(s.day), layout: 1, palette: [type === 'laptop' ? '#8f959d' : type === 'watch' ? '#3a3d42' : '#b9c7d8'], logo, logoImage: !!c.logo })
+  const d = generateDesign(holder, { segment, levels: s.levels, mLevel: marketLevel(s.day), layout: 1, palette: [STARTER_COLOR[type] ?? '#b9c7d8'], logo, logoImage: !!c.logo })
   const owned = (id: string) => s.features.includes(id)
   d.specs.extras = d.specs.extras.filter(owned)
   if (d.specs.refresh > 60 && !owned(`hz${d.specs.refresh}`)) d.specs.refresh = 60
@@ -1098,9 +1102,12 @@ export function migrate(input: GameState): GameState {
   // ---- companies: existing rivals enter the new markets, and new rivals arrive
   RIVALS.forEach((seed, i) => {
     let c = s.companies.find((x) => x.id === `r${i}`)
+    // a start-up founded during play may already hold this id; the seeded company then takes a fresh one
+    const taken = !!c && c.name !== seed.name && !seed.segments.some((seg) => c!.segments.includes(seg))
+    if (taken) c = undefined
     if (!c) {
       if (s.companies.some((x) => x.name === seed.name)) return
-      c = makeCompany(`r${i}`, seed)
+      c = makeCompany(taken ? `r${s.nextId++}` : `r${i}`, seed)
       s.companies.push(c)
     }
     c.software = c.software ?? seed.software

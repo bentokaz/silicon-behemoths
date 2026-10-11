@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { marketLevel } from '../data/catalog'
-import { SEGMENTS } from '../data/devices'
+import { RIVALS, SEGMENTS, ioOptions, segmentsOf, subLabel } from '../data/devices'
 import {
   type LaunchOrder,
   autoLine,
@@ -25,13 +25,14 @@ import {
   trailingUnits,
   upgradeOffice,
 } from './game'
-import { utility } from './market'
+import { clampPart, designFace, faceSize, facesFor, isEdge, kindsFor, mountOf, newPart, standMount } from './geometry'
+import { bestSegment, utility } from './market'
 import { pendingUnits, supplyPrice } from './ops'
-import { VARIANTS, deriveVariant } from './rivals'
-import { evaluate } from './scoring'
+import { VARIANTS, deriveVariant, fitInside, layoutParts, syncSockets } from './rivals'
+import { budWeight, evaluate, minThickness, thermal } from './scoring'
 import { lineStats, newSite, storeStats, validTile } from './sites'
 import { staffEffects } from './staff'
-import { DEVICE_TYPES, type GameState, type Levels, TRACKS } from './types'
+import { DEVICE_TYPES, type DeviceType, type GameState, type Levels, SUBS, TRACKS } from './types'
 
 const fresh = (seed = 7, extra: Partial<ReturnType<typeof defaultConfig>> = {}) => newGame({ ...defaultConfig(), seed, ...extra })
 const rich = (seed = 7) => fresh(seed, { unlimitedMoney: true })
@@ -371,6 +372,221 @@ describe('growth and technology', () => {
     expect(s.os.version).toBe(1)
     expect(s.os.servicesIncome).toBeGreaterThan(0)
     expect(s.reports.some((r) => r.other > 0)).toBe(true)
+  })
+})
+
+describe('desktops, consoles, earbuds and TVs', () => {
+  const NEW: DeviceType[] = ['desktop', 'console', 'earbuds', 'tv']
+  const finite = (ev: ReturnType<typeof evaluate>, label: string, least = 1) => {
+    for (const k of SUBS) {
+      expect(Number.isFinite(ev.raw[k]), `${label} ${k}`).toBe(true)
+      expect(ev.raw[k], `${label} ${k}`).toBeGreaterThanOrEqual(least)
+    }
+    expect(Number.isFinite(ev.unitCost) && ev.unitCost > 0, `${label} cost`).toBe(true)
+    expect(Number.isFinite(ev.report.pct), `${label} design`).toBe(true)
+    expect(ev.report.weight, `${label} weight`).toBeGreaterThan(10)
+    for (const v of Object.values(ev.costParts)) expect(Number.isFinite(v) && v >= 0, `${label} cost part`).toBe(true)
+  }
+
+  it('evaluates every new type at any tech level without bad numbers', () => {
+    for (const techLevel of [0, 3, 8]) {
+      const s = fresh(7, { techLevel })
+      for (const type of NEW) {
+        const d = starterDesign(s, type)
+        const ev = evaluate(d, s.levels, marketLevel(0), s.features, s.chips)
+        finite(ev, `${type} at level ${techLevel}`)
+        expect(ev.report.issues.filter((i) => i.level === 'error'), `${type} at level ${techLevel}`).toEqual([])
+        // a bare design with nothing chosen must still evaluate: old saves and half-built drafts look like this
+        const bare = structuredClone(d)
+        bare.parts = []
+        for (const k of ['io', 'gpu', 'keyboard', 'cooling', 'speakers', 'driver', 'anc'] as const) delete bare.specs[k]
+        delete bare.body.stand
+        delete bare.body.buds
+        finite(evaluate(bare, s.levels, marketLevel(0), s.features, s.chips), `bare ${type}`, 0)
+      }
+    }
+  })
+
+  it('names the scores of each type and has options for all of them', () => {
+    expect(subLabel('console', 'display')).toBe('Picture output')
+    expect(subLabel('earbuds', 'perf')).toBe('Sound quality')
+    expect(subLabel('tv', 'battery')).toBe('Sound')
+    expect(subLabel('phone', 'camera')).toBe('Camera')
+    for (const type of NEW) {
+      expect(segmentsOf(type).length, type).toBeGreaterThanOrEqual(2)
+      expect(ioOptions(type).length, type).toBeGreaterThan(3)
+      for (const seg of segmentsOf(type)) {
+        expect(Object.values(seg.weights).reduce((a, b) => a + b, 0), seg.id).toBeCloseTo(1, 5)
+        expect(RIVALS.filter((r) => r.segments.includes(seg.id)).length, seg.id).toBeGreaterThanOrEqual(2)
+      }
+    }
+  })
+
+  it('needs cooling for hot chips and room for big speakers', () => {
+    const s = fresh(7, { techLevel: 4 })
+    const box = starterDesign(s, 'console')
+    box.specs.chipTier = 2
+    box.specs.gpu = 3
+    box.specs.cooling = 0
+    Object.assign(box.body, { width: 200, height: 45, thickness: 150 })
+    expect(thermal(box)!.headroom).toBeLessThan(0.5)
+    expect(evaluate(box, s.levels, 3, s.features).report.issues.some((i) => i.level === 'error' && /overheats/.test(i.text))).toBe(true)
+    box.body.height = 300
+    box.body.thickness = 280
+    expect(thermal(box)!.headroom).toBeGreaterThan(1)
+    const tv = starterDesign(s, 'tv')
+    tv.specs.speakers = 3
+    tv.body.thickness = Math.max(minThickness('tv', s.levels.design, tv.specs), 20)
+    expect(evaluate(tv, s.levels, 3, s.features).report.issues.some((i) => /speakers need a body/.test(i.text))).toBe(true)
+    // the helper rivals use makes room for both
+    fitInside(tv, s.levels)
+    expect(evaluate(tv, s.levels, 3, s.features).report.issues.filter((i) => i.level === 'error')).toEqual([])
+  })
+
+  it('rewards better drivers, noise cancelling and a bigger case battery in earbuds', () => {
+    const s = fresh(7, { techLevel: 5 })
+    const d = starterDesign(s, 'earbuds')
+    const base = evaluate(d, s.levels, 4, s.features)
+    const better = structuredClone(d)
+    better.specs.driver = 4
+    better.specs.anc = 3
+    const up = evaluate(better, s.levels, 4, s.features)
+    expect(up.raw.perf).toBeGreaterThan(base.raw.perf)
+    expect(up.raw.display).toBeGreaterThanOrEqual(base.raw.display)
+    expect(up.unitCost).toBeGreaterThan(base.unitCost)
+    const small = structuredClone(d)
+    small.specs.battery = 100
+    expect(evaluate(small, s.levels, 4, s.features).raw.battery).toBeLessThan(base.raw.battery)
+    expect(base.report.lifeHours).toBeGreaterThan(10)
+    expect(base.report.lifeHours).toBeLessThan(80)
+    const beans = structuredClone(d)
+    beans.body.buds = 'bean'
+    expect(budWeight(beans)).toBeLessThan(budWeight(d))
+  })
+
+  it('launches rivals into every new segment at sensible prices', () => {
+    const s = tick(fresh(), 6 * 360)
+    for (const type of NEW) {
+      for (const seg of segmentsOf(type)) {
+        const made = s.products.filter((p) => p.segment === seg.id && p.companyId !== 'player')
+        const fresh = made.filter((p) => p.launchDay > 360)
+        expect(fresh.length, `${seg.id} launches`).toBeGreaterThanOrEqual(3)
+        expect(made.filter((p) => p.status === 'sale').length, `${seg.id} on sale`).toBeGreaterThanOrEqual(2)
+        for (const p of fresh) {
+          const errors = evaluate(p.design, maxLevels, marketLevel(p.launchDay)).report.issues.filter((i) => i.level === 'error')
+          expect(errors, `${p.name} (${seg.id})`).toEqual([])
+          expect(p.reviewAvg, p.name).toBeGreaterThan(4)
+          // prices are compared at launch; older models are discounted and components move
+          if (p.history.length > 2) continue
+          expect(p.price, `${p.name} (${seg.id})`).toBeGreaterThan(seg.priceRef * 0.45)
+          expect(p.price, `${p.name} (${seg.id})`).toBeLessThan(seg.priceRef * 1.9)
+        }
+        // over six years the makers aiming at a segment sell at least a year's worth of it between them
+        expect(made.reduce((a, p) => a + p.unitsSold, 0), `${seg.id} units`).toBeGreaterThan(seg.size * 0.8)
+      }
+    }
+  })
+
+  it('gives a starter design of each new type a fair review, real sales and no monopoly', () => {
+    for (const type of NEW) {
+      const s = rich()
+      const design = starterDesign(s, type)
+      const ev = evaluate(design, s.levels, marketLevel(0), s.features, s.chips)
+      const seg = bestSegment({ raw: ev.raw, featureBonus: ev.featureBonus, price: 0, type }, player(s), 0).seg
+      // priced the way a player would: at the going rate, or at a healthy margin over cost if that is higher
+      const price = Math.round(Math.max(seg.priceRef * 0.9, (ev.unitCost * 1.25) / 0.85))
+      expect(startProduct(s, order(s, { design, price, quantity: 5e6, marketing: 2e6 })), type).toBeNull()
+      tick(s, 540)
+      const p = mine(s)[0]
+      expect(p.reviewAvg, `${type} review`).toBeGreaterThan(4.5)
+      expect(p.reviewAvg, `${type} review`).toBeLessThan(9.6)
+      expect(p.unitsSold, `${type} units`).toBeGreaterThan(1000)
+      expect(p.price * 0.85, `${type} margin`).toBeGreaterThan(p.unitCost)
+      const all = s.products.filter((x) => x.type === type).reduce((a, x) => a + x.unitsSold, 0)
+      expect(p.unitsSold / all, `${type} share`).toBeLessThan(0.4)
+    }
+  })
+
+  it('keeps every part on a face it belongs to, on every solid of every type', () => {
+    const s = fresh()
+    for (const p of s.products) {
+      const d = p.design
+      for (const part of d.parts) {
+        expect(facesFor(part.kind, d.type), `${p.name}: ${part.kind}`).toContain(part.face)
+        const fs = faceSize(d.body, part.face, d.type)
+        expect(Math.abs(part.x), `${p.name}: ${part.kind} x`).toBeLessThanOrEqual(fs.w / 2 + 1e-6)
+        expect(Math.abs(part.y), `${p.name}: ${part.kind} y`).toBeLessThanOrEqual(fs.h / 2 + 1e-6)
+        // clamping a placed part again must not move it
+        expect(clampPart(d.body, part, d.type), `${p.name}: ${part.kind}`).toEqual(part)
+      }
+    }
+    for (const type of DEVICE_TYPES) {
+      for (const face of ['front', 'back', 'left', 'right', 'top', 'bottom'] as const) {
+        const m = mountOf(type, face)
+        expect(designFace(type, m.carrier, m.face), `${type} ${face}`).toBe(face)
+      }
+      // every kind the editor offers can be added and lands on one of its faces
+      const d = starterDesign(s, type)
+      for (const kind of kindsFor(type)) {
+        const part = newPart(kind, d)
+        expect(facesFor(kind, type), `${type} ${kind}`).toContain(part.face)
+        expect(Number.isFinite(part.x) && Number.isFinite(part.y) && part.w > 0 && part.h > 0, `${type} ${kind}`).toBe(true)
+      }
+    }
+    // a laptop's deck is a full surface, its sides are edges
+    expect(isEdge('top', 'laptop')).toBe(false)
+    expect(isEdge('left', 'laptop')).toBe(true)
+    expect(isEdge('left', 'console')).toBe(false)
+    const laptop = starterDesign(s, 'laptop')
+    expect(faceSize(laptop.body, 'top', 'laptop')).toEqual({ w: laptop.body.width, h: laptop.body.height })
+  })
+
+  it('adds and removes sockets as ports are chosen in the advanced editor', () => {
+    const s = fresh()
+    const d = starterDesign(s, 'tv')
+    const before = d.specs.io ?? []
+    const sockets = (x: typeof d) => x.parts.filter((p) => p.kind === 'port')
+    const count = sockets(d).length
+    const logo = d.parts.find((p) => p.kind === 'logo')!
+    logo.x = 40
+    d.specs.io = before.filter((id) => id !== 'hdmi')
+    d.parts = syncSockets(d, before)
+    expect(sockets(d).length).toBe(count - 2)
+    d.specs.io = [...d.specs.io, 'hdmi']
+    d.parts = syncSockets(d, before.filter((id) => id !== 'hdmi'))
+    expect(sockets(d).length).toBe(count)
+    expect(new Set(d.parts.map((p) => p.id)).size).toBe(d.parts.length)
+    expect(d.parts.find((p) => p.kind === 'logo')!.x).toBe(40)
+    expect(evaluate(d, s.levels, 3, s.features).report.issues.filter((i) => /no socket/.test(i.text))).toEqual([])
+  })
+
+  it('warns about a part placed where a desktop stand attaches', () => {
+    const s = fresh()
+    const d = starterDesign(s, 'desktop')
+    const clear = evaluate(d, s.levels, 3, s.features)
+    expect(clear.report.issues.filter((i) => /stand attaches/.test(i.text))).toEqual([])
+    const mount = standMount(d.body, 'desktop')!
+    const button = d.parts.find((p) => p.kind === 'button' && p.face === 'back')!
+    button.x = mount.x
+    button.y = mount.y
+    const blocked = evaluate(d, s.levels, 3, s.features)
+    expect(blocked.report.issues.some((i) => /stand attaches/.test(i.text) && i.partId === button.id)).toBe(true)
+    expect(blocked.report.pct).toBeLessThan(clear.report.pct)
+    // a TV on feet has nothing bolted to its back
+    expect(standMount(starterDesign(s, 'tv').body, 'tv')).toBeNull()
+  })
+
+  it('lays a console out as a tower when it is tall and narrow', () => {
+    const s = fresh()
+    const d = starterDesign(s, 'console')
+    Object.assign(d.body, { width: 104, height: 300, thickness: 262, corner: 10 })
+    d.parts = layoutParts(d.body, { type: 'console', layout: 0, cams: 0, sensor: 0, periscope: false, front: 'notch', fingerprint: 'none', flash: true, stereo: false, logo: 'ACME', logoImage: false, io: d.specs.io })
+    const ev = evaluate(d, s.levels, 3, s.features)
+    expect(ev.report.issues.filter((i) => /clipping/.test(i.text))).toEqual([])
+    expect(d.parts.find((p) => p.kind === 'slot')?.rot).toBe(90)
+    // too small for a disc: the drive is refused
+    Object.assign(d.body, { width: 100, height: 100 })
+    expect(evaluate(d, s.levels, 3, s.features).report.issues.some((i) => /disc drive needs/.test(i.text))).toBe(true)
   })
 })
 

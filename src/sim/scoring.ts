@@ -1,8 +1,8 @@
 // Turns a DeviceDesign into raw sub-scores, a design report derived from the
 // physical model, and a unit cost. No randomness: same design, same result.
-import { CHARGE_W, EXTRAS, LENSES, MIN_BEZEL, MIN_THICKNESS, REFRESH, batteryDensity, chipInfo, featuresAtLevels, idealRam, idealStorage, materialInfo, panelInfo, refScore, sensorInfo } from '../data/catalog'
-import { GPUS, KEYBOARDS, PORTS, SENSORS, STRAPS, TYPES } from '../data/devices'
-import { contains, isSide, rectsOverlap, screenRect } from './geometry'
+import { CHARGE_W, EXTRAS, LENSES, MIN_BEZEL, MIN_THICKNESS, PANEL_NAMES, REFRESH, batteryDensity, chipInfo, featuresAtLevels, idealRam, idealStorage, materialInfo, panelInfo, refScore, sensorInfo } from '../data/catalog'
+import { ANC, COOLERS, DRIVERS, GPUS, SPEAKERS, STRAPS, TYPES, VIDEO_OUT, inputOptions, ioInfo, standInfo } from '../data/devices'
+import { contains, isEdge, rectsOverlap, screenRect, standMount } from './geometry'
 import { clamp } from './rng'
 import type { Body, CostParts, CustomChip, DeviceDesign, DeviceType, Evaluation, Issue, Levels, PlacedPart, Specs } from './types'
 
@@ -13,10 +13,12 @@ const lerp01 = (v: number, zero: number, full: number) => clamp((v - zero) / (fu
 
 export const minBezel = (type: DeviceType, designLevel: number) => Math.round(MIN_BEZEL[designLevel] * TYPES[type].bezelScale * 20) / 20
 export function minThickness(type: DeviceType, designLevel: number, specs?: Specs): number {
-  return Math.max(3.5, MIN_THICKNESS[designLevel] + TYPES[type].thickBase) + (type === 'laptop' ? GPUS[specs?.gpu ?? 0].thick : 0)
+  const T = TYPES[type]
+  return Math.max(3.5, MIN_THICKNESS[designLevel] * (T.thickScale ?? 1) + T.thickBase) + (T.gpu ? GPUS[specs?.gpu ?? 0].thick : 0)
 }
 
 export function maxBattery(b: Body, batteryLevel: number, type: DeviceType = 'phone'): number {
+  if (TYPES[type].mains) return 0
   const m = TYPES[type].batt
   const vol = (Math.max(0, b.width - m.mx) * Math.max(0, b.height - m.my) * Math.max(0, b.thickness - m.mt)) / 1000
   const cap = Math.floor((vol * m.fill * batteryDensity(batteryLevel)) / 50) * 50
@@ -27,6 +29,10 @@ export const LAPTOP_BATTERY_CAP = 26000
 
 /** Battery capacity the way it is quoted for the device type. */
 export const batteryLabel = (type: DeviceType, mah: number) => (type === 'laptop' ? `${Math.round((mah * 3.85) / 1000)} Wh` : `${mah} mAh`)
+/** Charging power in watts. An earbud case charges at a tenth of what a phone does. */
+export const chargeWatts = (type: DeviceType, level: number) => (type === 'earbuds' ? CHARGE_W[level] / 10 : CHARGE_W[level])
+/** Name of a display level: a panel, or for a console what its video output can drive. */
+export const panelName = (type: DeviceType, level: number) => (type === 'console' ? VIDEO_OUT[level] : PANEL_NAMES[level])
 
 /** Screen-to-body ratio a top design at this level is expected to reach. */
 function targetSbr(type: DeviceType, level: number): number {
@@ -44,6 +50,8 @@ export interface ChipSpec {
   cost: number
   gen: number
   custom: boolean
+  /** Heat at full load in a phone-sized design; larger devices scale it up. */
+  watts: number
 }
 
 /** The chip a design uses: one of the company's own, or an off-the-shelf Helix. */
@@ -58,9 +66,16 @@ export function chipFor(s: Specs, chips?: CustomChip[]): ChipSpec {
       eff: (1 + 0.08 * own.gen) * (0.85 + 0.35 * own.efficiency) * own.quality,
       // no supplier margin, but a bigger design costs more silicon
       cost: 70 * Math.pow(1.12, own.gen) * (0.45 + 0.35 * own.power + 0.2 * own.graphics + 0.1 * own.efficiency) * 0.7,
+      watts: 15 + 28 * own.power + 12 * own.graphics - 10 * own.efficiency,
     }
   }
-  return { ...chipInfo(s.chipGen, s.chipTier), gen: s.chipGen, custom: false }
+  return { ...chipInfo(s.chipGen, s.chipTier), gen: s.chipGen, custom: false, watts: [15, 28, 45][s.chipTier] ?? 28 }
+}
+
+/** Weight of one earbud in grams. */
+export function budWeight(d: DeviceDesign): number {
+  const s = d.specs
+  return 3.3 + (DRIVERS[s.driver ?? 0] ?? DRIVERS[0]).weight + (ANC[s.anc ?? 0] ?? ANC[0]).weight + (d.body.buds === 'bean' ? 0.2 : 0.6)
 }
 
 export function deviceWeight(d: DeviceDesign): number {
@@ -69,10 +84,36 @@ export function deviceWeight(d: DeviceDesign): number {
   const frame = materialInfo(b.frameMat)
   const back = materialInfo(b.backMat)
   const volume = (b.width * b.height * b.thickness) / 1000
-  const frameVol = (2 * (b.width + b.height) * b.thickness * 1.5) / 1000
+  // an earbud case has no frame, only a hinge and trim in the frame material
+  const frameVol = ((2 * (b.width + b.height) * b.thickness * 1.5) / 1000) * (d.type === 'earbuds' ? 0.12 : 1)
   const plateVol = (b.width * b.height * 0.7) / 1000
-  const gpu = d.type === 'laptop' ? GPUS[d.specs.gpu ?? 0].weight : 0
-  return d.specs.battery * 0.011 + frameVol * frame.density + plateVol * back.density + plateVol * 2.5 + volume * t.density + gpu
+  let w = d.specs.battery * 0.011 + frameVol * frame.density + plateVol * back.density + (t.noScreen ? 0 : plateVol * 2.5) + volume * t.density
+  if (t.gpu) w += GPUS[d.specs.gpu ?? 0].weight
+  if (d.type === 'desktop' || d.type === 'tv') w += standInfo(d.type, b.stand).weight * areaScale(d)
+  if (d.type === 'earbuds') w += 2 * budWeight(d)
+  return w
+}
+
+/** Size of the body's face relative to the type's default, for costs and limits that grow with it. */
+const areaScale = (d: DeviceDesign) => (d.body.width * d.body.height) / (TYPES[d.type].width[2] * TYPES[d.type].height[2])
+
+/**
+ * How well a mains-powered design sheds its heat. Headroom of 1 or more runs
+ * cool and quiet; below about a half it cannot be sold. Null for types this
+ * does not apply to.
+ */
+export function thermal(d: DeviceDesign, chips?: CustomChip[]): { heat: number; litres: number; headroom: number } | null {
+  const T = TYPES[d.type]
+  if (!T.mains?.cool) return null
+  const b = d.body
+  const s = d.specs
+  const scr = screenRect(b)
+  // the display panel itself takes the first few millimetres behind the glass
+  const panel = T.noScreen ? 0 : scr.w * scr.h * Math.min(b.thickness, 8)
+  const litres = (b.width * b.height * b.thickness - panel) / 1e6
+  const heat = chipFor(s, chips).watts * (T.heat ?? 1) + (T.gpu ? GPUS[s.gpu ?? 0].drain : 0)
+  const cooler = COOLERS[s.cooling ?? 0] ?? COOLERS[0]
+  return { heat, litres, headroom: (litres * 40 * cooler.factor) / heat }
 }
 
 /**
@@ -86,28 +127,30 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
   const type = d.type
   const T = TYPES[type]
   const slab = type === 'phone' || type === 'tablet'
+  const hasScreen = !T.noScreen
   const issues: Issue[] = []
   const err = (text: string, partId?: string) => issues.push({ level: 'error', text, partId })
   const warn = (text: string, partId?: string) => issues.push({ level: 'warn', text, partId })
 
   const scr = screenRect(b)
-  const areaCm2 = (scr.w * scr.h) / 100
-  const diag = Math.hypot(scr.w, scr.h) / 25.4
+  const areaCm2 = hasScreen ? (scr.w * scr.h) / 100 : 0
+  const diag = hasScreen ? Math.hypot(scr.w, scr.h) / 25.4 : 0
   const panel = panelInfo(s.panel)
   const rf = REFRESH.find((r) => r.hz === s.refresh) ?? REFRESH[0]
   const chip = chipFor(s, chips)
   const frame = materialInfo(b.frameMat)
   const back = materialInfo(b.backMat)
-  const gpu = type === 'laptop' ? GPUS[s.gpu ?? 0] : GPUS[0]
+  const gpu = T.gpu ? (GPUS[s.gpu ?? 0] ?? GPUS[0]) : GPUS[0]
   const io = s.io ?? []
   const has = (id: string) => s.extras.includes(id)
+  const ref = refScore(mLevel)
 
   // ---- tech locks and physical limits
   if (s.customChip && !chip.custom) err('The chosen in-house chip is not ready')
-  if (s.panel > lv.display) err(`${panel.name} panel needs Display level ${s.panel}`)
+  if (s.panel > lv.display) err(type === 'console' ? `${VIDEO_OUT[s.panel]} output needs Display level ${s.panel}` : hasScreen ? `${panel.name} panel needs Display level ${s.panel}` : `This design needs Display level ${s.panel}`)
   if (rf.feat && !owned.has(rf.feat)) err(`${rf.hz} Hz refresh is not researched yet`)
   if (!chip.custom && s.chipGen > lv.chipset) err(`${chip.name} needs Chipset level ${s.chipGen}`)
-  if (s.charging > lv.charging) err(`${CHARGE_W[s.charging]} W charging needs Charging level ${s.charging}`)
+  if (s.charging > lv.charging) err(`${chargeWatts(type, s.charging)} W charging needs Charging level ${s.charging}`)
   if (frame.level > lv.materials) err(`${frame.name} needs Materials level ${frame.level}`)
   if (back.level > lv.materials) err(`${back.name} needs Materials level ${back.level}`)
   for (const id of s.extras) {
@@ -115,11 +158,11 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
     if (ex && !owned.has(ex.id)) err(`${ex.name} is not researched yet`)
   }
   const minBez = minBezel(type, lv.design)
-  if (Math.min(b.bezelSide, b.bezelTop, b.bezelBottom) < minBez - 1e-6) err(`Bezels below ${minBez} mm need better Industrial design`)
+  if (hasScreen && Math.min(b.bezelSide, b.bezelTop, b.bezelBottom) < minBez - 1e-6) err(`Bezels below ${minBez} mm need better Industrial design`)
   const minThick = minThickness(type, lv.design, s)
-  if (b.thickness < minThick - 1e-6) err(gpu.thick ? `This graphics card needs a body at least ${minThick.toFixed(1)} mm thick` : `Body thinner than ${minThick.toFixed(1)} mm needs better Industrial design`)
+  if (b.thickness < minThick - 1e-6) err(gpu.thick ? `This graphics card needs a body at least ${minThick.toFixed(1)} mm ${type === 'console' ? 'deep' : 'thick'}` : type === 'console' || type === 'earbuds' ? `The ${type === 'console' ? 'box' : 'case'} must be at least ${minThick.toFixed(0)} mm deep` : `Body thinner than ${minThick.toFixed(1)} mm needs better Industrial design`)
   const maxBat = maxBattery(b, lv.battery, type)
-  if (s.battery > maxBat) err(`Battery does not fit: this body holds at most ${batteryLabel(type, maxBat)}`)
+  if (!T.mains && s.battery > maxBat) err(`Battery does not fit: this ${type === 'earbuds' ? 'case' : 'body'} holds at most ${batteryLabel(type, maxBat)}`)
 
   // ---- parts
   const rear = d.parts.filter((p) => p.kind === 'camera' && p.face === 'back')
@@ -154,7 +197,27 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
     if (p.kind === 'fingerprint' && p.face === 'front' && !owned.has('fpdisplay')) err('Under-display fingerprint is not researched yet', p.id)
   }
   const buttons = d.parts.filter((p) => p.kind === 'button')
+  const sockets = d.parts.filter((p) => p.kind === 'port' || p.kind === 'slot')
+  const lights = d.parts.filter((p) => p.kind === 'light')
   const stereo = has('stereo')
+
+  // ---- what is fitted from the type's list of ports, sensors or features
+  let ioValue = 0
+  let ioCost = 0
+  let ioSockets = 0
+  for (const id of io) {
+    const info = ioInfo(type, id)
+    if (!info) continue
+    if (info.level > lv.chipset) err(`${info.name} needs Chipset level ${info.level}`)
+    ioValue += info.value
+    ioCost += info.cost
+    if (info.size) ioSockets += info.count ?? 1
+  }
+  if (ioSockets > sockets.length) warn(ioSockets - sockets.length === 1 ? 'One of the chosen ports has no socket on the body' : `${ioSockets - sockets.length} of the chosen ports have no socket on the body`)
+  const input = T.input ? inputOptions(type)[s.keyboard ?? 0] ?? inputOptions(type)[0] : undefined
+  const inputRank = (s.keyboard ?? 0) / 3
+  if (input && input.level > lv.design) err(`${input.name} needs Industrial design level ${input.level}`)
+  const webcam = selfie.length ? 0.5 + 0.5 * Math.min(1, selfieQ / refScore(Math.max(0, mLevel - 2))) : 0
 
   // ---- the type's special score
   let special = 0
@@ -168,32 +231,37 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
     if (buttons.length === 0) warn('No buttons: there is no way to power it on')
     if (!d.parts.some((p) => p.kind === 'grille')) warn('No speaker grille')
   } else if (T.special === 'sensors') {
-    for (const id of io) {
-      const sn = SENSORS.find((x) => x.id === id)
-      if (!sn) continue
-      if (sn.level > lv.chipset) err(`${sn.name} sensor needs Chipset level ${sn.level}`)
-      special += sn.value
-    }
+    special = ioValue
     if (io.length === 0) warn('No health sensors')
     if (io.length > 0 && !d.parts.some((p) => p.kind === 'island')) warn('Health sensors need a sensor window on the back')
     if (buttons.length === 0) warn('No crown or button')
     const strap = STRAPS.find((x) => x.id === b.strap)
     if (strap && strap.level > lv.materials) err(`${strap.name} strap needs Materials level ${strap.level}`)
-  } else {
-    const kb = KEYBOARDS[s.keyboard ?? 0]
-    if (kb.level > lv.design) err(`${kb.name} keyboard needs Industrial design level ${kb.level}`)
-    let portValue = 0
-    for (const id of io) {
-      const port = PORTS.find((x) => x.id === id)
-      if (!port) continue
-      if (port.level > lv.chipset) err(`${port.name} needs Chipset level ${port.level}`)
-      portValue += port.value
-    }
-    if (!io.some((id) => id === 'usbc' || id === 'usbc2' || id === 'thunder')) err('A laptop needs a USB-C or Thunderlink port to charge')
+  } else if (T.special === 'io') {
     if (selfie.length === 0) warn('No webcam')
-    const webcam = selfie.length ? 0.5 + 0.5 * Math.min(1, selfieQ / refScore(Math.max(0, mLevel - 2))) : 0
-    const pct = 0.35 * ((s.keyboard ?? 0) / 3) + 0.3 * Math.min(1, portValue / 4.5) + 0.2 * webcam + 0.15 * (stereo ? 1 : 0.3)
-    special = pct * refScore(mLevel) * 1.1
+    let pct: number
+    if (type === 'laptop') {
+      if (!io.some((id) => id === 'usbc' || id === 'usbc2' || id === 'thunder')) err('A laptop needs a USB-C or Thunderlink port to charge')
+      pct = 0.35 * inputRank + 0.3 * Math.min(1, ioValue / 4.5) + 0.2 * webcam + 0.15 * (stereo ? 1 : 0.3)
+    } else {
+      if (io.length === 0) warn('No ports: nothing can be plugged in')
+      if (buttons.length === 0) warn('No power button')
+      pct = 0.35 * inputRank + 0.37 * Math.min(1, ioValue / 5) + 0.28 * webcam
+    }
+    special = pct * ref * 1.1
+  } else if (T.special === 'games') {
+    if (io.includes('disc') && Math.max(b.width, b.height) < 132) err('A disc drive needs a front at least 132 mm wide or tall')
+    if (buttons.length === 0) warn('No power button')
+    if (!d.parts.some((p) => p.kind === 'vent')) warn('No vents: the hot air has nowhere to go')
+    special = (0.42 * inputRank + 0.58 * Math.min(1, ioValue / 4.6)) * ref * 1.1
+  } else if (T.special === 'smarts') {
+    special = ioValue
+    if (io.includes('through') && !(s.anc ?? 0)) err('Transparency mode needs noise-cancelling microphones')
+    if (!d.parts.some((p) => p.kind === 'port') && !has('wireless')) err('No charging port and no wireless charging')
+  } else {
+    if (!io.includes('hdmi') && !io.includes('hdmi4')) warn('No HDMI inputs')
+    if (buttons.length === 0) warn('No power button on the set')
+    special = (0.12 + 0.88 * Math.min(1, ioValue / 5.2)) * ref * 1.1
   }
 
   // overlaps: parts may sit on an island, and a camera may sit in a notch
@@ -212,20 +280,75 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
       }
     }
   }
+  const mount = standMount(b, type)
+  if (mount) {
+    const patch: PlacedPart = { id: '', kind: 'island', face: 'back', rot: 0, ...mount }
+    for (const p of d.parts) {
+      if (p.face !== 'back' || !rectsOverlap(p, patch)) continue
+      overlaps++
+      warn('This part is where the stand attaches', p.id)
+    }
+  }
 
   // ---- raw sub-scores
   const memoryFit = T.memory > 0 ? 0.8 + 0.12 * Math.min(1, s.ram / (idealRam(mLevel) * T.memory)) + 0.08 * Math.min(1, s.storage / (idealStorage(mLevel) * T.memory)) : 0.95
-  const perf = chip.perf * memoryFit * (type === 'laptop' ? 0.7 + gpu.boost : 1)
-  const sizeF = diag < T.diag[0] ? 1 - Math.min(0.15, ((T.diag[0] - diag) / T.diag[0]) * 0.6) : diag <= T.diag[1] ? 1 : 0.93
-  const display = panel.quality * (0.8 + rf.bonus) * sizeF
-  const rfPower = s.panel >= 3 ? 1 + (rf.power - 1) / 2 : rf.power
-  const drain = areaCm2 * panel.power * rfPower * 0.9 + T.drainBase + gpu.drain
-  const life = (s.battery * chip.eff) / drain
-  const battery = life * T.lifeScore + 12 + 3.5 * s.charging + (has('wireless') ? 4 : 0)
+  const driver = DRIVERS[s.driver ?? 0] ?? DRIVERS[0]
+  const anc = ANC[s.anc ?? 0] ?? ANC[0]
+  const stem = b.buds !== 'bean'
+  let perf = chip.perf * memoryFit * (T.gpu ? 0.7 + gpu.boost : 1)
+  let display: number
+  if (type === 'earbuds') {
+    // sound comes mostly from the driver, noise cancelling from its own electronics
+    if (driver.level > lv.materials) err(`${driver.name} driver needs Materials level ${driver.level}`)
+    if (anc.level > lv.chipset) err(`${anc.name} needs Chipset level ${anc.level}`)
+    perf = (0.6 * refScore(driver.tech) + 0.4 * chip.perf) * memoryFit
+    display = Math.max(10, refScore(anc.tech)) * (stem ? 1 : 1.04)
+  } else if (type === 'console') {
+    // a sharper output is only worth having with the graphics power to drive it
+    display = panel.quality * (0.8 + rf.bonus) * [0.8, 0.88, 0.95, 1][s.gpu ?? 0]
+  } else {
+    const sizeF = diag < T.diag[0] ? 1 - Math.min(0.15, ((T.diag[0] - diag) / T.diag[0]) * 0.6) : diag <= T.diag[1] ? 1 : 0.93
+    display = panel.quality * (0.8 + rf.bonus) * sizeF
+  }
+
+  // ---- battery, or for mains devices cooling and sound
+  let life = 0
+  let lifeHours = 0
+  let battery: number
+  const heat = thermal(d, chips)
+  const cooler = COOLERS[s.cooling ?? 0] ?? COOLERS[0]
+  const speakers = SPEAKERS[s.speakers ?? 0] ?? SPEAKERS[0]
+  if (T.mains) {
+    let cool = 1
+    if (heat) {
+      if (cooler.level > lv.materials) err(`${cooler.name} cooling needs Materials level ${cooler.level}`)
+      cool = lerp01(heat.headroom, 0.35, 1)
+      if (heat.headroom < 0.5) err(`It overheats: ${Math.round(heat.heat)} W of heat needs a larger body or better cooling`)
+      else if (heat.headroom < 0.8) warn('Runs hot and loud under load')
+    }
+    if (T.mains.sound > 0) {
+      if (speakers.level > lv.design) err(`${speakers.name} speakers need Industrial design level ${speakers.level}`)
+      if (b.thickness < speakers.thick - 1e-6) err(`${speakers.name} speakers need a body at least ${speakers.thick} mm thick`)
+    }
+    battery = (T.mains.cool * cool + T.mains.sound * speakers.quality) * ref * 1.1
+  } else if (type === 'earbuds') {
+    // each bud has a small cell of its own; the case recharges both several times
+    const cell = (stem ? 0.19 : 0.155) * batteryDensity(lv.battery)
+    const budHours = (cell * chip.eff) / (T.drainBase + driver.drain + anc.drain)
+    lifeHours = budHours * (1 + (s.battery * 0.85) / (2 * cell))
+    life = budHours + 0.2 * (lifeHours - budHours)
+    battery = life * T.lifeScore + 12 + 3.5 * s.charging + (has('wireless') ? 4 : 0)
+  } else {
+    const rfPower = s.panel >= 3 ? 1 + (rf.power - 1) / 2 : rf.power
+    const drain = areaCm2 * panel.power * rfPower * 0.9 + T.drainBase + gpu.drain
+    life = (s.battery * chip.eff) / drain
+    lifeHours = life * T.lifeHours
+    battery = life * T.lifeScore + 12 + 3.5 * s.charging + (has('wireless') ? 4 : 0)
+  }
 
   // ---- design score, derived from the physical model
   const dl = clamp(mLevel, 0, 8)
-  const sbr = (scr.w * scr.h) / (b.width * b.height)
+  const sbr = hasScreen ? (scr.w * scr.h) / (b.width * b.height) : 0
   const weight = deviceWeight(d)
   const idealThick = minThickness(type, Math.round(dl), s) + T.thin[0]
   const backArea = b.width * b.height
@@ -233,8 +356,9 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
   const looseCams = rear.filter((c) => !islands.some((i) => contains(i, c)))
   const bumpArea = islands.reduce((a, p) => a + p.w * p.h, 0) + looseCams.reduce((a, p) => a + p.w * p.h, 0)
 
-  // symmetry and alignment of everything on the back
-  const backParts = d.parts.filter((p) => p.face === 'back')
+  // symmetry and alignment of everything on the face that is judged: the back, or the front of a box
+  const judged = type === 'console' || type === 'earbuds' ? 'front' : 'back'
+  const backParts = d.parts.filter((p) => p.face === judged)
   let tidy = 0
   for (const p of backParts) {
     const centred = Math.abs(p.x) < 0.75
@@ -262,59 +386,109 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
     ergo = 0.6 * (1 - lerp01(weight, 520, 820)) + 0.4 * (buttons.length ? 1 : 0)
   } else if (type === 'watch') {
     ergo = 0.6 * (1 - lerp01(b.height, 47, 56)) + 0.4 * (buttons.some((p) => p.crown) ? 1 : buttons.length ? 0.6 : 0)
-  } else {
+  } else if (type === 'laptop') {
     ergo = 0.5 * (1 - lerp01(weight, 1500, 2800)) + 0.5 * (1 - lerp01(b.thickness, 17, 29))
+  } else if (type === 'desktop' || type === 'tv') {
+    // sockets you can reach without turning the whole thing round
+    const ports = d.parts.filter((p) => p.kind === 'port')
+    const near = ports.filter((p) => p.face !== 'back' || Math.abs(p.x) > b.width * 0.3)
+    ergo = 0.6 * (ports.length ? near.length / ports.length : 0.3) + 0.4 * (buttons.length ? 1 : 0)
+  } else if (type === 'console') {
+    ergo = 0.5 * (sockets.some((p) => p.face === 'front' && p.kind === 'port') ? 1 : 0.2) + 0.5 * (buttons.some((p) => p.face === 'front' || p.face === 'top') ? 1 : 0)
+  } else {
+    ergo = 0.5 * (lights.length ? 1 : 0) + 0.5 * (buttons.length ? 1 : 0)
   }
 
   const finish = b.backFinish === 'matte' && back.id === 'plastic' ? -0.05 : 0
   const materials = clamp((frame.premium + back.premium) / 2 + finish, 0, 1)
   const notchPenalty = notches.length > 0 && dl >= 1.5 ? 0.5 : 1
   const strap = STRAPS.find((x) => x.id === b.strap) ?? STRAPS[0]
+  const stand = standInfo(type === 'tv' ? 'tv' : 'desktop', b.stand)
+  const wScale = T.weightByArea ? areaScale(d) : 1
+  const weightRow = (max: number) => ({ key: 'weight', label: 'Weight', max, score: max * (1 - lerp01(weight, T.weight[0] * wScale, T.weight[1] * wScale)) })
 
-  const fourth =
-    type === 'watch'
-      ? { key: 'strap', label: 'Strap', max: 10, score: 10 * strap.premium }
-      : type === 'laptop'
-        ? { key: 'deck', label: 'Keyboard deck', max: 10, score: 10 * (0.25 + 0.75 * ((s.keyboard ?? 0) / 3)) }
-        : { key: 'bump', label: 'Camera housing', max: 10, score: 10 * (1 - lerp01(bumpArea / backArea, 0.14, 0.45)) }
-  const breakdown = [
-    { key: 'sbr', label: 'Screen-to-body', max: 28, score: 28 * lerp01(sbr, T.sbrFloor, targetSbr(type, dl)) * notchPenalty },
-    { key: 'thin', label: 'Thinness', max: 12, score: 12 * (1 - lerp01(b.thickness, idealThick, idealThick + T.thin[1])) },
-    { key: 'weight', label: 'Weight', max: 10, score: 10 * (1 - lerp01(weight, T.weight[0], T.weight[1])) },
-    fourth,
-    { key: 'sym', label: 'Symmetry and alignment', max: 15, score: 15 * symmetry },
-    { key: 'ergo', label: 'Ergonomics', max: 10, score: 10 * ergo },
-    { key: 'mat', label: 'Materials', max: 15, score: 15 * materials },
-  ]
-  const clipping = Math.min(20, overlaps * 4) + (buttons.length === 0 && type !== 'laptop' ? 5 : 0)
+  let breakdown: { key: string; label: string; score: number; max: number }[]
+  if (type === 'console') {
+    const litres = (b.width * b.height * b.thickness) / 1e6
+    breakdown = [
+      { key: 'compact', label: 'Compact size', max: 26, score: 26 * (1 - lerp01(litres, 4.5, 13)) },
+      weightRow(10),
+      { key: 'detail', label: 'Lighting and badge', max: 10, score: (lights.length ? 6 : 0) + (d.parts.some((p) => p.kind === 'logo') ? 4 : 0) },
+      { key: 'sym', label: 'Symmetry and alignment', max: 20, score: 20 * symmetry },
+      { key: 'ergo', label: 'Front access', max: 14, score: 14 * ergo },
+      { key: 'mat', label: 'Materials', max: 20, score: 20 * materials },
+    ]
+  } else if (type === 'earbuds') {
+    const cm3 = (b.width * b.height * b.thickness) / 1000
+    breakdown = [
+      { key: 'compact', label: 'Pocket size', max: 26, score: 26 * (1 - lerp01(cm3, 52, 105)) },
+      weightRow(12),
+      { key: 'fit', label: 'Bud comfort', max: 12, score: 12 * (1 - lerp01(budWeight(d), 4.6, 7.2)) },
+      { key: 'sym', label: 'Symmetry and alignment', max: 15, score: 15 * symmetry },
+      { key: 'ergo', label: 'Light and button', max: 10, score: 10 * ergo },
+      { key: 'mat', label: 'Materials', max: 25, score: 25 * materials },
+    ]
+  } else {
+    const fourth =
+      type === 'watch'
+        ? { key: 'strap', label: 'Strap', max: 10, score: 10 * strap.premium }
+        : type === 'laptop'
+          ? { key: 'deck', label: 'Keyboard deck', max: 10, score: 10 * (0.25 + 0.75 * ((s.keyboard ?? 0) / 3)) }
+          : type === 'desktop' || type === 'tv'
+            ? { key: 'stand', label: 'Stand', max: 10, score: 10 * stand.premium }
+            : { key: 'bump', label: 'Camera housing', max: 10, score: 10 * (1 - lerp01(bumpArea / backArea, 0.14, 0.45)) }
+    breakdown = [
+      { key: 'sbr', label: 'Screen-to-body', max: 28, score: 28 * lerp01(sbr, T.sbrFloor, targetSbr(type, dl)) * notchPenalty },
+      { key: 'thin', label: 'Thinness', max: 12, score: 12 * (1 - lerp01(b.thickness, idealThick, idealThick + T.thin[1])) },
+      weightRow(10),
+      fourth,
+      { key: 'sym', label: 'Symmetry and alignment', max: 15, score: 15 * symmetry },
+      { key: 'ergo', label: type === 'desktop' || type === 'tv' ? 'Reach of ports and buttons' : 'Ergonomics', max: 10, score: 10 * ergo },
+      { key: 'mat', label: 'Materials', max: 15, score: 15 * materials },
+    ]
+  }
+  const clipping = Math.min(20, overlaps * 4) + (buttons.length === 0 && type !== 'laptop' && type !== 'earbuds' ? 5 : 0)
   if (clipping > 0) breakdown.push({ key: 'clip', label: 'Clipping penalties', max: 0, score: -clipping })
   const pct = clamp(breakdown.reduce((a, x) => a + x.score, 0), 0, 100)
   const design = (pct / 100) * refScore(dl) * 1.06
 
   // ---- unit cost by supply category
-  const areaFactor = Math.pow((b.width * b.height) / (74 * 158), 0.6) * (type === 'watch' ? 2 : 1)
+  const shell = T.noScreen ? b.width * b.height + b.width * b.thickness + b.height * b.thickness : b.width * b.height
+  const areaFactor = Math.pow(shell / (74 * 158), 0.6) * (type === 'watch' ? 2 : 1)
   const cost: CostParts = { semis: 0, displays: 0, memory: 0, batteries: 0, materials: 0, other: T.assembly }
-  cost.semis = chip.cost * T.chipCost + gpu.cost * Math.pow(1.1, chip.gen)
+  cost.semis = chip.cost * T.chipCost + gpu.cost * (T.gpuCost ?? 1) * Math.pow(1.1, chip.gen)
   for (const p of rear) cost.semis += sensorInfo(p.sensor ?? 0).cost * LENSES[p.lens ?? 'wide'].cost
   for (const p of selfie) cost.semis += sensorInfo(p.sensor ?? 0).cost * 0.6 * (p.underDisplay ? 1.5 : 1)
   cost.displays = areaCm2 * panel.costPerCm2 * (1 + rf.bonus) * T.panelCost
-  cost.memory = T.memory > 0 ? s.ram * 2.5 + s.storage * 0.08 : 4
-  cost.batteries = s.battery * 0.0022 * (1 + 0.1 * lv.battery) + 1 + 0.04 * CHARGE_W[s.charging]
-  cost.materials = (frame.cost + back.cost) * areaFactor + (type === 'watch' ? strap.cost : 0)
+  cost.memory = T.memory > 0 ? s.ram * 2.5 + s.storage * 0.08 : type === 'earbuds' ? 1 : 4
+  cost.batteries = T.mains ? 0 : s.battery * 0.0022 * (1 + 0.1 * lv.battery) + 1 + 0.04 * chargeWatts(type, s.charging)
+  cost.materials = (frame.cost + back.cost) * areaFactor * (T.matCost ?? 1) + (type === 'watch' ? strap.cost : 0)
   for (const id of s.extras) cost.other += EXTRAS.find((e) => e.id === id)?.cost ?? 0
   cost.other += d.parts.filter((p) => p.kind !== 'camera').length * 0.5
-  if (d.parts.some((p) => p.kind === 'fingerprint' && !isSide(p.face) && p.face === 'front')) cost.other += 4
-  if (type === 'watch') for (const id of io) cost.semis += SENSORS.find((x) => x.id === id)?.cost ?? 0
-  if (type === 'laptop') {
-    cost.other += KEYBOARDS[s.keyboard ?? 0].cost
-    for (const id of io) cost.other += PORTS.find((x) => x.id === id)?.cost ?? 0
+  if (d.parts.some((p) => p.kind === 'fingerprint' && !isEdge(p.face, type) && p.face === 'front')) cost.other += 4
+  // sensors and radio features are chips; sockets and drives are not
+  if (type === 'watch' || type === 'earbuds') cost.semis += ioCost
+  else cost.other += ioCost
+  if (input) cost.other += input.cost
+  if (type === 'console') cost.semis += 3 + 2 * s.panel * (1 + rf.bonus)
+  if (type === 'earbuds') {
+    cost.semis += anc.cost
+    cost.other += driver.cost
+    cost.batteries += 1.6
+  }
+  if (T.mains) {
+    // the power supply, then whatever keeps it cool and makes it heard
+    cost.other += 6 + 0.05 * (heat?.heat ?? 40)
+    if (T.mains.cool > 0) cost.other += cooler.cost
+    if (T.mains.sound > 0) cost.other += speakers.cost
+    if (type !== 'console') cost.materials += stand.cost * areaScale(d)
   }
   cost.other += (d.colors?.length ?? 0) * 1.5
   const unitCost = cost.semis + cost.displays + cost.memory + cost.batteries + cost.materials + cost.other
 
   return {
     raw: { perf, display, camera: special, battery, design },
-    report: { pct, breakdown, issues, weight, sbr, diag, maxBattery: maxBat, lifeHours: life * T.lifeHours },
+    report: { pct, breakdown, issues, weight, sbr, diag, maxBattery: maxBat, lifeHours },
     unitCost: Math.round(unitCost * 100) / 100,
     costParts: cost,
     // extras, plus a little for offering a choice of colours

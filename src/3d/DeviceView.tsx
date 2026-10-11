@@ -5,25 +5,31 @@ import { Canvas, type ThreeEvent, useThree } from '@react-three/fiber'
 import { EffectComposer, N8AO } from '@react-three/postprocessing'
 import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
-import type { DeviceDesign, Face } from '../sim/types'
-import { buildDevice, deviceBottom, deviceRadius, disposeDevice, pointToFace } from './buildDevice'
+import { TYPES } from '../data/devices'
+import type { Carrier } from '../sim/geometry'
+import type { DeviceDesign, DeviceType, Face } from '../sim/types'
+import { buildDevice, deviceFrame, disposeDevice, pointToFace } from './buildDevice'
 
 export type ViewName = 'back' | 'front' | 'side' | 'bottom'
+type Views = Record<ViewName, [number, number, number]>
 /** Camera directions; the distance is set from the size of the device. */
-const VIEWS: Record<ViewName, [number, number, number]> = {
+const VIEWS: Views = {
   back: [-0.33, 0.15, -0.93],
   front: [0.33, 0.15, 0.93],
   side: [0.98, 0.09, -0.13],
   bottom: [0.13, -0.86, -0.49],
 }
-/** Laptops sit open on a desk, so they are viewed from higher up. */
-const LAPTOP_VIEWS: Record<ViewName, [number, number, number]> = {
-  back: [-0.4, 0.42, -0.82],
-  front: [0.34, 0.5, 0.8],
-  side: [0.95, 0.28, 0.12],
-  bottom: [0.3, 0.9, 0.3],
+/** Things that sit on a desk are viewed from higher up; their fourth view looks down on them. */
+const DESK_VIEWS: Partial<Record<DeviceType, Views>> = {
+  laptop: { back: [-0.4, 0.42, -0.82], front: [0.34, 0.5, 0.8], side: [0.95, 0.28, 0.12], bottom: [0.3, 0.9, 0.3] },
+  desktop: { back: [-0.42, 0.2, -0.88], front: [0.3, 0.14, 0.94], side: [0.97, 0.12, 0.2], bottom: [0.18, -0.72, 0.67] },
+  tv: { back: [-0.42, 0.2, -0.88], front: [0.28, 0.12, 0.95], side: [0.97, 0.12, 0.2], bottom: [0.18, -0.72, 0.67] },
+  console: { back: [-0.42, 0.34, -0.84], front: [0.4, 0.36, 0.84], side: [0.93, 0.26, 0.24], bottom: [0.24, 0.9, 0.36] },
+  earbuds: { back: [-0.44, 0.34, -0.83], front: [0.36, 0.4, 0.84], side: [0.93, 0.28, 0.24], bottom: [0.2, -0.82, 0.54] },
 }
-const viewDir = (d: DeviceDesign, v: ViewName) => (d.type === 'laptop' ? LAPTOP_VIEWS : VIEWS)[v]
+const viewDir = (d: DeviceDesign, v: ViewName) => (DESK_VIEWS[d.type] ?? VIEWS)[v]
+/** What the fourth view button shows for a device type. */
+export const fourthView = (type: DeviceType): string => (type === 'laptop' || type === 'console' ? 'top' : type === 'desktop' || type === 'tv' ? 'under' : 'bottom')
 /** Camera distance per unit of device radius, for a 26 degree lens. */
 const FRAMING = 5.3
 
@@ -55,7 +61,7 @@ function Rig({ dir, dist, nonce }: { dir: [number, number, number]; dist: number
   return null
 }
 
-function Device({ design, selectedId, onPick, onDrag, logo, colorIndex = -1 }: Props) {
+function Device({ design, selectedId, onPick, onDrag, logo, colorIndex = -1, scale }: Props & { scale: number }) {
   const group = useMemo(() => buildDevice(design, selectedId, logo, colorIndex), [design, selectedId, logo, colorIndex])
   useEffect(() => () => disposeDevice(group), [group])
   const dragging = useRef(false)
@@ -77,7 +83,7 @@ function Device({ design, selectedId, onPick, onDrag, logo, colorIndex = -1 }: P
     const hit = e.intersections.find((i) => i.object.userData.partId)
     const front = e.intersections[0]
     // a part only counts if nothing but its own island / the body is in front of it
-    const id = (front?.object.userData.partId as string | undefined) ?? (hit && hit.distance - front.distance < 3 ? (hit.object.userData.partId as string) : null)
+    const id = (front?.object.userData.partId as string | undefined) ?? (hit && hit.distance - front.distance < 3 * scale ? (hit.object.userData.partId as string) : null)
     onPick(id)
     if (id) {
       dragging.current = true
@@ -87,25 +93,28 @@ function Device({ design, selectedId, onPick, onDrag, logo, colorIndex = -1 }: P
   const move = (e: ThreeEvent<PointerEvent>) => {
     if (!dragging.current || !onDrag) return
     e.stopPropagation()
+    // the nearest solid under the pointer; the hit is converted into that solid's own space
     const hit = e.intersections.find((i) => i.object.userData.body && i.face)
     if (!hit?.face) return
-    const f = pointToFace(hit.point, hit.face.normal)
-    onDrag(f.face, f.x, f.y)
+    const local = hit.object.worldToLocal(hit.point.clone())
+    const f = pointToFace(design.type, hit.object.userData.carrier as Carrier, local, hit.face.normal)
+    if (f) onDrag(f.face, f.x, f.y)
   }
   return <primitive object={group} onPointerDown={down} onPointerMove={move} />
 }
 
 export function DeviceView(props: Props) {
   const { design } = props
-  const radius = deviceRadius(design)
-  // everything in the studio scales with the device, so a watch and a laptop are lit alike
+  const { radius, bottom } = deviceFrame(design)
+  // everything in the studio scales with the device, so a watch and a TV are lit alike
   const k = radius / 87
   const dist = radius * FRAMING
-  const view = props.view ?? (design.type === 'laptop' ? 'front' : 'back')
+  const desk = !!DESK_VIEWS[design.type]
+  const view = props.view ?? TYPES[design.type].hero
   const dir = viewDir(design, view)
-  // a laptop's deck faces straight up into the key light, so it needs less of it
-  const sun = design.type === 'laptop' ? 0.5 : 1
-  const floorY = -deviceBottom(design) - (design.type === 'laptop' ? 0.3 : 8 * k)
+  // a laptop's deck and a console's lid face straight up into the key light, so they need less of it
+  const sun = design.type === 'laptop' || design.type === 'console' ? 0.5 : design.type === 'earbuds' ? 0.75 : 1
+  const floorY = -bottom - (desk ? 0.3 * Math.min(k, 1) : 8 * k)
   return (
     <Canvas
       shadows
@@ -146,7 +155,7 @@ export function DeviceView(props: Props) {
         <Lightformer form="ring" intensity={1.2} color="#9fb4c8" position={[0, -7, 0]} scale={6} target={[0, 0, 0]} />
       </Environment>
 
-      <Device {...props} />
+      <Device {...props} scale={k} />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, floorY, 0]} receiveShadow>
         <planeGeometry args={[3000 * k, 3000 * k]} />

@@ -123,6 +123,16 @@ const PRAISE: Record<string, string[]> = {
   battery: ['Easily lasts me the whole day.', 'I keep forgetting to charge it.'],
   design: ['Feels premium in the hand.', 'People ask me what it is.'],
   price: ['Worth every cent.', 'Could not find better for the money.'],
+  games: ['The controller feels fantastic.', 'Plays everything I own, discs included.'],
+  graphics: ['Games look stunning on it.', 'Smooth and sharp in every game I have tried.'],
+  cooling: ['Stays cool and I never hear the fan.', 'Silent, even when it is working hard.'],
+  sound: ['Sounds big enough that I skipped the soundbar.', 'Voices are clear and the bass is real.'],
+  ports: ['Everything I own plugs straight in.', 'The menus are quick and easy to live with.'],
+  smart: ['The picture is clean, whatever I feed it.', 'Upscaling makes old shows look new.'],
+  audio: ['They sound far better than I expected.', 'Rich, detailed sound. I hear new things in old songs.'],
+  anc: ['The train just disappears when I put them in.', 'Noise cancelling is superb.'],
+  smarts: ['They pair instantly and just work.', 'Full of clever touches I use every day.'],
+  look: ['It looks great in the room.', 'Visitors always ask what it is.'],
 }
 const GRIPES: Record<string, string[]> = {
   perf: ['Stutters with a few apps open.', 'Feels slow already.'],
@@ -135,13 +145,24 @@ const GRIPES: Record<string, string[]> = {
   price: ['Way overpriced for what you get.', 'Should cost a lot less.'],
   defect: ['Mine arrived faulty and had to be replaced.', 'Had to send it back within a week.'],
   support: ['Support never answered my ticket.', 'Getting help was painful.'],
+  games: ['The controller feels like a toy.', 'Missing features every other console has.'],
+  graphics: ['Games look blurry on a big screen.', 'It struggles to hold a steady frame rate.'],
+  cooling: ['The fan sounds like a hair dryer.', 'It runs alarmingly hot.'],
+  sound: ['The speakers are thin and tinny.', 'I had to buy a soundbar straight away.'],
+  ports: ['Not enough inputs for my things.', 'The menus are slow and missing basics.'],
+  smart: ['Motion looks smeary.', 'Lower-quality video looks rough on it.'],
+  audio: ['They sound flat and lifeless.', 'Muddy bass and harsh highs.'],
+  anc: ['They barely block any noise.', 'I can still hear the whole office.'],
+  smarts: ['Pairing is a daily fight.', 'Bare-bones. They do not even pause when I take them out.'],
+  look: ['It looks cheap in the room.', 'A big dull box. I hide it away.'],
 }
 
 /** One owner's comment, picked from what this product does well or badly. */
 export function makeFeedback(r: RngHolder, p: Product, maker: Maker, day: number, supportGap: number): Feedback {
   const n = normalised(p.raw, day)
   const { seg } = bestSegment(p, maker, day)
-  const key = (k: keyof SubScores) => (k === 'camera' ? TYPES[p.type].special : k)
+  // each device type says which stock comments fit its scores; a console's "display" is its graphics
+  const key = (k: keyof SubScores) => TYPES[p.type].voice?.[k] ?? (k === 'camera' ? TYPES[p.type].special : k)
   const good: string[] = []
   const bad: string[] = []
   for (const k of SUBS) {
