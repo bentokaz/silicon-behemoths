@@ -27,10 +27,12 @@ const DESK_VIEWS: Partial<Record<DeviceType, Views>> = {
   tv: { back: [-0.42, 0.2, -0.88], front: [0.28, 0.12, 0.95], side: [0.97, 0.12, 0.2], bottom: [0.18, -0.72, 0.67] },
   console: { back: [-0.42, 0.34, -0.84], front: [0.4, 0.36, 0.84], side: [0.93, 0.26, 0.24], bottom: [0.24, 0.9, 0.36] },
   earbuds: { back: [-0.44, 0.34, -0.83], front: [0.36, 0.4, 0.84], side: [0.93, 0.28, 0.24], bottom: [0.2, -0.82, 0.54] },
+  headset: { back: [-0.5, 0.42, -0.76], front: [0.46, 0.3, 0.84], side: [0.95, 0.24, 0.2], bottom: [0.22, 0.92, 0.32] },
+  speaker: { back: [-0.42, 0.3, -0.86], front: [0.32, 0.5, 0.8], side: [0.93, 0.3, 0.22], bottom: [0.12, 0.95, 0.3] },
 }
 const viewDir = (d: DeviceDesign, v: ViewName) => (DESK_VIEWS[d.type] ?? VIEWS)[v]
 /** What the fourth view button shows for a device type. */
-export const fourthView = (type: DeviceType): string => (type === 'laptop' || type === 'console' ? 'top' : type === 'desktop' || type === 'tv' ? 'under' : 'bottom')
+export const fourthView = (type: DeviceType): string => (type === 'laptop' || type === 'console' || type === 'headset' || type === 'speaker' ? 'top' : type === 'desktop' || type === 'tv' ? 'under' : 'bottom')
 /** Camera distance per unit of device radius, for a 26 degree lens. */
 const FRAMING = 5.3
 
@@ -83,7 +85,7 @@ export function DeviceView(props: Props) {
   const view = props.view ?? TYPES[design.type].hero
   const dir = viewDir(design, view)
   // a laptop's deck and a console's lid face straight up into the key light, so they need less of it
-  const sun = design.type === 'laptop' || design.type === 'console' ? 0.5 : design.type === 'earbuds' ? 0.75 : 1
+  const sun = design.type === 'laptop' || design.type === 'console' ? 0.5 : design.type === 'earbuds' ? 0.75 : design.type === 'speaker' ? 0.65 : design.type === 'headset' ? 0.85 : 1
   const floorY = -bottom - (desk ? 0.3 * Math.min(k, 1) : 8 * k)
   // the wide, flat back of a screen or a lid faces away from every lamp, so it gets a fill of its own
   const backFill = design.type === 'tv' || design.type === 'desktop' ? 1.1 : design.type === 'laptop' ? 0.7 : 0

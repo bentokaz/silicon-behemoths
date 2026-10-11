@@ -5,14 +5,14 @@ import { DeviceView, type ViewName, fourthView } from '../3d/DeviceView'
 import { useStudio } from '../3d/studio'
 import { sfx } from '../audio/sfx'
 import { CHARGE_W, CHIP_TIERS, EXTRAS, LENSES, MATERIALS, PANEL_NAMES, RAM_OPTIONS, REFRESH, SENSOR_NAMES, STORAGE_OPTIONS, chipInfo, marketLevel, sensorInfo } from '../data/catalog'
-import { ANC, COOLERS, DRIVERS, GPUS, SPEAKERS, STRAPS, TYPES, inputOptions, ioOptions, segmentsOf, standInfo, standsFor, subLabel } from '../data/devices'
+import { ANC, COOLERS, DRIVERS, GPUS, HEAD_STRAPS, HINGES, INPUT_NAMES, MIC_ARRAYS, OPTICS, SPEAKERS, SPEAKER_DRIVERS, STRAPS, TYPES, headStrap, inputOptions, ioOptions, segmentsOf, standInfo, standsFor, subLabel } from '../data/devices'
 import { RETAIL_CUT, canAfford, devPlan, isVariantOf, player, productName, startProduct } from '../sim/game'
-import { faceLabel, facesFor, faceSize, isEdge, kindsFor, partLabel } from '../sim/geometry'
+import { faceLabel, facesFor, faceSize, isEdge, kindsFor, partLabel, speakerShape } from '../sim/geometry'
 import { EVENTS, hasStage } from '../sim/growth'
 import { appeal, bestSegment, normalised } from '../sim/market'
 import { CONTRACT, FACTORY_SAVING, costNow, factoryLine } from '../sim/ops'
 import { type FingerprintStyle, type FrontStyle, LAYOUT_NAMES } from '../sim/rivals'
-import { batteryLabel, chargeWatts, evaluate, minBezel, minThickness, panelName, selfieMinDia, thermal } from '../sim/scoring'
+import { batteryLabel, chargeWatts, evaluate, foldedThickness, minBezel, minThickness, panelName, selfieMinDia, thermal } from '../sim/scoring'
 import { type Colorway, DEVICE_TYPES, type DeviceType, type Face, type Lens, type PlacedPart, type ProductionOrder, SUBS, type StorageTier } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { Btn, Choice, Meter, Mini, NumInput, Row, Slider, Tabs, Tag, TextInput, money, num, pct } from './ui'
@@ -21,12 +21,22 @@ const SWATCHES = ['#17191d', '#2b2f36', '#5b6470', '#c9ccd1', '#ecebe6', '#c8b89
 const GLOWS = ['#ffffff', '#5ab4ff', '#8dffa8', '#ff5a4a', '#ffb347', '#c78bff']
 const mm = (v: number) => `${v.toFixed(1)} mm`
 /** Sizes of large devices read better without decimals. */
-const mmFor = (type: DeviceType) => (type === 'tv' || type === 'desktop' || type === 'console' ? (v: number) => `${Math.round(v)} mm` : mm)
+const mmFor = (type: DeviceType) => (type === 'tv' || type === 'desktop' || type === 'console' || type === 'headset' || type === 'speaker' ? (v: number) => `${Math.round(v)} mm` : mm)
 const grams = (g: number) => (g >= 2000 ? `${(g / 1000).toFixed(1)} kg` : `${Math.round(g)} g`)
 /** What the two body materials are called on each device type: [frame, back]. */
-const SHELL_NAMES: Partial<Record<DeviceType, [string, string]>> = { laptop: ['Shell', 'Lid'], desktop: ['Shell and stand', 'Back and chin'], console: ['Shell', 'Front panel'], tv: ['Frame and stand', 'Back'], earbuds: ['Hinge and trim', 'Case and buds'] }
+const SHELL_NAMES: Partial<Record<DeviceType, [string, string]>> = { laptop: ['Shell', 'Lid'], desktop: ['Shell and stand', 'Back and chin'], console: ['Shell', 'Front panel'], tv: ['Frame and stand', 'Back'], earbuds: ['Hinge and trim', 'Case and buds'], headset: ['Shell and band', 'Front plate'], speaker: ['Top and trim', 'Fabric'], handheld: ['Shell', 'Front plate'] }
 /** Where the simple editor puts the logo. */
-const LOGO_PLACE: Partial<Record<DeviceType, string>> = { laptop: 'lid', desktop: 'back, and on the chin if there is one', console: 'top, or the side of a tower', tv: 'back, and below the screen if the bezel allows', earbuds: 'front of the case' }
+const LOGO_PLACE: Partial<Record<DeviceType, string>> = { laptop: 'lid', desktop: 'back, and on the chin if there is one', console: 'top, or the side of a tower', tv: 'back, and below the screen if the bezel allows', earbuds: 'front of the case', foldable: 'back, beside the cameras', headset: 'front of the visor', speaker: 'panel at the back', handheld: 'back, between the grips' }
+/** What the body is called in the editor, where "chassis" does not fit. */
+const BODY_NAMES: Partial<Record<DeviceType, string>> = { earbuds: 'Case', headset: 'Visor', speaker: 'Body' }
+/** What the depth of the body costs and buys, for the types where the usual trade does not apply. */
+const DEPTH_HINTS: Partial<Record<DeviceType, string>> = {
+  earbuds: 'A slimmer case is easier to pocket but holds a smaller battery',
+  foldable: 'Each half is this thick, so it closes to a little over twice that. Thinner scores better but leaves less room for the battery',
+  headset: 'A slimmer visor sits closer to the face and is more comfortable, but holds a smaller battery. Simpler lenses need more depth',
+  speaker: 'A bigger body holds more air, which means more bass, but takes up more of the shelf',
+  handheld: 'Thinner scores better on design but leaves less room for the battery',
+}
 const storageLabel = (gb: number) => (gb >= 1024 ? `${gb / 1024} TB` : `${gb} GB`)
 
 function ColorPick({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
@@ -93,17 +103,20 @@ function BodyPanel({ simple }: { simple: boolean }) {
     const z = sizes[i]
     setBody({ width: z.width, height: z.height, ...(z.thickness ? { thickness: Math.max(z.thickness, minThick) } : {}) })
   }
-  const maxCorner = type === 'watch' ? Math.min(body.width, body.height) / 2 : type === 'earbuds' ? body.thickness / 2 : type === 'console' ? Math.max(2, Math.min(body.width, body.height) / 2 - 2) : type === 'laptop' ? 20 : type === 'tv' ? 40 : 24
+  const maxCorner = type === 'watch' ? Math.min(body.width, body.height) / 2 : type === 'earbuds' ? body.thickness / 2 : type === 'console' ? Math.max(2, Math.min(body.width, body.height) / 2 - 2) : type === 'laptop' ? 20 : type === 'tv' || type === 'headset' ? 40 : type === 'speaker' ? Math.min(body.width, body.thickness) / 2 - 1 : 24
+  const flank = T.flank ?? 0
+  const coarse = type === 'console' || type === 'headset' || type === 'speaker'
   // a desktop's bottom bezel is its chin, set on its own; a laptop's and a TV's follow the sides
   const allSides = (v: number) => {
     if (type === 'laptop') return setBody({ bezelSide: v, bezelTop: Math.max(v, body.bezelTop > 5 ? 6 : v), bezelBottom: v * 2.2 })
     if (type === 'tv') return setBody({ bezelSide: v, bezelTop: v, bezelBottom: Math.round(v * 16) / 10 })
     if (type === 'desktop') return setBody({ bezelSide: v, bezelTop: v, bezelBottom: body.bezelBottom > body.bezelSide + 0.01 ? Math.max(v, body.bezelBottom) : v })
-    setBody({ bezelSide: v, bezelTop: v, bezelBottom: v })
+    // a handheld's side bezels also hold its controls
+    setBody({ bezelSide: v + flank, bezelTop: v, bezelBottom: v })
   }
   return (
     <>
-      <Group title={type === 'earbuds' ? 'Case' : 'Chassis'}>
+      <Group title={BODY_NAMES[type] ?? 'Chassis'}>
         {simple ? (
           <Choice label="Size" value={sizeIndex} options={[...(sizeIndex < 0 ? [{ value: -1, label: `Custom (${body.width} x ${body.height} mm)` }] : []), ...sizes.map((z, i) => ({ value: i, label: `${z.name} (${z.width} x ${z.height} mm)` }))]} onChange={(i) => i >= 0 && pickSize(i)} />
         ) : (
@@ -117,31 +130,43 @@ function BodyPanel({ simple }: { simple: boolean }) {
           value={Math.max(body.thickness, minThick)}
           min={minThick}
           max={T.maxThickness}
-          step={type === 'console' ? 1 : 0.1}
+          step={coarse ? 1 : 0.1}
           format={size}
           onChange={(v) => setBody({ thickness: v })}
-          hint={T.mains ? 'A slimmer body scores better on design but has less room for cooling and speakers' : type === 'earbuds' ? 'A slimmer case is easier to pocket but holds a smaller battery' : 'Thinner scores better on design but leaves less room for the battery'}
+          hint={DEPTH_HINTS[type] ?? (T.mains ? 'A slimmer body scores better on design but has less room for cooling and speakers' : 'Thinner scores better on design but leaves less room for the battery')}
         />
-        <Slider label={type === 'earbuds' ? 'Roundness' : 'Corner radius'} value={Math.min(body.corner, maxCorner)} min={type === 'earbuds' ? 2 : 0} max={maxCorner} step={0.5} format={mm} onChange={(v) => setBody({ corner: v })} />
-        <Toggle label={type === 'earbuds' ? 'Top and bottom' : 'Edge profile'} value={body.edge} options={['flat', 'round'] as const} onChange={(edge) => setBody({ edge })} />
+        {(type !== 'speaker' || body.form === 'block') && <Slider label={type === 'earbuds' ? 'Roundness' : 'Corner radius'} value={Math.min(body.corner, maxCorner)} min={type === 'earbuds' ? 2 : 0} max={maxCorner} step={0.5} format={mm} onChange={(v) => setBody({ corner: v })} />}
+        {(type !== 'speaker' || body.form !== 'orb') && <Toggle label={type === 'earbuds' ? 'Top and bottom' : type === 'speaker' ? 'Top edge' : 'Edge profile'} value={body.edge} options={['flat', 'round'] as const} onChange={(edge) => setBody({ edge })} />}
       </Group>
+      {type === 'speaker' && (
+        <Group title="Shape">
+          <Toggle label="Form" value={body.form ?? 'column'} options={['column', 'orb', 'block'] as const} onChange={(form) => setBody({ form })} />
+          <label className="flex items-center py-1 text-[11px]">
+            <input type="checkbox" className="mr-2 accent-accent" checked={!!body.screen} onChange={(e) => setBody({ screen: e.target.checked })} />
+            Touch screen in the front
+          </label>
+          <div className="text-[10px] leading-snug text-faint">A screen lets the assistant show its answers, and buyers of smart displays expect one. It is as large as the flat front allows, so a wider body gives a bigger screen. The panel is chosen under Internals.</div>
+        </Group>
+      )}
       {!T.noScreen && (
         <Group title="Screen bezels">
           {simple ? (
             <>
-              <Slider label={type === 'desktop' ? 'Top and sides' : 'All sides'} value={body.bezelSide} min={minBez} max={minBez * 6 + 2} step={0.05} format={mm} onChange={allSides} />
+              <Slider label={type === 'desktop' ? 'Top and sides' : flank ? 'Around the screen' : 'All sides'} value={Math.max(minBez, body.bezelSide - flank)} min={minBez} max={minBez * 6 + 2} step={0.05} format={mm} onChange={allSides} />
               {type === 'desktop' && <Slider label="Chin" value={body.bezelBottom} min={minBez} max={90} step={0.5} format={mm} onChange={(v) => setBody({ bezelBottom: v })} hint="A chin below the screen gives the computer room in a thin body, at the cost of screen-to-body ratio" />}
             </>
           ) : (
             <>
               <Slider label="Top" value={body.bezelTop} min={minBez} max={minBez * 8 + 6} step={0.05} format={mm} onChange={(v) => setBody({ bezelTop: v })} />
               <Slider label={type === 'desktop' ? 'Bottom (chin)' : 'Bottom'} value={body.bezelBottom} min={minBez} max={type === 'desktop' ? 90 : minBez * 8 + 10} step={0.05} format={mm} onChange={(v) => setBody({ bezelBottom: v })} />
-              <Slider label="Sides" value={body.bezelSide} min={minBez} max={minBez * 6 + 4} step={0.05} format={mm} onChange={(v) => setBody({ bezelSide: v })} />
+              <Slider label={flank ? 'Sides, with the controls' : 'Sides'} value={body.bezelSide} min={minBez + flank} max={minBez * 6 + 4 + flank} step={0.05} format={mm} onChange={(v) => setBody({ bezelSide: v })} />
             </>
           )}
           <div className="text-[10px] text-faint">
             Minimum {minBez} mm at Industrial design level {g.levels.design}
+            {flank ? `, plus ${flank} mm each side for the controls` : ''}
           </div>
+          {type === 'foldable' && <div className="mt-1 text-[10px] leading-snug text-faint">The cover screen on the outside follows the side bezel. Use the Shut button above the model to see it.</div>}
         </Group>
       )}
       <Group title={frameName}>
@@ -151,8 +176,15 @@ function BodyPanel({ simple }: { simple: boolean }) {
       <Group title={backName}>
         {!oneShell && <Choice label="Material" value={body.backMat} options={mats('back')} onChange={(v) => setBody({ backMat: v })} />}
         <ColorPick label="Colour" value={body.backColor} onChange={(v) => setBody({ backColor: v })} />
-        <Toggle label="Finish" value={body.backFinish} options={['gloss', 'matte'] as const} onChange={(backFinish) => setBody({ backFinish })} />
+        {type !== 'speaker' && <Toggle label="Finish" value={body.backFinish} options={['gloss', 'matte'] as const} onChange={(backFinish) => setBody({ backFinish })} />}
       </Group>
+      {type === 'headset' && (
+        <Group title="Head strap">
+          <Choice label="Style" value={headStrap(body.strap).id} options={HEAD_STRAPS.map((s) => ({ value: s.id, label: `${s.name} (${money(s.cost)})`, locked: s.level > g.levels.materials }))} onChange={(v) => setBody({ strap: v })} />
+          <ColorPick label="Strap and cushions" value={body.strapColor ?? '#2f3237'} onChange={(v) => setBody({ strapColor: v })} />
+          <div className="text-[10px] leading-snug text-faint">A rigid band spreads the weight. One with the battery at the back also balances the visor and holds half as much charge again.</div>
+        </Group>
+      )}
       {type === 'watch' && (
         <Group title="Strap">
           <Choice label="Material" value={body.strap ?? 'silicone'} options={STRAPS.map((s) => ({ value: s.id, label: `${s.name} (${money(s.cost)})`, locked: s.level > g.levels.materials }))} onChange={(v) => setBody({ strap: v })} />
@@ -171,8 +203,8 @@ function BodyPanel({ simple }: { simple: boolean }) {
           <div className="text-[10px] leading-snug text-faint">Stems hold a larger battery. Beans are lighter and seal the ear better, which helps noise cancelling.</div>
         </Group>
       )}
-      {!T.noScreen && (
-        <Group title={type === 'watch' ? 'Watch face' : type === 'tv' ? 'On screen' : 'Wallpaper'}>
+      {(!T.noScreen || (type === 'speaker' && body.screen)) && (
+        <Group title={type === 'watch' ? 'Watch face' : type === 'tv' || type === 'speaker' || type === 'handheld' ? 'On screen' : 'Wallpaper'}>
           <div className="flex gap-1">
             {[0, 1, 2, 3, 4, 5].map((i) => (
               <Btn key={i} small className="flex-1" active={d.wallpaper === i} onClick={() => setDraft({ wallpaper: i })}>
@@ -195,9 +227,13 @@ const AUTO_LAYOUT: Partial<Record<DeviceType, string>> = {
   console: 'The disc slot, power button and front ports go on the front, with vents on the top, sides and back. A tall, narrow box is laid out as a tower. The drive and ports are chosen under Internals.',
   tv: 'Inputs sit on a panel on the back with vents above them. Speakers and the power button are along the bottom edge. Inputs are chosen under Internals.',
   earbuds: 'The case gets a charging port underneath and a pairing button on the back. Drivers, noise cancelling and the shape of the buds are chosen under Internals and Body.',
+  foldable: 'The cameras and the badge share the half of the back that is not the cover screen. The inner camera, the charging port and the speakers sit clear of the fold. The hinge is chosen under Internals.',
+  headset: 'The cameras go on the front plate in mirrored pairs, with the power button and a vent on top and the charging port and volume underneath. Lenses, controllers and the strap are chosen under Internals and Body.',
+  speaker: 'Three buttons go on top inside the light ring, and the power inlet and any sockets on the panel at the back. Drivers, microphones, the shape and the screen are chosen under Internals and Body.',
+  handheld: 'The sticks, buttons, triggers and grips are part of the body. Volume, power and the exhaust go along the top between the shoulder buttons, with the charging port and speakers underneath and an intake on the back. Controls and ports are chosen under Internals.',
 }
 /** What the simple editor's one light is called. */
-const LIGHT_NAMES: Partial<Record<DeviceType, string>> = { console: 'Light bar on the front', tv: 'Standby light', earbuds: 'Status light on the case' }
+const LIGHT_NAMES: Partial<Record<DeviceType, string>> = { console: 'Light bar on the front', tv: 'Standby light', earbuds: 'Status light on the case', headset: 'Status light on the front', speaker: 'Light on top', handheld: 'Charge light below the screen, if the bezel has room' }
 
 /** Simple editor: choose from lists; the parts are placed for you. */
 function LayoutPanel() {
@@ -207,10 +243,17 @@ function LayoutPanel() {
   const hasLogo = !!player(g).logo
   const { setSimple } = useStore.getState()
   const owned = (id: string) => g.features.includes(id)
-  const slab = d.type === 'phone' || d.type === 'tablet'
+  const slab = d.type === 'phone' || d.type === 'tablet' || d.type === 'foldable'
   const webcam = d.type === 'laptop' || d.type === 'desktop'
   return (
     <>
+      {d.type === 'headset' && (
+        <Group title="Tracking cameras">
+          <Slider label="Number of cameras" value={Math.max(2, Math.round(o.cams / 2) * 2)} min={2} max={6} step={2} onChange={(v) => setSimple({ cams: v })} />
+          <Choice label="Sensor" value={o.sensor} options={SENSOR_NAMES.map((n, i) => ({ value: i, label: `${n} (${money(sensorInfo(i).cost * 0.6)} each)`, locked: i > g.levels.camera }))} onChange={(v) => setSimple({ sensor: v })} />
+          <div className="text-[10px] leading-snug text-faint">Four cameras see everything around the wearer. A third pair, low down, keeps hold of hands in the lap. Sharper sensors track more steadily.</div>
+        </Group>
+      )}
       {slab && (
         <Group title="Rear cameras">
           <Choice label="Arrangement" value={o.layout} options={LAYOUT_NAMES.map((n, i) => ({ value: i, label: n }))} onChange={(v) => setSimple({ layout: v })} />
@@ -358,19 +401,44 @@ function InternalsPanel({ maxBattery }: { maxBattery: number }) {
   const small = type === 'watch' || type === 'earbuds'
   const heat = thermal(d, g.chips)
   const speakers = SPEAKERS[s.speakers ?? 0]
+  const shape = type === 'speaker' ? speakerShape(d.body) : null
+  const woofer = SPEAKER_DRIVERS[s.driver ?? 0] ?? SPEAKER_DRIVERS[0]
   return (
     <>
-      {type === 'earbuds' ? (
+      {shape && (
+        <Group title="Sound and voice">
+          <Choice label="Drivers" value={s.driver ?? 0} options={SPEAKER_DRIVERS.map((x, i) => ({ value: i, label: `${x.name} (${money(x.cost)})`, locked: x.level > lv.materials }))} onChange={(v) => setSpecs({ driver: v })} />
+          <Choice label="Microphones" value={s.mics ?? 0} options={MIC_ARRAYS.map((x, i) => ({ value: i, label: `${x.name} (${money(x.cost)})`, locked: x.level > lv.chipset }))} onChange={(v) => setSpecs({ mics: v })} />
+          <div className="mt-1 grid grid-cols-2 gap-1">
+            <Mini label="Enclosure" value={`${shape.litres.toFixed(2)} L`} tone={shape.litres < woofer.litres ? 'text-neg' : undefined} />
+            <Mini label="These drivers need" value={woofer.litres ? `${woofer.litres.toFixed(1)} L` : 'any size'} />
+          </div>
+          <div className="mt-1 text-[10px] leading-snug text-faint">Better drivers need Materials research and a bigger body; a bigger body also gives more bass on its own. More microphones need Chipset research and let the assistant hear across a noisy room.</div>
+        </Group>
+      )}
+      {shape && !d.body.screen ? null : type === 'earbuds' ? (
         <Group title="Sound">
           <Choice label="Driver" value={s.driver ?? 0} options={DRIVERS.map((x, i) => ({ value: i, label: `${x.name} (${money(x.cost)})`, locked: x.level > lv.materials }))} onChange={(v) => setSpecs({ driver: v })} />
           <Choice label="Noise cancelling" value={s.anc ?? 0} options={ANC.map((x, i) => ({ value: i, label: x.cost ? `${x.name} (${money(x.cost)})` : x.name, locked: x.level > lv.chipset }))} onChange={(v) => setSpecs({ anc: v })} />
           <div className="text-[10px] leading-snug text-faint">Better drivers need Materials research, better noise cancelling needs Chipset research. Both use more power and add weight to each bud.</div>
         </Group>
       ) : (
-        <Group title={type === 'console' ? 'Video output' : 'Display'}>
-          <Choice label={type === 'console' ? 'Drives up to' : 'Panel'} value={s.panel} options={PANEL_NAMES.map((_, i) => ({ value: i, label: panelName(type, i), locked: i > lv.display }))} onChange={(v) => setSpecs({ panel: v })} />
+        <Group title={type === 'console' ? 'Video output' : type === 'headset' ? 'Displays and lenses' : type === 'foldable' ? 'Display and hinge' : type === 'speaker' ? 'Screen' : 'Display'}>
+          <Choice label={type === 'console' ? 'Drives up to' : type === 'headset' ? 'Panels' : 'Panel'} value={s.panel} options={PANEL_NAMES.map((_, i) => ({ value: i, label: panelName(type, i), locked: i > lv.display }))} onChange={(v) => setSpecs({ panel: v })} />
           {type !== 'watch' && <Choice label="Refresh rate" value={s.refresh} options={REFRESH.map((r) => ({ value: r.hz, label: `${r.hz} Hz`, locked: !!r.feat && !g.features.includes(r.feat) }))} onChange={(v) => setSpecs({ refresh: v })} />}
           {type === 'console' && <div className="text-[10px] leading-snug text-faint">A sharper output only pays off with the graphics card to drive it.</div>}
+          {type === 'headset' && (
+            <>
+              <Choice label="Lenses" value={s.optics ?? 0} options={OPTICS.map((x, i) => ({ value: i, label: `${x.name} (${money(x.cost)})`, locked: x.level > lv.display }))} onChange={(v) => setSpecs({ optics: v })} />
+              <div className="text-[10px] leading-snug text-faint">The picture reaches the eye through the lenses, so they count as much as the panels. Better ones are also thinner and lighter: these need {OPTICS[s.optics ?? 0].depth} mm of extra depth in the visor.</div>
+            </>
+          )}
+          {type === 'foldable' && (
+            <>
+              <Choice label="Hinge" value={s.hinge ?? 0} options={HINGES.map((x, i) => ({ value: i, label: `${x.name} (${money(x.cost)})`, locked: x.level > lv.materials }))} onChange={(v) => setSpecs({ hinge: v })} />
+              <div className="text-[10px] leading-snug text-faint">A better hinge leaves a shallower crease in the screen and a smaller gap when shut. With this one it closes to {foldedThickness(d).toFixed(1)} mm.</div>
+            </>
+          )}
         </Group>
       )}
       <Group title="Compute">
@@ -400,7 +468,7 @@ function InternalsPanel({ maxBattery }: { maxBattery: number }) {
         <Group title="Power">
           <Slider label={type === 'earbuds' ? 'Case battery' : 'Battery'} value={Math.min(s.battery, Math.max(maxBattery, 100))} min={small ? 100 : 500} max={Math.max(maxBattery, small ? 100 : 500)} step={small ? 10 : 50} format={(v) => batteryLabel(type, v)} onChange={(v) => setSpecs({ battery: v })} />
           <div className="text-[10px] text-faint">
-            This {type === 'earbuds' ? 'case' : 'body'} holds up to {batteryLabel(type, maxBattery)}. A thicker or larger {type === 'earbuds' ? 'case' : 'body'} holds more.{type === 'earbuds' ? ' The case recharges the buds; each bud has a small cell of its own.' : ''}
+            This {type === 'earbuds' ? 'case' : type === 'headset' ? 'headset' : 'body'} holds up to {batteryLabel(type, maxBattery)}. A thicker or larger {type === 'earbuds' ? 'case' : type === 'headset' ? 'visor' : 'body'} holds more.{type === 'earbuds' ? ' The case recharges the buds; each bud has a small cell of its own.' : type === 'headset' ? ' So does a band with the battery at the back.' : ''}
           </div>
           <Choice label="Charging" value={s.charging} options={CHARGE_W.map((_, i) => ({ value: i, label: `${chargeWatts(type, i)} W`, locked: i > lv.charging }))} onChange={(v) => setSpecs({ charging: v })} />
         </Group>
@@ -422,8 +490,8 @@ function InternalsPanel({ maxBattery }: { maxBattery: number }) {
         </Group>
       )}
       {(T.input || ioOptions(type).length > 0) && (
-        <Group title={T.input === 'keyboard' ? `Keyboard and ${(T.ioLabel ?? 'ports').toLowerCase()}` : T.input === 'controller' ? 'Controller, drive and ports' : (T.ioLabel ?? 'Features')}>
-          {T.input && <Choice label={T.input === 'controller' ? 'Controller' : 'Keyboard'} value={s.keyboard ?? 0} options={inputOptions(type).map((k, i) => ({ value: i, label: `${k.name} (${money(k.cost)})`, locked: k.level > lv.design }))} onChange={(v) => setSpecs({ keyboard: v })} />}
+        <Group title={T.input === 'keyboard' ? `Keyboard and ${(T.ioLabel ?? 'ports').toLowerCase()}` : T.input === 'controller' ? 'Controller, drive and ports' : T.input === 'wands' ? 'Controllers and sensing' : T.input === 'controls' ? 'Controls, ports and features' : (T.ioLabel ?? 'Features')}>
+          {T.input && <Choice label={INPUT_NAMES[T.input]} value={s.keyboard ?? 0} options={inputOptions(type).map((k, i) => ({ value: i, label: `${k.name} (${money(k.cost)})`, locked: k.level > lv.design }))} onChange={(v) => setSpecs({ keyboard: v })} />}
           <Checks items={ioOptions(type).map((p) => ({ id: p.id, name: p.name, cost: p.cost, locked: p.level > lv.chipset, why: p.level > lv.chipset ? `Needs Chipset level ${p.level}` : undefined }))} selected={io} onToggle={(id) => setSpecs({ io: flip(io, id) })} />
         </Group>
       )}
@@ -634,6 +702,7 @@ export function Designer() {
   const T = TYPES[type]
   const simple = editorMode === 'simple'
   const heat = thermal(draft, g.chips)
+  const folded = useStudio((s) => s.folded)
 
   const [left, setLeft] = useState<LeftPanel>('body')
   const [right, setRight] = useState<RightPanel>(null)
@@ -757,6 +826,15 @@ export function Designer() {
           </div>
         </div>
         <div className="pointer-events-auto flex items-center gap-2">
+          {type === 'foldable' && (
+            <div className="flex border border-line2 bg-panel/95" title="Show it open, or folded shut with the cover screen outermost">
+              {(['open', 'shut'] as const).map((v) => (
+                <Btn key={v} small tone="ghost" active={folded === (v === 'shut')} onClick={() => useStudio.setState({ folded: v === 'shut' })}>
+                  {v}
+                </Btn>
+              ))}
+            </div>
+          )}
           <div className="flex border border-line2 bg-panel/95">
             {(['front', 'back', 'side', 'bottom'] as ViewName[]).map((v) => (
               <Btn key={v} small tone="ghost" active={view === v} onClick={() => (setView(v), setNonce((x) => x + 1))}>
@@ -773,7 +851,7 @@ export function Designer() {
           {left === 'body' && !meta.variant && (
             <div className="shrink-0 border-b border-line p-2">
               <div className="label mb-1 text-faint">Device type</div>
-              <div className="grid grid-cols-4 gap-1">
+              <div className="grid grid-cols-3 gap-1">
                 {DEVICE_TYPES.map((t) => (
                   <Btn key={t} small active={type === t} onClick={() => setType(t)} title={t === type ? '' : 'Switching starts a fresh design'}>
                     {TYPES[t].name}
@@ -817,7 +895,11 @@ export function Designer() {
                 </div>
               ))}
               <div className="mt-2 grid grid-cols-2 gap-1">
-                {T.noScreen ? (
+                {type === 'speaker' ? (
+                  <Mini label="Enclosure" value={`${speakerShape(draft.body).litres.toFixed(2)} L`} />
+                ) : type === 'headset' ? (
+                  <Mini label="Visor depth" value={`${Math.round(draft.body.thickness)} mm`} />
+                ) : T.noScreen ? (
                   <Mini label="Volume" value={type === 'console' ? `${((draft.body.width * draft.body.height * draft.body.thickness) / 1e6).toFixed(1)} L` : `${Math.round((draft.body.width * draft.body.height * draft.body.thickness) / 1000)} cm3`} />
                 ) : (
                   <Mini label="Screen" value={`${ev.report.diag.toFixed(type === 'watch' ? 2 : 1)}" / ${pct(ev.report.sbr, 0)}`} />
@@ -825,12 +907,15 @@ export function Designer() {
                 <Mini label="Weight" value={grams(ev.report.weight)} tone={!T.weightByArea && ev.report.weight > T.weight[1] * 0.9 ? 'text-warn' : undefined} />
                 {heat ? (
                   <Mini label="Cooling headroom" value={`${Math.round(heat.headroom * 100)}%`} tone={heat.headroom < 0.5 ? 'text-neg' : heat.headroom < 0.8 ? 'text-warn' : undefined} />
+                ) : type === 'speaker' ? (
+                  <Mini label="Screen" value={ev.report.diag ? `${ev.report.diag.toFixed(1)}"` : 'None'} />
                 ) : T.mains ? (
                   <Mini label="Speakers" value={SPEAKERS[draft.specs.speakers ?? 0].name} />
                 ) : (
                   <Mini label={type === 'earbuds' ? 'Listening, with case' : 'Battery life'} value={`${ev.report.lifeHours.toFixed(1)} h`} />
                 )}
                 <Mini label="Development" value={`${money(plan.cost, 1)} / ${plan.days} d`} />
+                {type === 'foldable' && <Mini label="Thickness when shut" value={`${foldedThickness(draft).toFixed(1)} mm`} />}
               </div>
             </div>
           )}

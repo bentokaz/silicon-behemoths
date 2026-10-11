@@ -137,6 +137,15 @@ const PRAISE: Record<string, string[]> = {
   anc: ['The train just disappears when I put them in.', 'Noise cancelling is superb.'],
   smarts: ['They pair instantly and just work.', 'Full of clever touches I use every day.'],
   look: ['It looks great in the room.', 'Visitors always ask what it is.'],
+  fold: ['It shuts with a lovely snap, and I cannot find the crease.', 'A phone in my pocket and a tablet when I open it.'],
+  optics: ['Sharp right to the edges. I forget I am wearing lenses.', 'The picture is so clear that text is easy to read.'],
+  tracking: ['It never loses my hands, even behind my back.', 'The controllers feel like part of my arms.'],
+  comfort: ['I wore it for two hours and forgot it was there.', 'So well balanced that it does not press on my face.'],
+  tone: ['Voices sound like the singer is in the room.', 'Clear and detailed, even turned right down.'],
+  assistant: ['It hears me from the next room, over the music.', 'It answers before I have finished asking.'],
+  home: ['It runs every light and lock in the house.', 'It set itself up with everything I already own.'],
+  bass: ['It fills the whole flat without straining.', 'Real bass from something this size.'],
+  play: ['The sticks and triggers feel as good as a proper gamepad.', 'It docks to the TV and I carry on where I left off.'],
 }
 const GRIPES: Record<string, string[]> = {
   perf: ['Stutters with a few apps open.', 'Feels slow already.'],
@@ -159,6 +168,15 @@ const GRIPES: Record<string, string[]> = {
   anc: ['They barely block any noise.', 'I can still hear the whole office.'],
   smarts: ['Pairing is a daily fight.', 'Bare-bones. They do not even pause when I take them out.'],
   look: ['It looks cheap in the room.', 'A big dull box. I hide it away.'],
+  fold: ['I see the crease every time the screen is on.', 'It is a brick when shut, and the hinge already creaks.'],
+  optics: ['Blurry everywhere but the dead centre.', 'I can count the pixels, and bright things smear.'],
+  tracking: ['It keeps losing track of my hands.', 'The room drifts sideways while I stand still.'],
+  comfort: ['Half an hour and my face aches.', 'All the weight hangs off the front of my head.'],
+  tone: ['Music sounds thin and boxy.', 'It turns harsh as soon as I turn it up.'],
+  assistant: ['I have to shout, and it still mishears me.', 'It takes an age to answer the simplest question.'],
+  home: ['It works with almost nothing else I own.', 'It is a speaker with a voice. It does little else.'],
+  bass: ['No bass at all.', 'Too quiet to fill even a small room.'],
+  play: ['The sticks drifted within a month.', 'The buttons feel mushy and it is missing the basics.'],
 }
 
 /** One owner's comment, picked from what this product does well or badly. */

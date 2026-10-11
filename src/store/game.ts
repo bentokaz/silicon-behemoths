@@ -76,7 +76,8 @@ function readLayout(d: DeviceDesign, g: GameState): SimpleLayout {
   const logo = d.parts.find((p) => p.kind === 'logo')
   return {
     layout: 1,
-    cams: Math.min(4, Math.max(d.type === 'phone' ? 1 : 0, rear.length)),
+    // a headset's cameras are the tracking cameras on its front
+    cams: d.type === 'headset' ? d.parts.filter((p) => p.kind === 'camera').length : Math.min(4, Math.max(d.type === 'phone' || d.type === 'foldable' ? 1 : 0, rear.length)),
     sensor: d.parts.filter((p) => p.kind === 'camera').reduce((m, p) => Math.max(m, p.sensor ?? 0), 0),
     front: selfie?.underDisplay ? 'under' : d.parts.some((p) => p.kind === 'notch') ? 'notch' : g.features.includes('punch') ? 'punch' : 'notch',
     fingerprint: !fp ? 'none' : fp.face === 'front' ? 'display' : fp.face === 'back' ? 'back' : 'side',

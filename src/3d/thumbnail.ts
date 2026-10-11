@@ -3,7 +3,7 @@
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import type { DeviceDesign, DeviceType } from '../sim/types'
-import { buildDevice, deviceFrame, disposeDevice } from './buildDevice'
+import { buildDevice, deviceFrame, disposeDevice, setFold } from './buildDevice'
 
 const W = 180
 const H = 220
@@ -23,6 +23,10 @@ const ANGLES: Partial<Record<DeviceType, [number, number, number]>> = {
   tv: [0.34, 0.14, 0.93],
   console: [0.42, 0.4, 0.82],
   earbuds: [0.4, 0.42, 0.82],
+  foldable: [0.5, 0.2, 0.84],
+  headset: [0.5, 0.36, 0.79],
+  speaker: [0.36, 0.46, 0.81],
+  handheld: [0.3, 0.22, 0.93],
 }
 const BACK: [number, number, number] = [-0.36, 0.12, -0.92]
 
@@ -51,6 +55,8 @@ export function deviceThumbnail(key: string, design: DeviceDesign, logo?: string
     if (!renderer) setup()
     // small screen artwork is plenty at this size
     const device = buildDevice(design, null, logo, -1, 0.4)
+    // a foldable is shown part-way open, like a book, so that it does not pass for a tablet
+    setFold(device, 0.3)
     scene.add(device)
     const dir = ANGLES[design.type] ?? BACK
     // the frame is portrait, so a wide device has to stand further back to fit across it

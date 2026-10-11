@@ -1,6 +1,6 @@
 // Pure geometry helpers shared by the scoring code and the 3D builder.
 import { sensorInfo } from '../data/catalog'
-import { standInfo } from '../data/devices'
+import { TYPES, standInfo } from '../data/devices'
 import { clamp } from './rng'
 import type { Body, DeviceDesign, DeviceType, Face, PartKind, PlacedPart } from './types'
 
@@ -34,6 +34,14 @@ const FACES: Record<DeviceType, FaceMap> = {
   // the faces of the lower half of the case
   earbuds: { port: ['bottom', 'back'], light: ['front'], button: ['back', 'front'], logo: ['front', 'back'] },
   tv: { port: ['back', 'left', 'right'], island: ['back'], vent: ['back'], grille: ['bottom', 'back'], button: ['bottom', 'back', 'right'], light: ['front'], logo: ['front', 'back'] },
+  // the open device: front = the inner screen across both halves, back = the cover screen on one half and the cameras on the other
+  foldable: SLAB_FACES,
+  // the faces of the visor; the strap takes its sides and the face its back
+  headset: { camera: ['front'], light: ['front', 'top'], button: ['top', 'bottom'], port: ['bottom', 'top'], vent: ['top', 'bottom'], logo: ['front', 'top'] },
+  // fabric all round: parts go on the top cap and on the flat panel at the back
+  speaker: { light: ['top'], button: ['top', 'back'], port: ['back'], logo: ['back', 'top'] },
+  // front = the screen and controls; the triggers take the ends of the top edge and the grips the ends of the back
+  handheld: { button: ['top'], port: ['bottom', 'top'], vent: ['top', 'back'], grille: ['bottom', 'top'], light: ['front'], logo: ['back', 'front'] },
 }
 const KINDS: PartKind[] = ['camera', 'island', 'flash', 'notch', 'slot', 'port', 'button', 'light', 'grille', 'vent', 'fingerprint', 'logo']
 
@@ -67,6 +75,9 @@ export function partLabel(p: Pick<PlacedPart, 'kind' | 'crown' | 'face'>, type: 
   if (type === 'console' && p.kind === 'light') return 'Light bar'
   if (type === 'console' && p.kind === 'button') return 'Power button'
   if (type === 'earbuds' && p.kind === 'button') return 'Pairing button'
+  if (type === 'headset' && p.kind === 'camera') return 'Tracking camera'
+  if (type === 'speaker' && p.kind === 'light') return 'Light ring'
+  if (type === 'speaker' && p.kind === 'button') return 'Control button'
   return PART_LABELS[p.kind]
 }
 
@@ -76,6 +87,10 @@ const FACE_LABELS: Partial<Record<DeviceType, Partial<Record<Face, string>>>> = 
   tv: { top: 'top edge', bottom: 'bottom edge', left: 'left edge', right: 'right edge' },
   console: { left: 'left side', right: 'right side', bottom: 'underside' },
   earbuds: { front: 'case front', back: 'case back', bottom: 'case underside' },
+  foldable: { front: 'inner screen side', back: 'outside', top: 'top edge', bottom: 'bottom edge', left: 'left edge', right: 'right edge' },
+  headset: { front: 'visor front', top: 'top of the visor', bottom: 'underside' },
+  speaker: { top: 'top', back: 'back panel' },
+  handheld: { top: 'top edge', bottom: 'bottom edge' },
 }
 /** What a face is called on a given device, for the editor. */
 export const faceLabel = (face: Face, type: DeviceType): string => FACE_LABELS[type]?.[face] ?? face
@@ -138,6 +153,107 @@ export function laptopDeck(b: Body): { x: number; y: number; w: number; h: numbe
   return { x: 0, y: b.height / 2 - 16 - h / 2, w, h, cols, rows, pitch }
 }
 
+// ---- foldables
+
+/** Half the width of the strip down the middle of a foldable's edges and back that parts keep clear of: the hinge. */
+export const HINGE_CLEAR = 4
+
+/**
+ * The cover screen of a foldable, in back-face coordinates. It fills the back of
+ * the half that folds over, so the cameras and everything else on the back share the other half.
+ */
+export function coverScreen(b: Body): { x: number; y: number; w: number; h: number; r: number } {
+  const m = Math.max(b.bezelSide, 1.2) + 1.4
+  return { x: b.width / 4, y: 0, w: Math.max(10, b.width / 2 - 2 * m), h: Math.max(10, b.height - 2 * m), r: Math.max(b.corner - m, 0.6) }
+}
+
+// ---- headsets
+
+/** Rim of shell around a headset's front plate, and rounding of the visor's edges. */
+export function visorShape(b: Body): { bevel: number; rim: number } {
+  return { bevel: b.edge === 'round' ? clamp(Math.min(b.height, b.thickness) * 0.12, 3, 10) : 2.2, rim: 3 }
+}
+
+// ---- speakers
+
+export interface SpeakerShape {
+  form: 'column' | 'orb' | 'block'
+  /** Rounding where the fabric meets the top and the base. */
+  bevel: number
+  /** Corner radius of the outline seen from above; half the width for the round forms. */
+  corner: number
+  /** Half-axes of the flat top. */
+  capX: number
+  capZ: number
+  /** Vertical half-axis of an orb before its top and base are cut flat. */
+  ry: number
+  /** How far the flat panel at the back is cut into the body, and the size of that panel. */
+  backSink: number
+  backW: number
+  backH: number
+  /** The same for the flat at the front that carries a screen. Zero and null without one. */
+  frontSink: number
+  screen: { w: number; h: number; r: number; y: number } | null
+  /** Volume of the enclosure. */
+  litres: number
+}
+
+/** Share of an orb's height that is left after its top and base are cut flat. */
+const ORB_CUT = 0.88
+
+/** Everything about the shape of a speaker that the model, the layout and the scoring share. */
+export function speakerShape(b: Body): SpeakerShape {
+  const form = b.form ?? 'column'
+  const rx = b.width / 2
+  const rz = b.thickness / 2
+  const small = Math.min(b.width, b.thickness, b.height)
+  let s: SpeakerShape
+  if (form === 'block') {
+    const corner = clamp(b.corner, 3, Math.min(rx, rz) - 1)
+    const bevel = b.edge === 'round' ? clamp(small * 0.08, 3, 10) : 2
+    const sw = Math.max(24, b.width - 2 * corner - 6)
+    const sh = Math.min(sw * 0.64, b.height - 2 * bevel - 8)
+    s = { form, bevel, corner, capX: rx - bevel, capZ: rz - bevel, ry: b.height / 2, backSink: 0, backW: Math.max(16, b.width - 2 * corner - 4), backH: b.height - 2 * bevel - 4, frontSink: 0, screen: { w: sw, h: sh, r: Math.min(6, sh * 0.12), y: 0 }, litres: ((b.width * b.thickness - (4 - Math.PI) * corner * corner) * b.height * 0.96) / 1e6 }
+  } else if (form === 'orb') {
+    const ry = b.height / 2 / ORB_CUT
+    const cap = Math.sqrt(1 - ORB_CUT * ORB_CUT)
+    const back = Math.sqrt(1 - 0.84 * 0.84)
+    const front = Math.sqrt(1 - 0.76 * 0.76)
+    const dia = 2 * Math.min(rx * front, ry * front, b.height / 2 - 2) - 8
+    s = { form, bevel: 0, corner: rx, capX: rx * cap, capZ: rz * cap, ry, backSink: rz * 0.16, backW: 2 * rx * back * 0.66, backH: 2 * Math.min(ry * back * 0.66, b.height / 2 - 3), frontSink: rz * 0.24, screen: { w: dia, h: dia, r: dia / 2, y: 0 }, litres: ((4 / 3) * Math.PI * rx * rz * ry * 0.92) / 1e6 }
+  } else {
+    const bevel = b.edge === 'round' ? clamp(small * 0.16, 4, 18) : 3
+    const flatH = b.height - 2 * bevel
+    const sw = b.width * 0.74 - 8
+    const sh = Math.min(sw * 0.64, flatH - 8)
+    s = { form: 'column', bevel, corner: rx, capX: rx - bevel, capZ: rz - bevel, ry: b.height / 2, backSink: rz * 0.2, backW: b.width * 0.6 * 0.9, backH: flatH - 4, frontSink: rz * (1 - Math.sqrt(1 - 0.74 * 0.74)), screen: { w: sw, h: sh, r: Math.min(5, sh * 0.12), y: Math.max(0, (flatH - sh) / 2 - 6) * 0.5 }, litres: (Math.PI * rx * rz * b.height * 0.95) / 1e6 }
+  }
+  if (!b.screen) {
+    s.frontSink = 0
+    s.screen = null
+  }
+  return s
+}
+
+/** How far below the nominal box of the body a face really lies. Only a speaker's flats are sunk into its curves. */
+export function faceSink(b: Body, face: Face, type: DeviceType): number {
+  if (type !== 'speaker') return 0
+  const s = speakerShape(b)
+  return face === 'back' ? s.backSink : face === 'front' ? s.frontSink : 0
+}
+
+// ---- handhelds
+
+/** Width at each end of a handheld's top edge taken by the shoulder buttons, and at each end of its back by the grips. */
+export const SHOULDER = 58
+export const GRIP = 60
+
+/** Where the controls sit on the front of a handheld: the centre line of each flank, and the height of the upper and lower control. */
+export function handheldControls(b: Body): { x: number; up: number; down: number; r: number } {
+  const flank = TYPES.handheld.flank ?? 44
+  return { x: b.width / 2 - flank / 2 - 1.5, up: b.height * 0.2, down: -b.height * 0.2, r: Math.min(10, b.height * 0.105) }
+}
+
 /** Dimensions of the solid that carries a design face. */
 export function carrierBody(b: Body, type: DeviceType, carrier: Carrier): Body {
   if (type === 'laptop') {
@@ -177,7 +293,7 @@ export const isSide = (f: Face) => f !== 'front' && f !== 'back'
 
 /** True if the face is a thin edge, where parts sit in a row and cannot move across it. */
 export function isEdge(face: Face, type: DeviceType): boolean {
-  if (type === 'console' || type === 'earbuds') return false
+  if (type === 'console' || type === 'earbuds' || type === 'headset' || type === 'speaker') return false
   return isSide(mountOf(type, face).face)
 }
 
@@ -186,6 +302,12 @@ export const edgeThickness = (b: Body, type: DeviceType) => (type === 'laptop' ?
 
 /** Width/height of a face in part coordinates. */
 export function faceSize(b: Body, face: Face, type: DeviceType = 'phone'): { w: number; h: number } {
+  if (type === 'speaker' && (face === 'top' || face === 'back')) {
+    // the flat top, less its rounded rim, and the flat panel cut into the back
+    const s = speakerShape(b)
+    if (face === 'back') return { w: s.backW, h: s.backH }
+    return s.form === 'block' ? { w: 2 * s.capX - 2, h: 2 * s.capZ - 2 } : { w: 2 * s.capX * 0.72, h: 2 * s.capZ * 0.72 }
+  }
   const m = mountOf(type, face)
   const c = carrierBody(b, type, m.carrier)
   if (m.face === 'front' || m.face === 'back') return { w: c.width, h: c.height }
@@ -205,6 +327,11 @@ function faceInset(b: Body, face: Face, type: DeviceType): { x: number; y: numbe
     const cs = caseShape(b)
     if (face === 'bottom') return { x: Math.min(cs.foot * 0.6 + cs.bevel * 0.5, fs.w * 0.35), y: Math.min(cs.bevel, fs.h * 0.3) }
     return { x: Math.min(cs.foot, fs.w * 0.35), y: Math.min(cs.bevel * 0.6, fs.h * 0.25) }
+  }
+  if (type === 'headset') {
+    const v = visorShape(b)
+    if (face === 'front') return { x: Math.min(v.bevel + v.rim + 2, fs.w * 0.2), y: Math.min(v.bevel + v.rim + 1, fs.h * 0.2) }
+    return { x: Math.min(Math.max(b.corner, v.bevel) + 2, fs.w * 0.3), y: Math.min(v.bevel + 2, fs.h * 0.25) }
   }
   if (isEdge(face, type)) return { x: Math.min(b.corner, fs.w * 0.25), y: 0 }
   return { x: 0, y: 0 }
@@ -257,10 +384,25 @@ export function clampPart(b: Body, p: PlacedPart, type: DeviceType = 'phone'): P
   }
   const inset = faceInset(b, face, type)
   const e = partExtent(q)
-  const maxX = Math.max(0, fs.w / 2 - inset.x - e.w / 2)
+  let maxX = Math.max(0, fs.w / 2 - inset.x - e.w / 2)
   const maxY = Math.max(0, fs.h / 2 - inset.y - e.h / 2)
+  if (type === 'handheld') {
+    // the triggers, the grips and the controls beside the screen leave only the middle free
+    const free = face === 'top' ? b.width / 2 - SHOULDER : face === 'back' ? b.width / 2 - GRIP : face === 'front' ? screenRect(b).w / 2 : fs.w
+    maxX = Math.max(0, Math.min(maxX, free - e.w / 2))
+  }
   q.x = clamp(q.x, -maxX, maxX)
   q.y = clamp(q.y, -maxY, maxY)
+  if (type === 'foldable' && !(face === 'left' || face === 'right')) {
+    if (face === 'back') {
+      // the half that folds over carries the cover screen, so everything on the back shares the other half
+      q.x = Math.max(-maxX, Math.min(q.x, -(HINGE_CLEAR + e.w / 2)))
+    } else {
+      // nothing sits across the hinge
+      const clear = (face === 'front' ? 3 : HINGE_CLEAR) + e.w / 2
+      if (Math.abs(q.x) < clear && clear <= maxX) q.x = q.x < 0 ? -clear : clear
+    }
+  }
   if (type === 'laptop' && face === 'top' && onKeyboard(b, q)) {
     // nothing fits between the keys: a part pushed onto the keyboard slides to the nearer strip of open deck
     const k = laptopDeck(b)
@@ -296,6 +438,11 @@ export function newPart(kind: PartKind, d: DeviceDesign, sensorLevel = 0): Place
   let p: PlacedPart
   switch (kind) {
     case 'camera': {
+      if (type === 'headset') {
+        // a tracking camera looks out through the front plate
+        p = { ...base, w: 8, h: 8, sensor: Math.max(0, sensorLevel - 1), lens: 'wide', x: fs.w * 0.3, y: fs.h * 0.22 }
+        break
+      }
       if (base.face === 'front') {
         p = { ...base, w: 3.6, h: 3.6, sensor: Math.max(0, sensorLevel - 1), lens: 'wide', y: b.height / 2 - Math.max(3, b.bezelTop / 2) }
         break
@@ -320,6 +467,9 @@ export function newPart(kind: PartKind, d: DeviceDesign, sensorLevel = 0): Place
       else if (type === 'console') p = { ...base, w: 10, h: 10, x: fs.w / 2 - 22 }
       else if (type === 'earbuds') p = { ...base, w: 5, h: 5 }
       else if (type === 'desktop' || type === 'tv') p = { ...base, w: 12, h: 12, x: fs.w / 2 - 40, y: -fs.h / 2 + 40 }
+      else if (type === 'headset') p = { ...base, w: 12, h: 5, x: fs.w * 0.3 }
+      else if (type === 'speaker') p = { ...base, w: Math.max(5, Math.min(10, fs.w * 0.16)), h: Math.max(5, Math.min(10, fs.w * 0.16)), y: fs.h * 0.25 }
+      else if (type === 'handheld') p = { ...base, w: 10, h: 2.6, x: 24 }
       else p = { ...base, face: 'right', w: 11, h: 2.2, x: 20 }
       break
     case 'port':
@@ -349,11 +499,26 @@ export function newPart(kind: PartKind, d: DeviceDesign, sensorLevel = 0): Place
       break
     case 'light':
       if (type === 'console') p = { ...base, w: Math.min(60, fs.w * 0.3), h: 1.6, y: -fs.h * 0.25, color: '#5ab4ff' }
+      else if (type === 'speaker') p = lightRing(b, base)
+      else if (type === 'headset') p = { ...base, w: 12, h: 1.4, y: -fs.h * 0.3, color: '#ffffff' }
       else p = { ...base, w: 1.2 * (big + 1), h: 1.2 * (big + 1), y: type === 'earbuds' ? fs.h * 0.2 : -b.height / 2 + Math.max(2, b.bezelBottom / 2), color: type === 'earbuds' ? '#8dffa8' : '#ffffff' }
       break
   }
   return clampPart(b, p, type)
 }
+
+/**
+ * The light on top of a speaker: a ring just inside the rim of a round top, or a
+ * bar along the front edge of a square one.
+ */
+export function lightRing<T extends { face: Face }>(b: Body, base: T): T & { face: Face; x: number; y: number; w: number; h: number; color: string } {
+  const s = speakerShape(b)
+  if (s.form === 'block') return { ...base, face: 'top', x: 0, y: -(s.capZ - 5), w: Math.max(12, s.capX * 0.9), h: 2, color: '#5ab4ff' }
+  return { ...base, face: 'top', x: 0, y: 0, w: 2 * s.capX * 0.9, h: 2 * s.capZ * 0.9, color: '#5ab4ff' }
+}
+
+/** True for a light part that is drawn as a ring: the one round a speaker's top. */
+export const isRing = (p: Pick<PlacedPart, 'kind' | 'w' | 'h'>, type: DeviceType) => type === 'speaker' && p.kind === 'light' && Math.min(p.w, p.h) >= 12
 
 export function rectsOverlap(a: PlacedPart, b: PlacedPart, tol = 0.2): boolean {
   const ea = partExtent(a)

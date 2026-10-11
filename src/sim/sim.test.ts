@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { marketLevel } from '../data/catalog'
-import { RIVALS, SEGMENTS, ioOptions, segmentsOf, subLabel } from '../data/devices'
+import { HINGES, RIVALS, SEGMENTS, SPEAKER_DRIVERS, TYPES, inputOptions, ioOptions, segmentsOf, subLabel } from '../data/devices'
 import {
   type LaunchOrder,
   SAVE_VERSION,
@@ -40,11 +40,11 @@ import {
   trailingUnits,
   upgradeOffice,
 } from './game'
-import { clampPart, designFace, faceSize, facesFor, isEdge, kindsFor, mountOf, newPart, standMount } from './geometry'
+import { GRIP, HINGE_CLEAR, SHOULDER, clampPart, coverScreen, designFace, faceSize, facesFor, isEdge, isRing, kindsFor, mountOf, newPart, partExtent, speakerShape, standMount } from './geometry'
 import { bestSegment, utility } from './market'
 import { pendingUnits, supplyPrice } from './ops'
-import { VARIANTS, deriveVariant, fitInside, layoutParts, syncSockets } from './rivals'
-import { budWeight, evaluate, minThickness, thermal } from './scoring'
+import { type LayoutOptions, VARIANTS, deriveVariant, fitInside, fitSpeaker, layoutParts, speakerSockets, syncSockets } from './rivals'
+import { budWeight, evaluate, foldedThickness, maxBattery, minThickness, thermal } from './scoring'
 import { builtTiles, canPlace, gridAt, hiredVenue, lineStats, newSite, openRooms, sealedRooms, storeStats, venueStats } from './sites'
 import { GOALS } from './goals'
 import { REGIONS } from './regions'
@@ -803,6 +803,356 @@ describe('desktops, consoles, earbuds and TVs', () => {
     // too small for a disc: the drive is refused
     Object.assign(d.body, { width: 100, height: 100 })
     expect(evaluate(d, s.levels, 3, s.features).report.issues.some((i) => /disc drive needs/.test(i.text))).toBe(true)
+  })
+})
+
+describe('foldables, headsets, speakers and handhelds', () => {
+  const NEW: DeviceType[] = ['foldable', 'headset', 'speaker', 'handheld']
+  const errorsOf = (ev: ReturnType<typeof evaluate>) => ev.report.issues.filter((i) => i.level === 'error').map((i) => i.text)
+  const finite = (ev: ReturnType<typeof evaluate>, label: string, least = 1) => {
+    for (const k of SUBS) {
+      expect(Number.isFinite(ev.raw[k]), `${label} ${k}`).toBe(true)
+      expect(ev.raw[k], `${label} ${k}`).toBeGreaterThanOrEqual(least)
+    }
+    expect(Number.isFinite(ev.unitCost) && ev.unitCost > 0, `${label} cost`).toBe(true)
+    expect(Number.isFinite(ev.report.pct), `${label} design`).toBe(true)
+    expect(ev.report.weight, `${label} weight`).toBeGreaterThan(10)
+    for (const b of ev.report.breakdown) expect(Number.isFinite(b.score) && b.score <= b.max + 1e-9, `${label} ${b.key}`).toBe(true)
+    for (const v of Object.values(ev.costParts)) expect(Number.isFinite(v) && v >= 0, `${label} cost part`).toBe(true)
+    for (const v of [ev.report.diag, ev.report.sbr, ev.report.lifeHours, ev.report.maxBattery]) expect(Number.isFinite(v) && v >= 0, `${label} report`).toBe(true)
+  }
+  const layoutOf = (s: GameState, type: DeviceType, patch: Partial<LayoutOptions> = {}): LayoutOptions => ({ type, layout: 1, cams: type === 'headset' ? 4 : 3, sensor: Math.min(2, s.levels.camera), periscope: false, front: 'notch', fingerprint: 'side', flash: true, stereo: true, logo: 'ACME', logoImage: false, ...patch })
+
+  it('evaluates every new type at any tech level without bad numbers', () => {
+    for (const techLevel of [0, 3, 8]) {
+      const s = fresh(7, { techLevel })
+      for (const type of NEW) {
+        const d = starterDesign(s, type)
+        const ev = evaluate(d, s.levels, marketLevel(0), s.features, s.chips)
+        finite(ev, `${type} at level ${techLevel}`)
+        expect(errorsOf(ev), `${type} at level ${techLevel}`).toEqual([])
+        // a bare design with nothing chosen must still evaluate: half-built drafts look like this
+        const bare = structuredClone(d)
+        bare.parts = []
+        for (const k of ['io', 'keyboard', 'driver', 'hinge', 'optics', 'mics'] as const) delete bare.specs[k]
+        for (const k of ['strap', 'strapColor', 'form', 'screen'] as const) delete bare.body[k]
+        finite(evaluate(bare, s.levels, marketLevel(0), s.features, s.chips), `bare ${type}`, 0)
+        // and every variant of the starter is something that could be launched
+        for (const v of VARIANTS) {
+          const made = deriveVariant(d, v.id, s.levels, s.features)
+          const evv = evaluate(made, s.levels, marketLevel(0), s.features, s.chips)
+          finite(evv, `${type} ${v.id} at level ${techLevel}`)
+          expect(errorsOf(evv), `${type} ${v.id} at level ${techLevel}`).toEqual([])
+        }
+      }
+    }
+  })
+
+  it('names the scores of each type, has markets and makers for all of them, and says what unlocks every type', () => {
+    expect(subLabel('headset', 'camera')).toBe('Tracking and controllers')
+    expect(subLabel('headset', 'display')).toBe('Optics and display')
+    expect(subLabel('speaker', 'perf')).toBe('Sound quality')
+    expect(subLabel('speaker', 'battery')).toBe('Bass and loudness')
+    expect(subLabel('handheld', 'camera')).toBe('Controls and features')
+    expect(subLabel('foldable', 'camera')).toBe('Camera')
+    for (const type of NEW) {
+      expect(segmentsOf(type).length, type).toBeGreaterThanOrEqual(2)
+      for (const seg of segmentsOf(type)) {
+        expect(Object.values(seg.weights).reduce((a, b) => a + b, 0), seg.id).toBeCloseTo(1, 5)
+        expect(RIVALS.filter((r) => r.segments.includes(seg.id)).length, seg.id).toBeGreaterThanOrEqual(3)
+        for (const r of RIVALS.filter((x) => x.segments.includes(seg.id))) expect(r.series[seg.id], `${r.name} ${seg.id}`).toBeTruthy()
+      }
+    }
+    expect(ioOptions('headset').length).toBeGreaterThan(3)
+    expect(ioOptions('speaker').length).toBeGreaterThan(3)
+    expect(ioOptions('handheld').length).toBeGreaterThan(3)
+    expect(inputOptions('headset')[0].name).toMatch(/Hand tracking/)
+    expect(inputOptions('handheld')).toHaveLength(4)
+    expect(inputOptions('laptop')[0].name).toBe('Membrane')
+    // every segment anyone competes in exists, and every type says what it takes to start making it
+    for (const r of RIVALS) for (const id of r.segments) expect(SEGMENTS.some((x) => x.id === id), `${r.name} ${id}`).toBe(true)
+    expect(new Set(RIVALS.map((r) => r.name)).size).toBe(RIVALS.length)
+    for (const type of DEVICE_TYPES) {
+      const u = TYPES[type].unlock
+      expect(u, type).toBeDefined()
+      expect(u!.cost, type).toBeGreaterThanOrEqual(0)
+      for (const [track, level] of Object.entries(u!.needs)) {
+        expect(TRACKS, type).toContain(track)
+        expect(level, type).toBeLessThanOrEqual(8)
+      }
+      for (const from of u!.from ?? []) expect(DEVICE_TYPES, type).toContain(from)
+      expect(u!.from ?? [], type).not.toContain(type)
+    }
+    expect(TYPES.phone.unlock).toEqual({ cost: 0, needs: {} })
+    expect(TYPES.foldable.unlock!.needs).toEqual({ display: 5, materials: 4 })
+    expect(TYPES.headset.unlock!.needs).toEqual({ display: 4, chipset: 5 })
+    expect(TYPES.speaker.unlock!.needs).toEqual({})
+    expect(TYPES.handheld.unlock!.needs).toEqual({ chipset: 3 })
+  })
+
+  it('launches rivals into every new segment at sensible prices', () => {
+    const s = tick(fresh(), 6 * 360)
+    for (const type of NEW) {
+      for (const seg of segmentsOf(type)) {
+        const made = s.products.filter((p) => p.segment === seg.id && p.companyId !== 'player')
+        const fresh = made.filter((p) => p.launchDay > 360)
+        expect(fresh.length, `${seg.id} launches`).toBeGreaterThanOrEqual(6)
+        expect(made.filter((p) => p.status === 'sale').length, `${seg.id} on sale`).toBeGreaterThanOrEqual(3)
+        expect(new Set(fresh.map((p) => p.companyId)).size, `${seg.id} makers`).toBeGreaterThanOrEqual(3)
+        for (const p of fresh) {
+          expect(p.type, p.name).toBe(type)
+          const ev = evaluate(p.design, maxLevels, marketLevel(p.launchDay))
+          expect(errorsOf(ev), `${p.name} (${seg.id})`).toEqual([])
+          expect(ev.report.issues.filter((i) => /clipping/.test(i.text)), `${p.name} (${seg.id})`).toEqual([])
+          expect(p.reviewAvg, p.name).toBeGreaterThan(5)
+          expect(p.reviewAvg, p.name).toBeLessThan(9.7)
+          // prices are compared at launch; older models are discounted and components move
+          if (p.history.length > 2) continue
+          expect(p.price, `${p.name} (${seg.id})`).toBeGreaterThan(seg.priceRef * 0.45)
+          expect(p.price, `${p.name} (${seg.id})`).toBeLessThan(seg.priceRef * 1.9)
+          expect(p.price * 0.85, `${p.name} (${seg.id}) margin`).toBeGreaterThan(p.unitCost)
+        }
+        // over six years the makers aiming at a segment sell at least a year's worth of it between them
+        expect(made.reduce((a, p) => a + p.unitsSold, 0), `${seg.id} units`).toBeGreaterThan(seg.size * 0.7)
+      }
+    }
+    // nobody was driven out by the new markets, and the new makers are still in them
+    for (const name of ['Plait', 'Orrery', 'Marram', 'Tarnwick']) expect(s.companies.find((c) => c.name === name)?.alive, name).toBe(true)
+  })
+
+  it('gives a starter design of each new type a fair review, real sales and no monopoly', () => {
+    for (const type of NEW) {
+      const s = rich()
+      const design = starterDesign(s, type)
+      const ev = evaluate(design, s.levels, marketLevel(0), s.features, s.chips)
+      expect(ev.report.issues.filter((i) => /clipping|no socket/.test(i.text)), type).toEqual([])
+      const seg = bestSegment({ raw: ev.raw, featureBonus: ev.featureBonus, price: 0, type }, player(s), 0).seg
+      expect(seg.type).toBe(type)
+      // priced the way a player would: at the going rate, or at a healthy margin over cost if that is higher
+      const price = Math.round(Math.max(seg.priceRef * 0.9, (ev.unitCost * 1.25) / 0.85))
+      expect(startProduct(s, order(s, { design, price, quantity: 5e6, marketing: 2e6 })), type).toBeNull()
+      tick(s, 540)
+      const p = mine(s)[0]
+      expect(p.reviewAvg, `${type} review`).toBeGreaterThan(4.5)
+      expect(p.reviewAvg, `${type} review`).toBeLessThan(9.6)
+      expect(p.unitsSold, `${type} units`).toBeGreaterThan(1000)
+      expect(p.price * 0.85, `${type} margin`).toBeGreaterThan(p.unitCost)
+      expect(p.feedback.length, `${type} feedback`).toBeGreaterThan(0)
+      for (const f of p.feedback) expect(f.text.length, `${type} feedback`).toBeGreaterThan(5)
+      const all = s.products.filter((x) => x.type === type).reduce((a, x) => a + x.unitsSold, 0)
+      expect(p.unitsSold / all, `${type} share`).toBeLessThan(0.4)
+    }
+  })
+
+  it('lays out every size and shape of the new types with nothing clipping and every part where it may go', () => {
+    const s = fresh(7, { techLevel: 6 })
+    for (const type of NEW) {
+      const T = TYPES[type]
+      const base = starterDesign(s, type)
+      const bodies = [0, 0.5, 1].flatMap((fw) => [0, 0.5, 1].map((fh) => ({ width: T.width[0] + (T.width[1] - T.width[0]) * fw, height: T.height[0] + (T.height[1] - T.height[0]) * fh })))
+      const looks = type === 'speaker' ? (['column', 'orb', 'block'] as const).flatMap((form) => [false, true].map((screen) => ({ form, screen }))) : type === 'headset' ? [{ strap: 'soft' }, { strap: 'pack' }] : [{}]
+      const everything = ioOptions(type).map((x) => x.id)
+      for (const size of bodies) {
+        for (const look of looks) {
+          for (const edge of ['flat', 'round'] as const) {
+            for (const layout of type === 'foldable' ? [0, 1, 2, 3, 4] : [0]) {
+              const d = structuredClone(base)
+              Object.assign(d.body, size, look, { edge })
+              if (type === 'speaker') d.body.thickness = Math.max(60, d.body.form === 'block' ? d.body.width * 0.7 : d.body.width)
+              if (everything.length) d.specs.io = [...everything]
+              // a speaker takes only the sockets its back panel has room for
+              fitSpeaker(d)
+              if (type === 'speaker') expect(speakerSockets(d.body, d.specs.io).fits, `${type} ${size.width}x${size.height} ${JSON.stringify(look)}`).toBe(true)
+              d.parts = layoutParts(d.body, layoutOf(s, type, { layout, cams: type === 'headset' ? 6 : 4, io: d.specs.io }))
+              const label = `${type} ${size.width}x${size.height} ${JSON.stringify(look)} ${edge} layout ${layout}`
+              const ev = evaluate(d, maxLevels, 6)
+              expect(ev.report.issues.filter((i) => /clipping|no socket/.test(i.text)), label).toEqual([])
+              expect(d.parts.length, label).toBeGreaterThan(4)
+              for (const part of d.parts) {
+                expect(facesFor(part.kind, type), `${label}: ${part.kind}`).toContain(part.face)
+                expect(clampPart(d.body, part, type), `${label}: ${part.kind}`).toEqual(part)
+                const fs = faceSize(d.body, part.face, type)
+                const e = partExtent(part)
+                // nothing hangs over the end of the face it is on, bar a speaker's ring, which is the rim of its top
+                if (!isRing(part, type)) {
+                  expect(Math.abs(part.x) + e.w / 2, `${label}: ${part.kind} on ${part.face}`).toBeLessThanOrEqual(fs.w / 2 + 1e-6)
+                  if (!isEdge(part.face, type)) expect(Math.abs(part.y) + e.h / 2, `${label}: ${part.kind} on ${part.face}`).toBeLessThanOrEqual(fs.h / 2 + 1e-6)
+                }
+              }
+            }
+          }
+        }
+      }
+      // every kind the editor offers can be added and lands on one of its faces
+      for (const kind of kindsFor(type)) {
+        const part = newPart(kind, base, 2)
+        expect(facesFor(kind, type), `${type} ${kind}`).toContain(part.face)
+        expect(clampPart(base.body, part, type), `${type} ${kind}`).toEqual(part)
+      }
+    }
+  })
+
+  it('keeps parts off a foldable\'s hinge and cover screen, and scores its hinge', () => {
+    const s = fresh(7, { techLevel: 6 })
+    const d = starterDesign(s, 'foldable')
+    const cover = coverScreen(d.body)
+    expect(cover.x).toBeGreaterThan(0)
+    expect(cover.w).toBeLessThan(d.body.width / 2)
+    for (const p of d.parts) {
+      const e = partExtent(p)
+      // everything on the back is on the half that is not the cover screen
+      if (p.face === 'back') expect(p.x + e.w / 2, p.kind).toBeLessThanOrEqual(-HINGE_CLEAR + 1e-6)
+      if (p.face === 'top' || p.face === 'bottom') expect(Math.abs(p.x) - e.w / 2, p.kind).toBeGreaterThanOrEqual(HINGE_CLEAR - 1e-6)
+    }
+    expect(d.parts.some((p) => p.kind === 'camera' && p.face === 'back')).toBe(true)
+    // dragging a camera onto the cover screen puts it back on its own half
+    const cam = d.parts.find((p) => p.kind === 'camera' && p.face === 'back')!
+    expect(clampPart(d.body, { ...cam, x: cover.x }, 'foldable').x).toBeLessThan(0)
+    const plain = structuredClone(d)
+    plain.specs.hinge = 0
+    const best = structuredClone(d)
+    best.specs.hinge = HINGES.length - 1
+    const a = evaluate(plain, maxLevels, 5)
+    const b = evaluate(best, maxLevels, 5)
+    expect(b.raw.display).toBeGreaterThan(a.raw.display)
+    expect(b.raw.design).toBeGreaterThan(a.raw.design)
+    expect(b.unitCost).toBeGreaterThan(a.unitCost)
+    expect(foldedThickness(best)).toBeLessThan(foldedThickness(plain))
+    expect(foldedThickness(plain)).toBeGreaterThan(2 * plain.body.thickness)
+    expect(evaluate(best, s.levels, 5, s.features).report.issues.some((i) => /hinge needs Materials/.test(i.text))).toBe(s.levels.materials < HINGES[HINGES.length - 1].level)
+    // the cover screen is part of what the display costs
+    const narrow = structuredClone(d)
+    narrow.body.bezelSide += 6
+    expect(evaluate(narrow, maxLevels, 5).costParts.displays).toBeLessThan(evaluate(d, maxLevels, 5).costParts.displays)
+  })
+
+  it('wants tracking cameras, lenses with room and a way to point on a headset', () => {
+    const s = fresh(7, { techLevel: 5 })
+    const d = starterDesign(s, 'headset')
+    const base = evaluate(d, s.levels, 4, s.features)
+    expect(errorsOf(base)).toEqual([])
+    expect(base.report.lifeHours).toBeGreaterThan(0.8)
+    expect(base.report.lifeHours).toBeLessThan(8)
+    // no cameras: it cannot be sold; two: it has blind spots
+    const blind = structuredClone(d)
+    blind.parts = blind.parts.filter((p) => p.kind !== 'camera')
+    expect(errorsOf(evaluate(blind, s.levels, 4, s.features)).some((t) => /tracking cameras/.test(t))).toBe(true)
+    const two = structuredClone(d)
+    two.parts = layoutParts(two.body, layoutOf(s, 'headset', { cams: 2, io: two.specs.io }))
+    const few = evaluate(two, s.levels, 4, s.features)
+    expect(few.raw.camera).toBeLessThan(base.raw.camera)
+    expect(few.report.issues.some((i) => /blind spots/.test(i.text))).toBe(true)
+    // simpler lenses need a deeper visor and give a poorer picture
+    const fresnel = structuredClone(d)
+    fresnel.specs.optics = 0
+    expect(minThickness('headset', s.levels.design, fresnel.specs)).toBeGreaterThan(minThickness('headset', s.levels.design, d.specs))
+    expect(errorsOf(evaluate(fresnel, s.levels, 4, s.features)).some((t) => /must be at least/.test(t))).toBe(true)
+    fresnel.body.thickness = minThickness('headset', s.levels.design, fresnel.specs)
+    expect(evaluate(fresnel, s.levels, 4, s.features).raw.display).toBeLessThan(base.raw.display)
+    // with no controllers it needs hand tracking
+    const bare = structuredClone(d)
+    bare.specs.keyboard = 0
+    bare.specs.io = (bare.specs.io ?? []).filter((id) => id !== 'hands')
+    expect(errorsOf(evaluate(bare, s.levels, 4, s.features)).some((t) => /hand tracking/.test(t))).toBe(true)
+    bare.specs.io = [...bare.specs.io, 'hands']
+    expect(errorsOf(evaluate(bare, s.levels, 4, s.features))).toEqual([])
+    // a battery at the back of the band holds more and is more comfortable
+    const pack = structuredClone(d)
+    pack.body.strap = 'pack'
+    const soft = structuredClone(d)
+    soft.body.strap = 'soft'
+    expect(maxBattery(pack.body, s.levels.battery, 'headset')).toBeGreaterThan(maxBattery(soft.body, s.levels.battery, 'headset'))
+    expect(evaluate(pack, s.levels, 4, s.features).raw.design).toBeGreaterThan(evaluate(soft, s.levels, 4, s.features).raw.design)
+  })
+
+  it('gives a bigger speaker more bass, makes big drivers need room, and counts a screen', () => {
+    const s = fresh(7, { techLevel: 6 })
+    const d = starterDesign(s, 'speaker')
+    Object.assign(d.body, { form: 'column', screen: false, width: 104, height: 148, thickness: 104 })
+    d.specs.driver = 1
+    d.parts = layoutParts(d.body, layoutOf(s, 'speaker', { io: d.specs.io }))
+    const base = evaluate(d, s.levels, 5, s.features)
+    expect(errorsOf(base)).toEqual([])
+    expect(base.report.diag).toBe(0)
+    expect(base.costParts.displays).toBe(0)
+    const big = structuredClone(d)
+    Object.assign(big.body, { width: 172, height: 180, thickness: 160 })
+    big.parts = layoutParts(big.body, layoutOf(s, 'speaker', { io: big.specs.io }))
+    const loud = evaluate(big, s.levels, 5, s.features)
+    expect(speakerShape(big.body).litres).toBeGreaterThan(speakerShape(d.body).litres * 2)
+    expect(loud.raw.battery).toBeGreaterThan(base.raw.battery)
+    expect(loud.raw.design).toBeLessThan(base.raw.design)
+    // the best drivers do not fit a small enclosure
+    const cramped = structuredClone(d)
+    Object.assign(cramped.body, { width: 96, height: 64, thickness: 96 })
+    cramped.specs.driver = SPEAKER_DRIVERS.length - 1
+    expect(errorsOf(evaluate(cramped, maxLevels, 5)).some((t) => /enclosure/.test(t))).toBe(true)
+    big.specs.driver = SPEAKER_DRIVERS.length - 1
+    const hifi = evaluate(big, maxLevels, 5)
+    expect(errorsOf(hifi)).toEqual([])
+    expect(hifi.raw.perf).toBeGreaterThan(loud.raw.perf)
+    // a screen helps the assistant, costs money and has a size
+    for (const form of ['column', 'orb', 'block'] as const) {
+      const off = structuredClone(d)
+      off.body.form = form
+      const on = structuredClone(off)
+      on.body.screen = true
+      const a = evaluate(off, s.levels, 5, s.features)
+      const b = evaluate(on, s.levels, 5, s.features)
+      expect(b.raw.display, form).toBeGreaterThan(a.raw.display)
+      expect(b.unitCost, form).toBeGreaterThan(a.unitCost)
+      expect(b.report.diag, form).toBeGreaterThan(1.5)
+      expect(b.report.diag, form).toBeLessThan(9)
+      // the flats cut for the screen and the sockets leave the body in one piece
+      const shape = speakerShape(on.body)
+      expect(shape.frontSink + shape.backSink, form).toBeLessThan(on.body.thickness * 0.5)
+      expect(shape.screen!.h, form).toBeLessThan(on.body.height)
+    }
+    // more microphones make a better listener
+    const deaf = structuredClone(d)
+    deaf.specs.mics = 0
+    const keen = structuredClone(d)
+    keen.specs.mics = 2
+    expect(evaluate(keen, s.levels, 5, s.features).raw.display).toBeGreaterThan(evaluate(deaf, s.levels, 5, s.features).raw.display)
+  })
+
+  it('leaves room for a handheld\'s controls, triggers and grips', () => {
+    const s = fresh(7, { techLevel: 5 })
+    const d = starterDesign(s, 'handheld')
+    const flank = TYPES.handheld.flank!
+    expect(d.body.bezelSide).toBeGreaterThanOrEqual(flank)
+    const base = evaluate(d, s.levels, 4, s.features)
+    expect(errorsOf(base)).toEqual([])
+    expect(base.report.diag).toBeGreaterThan(5)
+    expect(base.report.diag).toBeLessThan(10)
+    expect(base.report.lifeHours).toBeGreaterThan(1.5)
+    expect(base.report.lifeHours).toBeLessThan(14)
+    // a screen that runs under the controls is refused
+    const wide = structuredClone(d)
+    wide.body.bezelSide = flank - 10
+    expect(errorsOf(evaluate(wide, s.levels, 4, s.features)).some((t) => /controls need/.test(t))).toBe(true)
+    // parts keep clear of the shoulder buttons along the top and the grips on the back
+    for (const p of d.parts) {
+      const e = partExtent(p)
+      if (p.face === 'top') expect(Math.abs(p.x) + e.w / 2, `${p.kind} on top`).toBeLessThanOrEqual(d.body.width / 2 - SHOULDER + 1e-6)
+      if (p.face === 'back') expect(Math.abs(p.x) + e.w / 2, `${p.kind} on back`).toBeLessThanOrEqual(d.body.width / 2 - GRIP + 1e-6)
+    }
+    const vent = d.parts.find((p) => p.kind === 'vent' && p.face === 'back')!
+    expect(Math.abs(clampPart(d.body, { ...vent, x: d.body.width / 2 }, 'handheld').x) + vent.w / 2).toBeLessThanOrEqual(d.body.width / 2 - GRIP + 1e-6)
+    // better controls and more features are worth more
+    const cheap = structuredClone(d)
+    cheap.specs.keyboard = 0
+    cheap.specs.io = []
+    cheap.parts = layoutParts(cheap.body, layoutOf(s, 'handheld', { io: [] }))
+    const poor = evaluate(cheap, s.levels, 4, s.features)
+    expect(poor.raw.camera).toBeLessThan(base.raw.camera)
+    expect(poor.unitCost).toBeLessThan(base.unitCost)
+    // a faster chip drains the battery sooner
+    const hot = structuredClone(d)
+    hot.specs.chipTier = 2
+    const cool = structuredClone(d)
+    cool.specs.chipTier = 0
+    expect(evaluate(hot, s.levels, 4, s.features).report.lifeHours).toBeLessThan(evaluate(cool, s.levels, 4, s.features).report.lifeHours)
   })
 })
 

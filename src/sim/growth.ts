@@ -21,11 +21,11 @@ export interface ChannelDef {
 }
 export const CHANNELS: Record<ChannelId, ChannelDef> = {
   online: { name: 'Search and display ads', note: 'Cheap, measurable, works everywhere.', min: 20e3, reach: 1, segs: {}, other: 1 },
-  social: { name: 'Creators and social', note: 'Strong with younger buyers and anything photogenic.', min: 30e3, reach: 0.8, segs: { gamer: 1.6, mainstream: 1.3, camera: 1.3, 'w-smart': 1.3, 'w-fit': 1.3, 't-main': 1.1 }, other: 0.8 },
-  tv: { name: 'Television', note: 'Mass reach for mass-market products. Expensive to start.', min: 400e3, reach: 1.6, segs: { budget: 1.4, mainstream: 1.4, 't-budget': 1.3, 't-main': 1.3, 'l-budget': 1.2, 'w-fit': 1.1 }, other: 0.7 },
-  outdoor: { name: 'Billboards and transit', note: 'Builds a premium image in big cities.', min: 150e3, reach: 1.3, segs: { flagship: 1.3, business: 1.2, 'w-lux': 1.4, 'l-ultra': 1.2 }, other: 0.8 },
-  press: { name: 'Reviewer programme', note: 'Loaner units and briefings for enthusiasts and professionals.', min: 50e3, reach: 0.5, segs: { camera: 1.5, flagship: 1.4, 't-pro': 1.5, 'l-pro': 1.5, 'l-ultra': 1.2 }, other: 0.7 },
-  esports: { name: 'Esports sponsorship', note: 'Reaches gamers and almost nobody else.', min: 120e3, reach: 0.7, segs: { gamer: 2, 'l-game': 2 }, other: 0.3 },
+  social: { name: 'Creators and social', note: 'Strong with younger buyers and anything photogenic.', min: 30e3, reach: 0.8, segs: { gamer: 1.6, mainstream: 1.3, camera: 1.3, 'w-smart': 1.3, 'w-fit': 1.3, 't-main': 1.1, 'v-play': 1.4, 'h-pocket': 1.3, 'f-value': 1.2, 's-mini': 1.1 }, other: 0.8 },
+  tv: { name: 'Television', note: 'Mass reach for mass-market products. Expensive to start.', min: 400e3, reach: 1.6, segs: { budget: 1.4, mainstream: 1.4, 't-budget': 1.3, 't-main': 1.3, 'l-budget': 1.2, 'w-fit': 1.1, 's-mini': 1.3, 's-screen': 1.3, 'h-pocket': 1.2 }, other: 0.7 },
+  outdoor: { name: 'Billboards and transit', note: 'Builds a premium image in big cities.', min: 150e3, reach: 1.3, segs: { flagship: 1.3, business: 1.2, 'w-lux': 1.4, 'l-ultra': 1.2, 'f-flag': 1.4, 'f-work': 1.2, 'v-pro': 1.2 }, other: 0.8 },
+  press: { name: 'Reviewer programme', note: 'Loaner units and briefings for enthusiasts and professionals.', min: 50e3, reach: 0.5, segs: { camera: 1.5, flagship: 1.4, 't-pro': 1.5, 'l-pro': 1.5, 'l-ultra': 1.2, 'f-flag': 1.3, 'v-mixed': 1.3, 'v-pro': 1.6, 's-hifi': 1.5, 'h-elite': 1.4 }, other: 0.7 },
+  esports: { name: 'Esports sponsorship', note: 'Reaches gamers and almost nobody else.', min: 120e3, reach: 0.7, segs: { gamer: 2, 'l-game': 2, 'h-pc': 2, 'h-elite': 1.8, 'v-play': 1.7, 'h-pocket': 1.2 }, other: 0.3 },
 }
 export const channelFit = (ch: ChannelId, seg: SegmentInfo) => CHANNELS[ch].segs[seg.id] ?? CHANNELS[ch].other
 

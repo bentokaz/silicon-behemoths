@@ -5,8 +5,8 @@ export type Track = 'display' | 'chipset' | 'camera' | 'battery' | 'charging' | 
 export const TRACKS: Track[] = ['display', 'chipset', 'camera', 'battery', 'charging', 'materials', 'design']
 export type Levels = Record<Track, number>
 
-export type DeviceType = 'phone' | 'tablet' | 'watch' | 'laptop' | 'desktop' | 'console' | 'earbuds' | 'tv'
-export const DEVICE_TYPES: DeviceType[] = ['phone', 'tablet', 'watch', 'laptop', 'desktop', 'console', 'earbuds', 'tv']
+export type DeviceType = 'phone' | 'tablet' | 'watch' | 'laptop' | 'desktop' | 'console' | 'earbuds' | 'tv' | 'foldable' | 'headset' | 'speaker' | 'handheld'
+export const DEVICE_TYPES: DeviceType[] = ['phone', 'tablet', 'watch', 'laptop', 'desktop', 'console', 'earbuds', 'tv', 'foldable', 'headset', 'speaker', 'handheld']
 
 export type Face = 'front' | 'back' | 'left' | 'right' | 'top' | 'bottom'
 export type PartKind = 'camera' | 'island' | 'flash' | 'notch' | 'button' | 'port' | 'grille' | 'fingerprint' | 'logo' | 'vent' | 'slot' | 'light'
@@ -50,13 +50,16 @@ export interface Body {
   frameColor: string
   backColor: string
   backFinish: 'gloss' | 'matte'
-  /** Watches: strap material and colour. */
+  /** Watches: strap material and colour. Headsets: head strap style, an id from HEAD_STRAPS. */
   strap?: string
   strapColor?: string
   /** Desktops and TVs: stand style, an id from STANDS. */
   stand?: string
   /** Earbuds: the shape of the buds. */
   buds?: 'stem' | 'bean'
+  /** Speakers: the shape of the body, and whether a touch screen is set into its front. */
+  form?: 'column' | 'orb' | 'block'
+  screen?: boolean
 }
 
 export interface Specs {
@@ -73,7 +76,7 @@ export interface Specs {
   extras: string[]
   /** Laptops, desktops, consoles: discrete graphics tier, 0 = integrated. */
   gpu?: number
-  /** Laptops, desktops: keyboard quality, index into KEYBOARDS. Consoles: controller, index into CONTROLLERS. */
+  /** The input device, index into inputOptions(type): keyboard (laptops, desktops), gamepad (consoles), hand controllers (headsets), built-in controls (handhelds). */
   keyboard?: number
   /** Ports, sensors or features fitted. The list depends on the device type (see ioOptions). */
   io?: string[]
@@ -81,9 +84,15 @@ export interface Specs {
   cooling?: number
   /** Desktops, TVs: speaker system, index into SPEAKERS. */
   speakers?: number
-  /** Earbuds: driver, index into DRIVERS, and noise cancelling, index into ANC. */
+  /** Earbuds: driver, index into DRIVERS, and noise cancelling, index into ANC. Speakers: driver set, index into SPEAKER_DRIVERS. */
   driver?: number
   anc?: number
+  /** Foldables: hinge, index into HINGES. */
+  hinge?: number
+  /** Headsets: lenses, index into OPTICS. */
+  optics?: number
+  /** Speakers: microphone array, index into MIC_ARRAYS. */
+  mics?: number
 }
 
 /** An extra colour a device is sold in. */
