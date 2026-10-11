@@ -2,11 +2,12 @@
 // The simulation mutates GameState in place; `rev` is bumped to re-render.
 import { create } from 'zustand'
 import { sfx } from '../audio/sfx'
-import { DAYS_PER_MONTH } from '../data/catalog'
+import { DAYS_PER_MONTH, START_YEAR } from '../data/catalog'
 import { TYPES } from '../data/devices'
 import { clampPart, newPart, nextPartId } from '../sim/geometry'
 import { migrate, newGame, player, starterDesign, tick } from '../sim/game'
 import { monthCosts } from '../sim/types'
+import { hasType } from '../sim/world'
 import { type FingerprintStyle, type FrontStyle, type VariantId, deriveVariant, layoutParts, syncSockets } from '../sim/rivals'
 import type { Body, DeviceDesign, DeviceType, Face, GameConfig, GameState, PartKind, PlacedPart, Product, Specs } from '../sim/types'
 import { AUTOSAVE, BEFORE_DEBT, saveGame, saveSnapshot } from './saves'
@@ -102,6 +103,9 @@ interface Store {
   showing: string | null
   /** Employee whose card is open, from any screen. */
   person: string | null
+  /** The year whose summary is on screen, if any. */
+  yearEnd: number | null
+  closeYear(): void
   openPerson(id: string | null): void
 
   designing: boolean
@@ -176,6 +180,8 @@ export const useStore = create<Store>((set, get) => {
     showing: null,
     person: null,
     openPerson: (person) => set({ person }),
+    yearEnd: null,
+    closeYear: () => set({ yearEnd: null }),
 
     designing: false,
     editorMode: saved('sb-editor', 'simple') === 'advanced' ? 'advanced' : 'simple',
@@ -214,6 +220,7 @@ export const useStore = create<Store>((set, get) => {
       if (!g || g.gameOver || days <= 0) return
       const lastNews = g.news[0]?.id ?? 0
       const month = Math.floor(g.day / DAYS_PER_MONTH)
+      const year = Math.floor(g.day / (DAYS_PER_MONTH * 12))
       // while there is money in the bank, keep a recent copy of the game: every
       // couple of days when cash is running low, less often when it is not
       const solvent = g.cash >= 0
@@ -244,7 +251,10 @@ export const useStore = create<Store>((set, get) => {
       const halt = prefs.pauseOnAlert && fresh.some((n) => n.kind === 'alert')
       // a keynote that just happened plays out on screen
       const keynote = g.events.find((e) => e.done && e.type === 'keynote' && !shown.has(e.id) && e.beats)
-      set({ rev: get().rev + 1, speed: g.gameOver || keynote || halt ? 0 : get().speed, checkpoint, showing: keynote ? keynote.id : get().showing })
+      // the calendar turned: stop and look back on the year
+      const turned = Math.floor(g.day / (DAYS_PER_MONTH * 12)) !== year && g.reports.length >= 6
+      const decision = g.incidents.some((i) => !i.done)
+      set({ rev: get().rev + 1, speed: g.gameOver || keynote || halt || turned || decision ? 0 : get().speed, checkpoint, showing: keynote ? keynote.id : get().showing, yearEnd: turned ? START_YEAR + year : get().yearEnd })
     },
 
     act(fn) {
@@ -276,6 +286,10 @@ export const useStore = create<Store>((set, get) => {
     openDesigner(opts = {}) {
       const g = get().game
       if (!g) return
+      // a company starts on one kind of device and opens the others under Research
+      const wanted = opts.from?.type ?? opts.type
+      if (wanted && !hasType(g, wanted)) return get().say(`Your company does not make ${TYPES[wanted].plural.toLowerCase()} yet. Open that line under Research.`, 'bad')
+      if (!wanted && g.types?.length && !g.types.includes('phone')) opts = { ...opts, type: g.types[0] }
       const from = opts.from
       const own = g.products.filter((p) => p.companyId === 'player')
       let draft: DeviceDesign
@@ -304,6 +318,7 @@ export const useStore = create<Store>((set, get) => {
     setType(type) {
       const g = get().game
       if (!g || get().draft?.type === type) return
+      if (!hasType(g, type)) return get().say(`Your company does not make ${TYPES[type].plural.toLowerCase()} yet. Open that line under Research.`, 'bad')
       const draft = starterDesign(g, type)
       const base = player(g).name.split(' ')[0]
       const count = g.products.filter((p) => p.companyId === 'player' && p.type === type && !p.variant).length + 1

@@ -2,7 +2,7 @@
 // navigation rail that can collapse, the active screen, the news feed and the
 // slide-over product inspector. Also runs the game loop.
 import { useEffect, useRef } from 'react'
-import { sfx } from '../audio/sfx'
+import { type Ambience, setAmbience, setAmbienceLevel, sfx } from '../audio/sfx'
 import { fmtDate, player } from '../sim/game'
 import { factoryLine, pendingUnits } from '../sim/ops'
 import { sealedRooms } from '../sim/sites'
@@ -16,11 +16,12 @@ import { OfficeScreen, PersonCard, Staff } from './Company'
 import { Designer } from './Designer'
 import { CareScreen, GoalsScreen, SharesScreen, WorldScreen } from './Empire'
 import { MarketingScreen, StoresScreen, VenueScreen } from './Growth'
+import { Coach, Decision, YearEnd } from './Guide'
 import { LaunchShow } from './Show'
 import { ProductDrawer } from './Inspector'
 import { LabsScreen } from './Labs'
 import { FactoryScreen } from './Operations'
-import { Research } from './ResearchTree'
+import { ResearchScreen } from './Lines'
 import { Dashboard, Finance, Market, Products, Rivals } from './Screens'
 import { System } from './System'
 import { Icon, type IconName, TAB_ICON } from './icons'
@@ -154,6 +155,14 @@ export function Shell() {
   }
   useGameLoop()
   useHotkeys()
+  // each place has its own background sound
+  const ambience = useSettings((s) => s.settings.ambience)
+  useEffect(() => {
+    setAmbienceLevel(ambience)
+    const place: Ambience = designing || showing ? 'none' : tab === 'office' || tab === 'staff' ? 'office' : tab === 'factory' ? 'factory' : tab === 'stores' ? 'store' : tab === 'venue' ? 'venue' : (tab as string) === 'city' || tab === 'world' ? 'outdoors' : 'none'
+    setAmbience(place)
+    return () => setAmbience('none')
+  }, [tab, designing, showing, ambience])
   const me = player(g)
   const showFeed = feedOpen && !designing && !WIDE.includes(tab)
   const railW = railOpen ? 'w-[172px]' : 'w-[52px]'
@@ -252,7 +261,7 @@ export function Shell() {
             <>
               {tab === 'dashboard' && <Dashboard />}
               {tab === 'products' && <Products />}
-              {tab === 'research' && <Research />}
+              {tab === 'research' && <ResearchScreen />}
               {tab === 'market' && <Market />}
               {tab === 'factory' && <FactoryScreen />}
               {tab === 'stores' && <StoresScreen />}
@@ -298,6 +307,9 @@ export function Shell() {
       </div>
 
       {showing && !g.gameOver && <LaunchShow eventId={showing} />}
+      {!g.gameOver && !showing && <Coach />}
+      {!g.gameOver && !showing && !designing && <Decision />}
+      {!g.gameOver && !showing && <YearEnd />}
 
       {g.gameOver && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-carbon/85">

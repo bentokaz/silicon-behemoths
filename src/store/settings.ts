@@ -17,9 +17,11 @@ export interface Settings {
   pauseOnAlert: boolean
   /** Show people walking about the campus. */
   walkers: boolean
+  /** Background sound of the place on screen, 0-1. */
+  ambience: number
 }
 
-export const DEFAULT_SETTINGS: Settings = { quality: 'medium', cameraSpeed: 1, zoomToPointer: true, autosave: true, pauseOnAlert: false, walkers: true }
+export const DEFAULT_SETTINGS: Settings = { quality: 'medium', cameraSpeed: 1, zoomToPointer: true, autosave: true, pauseOnAlert: false, walkers: true, ambience: 0.5 }
 
 export const QUALITY: Record<Quality, { label: string; note: string; dpr: number; shadows: number; ao: boolean }> = {
   low: { label: 'Low', note: 'No shadows or shading. For laptops without a graphics card.', dpr: 1, shadows: 0, ao: false },

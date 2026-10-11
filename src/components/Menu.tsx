@@ -3,7 +3,9 @@ import { REGIONS } from '../sim/regions'
 import { useState } from 'react'
 import { sfx } from '../audio/sfx'
 import { TRACK_INFO } from '../data/catalog'
+import { TYPES, segmentsOf } from '../data/devices'
 import { DIFFICULTY, defaultConfig } from '../sim/game'
+import { START_TYPES } from '../sim/world'
 import { type Difficulty, type GameConfig, TRACKS } from '../sim/types'
 import { useStore } from '../store/game'
 import { LogoPicker } from './Company'
@@ -50,6 +52,9 @@ export function MainMenu() {
           DESIGN / LAUNCH / OUTSELL / REINVEST
           <br />
           Saves are stored in this browser. Export them to keep a copy.
+          <br />
+          <br />
+          A free game made for fun. The code, models and sounds were written by an AI (Claude) under one person's direction. Every company in it is made up.
         </div>
       </div>
       <div className="flex min-h-0 flex-col gap-2 p-8">
@@ -73,7 +78,7 @@ const logMax = 9
 
 export function NewGame() {
   const { begin, setScreen } = useStore.getState()
-  const [cfg, setCfg] = useState<GameConfig>(() => ({ ...defaultConfig(), seed: Math.floor(Math.random() * 99999) + 1 }))
+  const [cfg, setCfg] = useState<GameConfig>(() => ({ ...defaultConfig(), startType: 'phone', seed: Math.floor(Math.random() * 99999) + 1 }))
   const up = (patch: Partial<GameConfig>) => setCfg((c) => ({ ...c, ...patch }))
   const d = DIFFICULTY[cfg.difficulty]
   return (
@@ -81,8 +86,7 @@ export function NewGame() {
       <div className="flex flex-col justify-between border-r border-line bg-panel p-8">
         <Wordmark />
         <div className="text-[12px] leading-relaxed text-dim">
-          You start as a small device maker in {2026}. More than twenty established companies already sell phones, tablets, watches, laptops, desktops, consoles, earbuds and TVs. Design a device, get it built, launch it, read the reviews, and put the money back into research, people and places.
-        </div>
+          You start as a small maker of one kind of device in {2026}. Established companies already sell phones, tablets, watches, laptops, consoles, earbuds, TVs and more. Design a device, get it built, launch it, read the reviews, and put the money back into research, people and places. </div>
         <Btn onClick={() => setScreen('menu')}>Back</Btn>
       </div>
       <div className="min-h-0 overflow-y-auto p-8">
@@ -113,6 +117,26 @@ export function NewGame() {
             <label className="flex items-center justify-between gap-2 py-1">
               <span className="text-[11px] text-dim">World seed</span>
               <input type="number" value={cfg.seed} onChange={(e) => up({ seed: Math.max(1, Math.floor(Number(e.target.value)) || 1) })} className="num h-7 w-48 rounded-none border border-line2 bg-raise px-2 text-xs outline-none focus:border-accent" />
+            </label>
+          </Panel>
+
+          <Panel title="What your company makes" bodyClass="p-3" className="col-span-2">
+            <div className="grid grid-cols-5 gap-1">
+              {START_TYPES.map((type) => (
+                <button key={type} onClick={() => (up({ startType: type }), sfx.toggle())} className={`border px-2 py-2 text-left transition-colors ${cfg.startType === type ? 'border-accent bg-accent/10' : 'border-line2 bg-raise hover:border-accent'}`}>
+                  <div className={`text-xs uppercase tracking-wider ${cfg.startType === type ? 'text-accent' : 'text-fg'}`}>{TYPES[type].plural}</div>
+                  <div className="num text-[10px] text-faint">{segmentsOf(type).length} markets</div>
+                </button>
+              ))}
+              <button onClick={() => (up({ startType: 'all' }), sfx.toggle())} className={`border px-2 py-2 text-left transition-colors ${cfg.startType === 'all' ? 'border-accent bg-accent/10' : 'border-line2 bg-raise hover:border-accent'}`}>
+                <div className={`text-xs uppercase tracking-wider ${cfg.startType === 'all' ? 'text-accent' : 'text-fg'}`}>Everything</div>
+                <div className="num text-[10px] text-faint">nothing to unlock</div>
+              </button>
+            </div>
+            <div className="mt-2 text-[11px] leading-snug text-dim">You begin as a maker of one kind of device and open other lines under Research as you grow. Related lines are cheaper to open; the most demanding need your technology to be far enough along. "Everything" starts with every line open.</div>
+            <label className="mt-2 flex items-center gap-2 text-[11px] text-dim">
+              <input type="checkbox" checked={!!cfg.parody} onChange={(e) => up({ parody: e.target.checked })} />
+              Use joke names for rival companies instead of invented ones
             </label>
           </Panel>
 

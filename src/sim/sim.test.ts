@@ -4,6 +4,8 @@ import { RIVALS, SEGMENTS, ioOptions, segmentsOf, subLabel } from '../data/devic
 import {
   type LaunchOrder,
   SAVE_VERSION,
+  decide,
+  unlockType,
   acquire,
   autoLine,
   autoTeams,
@@ -50,6 +52,7 @@ import { GOALS } from './goals'
 import { REGIONS } from './regions'
 import { staffEffects, unmanaged } from './staff'
 import { founderStake, valuation } from './stock'
+import { unlockBlocked, unlockCost } from './world'
 import { DEVICE_TYPES, type DeviceType, type GameState, type Levels, SUBS, TRACKS } from './types'
 
 const fresh = (seed = 7, extra: Partial<ReturnType<typeof defaultConfig>> = {}) => newGame({ ...defaultConfig(), seed, ...extra })
@@ -556,6 +559,40 @@ describe('a bigger world', () => {
     clearZone(s, 'office', 1, 1, 9, 9)
     expect(Object.keys(s.office.cuts ?? {}).length).toBeLessThan(before)
     expect(JSON.parse(JSON.stringify(s.office))).toEqual(s.office)
+  })
+
+  it('starts on one kind of device and opens the others', () => {
+    const s = fresh(7, { startType: 'earbuds', startCash: 50e6 })
+    expect(s.companies.some((c) => ['Pear', 'Samsong', 'Microsoff'].includes(c.name))).toBe(false)
+    expect(fresh(7, { parody: true }).companies.some((c) => c.name === 'Pear')).toBe(true)
+    expect(startProduct(s, order(s))).toMatch(/does not make phones/)
+    expect(startProduct(s, order(s, { design: starterDesign(s, 'earbuds'), price: 99 }))).toBeNull()
+    expect(unlockBlocked(s, 'console')).toMatch(/level 4/)
+    expect(unlockCost(s, 'watch')).toBeLessThan(unlockCost(s, 'tablet'))
+    const cash = s.cash
+    expect(unlockType(s, 'watch')).toBeNull()
+    expect(s.cash).toBe(cash - unlockCost({ ...s, types: ['earbuds'] }, 'watch'))
+    expect(unlockType(s, 'watch')).toMatch(/already/)
+    expect(startProduct(s, order(s, { design: starterDesign(s, 'watch'), family: 'W' }))).toBeNull()
+  })
+
+  it('raises incidents that wait for a decision, then settle themselves', () => {
+    const s = rich()
+    startProduct(s, order(s, { quantity: 300000 }))
+    for (let i = 0; i < 60 && !s.incidents.length; i++) tick(s, 30)
+    expect(s.incidents.length).toBeGreaterThan(0)
+    const first = s.incidents[0]
+    expect(first.done).toBe(false)
+    expect(decide(s, first.id, 0)).toBeNull()
+    expect(first.done).toBe(true)
+    expect(decide(s, first.id, 0)).toMatch(/already/)
+    // left alone, the next one takes its second option after a month
+    for (let i = 0; i < 80 && s.incidents.length < 2; i++) tick(s, 30)
+    const second = s.incidents[1]
+    expect(second).toBeDefined()
+    tick(s, 61)
+    expect(second.done).toBe(true)
+    expect(JSON.parse(JSON.stringify(s.incidents))).toEqual(s.incidents)
   })
 
   it('reaches goals and pays their rewards', () => {

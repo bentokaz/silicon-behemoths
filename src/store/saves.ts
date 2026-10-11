@@ -2,6 +2,7 @@
 import { del, get, keys, set } from 'idb-keyval'
 import { SAVE_VERSION, migrate, player } from '../sim/game'
 import type { GameState } from '../sim/types'
+import { deleteRemote, listRemote, pushRemote } from './cloud'
 
 const PREFIX = 'sb-save:'
 export const AUTOSAVE = 'autosave'
@@ -24,12 +25,25 @@ interface SaveFile {
 export async function saveGame(slot: string, state: GameState): Promise<void> {
   const meta: SaveMeta = { slot, company: player(state).name, day: state.day, cash: state.cash, savedAt: Date.now() }
   await set(PREFIX + slot, { meta, state } satisfies SaveFile)
+  // a copy goes to the sync folder and the online account, if either is set up
+  void pushRemote(slot, { meta, state })
+}
+
+/** Bring in any save from the sync folder or online account that is newer than the copy here. */
+async function pullRemote() {
+  for (const r of await listRemote()) {
+    const mine = await get<SaveFile>(PREFIX + r.slot)
+    if (mine && mine.meta.savedAt >= r.meta.savedAt) continue
+    const state = (await r.load()) as GameState | undefined
+    if (state) await set(PREFIX + r.slot, { meta: r.meta, state } satisfies SaveFile)
+  }
 }
 
 /** Save a copy of the game that is not the live one. */
 export const saveSnapshot = (slot: string, state: GameState) => saveGame(slot, state)
 
 export async function listSaves(): Promise<SaveMeta[]> {
+  await pullRemote().catch(() => {})
   const all = (await keys()).filter((k): k is string => typeof k === 'string' && k.startsWith(PREFIX))
   const files = await Promise.all(all.map((k) => get<SaveFile>(k)))
   return files.filter((f): f is SaveFile => !!f).map((f) => f.meta).sort((a, b) => b.savedAt - a.savedAt)
@@ -40,7 +54,10 @@ export async function loadGame(slot: string): Promise<GameState | null> {
   return f ? validate(f.state) : null
 }
 
-export const deleteSave = (slot: string) => del(PREFIX + slot)
+export const deleteSave = async (slot: string) => {
+  await del(PREFIX + slot)
+  await deleteRemote(slot)
+}
 
 export function validate(state: unknown): GameState {
   const s = state as GameState

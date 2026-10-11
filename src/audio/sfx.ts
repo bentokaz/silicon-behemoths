@@ -222,6 +222,114 @@ export const sfx = {
   remove: () => tone(520, 0.12, 'triangle', 0.07, 0, 300),
 }
 
+// ---------------------------------------------------------------- ambience
+
+export type Ambience = 'none' | 'office' | 'factory' | 'store' | 'venue' | 'outdoors'
+let ambient: { kind: Ambience; stop: () => void } | null = null
+let ambienceLevel = 0.5
+export const setAmbienceLevel = (v: number) => {
+  ambienceLevel = v
+  const kind = ambient?.kind
+  if (kind) {
+    setAmbience('none')
+    setAmbience(kind)
+  }
+}
+
+/** A looping bed of filtered noise for a place, with small sounds scattered over it. */
+export function setAmbience(kind: Ambience) {
+  if (ambient?.kind === kind) return
+  ambient?.stop()
+  ambient = null
+  const a = kind === 'none' || ambienceLevel <= 0 ? null : audio()
+  if (!a) return
+  if (!noiseBuffer) {
+    noiseBuffer = a.createBuffer(1, a.sampleRate, a.sampleRate)
+    const data = noiseBuffer.getChannelData(0)
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1
+  }
+  const master = a.createGain()
+  master.gain.setValueAtTime(0, a.currentTime)
+  master.gain.linearRampToValueAtTime(volume * ambienceLevel, a.currentTime + 1.2)
+  master.connect(a.destination)
+  const bed = (freq: number, q: number, gain: number, type: BiquadFilterType, wobble = 0) => {
+    const src = a.createBufferSource()
+    src.buffer = noiseBuffer
+    src.loop = true
+    const filter = a.createBiquadFilter()
+    filter.type = type
+    filter.frequency.value = freq
+    filter.Q.value = q
+    const amp = a.createGain()
+    amp.gain.value = gain
+    if (wobble) {
+      // a slow swell, so the bed never sounds like a held tone
+      const lfo = a.createOscillator()
+      const depth = a.createGain()
+      lfo.frequency.value = wobble
+      depth.gain.value = gain * 0.5
+      lfo.connect(depth).connect(amp.gain)
+      lfo.start()
+    }
+    src.connect(filter).connect(amp).connect(master)
+    src.start(0, Math.random())
+    return src
+  }
+  const blip = (freq: number, len: number, gain: number, type: BiquadFilterType = 'bandpass') => {
+    const src = a.createBufferSource()
+    src.buffer = noiseBuffer
+    const filter = a.createBiquadFilter()
+    filter.type = type
+    filter.frequency.value = freq
+    filter.Q.value = 2
+    const amp = a.createGain()
+    const now = a.currentTime
+    amp.gain.setValueAtTime(gain, now)
+    amp.gain.exponentialRampToValueAtTime(0.0001, now + len)
+    src.connect(filter).connect(amp).connect(master)
+    src.start(now, Math.random() * 0.5, len + 0.05)
+  }
+  const beds: AudioBufferSourceNode[] = []
+  let every = 400
+  let scatter = () => {}
+  if (kind === 'office') {
+    beds.push(bed(160, 0.6, 0.05, 'lowpass'), bed(900, 0.5, 0.012, 'bandpass', 0.07))
+    every = 170
+    // keys, the odd mouse click, a chair
+    scatter = () => (Math.random() < 0.55 ? blip(2600 + Math.random() * 1800, 0.025, 0.02) : Math.random() < 0.04 ? blip(300, 0.2, 0.02, 'lowpass') : undefined)
+  } else if (kind === 'factory') {
+    beds.push(bed(90, 0.8, 0.14, 'lowpass'), bed(1400, 0.7, 0.02, 'bandpass', 0.4))
+    every = 620
+    scatter = () => (blip(420, 0.09, 0.07), Math.random() < 0.3 ? blip(3200, 0.05, 0.03) : undefined)
+  } else if (kind === 'store') {
+    beds.push(bed(520, 0.5, 0.05, 'bandpass', 0.13), bed(1700, 0.6, 0.014, 'bandpass', 0.21))
+    every = 900
+    scatter = () => (Math.random() < 0.3 ? blip(2100, 0.06, 0.025) : undefined)
+  } else if (kind === 'venue') {
+    beds.push(bed(450, 0.4, 0.07, 'bandpass', 0.1), bed(1500, 0.5, 0.03, 'bandpass', 0.17))
+    every = 1400
+    scatter = () => (Math.random() < 0.25 ? blip(1200, 0.4, 0.03) : undefined)
+  } else {
+    beds.push(bed(380, 0.3, 0.05, 'lowpass', 0.06), bed(3800, 0.8, 0.006, 'bandpass', 0.09))
+    every = 2600
+    // a bird now and then
+    scatter = () => (Math.random() < 0.35 ? (blip(4200, 0.07, 0.02), window.setTimeout(() => blip(4700, 0.06, 0.018), 110)) : undefined)
+  }
+  const timer = window.setInterval(() => scatter(), every)
+  ambient = {
+    kind,
+    stop() {
+      window.clearInterval(timer)
+      master.gain.cancelScheduledValues(a.currentTime)
+      master.gain.setTargetAtTime(0, a.currentTime, 0.25)
+      window.setTimeout(() => {
+        for (const b of beds) b.stop()
+        master.disconnect()
+      }, 1200)
+    },
+  }
+}
+
 /** Tick on hover and click for every interactive control on the page. */
 export function installUiSounds(): () => void {
   const sel = 'button, select, [role="button"], input[type="range"], input[type="checkbox"]'

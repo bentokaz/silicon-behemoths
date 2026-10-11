@@ -1,9 +1,10 @@
 // Settings and key bindings, shown from the System screen and the main menu.
 import { useEffect, useState } from 'react'
-import { getVolume, setVolume, sfx } from '../audio/sfx'
+import { getVolume, setAmbienceLevel, setVolume, sfx } from '../audio/sfx'
+import { chooseFolder, cloudBuiltIn, cloudConfig, cloudUser, folderState, forgetFolder, setCloudConfig, signIn, signOut, signUp, unlockFolder } from '../store/cloud'
 import { ACTIONS, type Action, QUALITY, type Quality, keyName, keysFor, useSettings } from '../store/settings'
 import { ThemePicker } from './System'
-import { Btn, Panel, Slider } from './ui'
+import { Btn, Panel, Slider, TextInput } from './ui'
 
 function Toggle({ on, onChange, title, note }: { on: boolean; onChange: (v: boolean) => void; title: string; note: string }) {
   return (
@@ -47,6 +48,7 @@ export function SettingsPanel() {
       </Panel>
       <Panel title="Sound" bodyClass="p-2">
         <Slider label="Volume" value={vol} min={0} max={1} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => (setVol(v), setVolume(v), sfx.click())} />
+        <Slider label="Background ambience" value={settings.ambience} min={0} max={1} step={0.05} format={(v) => (v ? `${Math.round(v * 100)}%` : 'off')} onChange={(v) => (set({ ambience: v }), setAmbienceLevel(v))} hint="The hum of the office, the factory floor, a busy store. There is no music." />
         <div className="mt-2 grid grid-cols-3 gap-1">
           {(
             [
@@ -63,11 +65,103 @@ export function SettingsPanel() {
             </Btn>
           ))}
         </div>
-        <div className="mt-2 text-[10px] leading-snug text-faint">Every sound is generated in the browser; there is no music yet.</div>
+        <div className="mt-2 text-[10px] leading-snug text-faint">Every sound is generated in the browser.</div>
         <Btn small className="mt-4 w-full" onClick={() => (resetSettings(), sfx.confirm())}>
           Reset all settings
         </Btn>
       </Panel>
+    </div>
+  )
+}
+
+/** Where saves are kept besides this browser. */
+export function SavesBeyond() {
+  const [folder, setFolder] = useState<Awaited<ReturnType<typeof folderState>>>({ state: 'none' })
+  const [user, setUser] = useState(cloudUser())
+  const [cfg, setCfg] = useState(cloudConfig())
+  const [url, setUrl] = useState(cfg?.url ?? '')
+  const [key, setKey] = useState(cfg?.key ?? '')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [note, setNote] = useState('')
+  const refresh = () => void folderState().then(setFolder)
+  useEffect(refresh, [])
+  const run = (job: () => Promise<unknown>, done: string) =>
+    void job()
+      .then(() => (setNote(done), sfx.confirm(), refresh(), setUser(cloudUser()), setCfg(cloudConfig())))
+      .catch((e: Error) => (e.name === 'AbortError' ? null : (setNote(e.message), sfx.error())))
+  return (
+    <div className="space-y-3 p-2">
+      <div>
+        <div className="label mb-1 text-faint">Sync folder</div>
+        {folder.state === 'unsupported' ? (
+          <div className="text-[11px] leading-snug text-dim">This browser cannot write to a folder. Chrome and Edge on a computer can. Use Export to file to keep copies instead.</div>
+        ) : (
+          <>
+            <div className="text-[11px] leading-snug text-dim">Pick a folder and every save is also written there as a file. Choose one inside OneDrive, Google Drive or Dropbox and your games follow you to any PC, and survive clearing the browser.</div>
+            <div className="mt-2 flex items-center gap-2">
+              <Btn small tone={folder.state === 'none' ? 'primary' : 'default'} onClick={() => run(chooseFolder, 'Folder set. Saves will be copied there from now on.')}>
+                {folder.state === 'none' ? 'Choose a folder' : 'Change folder'}
+              </Btn>
+              {folder.state === 'locked' && (
+                <Btn small tone="primary" onClick={() => run(unlockFolder, 'Folder reconnected.')}>
+                  Reconnect
+                </Btn>
+              )}
+              {folder.state !== 'none' && (
+                <Btn small tone="ghost" onClick={() => run(forgetFolder, 'Folder forgotten. Files already there are untouched.')}>
+                  Stop using it
+                </Btn>
+              )}
+            </div>
+            <div className={`num mt-1 text-[10px] ${folder.state === 'ready' ? 'text-pos' : folder.state === 'locked' ? 'text-warn' : 'text-faint'}`}>
+              {folder.state === 'ready' ? `Writing to "${folder.name}"` : folder.state === 'locked' ? `"${folder.name}" needs reconnecting: the browser asks again each visit` : 'No folder chosen'}
+            </div>
+          </>
+        )}
+      </div>
+      <div className="border-t border-line pt-3">
+        <div className="label mb-1 text-faint">Online account</div>
+        {!cfg ? (
+          <>
+            <div className="text-[11px] leading-snug text-dim">Not set up. Online saves need a free Supabase project; the steps are in CLOUD.md in the game's folder. Paste the project address and public key here once you have them.</div>
+            <TextInput value={url} onChange={setUrl} placeholder="Project address (https://...supabase.co)" className="mt-2 w-full" />
+            <TextInput value={key} onChange={setKey} placeholder="Public (anon) key" className="mt-1 w-full" />
+            <Btn small className="mt-1" disabled={!url.trim() || !key.trim()} onClick={() => (setCloudConfig(url, key), setCfg(cloudConfig()), setNote('Project saved. Now sign in or create an account.'))}>
+              Use this project
+            </Btn>
+          </>
+        ) : user ? (
+          <>
+            <div className="text-[11px] text-dim">
+              Signed in as <span className="text-fg">{user}</span>. Every save is copied to your account and newer saves there are fetched when you open the load list.
+            </div>
+            <Btn small className="mt-2" onClick={() => (signOut(), setUser(null), setNote('Signed out.'))}>
+              Sign out
+            </Btn>
+          </>
+        ) : (
+          <>
+            <div className="text-[11px] leading-snug text-dim">Sign in to keep saves online and load them on any device.</div>
+            <TextInput value={email} onChange={setEmail} placeholder="Email" className="mt-2 w-full" />
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="mt-1 h-7 w-full rounded-none border border-line2 bg-raise px-2 text-xs text-fg outline-none focus:border-accent" />
+            <div className="mt-1 flex gap-1">
+              <Btn small tone="primary" disabled={!email || password.length < 6} onClick={() => run(() => signIn(email, password), 'Signed in.')}>
+                Sign in
+              </Btn>
+              <Btn small disabled={!email || password.length < 6} onClick={() => run(() => signUp(email, password), 'Account created.')}>
+                Create account
+              </Btn>
+              {!cloudBuiltIn() && (
+                <Btn small tone="ghost" onClick={() => (localStorage.removeItem('sb-cloud'), setCfg(null))}>
+                  Change project
+                </Btn>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+      {note && <div className="border border-line px-2 py-[6px] text-[11px] text-dim">{note}</div>}
     </div>
   )
 }

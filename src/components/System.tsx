@@ -8,7 +8,7 @@ import { AUTOSAVE, BEFORE_DEBT, type SaveMeta, deleteSave, exportGame, importGam
 import { THEMES, type ThemeId, applyTheme, getTheme } from '../store/theme'
 import { LogoPicker } from './Company'
 import { Btn, Panel, Row, Slider, TextInput, money, Tabs } from './ui'
-import { KeysPanel, SettingsPanel } from './Settings'
+import { KeysPanel, SavesBeyond, SettingsPanel } from './Settings'
 
 export function SaveList({ onChange, nonce = 0 }: { onChange?: () => void; nonce?: number }) {
   const [saves, setSaves] = useState<SaveMeta[] | null>(null)
@@ -136,11 +136,14 @@ function Saves() {
           <ImportButton />
           <span className="text-[11px] text-faint">The game also autosaves every month and at big moments such as a device going on sale, and keeps a copy from just before the company goes into debt.</span>
         </Panel>
-        <Panel title="Saved games on this device" bodyClass="overflow-auto">
+        <Panel title="Saved games" bodyClass="overflow-auto">
           <SaveList nonce={nonce} />
         </Panel>
       </div>
       <div className="flex min-h-0 flex-col gap-2 overflow-y-auto">
+        <Panel title="Saves beyond this browser" className="shrink-0">
+          <SavesBeyond />
+        </Panel>
         <Panel title="Company logo" className="shrink-0" bodyClass="p-2">
           <LogoPicker value={player(g).logo} onChange={(logo) => act((s) => void (player(s).logo = logo))} />
           <div className="mt-2 text-[10px] leading-snug text-faint">Shown in the top bar and on new devices. On an existing draft, select the logo part in the advanced editor to switch it to the image.</div>
@@ -162,6 +165,11 @@ function Saves() {
           ))}
           <div className="py-1 text-[10px] text-faint">Renaming applies to this save. Devices already on sale keep their model names.</div>
         </Panel>
+        {g.guide < 0 && (
+          <Btn className="shrink-0" onClick={() => (act((s) => void (s.guide = 0)), say('The guide is back at the bottom of the screen.'))}>
+            Run the guided start again
+          </Btn>
+        )}
         <Btn tone="danger" className="shrink-0" onClick={quit}>
           Quit to main menu
         </Btn>
