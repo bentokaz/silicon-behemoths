@@ -1,7 +1,7 @@
 // 3D view of a buildable site: the land around it, the rooms and walls, what
 // stands in them, and the cursor for building.
 import { Environment, Lightformer, OrbitControls } from '@react-three/drei'
-import { Canvas, type ThreeEvent } from '@react-three/fiber'
+import { Canvas, type ThreeEvent, useThree } from '@react-three/fiber'
 import { EffectComposer, N8AO } from '@react-three/postprocessing'
 import { useEffect, useMemo, useState } from 'react'
 import * as THREE from 'three'
@@ -74,6 +74,18 @@ interface Props {
 }
 
 const CHUNK = 8
+
+/** Development only: lets the camera be driven from the console for close-up checks of the models. */
+function DevHandle() {
+  const camera = useThree((s) => s.camera)
+  const controls = useThree((s) => s.controls)
+  const gl = useThree((s) => s.gl)
+  const scene = useThree((s) => s.scene)
+  useEffect(() => {
+    Object.assign(window, { sbView: { camera, controls, gl, scene } })
+  }, [camera, controls, gl, scene])
+  return null
+}
 
 /** A flat tint over a set of tiles, drawn as one mesh. */
 function Tint({ tiles, w, h, color, opacity, y = 0.02 }: { tiles: [number, number][]; w: number; h: number; color: string; opacity: number; y?: number }) {
@@ -247,7 +259,7 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
     <Canvas shadows dpr={[1, 1.5]} camera={{ fov: 30, near, far, position: [span * 0.75, span * 0.95 + height, span * 1.2 + 6] }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: mood === 'night' ? 1.25 : 1, powerPreference: 'high-performance' }}>
       <color attach="background" args={[M.sky]} />
       <fog attach="fog" args={[M.sky, span * 3 + 80, far * 0.9]} />
-      <hemisphereLight args={[mood === 'night' ? '#6a7fa8' : '#fff4e6', mood === 'night' ? '#14161c' : '#4a4338', M.hemi + (mood === 'night' ? 0.25 : 0)]} />
+      <hemisphereLight args={[mood === 'night' ? '#6a7fa8' : '#fff4e6', mood === 'night' ? '#14161c' : '#4a4338', M.hemi + (mood === 'night' ? 0.35 : 0)]} />
       <directionalLight
         color={M.sunColor}
         intensity={M.sun}
@@ -264,7 +276,7 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
         shadow-camera-far={span * 5 + 60}
       />
       {/* after dark the rooms are lit from within */}
-      {mood !== 'day' && <pointLight position={[0, 7, 0]} color="#ffd9a8" intensity={(mood === 'night' ? 26 : 9) * span} distance={span * 1.5} decay={1.4} />}
+      {mood !== 'day' && <pointLight position={[0, 7, 0]} color="#ffd9a8" intensity={(mood === 'night' ? 5 : 2) * span} distance={span * 1.5} decay={1.4} />}
       <Environment resolution={128} frames={1} environmentIntensity={mood === 'night' ? 0.12 : 0.4}>
         <color attach="background" args={[M.sky]} />
         <Lightformer form="rect" intensity={3} color="#fff1e0" position={[0, 8, 0]} rotation-x={Math.PI / 2} scale={[14, 14, 1]} />
@@ -342,6 +354,7 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
       <EffectComposer multisampling={4}>
         <N8AO halfRes aoRadius={0.8} distanceFalloff={1} intensity={mood === 'night' ? 1.2 : 2} quality="medium" />
       </EffectComposer>
+      {import.meta.env.DEV && <DevHandle />}
       <OrbitControls makeDefault target={[0, height * 0.35 + 0.5, 0]} minDistance={near * 6} maxDistance={span * 3 + 40} maxPolarAngle={Math.PI * 0.485} enablePan panSpeed={0.8} autoRotate={autoRotate} autoRotateSpeed={0.5} />
     </Canvas>
   )

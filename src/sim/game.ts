@@ -23,7 +23,7 @@ export const RETAIL_CUT = 0.15
 export const DIFFICULTY: Record<Difficulty, { label: string; blurb: string; startCash: number; rivalOffset: number; awareness: number; overhead: number; debtDays: number; overdraft: number }> = {
   relaxed: { label: 'Relaxed', blurb: 'Forgiving market, slow rivals, generous credit.', startCash: 15e6, rivalOffset: -0.5, awareness: 1.6, overhead: 0.6, debtDays: 720, overdraft: 5e6 },
   normal: { label: 'Normal', blurb: 'Balanced rivals and a fair market.', startCash: 6e6, rivalOffset: 0, awareness: 1, overhead: 1, debtDays: 360, overdraft: 2e6 },
-  tough: { label: 'Tough', blurb: 'Aggressive rivals, thin credit, slow brand growth.', startCash: 3e6, rivalOffset: 0.4, awareness: 0.7, overhead: 1.5, debtDays: 180, overdraft: 0.5e6 },
+  tough: { label: 'Tough', blurb: 'Aggressive rivals, thin credit, slow brand growth.', startCash: 3e6, rivalOffset: 0.4, awareness: 0.8, overhead: 1.5, debtDays: 180, overdraft: 0.5e6 },
 }
 
 export const defaultConfig = (): GameConfig => ({
@@ -184,7 +184,7 @@ function starterOffice(): Site {
     { id: 'o3', kind: 'plant', x: 3, y: 2, rot: 0 },
     { id: 'o4', kind: 'whiteboard', x: 9, y: 2, rot: 0 },
     { id: 'o5', kind: 'otree', x: 1, y: 1, rot: 0 },
-    { id: 'o6', kind: 'otree', x: 12, y: 8, rot: 0 },
+    { id: 'o6', kind: 'otree', x: 12, y: 0, rot: 0 },
     { id: 'o7', kind: 'hedge', x: 0, y: 9, rot: 0 },
     { id: 'o8', kind: 'hedge', x: 1, y: 9, rot: 0 },
   ]

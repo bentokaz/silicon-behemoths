@@ -610,10 +610,11 @@ export function OfficeItem({ kind, c }: { kind: string; c: OfficeCtx }) {
     case 'parking':
       return (
         <>
+          <B p={[0, 0.004, 0]} s={[2.96, 0.008, 4.96]} c="#3d4045" r={0} rough={0.9} cast={false} />
           {[-1.42, 1.42].map((x) => (
-            <B key={x} p={[x, 0.006, 0]} s={[0.1, 0.012, 4.9]} c="#e9e6dc" r={0} rough={0.9} cast={false} />
+            <B key={x} p={[x, 0.012, 0]} s={[0.1, 0.01, 4.9]} c="#e9e6dc" r={0} rough={0.9} cast={false} />
           ))}
-          <B p={[0, 0.006, -2.4]} s={[2.74, 0.012, 0.1]} c="#e9e6dc" r={0} rough={0.9} cast={false} />
+          <B p={[0, 0.012, -2.4]} s={[2.74, 0.01, 0.1]} c="#e9e6dc" r={0} rough={0.9} cast={false} />
           <B p={[0, 0.07, -2.05]} s={[1.7, 0.14, 0.18]} c="#8c8e90" r={0.03} rough={0.9} />
           {hash(c.seed + 2) > 0.2 && <Car seed={c.seed} p={[0, 0, 0.1]} rotY={Math.PI} glow={c.glow > 1.2 ? 0.3 : 0} />}
         </>

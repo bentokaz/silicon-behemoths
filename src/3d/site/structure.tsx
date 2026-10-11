@@ -85,7 +85,7 @@ export function surface(key: string, glow = 0): { material: THREE.Material; cast
   if (!m) {
     if (key === 'glass') m = new THREE.MeshPhysicalMaterial({ color: '#bfe0f2', roughness: 0.05, transparent: true, opacity: 0.24, side: THREE.DoubleSide, depthWrite: false })
     else if (key === 'pane') m = new THREE.MeshStandardMaterial({ color: '#27353f', roughness: 0.1, metalness: 0.7 })
-    else if (key === 'lit') m = new THREE.MeshStandardMaterial({ color: '#3a3428', roughness: 0.2, emissive: '#ffd9a0', emissiveIntensity: glow })
+    else if (key === 'lit') m = new THREE.MeshStandardMaterial({ color: '#2a2418', roughness: 0.2, emissive: '#ffb866', emissiveIntensity: glow * 0.55 })
     else if (key === 'water') m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.08, metalness: 0.3 })
     else if (key === 'trim') m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.4 })
     else if (key.startsWith('floor')) m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: Number(key.slice(5)) / 10 })
@@ -147,7 +147,8 @@ export function Structure({ site, mode, glow }: { site: Site; mode: ViewMode; gl
     const top = full ? site.floors * STOREY : H
     const half = WALL_T / 2
     const overrides = new Map(site.walls.map((w) => [`${w.x},${w.y},${w.side}`, w.kind]))
-    const posts = new Set<string>()
+    /** What stands on each edge that has a wall: 'wall' covers doors too, since their jambs finish the run. */
+    const edges = new Map<string, 'wall' | 'glass'>()
     const litKey = glow > 0.05 ? 'lit' : 'pane'
 
     /** One side of a wall: a slab `depth` thick on the given side of the edge line. */
@@ -206,14 +207,10 @@ export function Structure({ site, mode, glow }: { site: Site; mode: ViewMode; gl
           const kind = overrides.get(`${x},${y},${side}`)
           const exterior = !a || !c
           const seed = x * 53 + y * 97 + (side === 'n' ? 0 : 7)
-          // posts stand wherever a wall meets a grid corner
-          if (kind !== 'open') {
-            posts.add(`${x},${y}`)
-            posts.add(side === 'n' ? `${x + 1},${y}` : `${x},${y + 1}`)
-          }
           const ra = rooms.get(a)
           const rc = rooms.get(c)
           const glassWall = kind === 'glass' || (exterior && facade.kind === 'glass' && kind === undefined)
+          if (kind !== 'open') edges.set(`${x},${y},${side}`, glassWall ? 'glass' : 'wall')
 
           if (kind === 'open') {
             onEdge('trim', x, y, side, 0.5, 1, 0, 0.012, WALL_T, CAP)
@@ -279,12 +276,22 @@ export function Structure({ site, mode, glow }: { site: Site; mode: ViewMode; gl
       }
     }
 
-    for (const key of posts) {
-      const [x, y] = key.split(',').map(Number)
-      // only corners that touch the outside carry on up the building
-      const ext = !gridAt(site, x, y) || !gridAt(site, x - 1, y) || !gridAt(site, x, y - 1) || !gridAt(site, x - 1, y - 1)
-      const h = full && ext ? top + 0.345 : H + 0.035
-      b.box('trim', ox + x, h / 2, oz + y, WALL_T + 0.03, h, WALL_T + 0.03, POST)
+    // posts stand at corners, junctions and wall ends, not along a straight run
+    for (let y = 0; y <= site.h; y++) {
+      for (let x = 0; x <= site.w; x++) {
+        const west = edges.get(`${x - 1},${y},n`)
+        const east = edges.get(`${x},${y},n`)
+        const north = edges.get(`${x},${y - 1},w`)
+        const south = edges.get(`${x},${y},w`)
+        const count = (west ? 1 : 0) + (east ? 1 : 0) + (north ? 1 : 0) + (south ? 1 : 0)
+        if (!count) continue
+        const straight = count === 2 && ((west && east && west === east) || (north && south && north === south))
+        if (straight) continue
+        // only corners that touch the outside carry on up the building
+        const ext = !gridAt(site, x, y) || !gridAt(site, x - 1, y) || !gridAt(site, x, y - 1) || !gridAt(site, x - 1, y - 1)
+        const h = full && ext ? top + 0.345 : H + 0.035
+        b.box('trim', ox + x, h / 2, oz + y, WALL_T + 0.03, h, WALL_T + 0.03, POST)
+      }
     }
 
     if (full) {

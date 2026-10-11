@@ -478,8 +478,8 @@ describe('a bigger world', () => {
     expect(s.stock.history.length).toBe(13)
     expect(s.reports.every((r) => r.funding === 0 || r.month === 0)).toBe(true)
 
-    s.cash = 400e6
-    expect(valuation(s)).toBeGreaterThan(50e6)
+    s.cash = 900e6
+    expect(valuation(s)).toBeGreaterThan(200e6)
     expect(listCompany(s, 0.25)).toBeNull()
     expect(s.stock.listed).toBe(true)
     expect(founderStake(s)).toBeCloseTo(0.6)
