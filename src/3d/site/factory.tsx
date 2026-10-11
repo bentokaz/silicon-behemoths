@@ -49,7 +49,7 @@ function Parcel({ dir, phase }: { dir: [number, number]; phase: number }) {
     ref.current.position.set(dir[0] * t, BELT + 0.1, dir[1] * t)
   })
   return (
-    <mesh ref={ref} castShadow userData={{ live: true }}>
+    <mesh ref={ref} position={[0, BELT + 0.1, 0]} castShadow userData={{ live: true }}>
       <boxGeometry args={[0.26, 0.18, 0.26]} />
       <meshStandardMaterial color={BOX} roughness={0.8} />
     </mesh>

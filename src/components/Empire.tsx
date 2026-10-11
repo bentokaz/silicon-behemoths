@@ -369,7 +369,7 @@ export function WorldScreen() {
   const g = useGame()
   const [selected, setSelected] = useState(homeRegion(g))
   const open = REGIONS.filter((r) => g.regions[r.id].open)
-  const total = open.reduce((a, r) => a + g.regions[r.id].monthUnits, 0)
+  const total = open.reduce((a, r) => a + (g.regions[r.id].history.at(-1) ?? 0), 0)
   const region = REGIONS.find((r) => r.id === selected) ?? REGIONS[0]
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-2">
@@ -391,7 +391,7 @@ export function WorldScreen() {
                   <th>Region</th>
                   <th className="r">World demand</th>
                   <th className="w-32">Awareness</th>
-                  <th className="r">Units this month</th>
+                  <th className="r">Units last month</th>
                   <th className="r">Share of your sales</th>
                   <th className="r">Local price</th>
                 </tr>
@@ -407,8 +407,8 @@ export function WorldScreen() {
                       </td>
                       <td className="num r text-dim">{pct(r.share, 0)}</td>
                       <td>{st.open ? <Meter value={st.awareness} tone="accent" /> : <span className="text-[10px] text-faint">not entered ({money(r.entry, 1)})</span>}</td>
-                      <td className="num r text-fg">{st.open ? num(st.monthUnits) : '--'}</td>
-                      <td className="num r text-dim">{st.open && total > 0 ? pct(st.monthUnits / total, 0) : '--'}</td>
+                      <td className="num r text-fg">{st.open ? num(st.history.at(-1) ?? 0) : '--'}</td>
+                      <td className="num r text-dim">{st.open && total > 0 ? pct((st.history.at(-1) ?? 0) / total, 0) : '--'}</td>
                       <td className="num r text-dim">{st.open ? `${st.priceAdj >= 1 ? '+' : ''}${Math.round((st.priceAdj - 1) * 100)}%` : '--'}</td>
                     </tr>
                   )

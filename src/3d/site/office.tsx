@@ -1,7 +1,7 @@
 // Office furniture and campus grounds. One unit is one metre and one floor
 // tile. Each model is centred on its footprint with its front toward +Z, and
 // every part rests on the floor or on another part.
-import { B, C, CHARCOAL, Car, Chair, DARK, FABRIC, LEAF, OAK_PALE, type PersonLook, Person, Plant, S, STEEL, Sign, Tree, WALNUT, WHITE, WOOD, hash } from './kit'
+import { B, C, CHARCOAL, Car, Chair, Ring, DARK, FABRIC, LEAF, OAK_PALE, type PersonLook, Person, Plant, S, STEEL, Sign, Tree, WALNUT, WHITE, WOOD, hash } from './kit'
 
 export interface OfficeCtx {
   /** Who sits here, if anyone. */
@@ -249,7 +249,10 @@ export function OfficeItem({ kind, c }: { kind: string; c: OfficeCtx }) {
             <B p={[0, 0, 0]} s={[0.1, 0.5, 0.5]} c={DARK} r={0.02} />
             <B p={[-0.053, 0, 0]} s={[0.008, 0.44, 0.44]} c="#fff6e6" r={0} glow="#fff1d6" glowPower={1.1 * c.glow} cast={false} />
           </group>
-          <C p={[0.2, 0.6, 0.38]} r={[0.006, 0.09]} h={1.2} c={DARK} seg={3} />
+          <C p={[0.2, 0.6, 0.38]} r={[0.014, 0.014]} h={1.2} c={DARK} seg={8} />
+          {[0, 2.1, 4.2].map((a) => (
+            <B key={a} p={[0.2 + Math.sin(a) * 0.14, 0.012, 0.38 + Math.cos(a) * 0.14]} s={[0.03, 0.024, 0.3]} c={DARK} r={0.006} rot={[0, a, 0]} cast={false} />
+          ))}
           <B p={[0.2, 1.25, 0.38]} s={[0.14, 0.1, 0.1]} c="#16181b" r={0.01} />
           <C p={[0.2, 1.25, 0.3]} r={[0.035, 0.04]} h={0.08} c="#0b0c0e" seg={14} rot={[Math.PI / 2, 0, 0]} cast={false} />
           <C p={[-0.2, 0.416, -0.05]} r={[0.2, 0.2]} h={0.8} c={WHITE} seg={24} rough={0.4} />
@@ -631,7 +634,12 @@ export function OfficeItem({ kind, c }: { kind: string; c: OfficeCtx }) {
               {i % 2 === c.seed % 2 && (
                 <group position={[0.12, 0, 0]}>
                   {[-0.52, 0.52].map((z) => (
-                    <C key={z} p={[0, 0.33, z]} r={[0.33, 0.33]} h={0.03} c="#15171a" seg={16} rot={[0, 0, Math.PI / 2]} cast={false} />
+                    <group key={z}>
+                      <Ring p={[0, 0.33, z]} R={0.31} r={0.022} c="#15171a" rot={[0, Math.PI / 2, 0]} rough={0.9} />
+                      <C p={[0, 0.33, z]} r={[0.03, 0.03]} h={0.05} c={STEEL} seg={8} rot={[0, 0, Math.PI / 2]} metal={0.8} rough={0.4} cast={false} />
+                      <B p={[0, 0.33, z]} s={[0.008, 0.6, 0.008]} c={STEEL} r={0} cast={false} />
+                      <B p={[0, 0.33, z]} s={[0.008, 0.008, 0.6]} c={STEEL} r={0} cast={false} />
+                    </group>
                   ))}
                   <B p={[0, 0.62, 0]} s={[0.035, 0.035, 1.0]} c={['#c9553d', '#31506b', '#e0a23a'][(c.seed + i) % 3]} r={0.01} cast={false} />
                   <B p={[0, 0.48, -0.2]} s={[0.03, 0.34, 0.03]} c={['#c9553d', '#31506b', '#e0a23a'][(c.seed + i) % 3]} r={0.008} rot={[0.5, 0, 0]} cast={false} />

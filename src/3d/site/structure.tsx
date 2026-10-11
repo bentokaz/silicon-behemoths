@@ -112,7 +112,7 @@ export function Ground({ site, dim }: { site: Site; dim: number }) {
     for (let y = 0; y < site.h; y++) {
       for (let x = 0; x < site.w; x++) {
         const room = rooms.get(site.grid[y * site.w + x])
-        const jitter = (0.94 + hash(x * 31 + y * 17) * 0.12) * dim
+        const jitter = (0.78 + hash(x * 31 + y * 17) * 0.1) * dim
         if (room) {
           const st = styleOf(site, room)
           b.quad(`floor${Math.round(st.rough * 10)}`, ox + x, oz + y, ox + x + 1, oz + y + 1, 0, st.floor, jitter)

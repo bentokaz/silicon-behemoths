@@ -19,9 +19,10 @@ function cached<T extends THREE.BufferGeometry>(key: string, make: () => T): T {
 export const boxGeo = (w: number, h: number, d: number, r: number) =>
   cached(`b${w},${h},${d},${r}`, () => {
     const rr = Math.min(r, w / 2, h / 2, d / 2)
-    return rr > 0.004 ? new RoundedBoxGeometry(w, h, d, rr >= 0.05 ? 3 : 1, rr) : new THREE.BoxGeometry(w, h, d)
+    return rr > 0.004 ? new RoundedBoxGeometry(w, h, d, rr >= 0.05 ? 2 : 1, rr) : new THREE.BoxGeometry(w, h, d)
   })
 export const cylGeo = (top: number, bottom: number, h: number, seg: number) => cached(`c${top},${bottom},${h},${seg}`, () => new THREE.CylinderGeometry(top, bottom, h, seg))
+export const torusGeo = (R: number, r: number, seg = 20) => cached(`t${R},${r},${seg}`, () => new THREE.TorusGeometry(R, r, 6, seg))
 export const sphereGeo = (r: number, detail = 1) => cached(`s${r},${detail}`, () => new THREE.IcosahedronGeometry(r, detail))
 
 export interface Look {
@@ -66,6 +67,11 @@ export function B({ p, s, c, r = 0.012, rot, cast = true, ...look }: PartProps &
 /** A cylinder or cone standing on its axis. r = [top radius, bottom radius]. */
 export function C({ p, r, h, c, seg = 16, rot, cast = true, ...look }: PartProps & { r: [number, number]; h: number; seg?: number }) {
   return <mesh position={p} rotation={rot} geometry={cylGeo(r[0], r[1], h, seg)} material={mat(c, look)} castShadow={cast} receiveShadow />
+}
+
+/** A ring: tyres, hoops. Lies in the XY plane until rotated. R = ring radius, r = tube radius. */
+export function Ring({ p, R, r, c, rot, cast = true, ...look }: PartProps & { R: number; r: number }) {
+  return <mesh position={p} rotation={rot} geometry={torusGeo(R, r)} material={mat(c, look)} castShadow={cast} receiveShadow />
 }
 
 /** A faceted ball, used for foliage and ornaments. */

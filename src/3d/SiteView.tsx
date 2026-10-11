@@ -5,7 +5,7 @@ import { Canvas, type ThreeEvent, useThree } from '@react-three/fiber'
 import { EffectComposer, N8AO } from '@react-three/postprocessing'
 import { useEffect, useMemo, useState } from 'react'
 import * as THREE from 'three'
-import { ITEMS, type LineStats, SITE_TIERS, areaTiles, canPlace, gridAt, inPlot, isBoundary, itemAt, reachable, tilesOf } from '../sim/sites'
+import { ITEMS, type LineStats, SITE_TIERS, areaTiles, canPlace, gridAt, inPlot, isBoundary, itemAt, reachable, roomOf, tilesOf } from '../sim/sites'
 import { ROLE_INFO } from '../sim/staff'
 import type { Employee, Product, Site, SiteItem } from '../sim/types'
 import { themeColor } from '../store/theme'
@@ -143,7 +143,7 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
     for (let i = 0; i < w * h; i++) {
       const x = Math.floor(hash(i * 3 + 1) * w)
       const y = Math.floor(hash(i * 7 + 2) * h)
-      if (!gridAt(site, x, y) || itemAt(site, x, y)) continue
+      if (!gridAt(site, x, y) || itemAt(site, x, y) || roomOf(site, gridAt(site, x, y))?.type === 'stock') continue
       if (spots.some(([sx, sz]) => Math.abs(sx - (x - w / 2 + 0.5)) < 0.9 && Math.abs(sz - (y - h / 2 + 0.5)) < 0.9)) continue
       spots.push([x - w / 2 + 0.5 + (hash(i) - 0.5) * 0.3, y - h / 2 + 0.5 + (hash(i + 9) - 0.5) * 0.3])
       if (spots.length >= 14) break
@@ -249,7 +249,8 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
     )
   }
 
-  const stage = site.kind === 'venue' && show?.presenter ? site.items.find((i) => i.kind === 'stage') : undefined
+  const venueStage = site.kind === 'venue' ? site.items.find((i) => i.kind === 'stage') : undefined
+  const stage = show?.presenter ? venueStage : undefined
   const sun: [number, number, number] = [M.sunDir[0] * span * 1.4, M.sunDir[1] * span * 1.4, M.sunDir[2] * span * 1.4]
   const far = span * 7 + 420
   const near = Math.min(1.5, Math.max(0.4, span / 40))
@@ -276,7 +277,9 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
         shadow-camera-far={span * 5 + 60}
       />
       {/* after dark the rooms are lit from within */}
-      {mood !== 'day' && <pointLight position={[0, 7, 0]} color="#ffd9a8" intensity={(mood === 'night' ? 5 : 2) * span} distance={span * 1.5} decay={1.4} />}
+      {mood !== 'day' && site.kind !== 'venue' && <pointLight position={[0, 2.3, 0]} color="#ffd9a8" intensity={(mood === 'night' ? 5 : 2) * span} distance={span * 1.5} decay={1.4} />}
+      {/* a venue is lit from the stage outward */}
+      {mood !== 'day' && site.kind === 'venue' && <pointLight position={venueStage ? [venueStage.x - w / 2 + 3, 9, venueStage.y - h / 2 + 7] : [0, 9, 0]} color="#ffe2bd" intensity={(mood === 'night' ? 9 : 4) * span} distance={span * 2} decay={1.2} />}
       <Environment resolution={128} frames={1} environmentIntensity={mood === 'night' ? 0.12 : 0.4}>
         <color attach="background" args={[M.sky]} />
         <Lightformer form="rect" intensity={3} color="#fff1e0" position={[0, 8, 0]} rotation-x={Math.PI / 2} scale={[14, 14, 1]} />

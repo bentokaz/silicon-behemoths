@@ -98,7 +98,7 @@ function todos(g: GameState): Todo[] {
   const sealed = sealedRooms(g.office).length
   if (sealed) out.push({ text: `${sealed === 1 ? 'A room' : `${sealed} rooms`} on the campus ${sealed === 1 ? 'has' : 'have'} no door. Nothing inside counts.`, tab: 'office', tone: 'warn' })
   const loose = unmanaged(g)
-  if (loose) out.push({ text: `${loose} people have no team lead and work at 90%.`, tab: 'staff', tone: 'accent' })
+  if (loose) out.push({ text: loose === 1 ? 'One person has no team lead and works at 90%.' : `${loose} people have no team lead and work at 90%.`, tab: 'staff', tone: 'accent' })
   if (g.stock.lowDays > 0) out.push({ text: 'The board has lost confidence in you.', tab: 'shares', tone: 'neg' })
   if (own.some((p) => p.status === 'sale') && REGIONS.filter((r) => g.regions[r.id].open).length === 1 && g.cash > 6e6) out.push({ text: 'You only sell at home. Other regions are waiting.', tab: 'world', tone: 'accent' })
   if (g.rdBudget > 0 && !g.activeResearch.length) out.push({ text: 'You have a research budget but no project running.', tab: 'research', tone: 'warn' })

@@ -37,14 +37,14 @@ function Spectator({ x, y, z, n, cheer }: { x: number; y: number; z: number; n: 
   const up = cheer && hash(n + 2) > 0.35
   return (
     <group position={[x, y, z]}>
-      <B p={[0, 0.06, -0.14]} s={[0.3, 0.12, 0.36]} c="#2b3140" r={0.04} cast={false} />
-      <B p={[0, 0.3, 0.02]} s={[0.32, 0.5, 0.2]} c={shirt} r={0.07} rough={0.9} />
+      <B p={[0, 0.06, -0.14]} s={[0.3, 0.12, 0.36]} c="#2b3140" r={0} cast={false} />
+      <B p={[0, 0.3, 0.02]} s={[0.32, 0.5, 0.2]} c={shirt} r={0.03} rough={0.9} cast={false} />
       <S p={[0, 0.7, 0.02]} r={0.105} c={skin} detail={1} rough={0.75} cast={false} />
       <S p={[0, 0.735, 0.035]} r={0.11} c={HAIR[Math.floor(hash(n + 3) * HAIR.length)]} detail={1} rough={0.95} scale={[1, 0.8, 1]} cast={false} />
       {up && (
         <>
-          <B p={[-0.22, 0.66, 0]} s={[0.08, 0.42, 0.08]} c={shirt} r={0.03} rot={[0, 0, 0.25]} cast={false} />
-          <B p={[0.22, 0.66, 0]} s={[0.08, 0.42, 0.08]} c={shirt} r={0.03} rot={[0, 0, -0.25]} cast={false} />
+          <B p={[-0.22, 0.66, 0]} s={[0.08, 0.42, 0.08]} c={shirt} r={0} rot={[0, 0, 0.25]} cast={false} />
+          <B p={[0.22, 0.66, 0]} s={[0.08, 0.42, 0.08]} c={shirt} r={0} rot={[0, 0, -0.25]} cast={false} />
         </>
       )}
     </group>
@@ -68,9 +68,9 @@ function SeatBlock({ h, c }: { h: number; c: VenueCtx }) {
               const n = c.seed * 31 + row * 7 + i
               return (
                 <group key={i}>
-                  <B p={[x, base + 0.21, z]} s={[0.06, 0.42, 0.34]} c={DARK} r={0.008} cast={false} />
-                  <B p={[x, base + 0.455, z]} s={[0.44, 0.08, 0.42]} c={c.color} r={0.03} rough={0.95} />
-                  <B p={[x, base + 0.76, z + 0.2]} s={[0.44, 0.56, 0.06]} c={c.color} r={0.03} rough={0.95} />
+                  <B p={[x, base + 0.21, z]} s={[0.06, 0.42, 0.34]} c={DARK} r={0} cast={false} />
+                  <B p={[x, base + 0.455, z]} s={[0.44, 0.08, 0.42]} c={c.color} r={0} rough={0.95} cast={false} />
+                  <B p={[x, base + 0.76, z + 0.2]} s={[0.44, 0.56, 0.06]} c={c.color} r={0} rough={0.95} />
                   {hash(n + 11) < c.crowd && <Spectator x={x} y={base + 0.495} z={z} n={n} cheer={c.cheer} />}
                 </group>
               )

@@ -9,7 +9,7 @@ import { Batch, surface } from './structure'
 
 export type Mood = 'day' | 'dusk' | 'night'
 export const MOODS: Record<Mood, { sky: string; ground: number; sun: number; sunColor: string; sunDir: [number, number, number]; hemi: number; glow: number }> = {
-  day: { sky: '#a8c8e4', ground: 1, sun: 2.5, sunColor: '#fff3dd', sunDir: [0.5, 1, 0.45], hemi: 0.75, glow: 0.7 },
+  day: { sky: '#a8c8e4', ground: 1, sun: 2.2, sunColor: '#fff3dd', sunDir: [0.5, 1, 0.45], hemi: 0.65, glow: 0.7 },
   dusk: { sky: '#d98f66', ground: 0.72, sun: 1.5, sunColor: '#ffab72', sunDir: [0.9, 0.38, 0.5], hemi: 0.45, glow: 1.25 },
   night: { sky: '#0a0f1e', ground: 0.3, sun: 0.22, sunColor: '#9db4e0', sunDir: [-0.4, 1, 0.5], hemi: 0.2, glow: 2 },
 }
