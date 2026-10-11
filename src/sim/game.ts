@@ -3,17 +3,21 @@
 import { DAYS_PER_MONTH, DAYS_PER_YEAR, MAX_LEVEL, START_YEAR, SUPPLY_LABELS, TRACK_INFO, TRUNK_REQS, featureCost, featureInfo, featuresAtLevels, marketLevel, researchCost } from '../data/catalog'
 import { RIVALS, type RivalSeed, SEGMENTS, TIERS, TYPES, segmentInfo, segmentsOf } from '../data/devices'
 import { BUZZ_DECAY, CHANNELS, EVENTS, EVENT_LEAD, FAN_CYCLE, campaignDay, dailyTickets, eventBlocked, nextFair, productSatisfaction, resolveEvent } from './growth'
-import { OUTSIDE_OPTION, attraction, bestSegment, lifecycle, makeFeedback, makeReviews, segmentDemand, tierAverages, utility } from './market'
+import { RECALL_DEADLINE, TRADE_CREDIT, TRADE_PULL, REFURB_RETURN, UPDATE_YEARS, WARRANTY_YEARS, careBonus, careSatisfaction, checkRecalls, closeCareMonth, newCare, recallCost, stepCare, warrantyLoad } from './care'
+import { type Goal, checkGoals } from './goals'
+import { OUTSIDE_OPTION, bestSegment, launchHype, lifecycle, makeFeedback, makeReviews, priceFactor, pull, segmentDemand, tierAverages, utility } from './market'
+import { DEFAULT_HOME, REGIONS, addAwareness, entryBlocked, homeRegion, newRegion, newRegions, regionIncome, regionInfo, regionOverheads, regionTaste, rivalReach, worldAwareness } from './regions'
+import { buyBack, buyStake, goPublic, holdingIncome, issueShares, monthlyStock, moveSentiment, newStock, raiseRound, sellStake, stakeIn, stakePrice, stepStock, takeoverPrice, valuation } from './stock'
 import { CONTRACT, LOCK_DAYS, LOCK_FEE, buildCost, costNow, factoryLine, marketPrice, newSupply, stepProduction, stepSupply } from './ops'
 import { type VariantId, generateDesign, layoutParts } from './rivals'
 import { clamp, int, pick, rand, range } from './rng'
 import { evaluate } from './scoring'
-import { FLOORS, ITEMS, SITE_TIERS, WALLS, canPlace, newSite, starterLine, storeStats, tierOf, validTile, wallAt } from './sites'
-import { HEADHUNT_COST, inTraining, monthlySalaries, monthlyStaff, refreshCandidates, staffEffects, stepStaff, trainingCost } from './staff'
+import { FACADES, FLOOR_COST, GROUNDS, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, areaTiles, autoDoor, builtTiles, canPlace, gridAt, inPlot, isBoundary, itemAt, itemTiles, newSite, roomOf, starterLine, storeStats, tidy, tierOf, upkeep, zone } from './sites'
+import { HEADHUNT_COST, TEAM_SPAN, dropFromTeams, inTraining, monthlySalaries, monthlyStaff, newPolicy, perksCost, refreshCandidates, staffEffects, stepStaff, trainingCost } from './staff'
 import { CHIP_BUDGET, OS_FEATURES, chipAdoption, chipBlocked, chipProjectCost, chipProjectDays, finishChip, newOs, osBlocked, osProjectCost, osProjectDays, osShipQuality, servicesPerMonth, softwareBonus } from './tech'
-import { type ChannelId, type Company, type CostKey, type DeviceDesign, type DeviceType, type Difficulty, type EventType, type GameConfig, type GameState, type Levels, type MonthReport, type NewsItem, type Product, type ProductionOrder, type SegmentId, type Site, type SiteWall, type StorageTier, type SupplyCat, TRACKS, type Track } from './types'
+import { type ChannelId, type Company, type CostKey, type DeviceDesign, type DeviceType, type Difficulty, type EventType, type GameConfig, type GameState, type Levels, type MonthReport, type NewsItem, type Product, type ProductionOrder, type SegmentId, type Site, type SiteKind, type StaffPolicy, type StorageTier, type SupplyCat, TRACKS, type Track, monthCosts } from './types'
 
-export const SAVE_VERSION = 3
+export const SAVE_VERSION = 4
 export const RETAIL_CUT = 0.15
 
 export const DIFFICULTY: Record<Difficulty, { label: string; blurb: string; startCash: number; rivalOffset: number; awareness: number; overhead: number; debtDays: number; overdraft: number }> = {
@@ -53,7 +57,7 @@ function news(s: GameState, kind: NewsItem['kind'], text: string, productId?: st
   if (s.news.length > 100) s.news.length = 100
 }
 
-const emptyReport = (month: number): MonthReport => ({ month, revenue: 0, other: 0, production: 0, rd: 0, marketing: 0, development: 0, overhead: 0, salaries: 0, facilities: 0, interest: 0, units: 0, cash: 0 })
+const emptyReport = (month: number): MonthReport => ({ month, revenue: 0, other: 0, production: 0, rd: 0, marketing: 0, development: 0, overhead: 0, salaries: 0, facilities: 0, interest: 0, units: 0, cash: 0, funding: 0 })
 
 export function rivalLevels(s: GameState, c: Company): Levels {
   const base = marketLevel(s.day) + c.techOffset + (s.config.rivalStrength - 1) * 1.5 + DIFFICULTY[s.config.difficulty].rivalOffset
@@ -133,6 +137,7 @@ function release(s: GameState, p: Product, c: Company, issues: string[]) {
   p.satisfaction = productSatisfaction(p, c.software, 0, 0, false)
   const w = c.isPlayer ? 0.3 : 0.15
   c.brand = clamp(c.brand * (1 - w) + (p.reviewAvg / 10) * w, 0.05, 1)
+  if (c.isPlayer && s.stock) moveSentiment(s, (p.reviewAvg - 7) * 0.08)
 }
 
 function rivalLaunch(s: GameState, c: Company, segment: SegmentId, backdate = 0) {
@@ -165,6 +170,28 @@ function endProduct(s: GameState, p: Product) {
   p.endDay = s.day
 }
 
+/** How well the home market knows a brand-new company. */
+const START_AWARENESS = 0.045
+
+/** The first home: a one-room garage with two desks. */
+function starterOffice(): Site {
+  const site = newSite('office', 0)
+  const { room } = zone(site, 'work', areaTiles(3, 2, 10, 6), undefined, 1)
+  if (room) autoDoor(site, room.n)
+  site.items = [
+    { id: 'o1', kind: 'desk', x: 4, y: 3, rot: 0 },
+    { id: 'o2', kind: 'desk', x: 6, y: 3, rot: 0 },
+    { id: 'o3', kind: 'plant', x: 3, y: 2, rot: 0 },
+    { id: 'o4', kind: 'whiteboard', x: 9, y: 2, rot: 0 },
+    { id: 'o5', kind: 'otree', x: 1, y: 1, rot: 0 },
+    { id: 'o6', kind: 'otree', x: 12, y: 8, rot: 0 },
+    { id: 'o7', kind: 'hedge', x: 0, y: 9, rot: 0 },
+    { id: 'o8', kind: 'hedge', x: 1, y: 9, rot: 0 },
+  ]
+  for (let y = 7; y < 10; y++) for (let x = 5; x <= 7; x++) site.floor[`${x},${y}`] = 'asphalt'
+  return site
+}
+
 export function newGame(cfg: GameConfig): GameState {
   const s: GameState = {
     version: SAVE_VERSION,
@@ -184,8 +211,9 @@ export function newGame(cfg: GameConfig): GameState {
     rdBudget: 0,
     staff: [],
     candidates: [],
-    office: newSite('office', 0),
+    office: starterOffice(),
     factory: null,
+    venue: null,
     orders: [],
     supply: newSupply(),
     stores: [],
@@ -195,6 +223,12 @@ export function newGame(cfg: GameConfig): GameState {
     os: newOs(),
     owners: 0,
     fans: 0,
+    teams: [],
+    policy: newPolicy(),
+    stock: newStock(cfg.startCash),
+    regions: newRegions(cfg.home ?? DEFAULT_HOME, START_AWARENESS),
+    care: newCare(),
+    goals: {},
     cur: emptyReport(0),
     reports: [],
     shareHistory: [],
@@ -204,7 +238,7 @@ export function newGame(cfg: GameConfig): GameState {
   for (const t of TRACKS) s.levels[t] = clamp(Math.round(cfg.techLevel), 0, MAX_LEVEL)
   s.features = featuresAtLevels(s.levels)
   s.companies.push({
-    ...makeCompany('player', { name: cfg.companyName, color: cfg.color, brand: 0.35, awareness: 0.01, techOffset: 0, priceMult: 1, software: 0, segments: [], layout: 0, palette: [], series: {}, counter: 1 }),
+    ...makeCompany('player', { name: cfg.companyName, color: cfg.color, brand: 0.35, awareness: 0, techOffset: 0, priceMult: 1, software: 0, segments: [], layout: 0, palette: [], series: {}, counter: 1 }),
     isPlayer: true,
     logo: cfg.logo,
   })
@@ -217,6 +251,8 @@ export function newGame(cfg: GameConfig): GameState {
     }
     c.counter++
   })
+  player(s).home = cfg.home ?? DEFAULT_HOME
+  player(s).awareness = worldAwareness(s)
   refreshCandidates(s)
   news(s, 'finance', `${cfg.companyName} is founded with ${cfg.unlimitedMoney ? 'unlimited funds' : '$' + (cfg.startCash / 1e6).toFixed(1) + 'M'}.`)
   return s
@@ -236,6 +272,12 @@ function spend(s: GameState, amount: number, bucket: CostKey) {
 function earn(s: GameState, amount: number, bucket: 'revenue' | 'other' = 'revenue') {
   s.cash += amount
   s.cur[bucket] += amount
+}
+
+/** Money from (or to, if negative) shareholders and investments. Not part of profit. */
+function fund(s: GameState, amount: number) {
+  s.cash += amount
+  s.cur.funding += amount
 }
 
 // ---------------------------------------------------------------- devices
@@ -431,6 +473,61 @@ export function hire(s: GameState, candidateId: string): string | null {
 
 export function fire(s: GameState, employeeId: string) {
   s.staff = s.staff.filter((e) => e.id !== employeeId)
+  dropFromTeams(s, employeeId)
+}
+
+export function createTeam(s: GameState, name: string): string {
+  const id = `t${s.nextId++}`
+  s.teams.push({ id, name: name.trim() || `Team ${s.teams.length + 1}`, members: [] })
+  return id
+}
+
+export function renameTeam(s: GameState, teamId: string, name: string) {
+  const t = s.teams.find((x) => x.id === teamId)
+  if (t && name.trim()) t.name = name.trim()
+}
+
+export function deleteTeam(s: GameState, teamId: string) {
+  s.teams = s.teams.filter((t) => t.id !== teamId)
+}
+
+/** Put someone in a team (or take them out of any, with null). */
+export function assignTeam(s: GameState, employeeId: string, teamId: string | null) {
+  if (!s.staff.some((e) => e.id === employeeId)) return
+  dropFromTeams(s, employeeId)
+  const t = s.teams.find((x) => x.id === teamId)
+  if (t) t.members.push(employeeId)
+}
+
+export function setLead(s: GameState, teamId: string, employeeId: string | undefined) {
+  const t = s.teams.find((x) => x.id === teamId)
+  if (!t) return
+  if (employeeId && !t.members.includes(employeeId)) assignTeam(s, employeeId, teamId)
+  t.leadId = employeeId
+}
+
+/** Sort everyone into teams by role, a lead's span at a time, led by whoever suits it best. */
+export function autoTeams(s: GameState) {
+  s.teams = []
+  const lead = (ids: string[]) => {
+    const people = ids.map((id) => s.staff.find((e) => e.id === id)!)
+    // a good lead is skilled and good with people; a star is better left doing the work
+    return people.sort((a, b) => b.skill + (b.traits.includes('social') ? 15 : 0) - (b.traits.includes('star') ? 25 : 0) - (a.skill + (a.traits.includes('social') ? 15 : 0) - (a.traits.includes('star') ? 25 : 0)))[0].id
+  }
+  for (const [role, label] of [['engineer', 'Hardware'], ['software', 'Software'], ['designer', 'Design'], ['researcher', 'Research'], ['marketer', 'Marketing'], ['support', 'Support']] as const) {
+    const people = s.staff.filter((e) => e.role === role)
+    const groups = Math.ceil(people.length / TEAM_SPAN)
+    for (let g = 0; g < groups; g++) {
+      const members = people.filter((_, i) => i % groups === g).map((e) => e.id)
+      if (members.length < 2) continue
+      s.teams.push({ id: `t${s.nextId++}`, name: groups > 1 ? `${label} ${g + 1}` : label, members, leadId: lead(members) })
+    }
+  }
+}
+
+export function setPolicy(s: GameState, patch: Partial<StaffPolicy>) {
+  if (patch.hours) s.policy.hours = patch.hours
+  if (patch.perks !== undefined) s.policy.perks = clamp(Math.round(patch.perks), 0, 3)
 }
 
 export function giveRaise(s: GameState, employeeId: string, salary?: number) {
@@ -471,14 +568,129 @@ export function headhunt(s: GameState): string | null {
 }
 
 // ---------------------------------------------------------------- sites
-// A site reference is 'office', 'factory' or 'store:' + store id.
+// A site reference is 'office', 'factory', 'venue' or 'store:' + store id.
 
 export function siteOf(s: GameState, ref: string): Site | null {
   if (ref === 'office') return s.office
   if (ref === 'factory') return s.factory
+  if (ref === 'venue') return s.venue
   return s.stores.find((st) => `store:${st.id}` === ref)?.site ?? null
 }
 const siteBucket = (site: Site): CostKey => (site.kind === 'office' ? 'overhead' : 'facilities')
+/** Rooms cost more to build when the building has upper floors to carry. */
+export const roomCost = (site: Site, type: string, tiles: number) => Math.round(tiles * (ROOMS[site.kind][type]?.cost ?? 0) * (1 + 0.4 * (site.floors - 1)))
+
+/** Tiles in an area that could become part of a room. */
+export const zoneable = (site: Site, x0: number, y0: number, x1: number, y1: number, shape: 'rect' | 'round') => areaTiles(x0, y0, x1, y1, shape).filter(([x, y]) => inPlot(site, x, y) && !gridAt(site, x, y))
+
+/**
+ * Build a room over an area of open ground. Pass `into` to extend an existing
+ * room of the same type instead of starting a new one.
+ */
+export function zoneRoom(s: GameState, ref: string, type: string, x0: number, y0: number, x1: number, y1: number, shape: 'rect' | 'round' = 'rect', into?: number): string | null {
+  const site = siteOf(s, ref)
+  if (!site) return 'Nothing to build on'
+  if (!ROOMS[site.kind][type]) return 'Unknown room'
+  const tiles = zoneable(site, x0, y0, x1, y1, shape)
+  if (!tiles.length) return 'That land is already built on'
+  if (tiles.some(([x, y]) => itemAt(site, x, y))) return 'Clear what is standing there first'
+  const target = into !== undefined ? roomOf(site, into) : undefined
+  const cost = roomCost(site, type, tiles.length)
+  if (!canAfford(s, cost)) return `Not enough cash: that would cost $${cost.toLocaleString()}`
+  spend(s, cost, siteBucket(site))
+  const { room } = zone(site, type, tiles, target?.type === type ? target.n : undefined)
+  if (room) autoDoor(site, room.n)
+  tidy(site)
+  return null
+}
+
+/** Knock down every room tile in an area. Anything inside is sold for half its price. */
+export function clearZone(s: GameState, ref: string, x0: number, y0: number, x1: number, y1: number, shape: 'rect' | 'round' = 'rect') {
+  const site = siteOf(s, ref)
+  if (!site) return
+  const hit = new Set(areaTiles(x0, y0, x1, y1, shape).filter(([x, y]) => gridAt(site, x, y)).map(([x, y]) => `${x},${y}`))
+  if (!hit.size) return
+  let back = 0
+  site.items = site.items.filter((it) => {
+    if (!ITEMS[site.kind][it.kind] || !itemTiles(site, it).some(([x, y]) => hit.has(`${x},${y}`))) return true
+    back += ITEMS[site.kind][it.kind].cost / 2
+    return false
+  })
+  for (const key of hit) {
+    const [x, y] = key.split(',').map(Number)
+    site.grid[y * site.w + x] = 0
+  }
+  s.cash += back
+  s.cur[siteBucket(site)] -= back
+  tidy(site)
+  site.rev++
+}
+
+/** Knock down one whole room. */
+export function removeRoom(s: GameState, ref: string, room: number) {
+  const site = siteOf(s, ref)
+  if (!site || !roomOf(site, room)) return
+  let back = 0
+  site.items = site.items.filter((it) => {
+    if (!ITEMS[site.kind][it.kind] || !itemTiles(site, it).some(([x, y]) => gridAt(site, x, y) === room)) return true
+    back += ITEMS[site.kind][it.kind].cost / 2
+    return false
+  })
+  for (let i = 0; i < site.grid.length; i++) if (site.grid[i] === room) site.grid[i] = 0
+  s.cash += back
+  s.cur[siteBucket(site)] -= back
+  tidy(site)
+  site.rev++
+}
+
+export function setRoomStyle(s: GameState, ref: string, room: number, style: number) {
+  const site = siteOf(s, ref)
+  const r = site && roomOf(site, room)
+  if (!site || !r || !ROOMS[site.kind][r.type].styles[style]) return
+  r.style = style
+  site.rev++
+}
+
+const EDGE_COST = { wall: 0, open: 0, glass: 120, door: 300 }
+/** Change one stretch of wall to glass, a door or an opening, or back to plain wall. */
+export function setEdge(s: GameState, ref: string, x: number, y: number, side: 'n' | 'w', kind: 'wall' | 'glass' | 'door' | 'open'): string | null {
+  const site = siteOf(s, ref)
+  if (!site) return 'Nothing to build on'
+  if (!isBoundary(site, x, y, side)) return 'There is no wall there'
+  const cost = EDGE_COST[kind]
+  if (!canAfford(s, cost)) return 'Not enough cash'
+  spend(s, cost, siteBucket(site))
+  site.walls = site.walls.filter((w) => !(w.x === x && w.y === y && w.side === side))
+  if (kind !== 'wall') site.walls.push({ id: `w${s.nextId++}`, x, y, side, kind })
+  site.rev++
+  return null
+}
+
+/** Cost of changing a building's cladding, roof or height. */
+export function lookCost(site: Site, look: { facade?: number; roof?: number; floors?: number }): number {
+  const tiles = builtTiles(site)
+  let cost = 0
+  if (look.facade !== undefined && look.facade !== site.facade) cost += (FACADES[look.facade]?.cost ?? 0) * Math.sqrt(tiles) * 4 * site.floors
+  if (look.roof !== undefined && look.roof !== site.roof) cost += (ROOFS[look.roof]?.cost ?? 0) * tiles
+  if (look.floors !== undefined && look.floors > site.floors) cost += (look.floors - site.floors) * tiles * FLOOR_COST
+  return Math.round(cost)
+}
+
+export function setLook(s: GameState, ref: string, look: { facade?: number; roof?: number; floors?: number }): string | null {
+  const site = siteOf(s, ref)
+  if (!site) return 'Nothing to build on'
+  if (look.facade !== undefined && !FACADES[look.facade]) return 'Unknown cladding'
+  if (look.roof !== undefined && !ROOFS[look.roof]) return 'Unknown roof'
+  if (look.floors !== undefined && (look.floors < 1 || look.floors > MAX_FLOORS)) return `A building can have 1 to ${MAX_FLOORS} floors`
+  const cost = lookCost(site, look)
+  if (!canAfford(s, cost)) return `Not enough cash: that would cost $${cost.toLocaleString()}`
+  spend(s, cost, siteBucket(site))
+  if (look.facade !== undefined) site.facade = look.facade
+  if (look.roof !== undefined) site.roof = look.roof
+  if (look.floors !== undefined) site.floors = look.floors
+  site.rev++
+  return null
+}
 
 export function placeItem(s: GameState, ref: string, kind: string, x: number, y: number, rot: number): string | null {
   const site = siteOf(s, ref)
@@ -490,6 +702,7 @@ export function placeItem(s: GameState, ref: string, kind: string, x: number, y:
   if (!canAfford(s, cost)) return 'Not enough cash'
   spend(s, cost, siteBucket(site))
   site.items.push({ id: `o${s.nextId++}`, kind, x, y, rot: turn })
+  site.rev++
   return null
 }
 
@@ -498,8 +711,9 @@ export function removeItem(s: GameState, ref: string, itemId: string) {
   const item = site?.items.find((i) => i.id === itemId)
   if (!site || !item) return
   site.items = site.items.filter((i) => i !== item)
+  site.rev++
   // second-hand furniture and machinery sells for half
-  const back = ITEMS[site.kind][item.kind].cost / 2
+  const back = (ITEMS[site.kind][item.kind]?.cost ?? 0) / 2
   s.cash += back
   s.cur[siteBucket(site)] -= back
 }
@@ -513,110 +727,148 @@ export function rotateItem(s: GameState, ref: string, itemId: string): string | 
   const err = canPlace(rest, item.kind, item.x, item.y, next)
   if (err) return 'No room to turn it there'
   item.rot = next
+  site.rev++
   return null
 }
 
-export function placeWall(s: GameState, ref: string, x: number, y: number, side: SiteWall['side'], kind: SiteWall['kind']): string | null {
+/** Lay a ground finish on open land. Free. */
+export function paintFloor(s: GameState, ref: string, x: number, y: number, groundId: string) {
   const site = siteOf(s, ref)
-  if (!site) return 'Nothing to build on'
-  // an edge belongs to the site if either tile it separates does
-  const other: [number, number] = side === 'n' ? [x, y - 1] : [x - 1, y]
-  if (!validTile(site, x, y) && !validTile(site, other[0], other[1])) return 'Outside the floor'
-  const existing = wallAt(site, x, y, side)
-  if (existing?.kind === kind) return null
-  if (!canAfford(s, WALLS[kind].cost)) return 'Not enough cash'
-  spend(s, WALLS[kind].cost, siteBucket(site))
-  if (existing) existing.kind = kind
-  else site.walls.push({ id: `w${s.nextId++}`, x, y, side, kind })
-  return null
+  if (!site || !inPlot(site, x, y) || gridAt(site, x, y)) return
+  if (groundId === GROUNDS[0].id) delete site.floor[`${x},${y}`]
+  else if (GROUNDS.some((g) => g.id === groundId)) site.floor[`${x},${y}`] = groundId
+  site.rev++
 }
 
-export function removeWall(s: GameState, ref: string, x: number, y: number, side: SiteWall['side']) {
+/** Lay a ground finish over an area of open land. */
+export function paintArea(s: GameState, ref: string, x0: number, y0: number, x1: number, y1: number, shape: 'rect' | 'round', groundId: string) {
   const site = siteOf(s, ref)
-  if (site) site.walls = site.walls.filter((w) => !(w.x === x && w.y === y && w.side === side))
-}
-
-export function paintFloor(s: GameState, ref: string, x: number, y: number, floorId: string) {
-  const site = siteOf(s, ref)
-  if (!site || !validTile(site, x, y)) return
-  if (floorId === FLOORS[site.kind][0].id) delete site.floor[`${x},${y}`]
-  else site.floor[`${x},${y}`] = floorId
-}
-
-/** Move a site to its next size, keeping whatever still fits. */
-function grow(s: GameState, old: Site): { site: Site; refunded: number } {
-  const site = newSite(old.kind, old.tier + 1)
-  site.items = []
-  // keep the old layout centred in the new space
-  const dx = Math.floor((site.w - old.w) / 2)
-  const dy = site.shape === 'ring' ? 1 : Math.floor((site.h - old.h) / 2)
-  let refunded = 0
-  for (const it of old.items) {
-    const moved = { ...it, x: it.x + dx, y: it.y + dy }
-    if (!canPlace(site, moved.kind, moved.x, moved.y, moved.rot)) site.items.push(moved)
-    else refunded += ITEMS[old.kind][it.kind].cost
+  if (!site || !GROUNDS.some((g) => g.id === groundId)) return
+  for (const [x, y] of zoneable(site, x0, y0, x1, y1, shape)) {
+    if (groundId === GROUNDS[0].id) delete site.floor[`${x},${y}`]
+    else site.floor[`${x},${y}`] = groundId
   }
-  site.walls = old.walls.map((w) => ({ ...w, x: w.x + dx, y: w.y + dy })).filter((w) => validTile(site, w.x, w.y))
+  site.rev++
+}
+
+/** Move everything on a plot to the next size up, centred. Nothing is lost. */
+function movePlot(old: Site): Site {
+  const site = newSite(old.kind, old.tier + 1)
+  const dx = Math.floor((site.w - old.w) / 2)
+  const dy = Math.floor((site.h - old.h) / 2)
+  for (let y = 0; y < old.h; y++) for (let x = 0; x < old.w; x++) site.grid[(y + dy) * site.w + x + dx] = old.grid[y * old.w + x]
+  site.rooms = old.rooms.map((r) => ({ ...r }))
+  site.nextRoom = old.nextRoom
+  site.items = old.items.map((it) => ({ ...it, x: it.x + dx, y: it.y + dy }))
+  site.walls = old.walls.map((w) => ({ ...w, x: w.x + dx, y: w.y + dy }))
   for (const [key, id] of Object.entries(old.floor)) {
     const [x, y] = key.split(',').map(Number)
-    if (validTile(site, x + dx, y + dy)) site.floor[`${x + dx},${y + dy}`] = id
+    site.floor[`${x + dx},${y + dy}`] = id
   }
-  s.cash += refunded
-  return { site, refunded }
+  site.facade = old.facade
+  site.roof = old.roof
+  site.floors = old.floors
+  site.rev = old.rev + 1
+  return site
 }
 
 export function upgradeOffice(s: GameState): string | null {
   const next = SITE_TIERS.office[s.office.tier + 1]
-  if (!next) return 'This is the largest office'
+  if (!next) return 'This is the largest plot'
   if (!canAfford(s, next.cost)) return 'Not enough cash'
   spend(s, next.cost, 'overhead')
-  const { site, refunded } = grow(s, s.office)
-  s.office = site
-  news(s, 'finance', `The company moved into a new home: ${next.name}.${refunded ? ` Furniture that did not fit was sold back for $${Math.round(refunded).toLocaleString()}.` : ''}`)
+  s.office = movePlot(s.office)
+  news(s, 'finance', `The company moved to a bigger plot: ${next.name}. Everything was rebuilt there as it stood.`)
   return null
 }
 
 export function buildFactory(s: GameState): string | null {
   const tier = s.factory ? s.factory.tier + 1 : 0
   const def = SITE_TIERS.factory[tier]
-  if (!def) return 'This is the largest factory'
+  if (!def) return 'This is the largest factory site'
   if (!canAfford(s, def.cost)) return 'Not enough cash'
   spend(s, def.cost, 'facilities')
-  s.factory = s.factory ? grow(s, s.factory).site : newSite('factory', 0)
-  news(s, 'finance', `${tier ? 'The factory expanded' : 'The company opened its first factory'}: ${def.name}.`)
+  s.factory = s.factory ? movePlot(s.factory) : newSite('factory', 0)
+  news(s, 'finance', `${tier ? 'The factory moved to a bigger site' : 'The company bought land for its first factory'}: ${def.name}.`)
   return null
 }
 
-/** Lay down a standard production line in an empty factory. */
+/** Build a production hall with a standard line in it. */
 export function autoLine(s: GameState): string | null {
-  if (!s.factory) return 'Build a factory first'
-  const plan = starterLine(s.factory)
-  if (!plan.length) return 'Clear the middle of the floor first; the starter line needs a free strip 14 tiles long'
-  const cost = plan.reduce((a, p) => a + ITEMS.factory[p.kind].cost, 0)
-  if (!canAfford(s, cost)) return `Not enough cash: the starter line costs $${cost.toLocaleString()}`
-  for (const p of plan) placeItem(s, 'factory', p.kind, p.x, p.y, p.rot)
+  const site = s.factory
+  if (!site) return 'Buy a factory site first'
+  const plan = starterLine(site)
+  if (!plan) return 'There is no room: the starter hall needs a clear strip 16 by 6 in the middle of the plot'
+  const fresh = zoneable(site, ...plan.hall, 'rect').length
+  const cost = plan.items.reduce((a, p) => a + ITEMS.factory[p.kind].cost, 0) + roomCost(site, 'hall', fresh)
+  if (!canAfford(s, cost)) return `Not enough cash: the hall and line cost $${cost.toLocaleString()}`
+  if (fresh) {
+    const err = zoneRoom(s, 'factory', 'hall', ...plan.hall)
+    if (err) return err
+  }
+  for (const p of plan.items) {
+    const err = placeItem(s, 'factory', p.kind, p.x, p.y, p.rot)
+    if (err) return err
+  }
   return null
 }
 
-const CITIES = ['Shibuya', 'Regent Street', 'Fifth Avenue', 'Orchard Road', 'Kurfürstendamm', 'Champs-Élysées', 'Union Square', 'Passeig de Gràcia', 'Gangnam', 'Bondi', 'Yorkville', 'Via Torino']
-
-export function openStore(s: GameState, tier: number): string | null {
+export function openStore(s: GameState, tier: number, region?: string): string | null {
   const def = SITE_TIERS.store[tier]
   if (!def) return 'No such location'
+  const where = region ?? homeRegion(s)
+  if (!s.regions[where]?.open) return 'You do not sell in that region yet'
   if (!canAfford(s, def.cost)) return 'Not enough cash'
   spend(s, def.cost, 'facilities')
-  const free = CITIES.filter((c) => !s.stores.some((st) => st.name === c))
+  const free = regionInfo(where).cities.filter((c) => !s.stores.some((st) => st.name === c))
   const site = newSite('store', tier)
-  // a new store opens with the minimum it needs to trade
-  site.items.push({ id: `o${s.nextId++}`, kind: 'table', x: 2, y: 2, rot: 0 }, { id: `o${s.nextId++}`, kind: 'counter', x: site.w - 2, y: site.h - 2, rot: 0 })
-  const store = { id: `s${s.nextId++}`, name: free.length ? pick(s, free) : `Store ${s.stores.length + 1}`, location: def.name, site, openedDay: s.day, unitsTotal: 0, monthUnits: 0, lastVisitors: 0 }
+  // a new store opens with a sales floor and the minimum it needs to trade
+  const { room } = zone(site, 'sales', areaTiles(1, 1, site.w - 2, site.h - 3))
+  if (room) autoDoor(site, room.n)
+  site.items.push({ id: `o${s.nextId++}`, kind: 'table', x: 3, y: 3, rot: 0 }, { id: `o${s.nextId++}`, kind: 'counter', x: site.w - 3, y: 2, rot: 0 })
+  const store = { id: `s${s.nextId++}`, name: free.length ? pick(s, free) : `${regionInfo(where).name} ${s.stores.length + 1}`, location: def.name, region: where, site, openedDay: s.day, unitsTotal: 0, monthUnits: 0, lastVisitors: 0 }
   s.stores.push(store)
-  news(s, 'finance', `A new store opened: ${store.name} (${def.name.toLowerCase()}).`)
+  news(s, 'finance', `A new store opened: ${store.name} (${def.name.toLowerCase()}, ${regionInfo(where).name}).`)
   return null
 }
 
 export function closeStore(s: GameState, storeId: string) {
   s.stores = s.stores.filter((st) => st.id !== storeId)
+}
+
+export function buildVenue(s: GameState): string | null {
+  const tier = s.venue ? s.venue.tier + 1 : 0
+  const def = SITE_TIERS.venue[tier]
+  if (!def) return 'This is the largest venue site'
+  if (!canAfford(s, def.cost)) return 'Not enough cash'
+  spend(s, def.cost, 'facilities')
+  s.venue = s.venue ? movePlot(s.venue) : newSite('venue', 0)
+  news(s, 'finance', `${tier ? 'Your venue moved to a bigger site' : 'The company bought land for a venue of its own'}: ${def.name}.`)
+  return null
+}
+
+/** A simple open-air stage with seating, for players who want a working venue quickly. */
+export function autoVenue(s: GameState): string | null {
+  const site = s.venue
+  if (!site) return 'Buy a venue site first'
+  if (site.items.length) return 'Clear the plot first: the starter layout needs open ground'
+  const cx = Math.floor(site.w / 2)
+  const plan: { kind: string; x: number; y: number; rot: number }[] = [
+    { kind: 'screen', x: cx - 3, y: 1, rot: 0 },
+    { kind: 'stage', x: cx - 3, y: 2, rot: 0 },
+    { kind: 'lights', x: cx - 5, y: 2, rot: 0 },
+    { kind: 'lights', x: cx + 4, y: 2, rot: 0 },
+    { kind: 'speakers', x: cx - 5, y: 4, rot: 0 },
+    { kind: 'speakers', x: cx + 4, y: 4, rot: 0 },
+  ]
+  for (let row = 0; row < 3; row++) for (let col = -2; col < 2; col++) plan.push({ kind: row === 0 ? 'seats' : row === 1 ? 'seats_mid' : 'seats_high', x: cx + col * 3, y: 8 + row * 2, rot: 0 })
+  const cost = plan.reduce((a, p) => a + ITEMS.venue[p.kind].cost, 0)
+  if (!canAfford(s, cost)) return `Not enough cash: the starter layout costs $${cost.toLocaleString()}`
+  for (const p of plan) {
+    const err = placeItem(s, 'venue', p.kind, p.x, p.y, p.rot)
+    if (err) return err
+  }
+  return null
 }
 
 // ---------------------------------------------------------------- supply, marketing, events
@@ -630,12 +882,13 @@ export function lockSupply(s: GameState, cat: SupplyCat): string | null {
   return null
 }
 
-export function startCampaign(s: GameState, channel: ChannelId, target: string, monthly: number): string | null {
+export function startCampaign(s: GameState, channel: ChannelId, target: string, monthly: number, region?: string): string | null {
+  if (region && !s.regions[region]?.open) return 'You do not sell in that region yet'
   const def = CHANNELS[channel]
   if (monthly < def.min) return `${def.name} needs at least $${def.min.toLocaleString()} a month`
   if (target !== 'brand' && !ownProducts(s).some((p) => p.id === target && p.status !== 'ended')) return 'Pick a device to advertise'
-  if (s.campaigns.some((c) => c.channel === channel && c.target === target)) return 'That campaign is already running'
-  s.campaigns.push({ id: `c${s.nextId++}`, channel, target, monthly, startedDay: s.day, spent: 0 })
+  if (s.campaigns.some((c) => c.channel === channel && c.target === target && c.region === region)) return 'That campaign is already running'
+  s.campaigns.push({ id: `c${s.nextId++}`, channel, target, monthly, startedDay: s.day, spent: 0, region })
   return null
 }
 
@@ -721,7 +974,7 @@ function stepProjects(s: GameState) {
     p.raw.design *= 1 + staffEffects(s).polish
     p.designPct = ev.report.pct
     release(s, p, c, ev.report.issues.filter((i) => i.level === 'warn').map((i) => i.text))
-    c.awareness += (1 - c.awareness) * (1 - Math.exp(-p.marketing / 25e6))
+    addAwareness(s, 1 - Math.exp(-p.marketing / 25e6))
     news(s, 'review', `${p.name} is on sale. Review average ${p.reviewAvg.toFixed(1)} / 10.`, p.id)
     if (p.stock <= 0) news(s, 'alert', `${p.name} launched with nothing in stock. Order a production run.`, p.id)
   }
@@ -750,7 +1003,6 @@ function stepEvents(s: GameState) {
 }
 
 function stepCampaigns(s: GameState) {
-  const me = player(s)
   const gain = DIFFICULTY[s.config.difficulty].awareness
   for (const p of ownProducts(s)) for (const k of Object.keys(p.buzz)) p.buzz[k] *= 1 - BUZZ_DECAY
   for (const c of [...s.campaigns]) {
@@ -763,17 +1015,20 @@ function stepCampaigns(s: GameState) {
     if (!canAfford(s, daily)) continue
     spend(s, daily, 'marketing')
     c.spent += daily
-    me.awareness += (1 - me.awareness) * campaignDay(s, c, daily, product) * gain
+    addAwareness(s, campaignDay(s, c, daily, product) * gain, c.region)
   }
 }
 
-/** Records a sale. `direct` sales through your own stores keep the retailer's cut. */
-function sell(s: GameState, p: Product, c: Company, units: number, segment: string, direct = false): number {
+/**
+ * Records a sale. `direct` sales through your own stores keep the retailer's
+ * cut; `keep` is the share of the price left after local pricing and duties.
+ */
+function sell(s: GameState, p: Product, c: Company, units: number, segment: string, direct = false, keep = 1): number {
   if (units <= 0) return 0
   if (c.isPlayer) units = Math.min(units, p.stock)
   if (units <= 0) return 0
   const avg = tierAverages(p)
-  const income = units * avg.price * (direct ? 1 : 1 - RETAIL_CUT)
+  const income = units * avg.price * keep * (direct ? 1 : 1 - RETAIL_CUT)
   p.unitsSold += units
   p.revenue += income
   p.monthUnits += units
@@ -785,13 +1040,16 @@ function sell(s: GameState, p: Product, c: Company, units: number, segment: stri
     p.stock -= units
     earn(s, income)
     s.cur.units += units
-    // bigger storage options cost a little more to build; faulty units are replaced under warranty
-    spend(s, units * (avg.extraCost + p.defectRate * p.unitCost * 0.6), 'production')
+    // bigger storage options cost a little more to build; faulty units are repaired under warranty
+    const repairs = units * p.defectRate * p.unitCost * warrantyLoad(s)
+    spend(s, units * avg.extraCost + repairs, 'production')
+    s.care.month.repairs += units * p.defectRate
+    s.care.month.repairCost += repairs
     if (p.stock === 0) {
       p.carry = 0
       news(s, 'alert', `${p.name} is sold out. Order more units to keep selling.`, p.id)
     }
-  }
+  } else c.revMonth = (c.revMonth ?? 0) + income
   return units
 }
 
@@ -801,42 +1059,81 @@ function stepSales(s: GameState) {
   const companies = new Map(s.companies.map((c) => [c.id, c]))
   const fx = staffEffects(s)
   const gain = DIFFICULTY[s.config.difficulty].awareness * fx.marketing
+  const home = homeRegion(s)
+  const regionUnits: Record<string, number> = {}
   let mineToday = 0
 
-  // ---- every segment chooses between everything on sale for its device type
+  // ---- every segment in every region chooses between everything on sale for its device type
   for (const seg of SEGMENTS) {
     const pool = onSale.filter((p) => p.type === seg.type)
     if (!pool.length) continue
     const demand = segmentDemand(seg, s.day)
-    const weights = pool.map((p) => (p.stock <= 0 ? 0 : attraction(p, companies.get(p.companyId)!, seg, s.day)))
-    const total = weights.reduce((a, w) => a + w, OUTSIDE_OPTION)
+    const makers = pool.map((p) => companies.get(p.companyId)!)
+    const base = pool.map((p, i) => (p.stock <= 0 ? 0 : pull(p, makers[i], seg, s.day)))
+    const hype = pool.map((p) => launchHype(p, s.day))
+    const alloc = pool.map(() => 0)
+    const kept = pool.map(() => 0)
+    for (const r of REGIONS) {
+      const st = s.regions[r.id]
+      const weights = pool.map((p, i) => {
+        if (base[i] <= 0) return 0
+        if (!makers[i].isPlayer) return base[i] * Math.min(1, makers[i].awareness + hype[i]) * rivalReach(makers[i], r.id)
+        if (!st.open) return 0
+        // a local price above or below list changes how the device compares here
+        const local = st.priceAdj === 1 ? 1 : Math.pow(priceFactor(p.price * st.priceAdj, seg) / priceFactor(p.price, seg), 3.5)
+        return base[i] * Math.min(1, st.awareness + hype[i]) * local
+      })
+      const total = weights.reduce((a, w) => a + w, OUTSIDE_OPTION)
+      const buyers = demand * r.share * regionTaste(r, seg)
+      pool.forEach((_, i) => {
+        if (weights[i] <= 0) return
+        const units = (buyers * weights[i]) / total
+        alloc[i] += units
+        if (makers[i].isPlayer) {
+          kept[i] += units * regionIncome(s, r.id)
+          regionUnits[r.id] = (regionUnits[r.id] ?? 0) + units
+        }
+      })
+    }
     pool.forEach((p, i) => {
-      if (weights[i] <= 0) return
-      p.carry += ((demand * weights[i]) / total) * range(s, 0.9, 1.1)
+      if (alloc[i] <= 0) return
+      p.carry += alloc[i] * range(s, 0.9, 1.1)
       const whole = Math.floor(p.carry)
       if (whole <= 0) return
-      const c = companies.get(p.companyId)!
-      const sold = sell(s, p, c, whole, seg.id)
+      const c = makers[i]
+      const sold = sell(s, p, c, whole, seg.id, false, c.isPlayer ? kept[i] / alloc[i] : 1)
       p.carry -= Math.min(p.carry, whole)
       if (c.isPlayer) mineToday += sold
     })
   }
 
   const mine = onSale.filter((p) => p.companyId === 'player' && p.stock > 0)
-  const pull = (p: Product) => clamp(bestSegment(p, me, s.day).u, 0, 1.3) * lifecycle(s.day - p.launchDay)
+  const draw = (p: Product) => clamp(bestSegment(p, me, s.day).u, 0, 1.3) * lifecycle(s.day - p.launchDay)
 
   // ---- fans buy again, and line up for anything new
   if (s.fans > 0 && mine.length) {
-    const w = mine.map((p) => pull(p) * (s.day - p.launchDay <= 45 ? 3 : 1))
+    const w = mine.map((p) => draw(p) * (s.day - p.launchDay <= 45 ? 3 : 1))
     const total = w.reduce((a, b) => a + b, 0)
-    const buyers = (s.fans / FAN_CYCLE) * Math.min(1, total / mine.length)
+    const buyers = (s.fans / FAN_CYCLE) * Math.min(1, total / mine.length) * (s.care.tradeIn ? TRADE_PULL : 1)
     mine.forEach((p, i) => {
       if (total <= 0) return
       p.carry += (buyers * w[i]) / total
       const whole = Math.floor(p.carry)
       if (whole <= 0) return
-      mineToday += sell(s, p, me, whole, p.segment ?? 'fans')
+      const sold = sell(s, p, me, whole, p.segment ?? 'fans')
+      mineToday += sold
+      regionUnits[home] = (regionUnits[home] ?? 0) + sold
       p.carry -= Math.min(p.carry, whole)
+      if (s.care.tradeIn && sold) {
+        // the old device comes back as credit; refurbished, it is sold on
+        spend(s, sold * p.price * TRADE_CREDIT, 'marketing')
+        s.care.month.tradeIns += sold
+        if (s.care.refurb) {
+          const back = sold * p.price * REFURB_RETURN
+          earn(s, back, 'other')
+          s.care.month.refurbIncome += back
+        }
+      }
     })
   }
 
@@ -845,24 +1142,26 @@ function stepSales(s: GameState) {
   for (const st of s.stores) {
     const stats = storeStats(st.site)
     const def = tierOf(st.site)
-    spend(s, (def.rent + stats.wages) / DAYS_PER_MONTH, 'facilities')
+    const local = s.regions[st.region] ?? s.regions[home]
+    spend(s, (upkeep(st.site) + stats.wages) / DAYS_PER_MONTH, 'facilities')
     if (stats.hasSupport) storeSupport++
     st.lastVisitors = 0
     if (!stats.open) continue
-    const visitors = Math.min(stats.capacity, (def.traffic ?? 0) * (0.35 + 0.65 * Math.sqrt(me.awareness))) * (0.6 + 0.4 * stats.appeal)
+    const visitors = Math.min(stats.capacity, (def.traffic ?? 0) * (0.35 + 0.65 * Math.sqrt(local.awareness))) * (0.6 + 0.4 * stats.appeal)
     st.lastVisitors = Math.round(visitors)
-    me.awareness += (1 - me.awareness) * (visitors / 3e6) * gain
+    addAwareness(s, (visitors / 3e6) * gain, st.region)
     const stocked = mine.filter((p) => p.stock > 0)
     if (!stocked.length) continue
-    const w = stocked.map(pull)
+    const w = stocked.map(draw)
     const total = w.reduce((a, b) => a + b, 0)
     if (total <= 0) continue
     const buyers = visitors * 0.035 * stats.appeal * Math.min(1.2, total / stocked.length)
     stocked.forEach((p, i) => {
       const units = Math.floor((buyers * w[i]) / total + rand(s))
-      const sold = sell(s, p, me, units, p.segment ?? 'store', true)
+      const sold = sell(s, p, me, units, p.segment ?? 'store', true, regionIncome(s, st.region))
       if (!sold) return
       mineToday += sold
+      regionUnits[st.region] = (regionUnits[st.region] ?? 0) + sold
       st.unitsTotal += sold
       st.monthUnits += sold
       // accessories ride along with each device sold
@@ -873,13 +1172,14 @@ function stepSales(s: GameState) {
   // ---- owners, fans and how they feel
   const tickets = dailyTickets(s)
   const supportGap = tickets > 0 ? clamp(1 - (fx.support + 20) / tickets, 0, 1) : 0
-  me.software = softwareBonus(s)
+  me.software = softwareBonus(s) + careBonus(s)
   const longUpdates = s.os.own && s.os.features.includes('updates')
+  const cared = careSatisfaction(s)
   let weight = 0
   let mood = 0
   for (const p of onSale) {
     if (p.companyId !== 'player') continue
-    p.satisfaction = productSatisfaction(p, me.software, supportGap, storeSupport, longUpdates)
+    p.satisfaction = clamp(productSatisfaction(p, me.software, supportGap, storeSupport, longUpdates) + cared - (p.recall?.state === 'open' ? 0.1 : p.recall?.state === 'ignored' ? 0.2 : 0), 0, 1)
     p.unitCost = Math.round(costNow(s, p.costParts) * 100) / 100
     weight += p.monthUnits + 1
     mood += p.satisfaction * (p.monthUnits + 1)
@@ -891,8 +1191,22 @@ function stepSales(s: GameState) {
   const sat = weight ? mood / weight : 0.6
   s.owners += mineToday - s.owners * 0.0009
   s.fans = Math.max(0, s.fans + mineToday * Math.max(0, sat - 0.55) * 1.2 - s.fans * (sat < 0.4 ? 0.003 : 0.0007))
-  me.awareness += (1 - me.awareness) * ((mineToday / 3e6) * gain + s.fans / 4e7)
-  me.awareness = clamp(me.awareness, 0, 1)
+
+  // ---- being seen: every sale makes the next one easier, region by region
+  for (const r of REGIONS) {
+    const st = s.regions[r.id]
+    if (!st.open) continue
+    const units = regionUnits[r.id] ?? 0
+    st.monthUnits += units
+    st.awareness = clamp(st.awareness + (1 - st.awareness) * ((units / (3e6 * r.share)) * gain + s.fans / 4e7), 0, 1)
+  }
+  me.awareness = worldAwareness(s)
+
+  // ---- after-sales: updates for old devices and the care plan
+  const care = stepCare(s, sat)
+  if (care.updates) spend(s, care.updates, 'development')
+  if (care.planCost) spend(s, care.planCost, 'production')
+  if (care.planIncome) earn(s, care.planIncome, 'other')
 }
 
 function stepResearch(s: GameState) {
@@ -941,15 +1255,17 @@ function stepOperations(s: GameState) {
     const p = s.products.find((x) => x.id === id)
     if (p && !s.orders.some((o) => o.productId === id)) news(s, 'launch', `Production run finished for ${p.name}. ${p.stock.toLocaleString()} in stock.`, id)
   }
-  if (s.factory) spend(s, tierOf(s.factory).rent / DAYS_PER_MONTH, 'facilities')
+  if (s.factory) spend(s, upkeep(s.factory) / DAYS_PER_MONTH, 'facilities')
+  if (s.venue) spend(s, upkeep(s.venue) / DAYS_PER_MONTH, 'facilities')
   void had
 }
 
 function stepFinance(s: GameState) {
   const d = DIFFICULTY[s.config.difficulty]
   const selling = ownProducts(s).filter((p) => p.status !== 'ended').length
-  spend(s, ((40e3 + 15e3 * selling) * d.overhead + tierOf(s.office).rent) / DAYS_PER_MONTH, 'overhead')
-  if (s.staff.length) spend(s, monthlySalaries(s) / DAYS_PER_MONTH, 'salaries')
+  spend(s, ((40e3 + 15e3 * selling) * d.overhead + upkeep(s.office) + regionOverheads(s)) / DAYS_PER_MONTH, 'overhead')
+  if (s.staff.length) spend(s, (monthlySalaries(s) + perksCost(s)) / DAYS_PER_MONTH, 'salaries')
+  stepStock(s)
   if (s.config.unlimitedMoney) return
   if (s.cash < 0) {
     spend(s, (-s.cash * 0.12) / DAYS_PER_YEAR, 'interest')
@@ -957,6 +1273,7 @@ function stepFinance(s: GameState) {
     if (s.debtDays === 30) news(s, 'alert', 'The company is in debt. Bankruptcy follows if it is not cleared.')
     if (s.debtDays > d.debtDays) {
       s.gameOver = true
+      s.overReason = 'bankrupt'
       news(s, 'alert', `${player(s).name} is bankrupt.`)
     }
   } else s.debtDays = 0
@@ -978,6 +1295,30 @@ function closeMonth(s: GameState) {
   if (services > 0) {
     s.os.servicesIncome += services
     earn(s, services, 'other')
+  }
+
+  const stakes = holdingIncome(s)
+  if (stakes > 0) earn(s, stakes, 'other')
+
+  // ---- shareholders, the board, and anything owners are still waiting on
+  const profit = s.cur.revenue + s.cur.other - monthCosts(s.cur)
+  const canOust = !s.config.unlimitedMoney && s.config.difficulty !== 'relaxed'
+  const market = monthlyStock(s, profit, canOust)
+  if (market.dividend > 0) fund(s, -market.dividend)
+  for (const n of market.notes) {
+    news(s, n.alert ? 'alert' : 'finance', n.text)
+    if (n.ousted) {
+      s.gameOver = true
+      s.overReason = 'ousted'
+    }
+  }
+  for (const n of checkRecalls(s)) news(s, 'alert', n.text, n.productId)
+  closeCareMonth(s)
+  for (const r of REGIONS) {
+    const st = s.regions[r.id]
+    st.history.push(Math.round(st.monthUnits))
+    if (st.history.length > 36) st.history.shift()
+    st.monthUnits = 0
   }
 
   s.cur.cash = s.cash
@@ -1041,6 +1382,14 @@ function stepDay(s: GameState) {
   for (const n of stepStaff(s, crunch)) news(s, n.alert ? 'alert' : 'staff', n.text)
   stepFinance(s)
   if (s.day % DAYS_PER_MONTH === 0) closeMonth(s)
+  if (s.day % 5 === 0) for (const g of checkGoals(s)) reward(s, g)
+}
+
+function reward(s: GameState, g: Goal) {
+  if (g.cash) earn(s, g.cash, 'other')
+  if (g.fans) s.fans += g.fans
+  const prize = [g.cash ? `${g.cash.toLocaleString()}` : '', g.fans ? `${g.fans.toLocaleString()} fans` : ''].filter(Boolean).join(' and ')
+  news(s, 'goal', `Goal reached: ${g.name}.${prize ? ` Reward: ${prize}.` : ''}`)
 }
 
 /** Advance the simulation. Deterministic for a given state. */
@@ -1056,7 +1405,189 @@ export function trailingUnits(s: GameState): { company: Company; units: number }
 
 export { CHIP_BUDGET, CONTRACT, buildCost, segmentsOf, utility }
 
+// ---------------------------------------------------------------- shares and investors
+
+/** Sell a stake to a private investor. */
+export function fundingRound(s: GameState, stake: number): string | null {
+  const r = raiseRound(s, stake)
+  if (r.error) return r.error
+  fund(s, r.cash)
+  news(s, 'finance', `${r.name} invested ${(r.cash / 1e6).toFixed(1)}M for ${(stake * 100).toFixed(0)}% of the company.`)
+  return null
+}
+
+export function listCompany(s: GameState, float: number): string | null {
+  const r = goPublic(s, float)
+  if (r.error) return r.error
+  fund(s, r.cash)
+  news(s, 'finance', `${player(s).name} listed on the stock market, raising ${(r.cash / 1e6).toFixed(0)}M. Shares opened at ${s.stock.price.toFixed(2)}.`)
+  return null
+}
+
+export function sellShares(s: GameState, pct: number): string | null {
+  const r = issueShares(s, pct)
+  if (r.error) return r.error
+  fund(s, r.cash)
+  news(s, 'finance', `The company sold new shares worth ${(r.cash / 1e6).toFixed(1)}M.`)
+  return null
+}
+
+export function buyBackShares(s: GameState, amount: number): string | null {
+  if (amount <= 0) return 'Enter an amount'
+  if (!canAfford(s, amount) || s.cash < amount) return 'Buybacks must be paid from cash in hand'
+  const r = buyBack(s, amount)
+  if (r.error) return r.error
+  fund(s, -r.spent)
+  return null
+}
+
+export function setPayout(s: GameState, share: number) {
+  s.stock.payout = clamp(share, 0, 0.5)
+}
+
+export function buyRivalStake(s: GameState, companyId: string, pct: number): string | null {
+  const c = s.companies.find((x) => x.id === companyId)
+  if (!c) return 'No such company'
+  const take = Math.min(pct, 0.49 - stakeIn(s, companyId))
+  if (take > 0.001 && s.cash < stakePrice(c, take)) return 'Stakes must be paid from cash in hand'
+  const r = buyStake(s, companyId, pct)
+  if (r.error) return r.error
+  fund(s, -r.cost)
+  news(s, 'finance', `You now own ${(stakeIn(s, companyId) * 100).toFixed(0)}% of ${c.name}.`)
+  return null
+}
+
+export function sellRivalStake(s: GameState, companyId: string) {
+  const back = sellStake(s, companyId)
+  if (back > 0) fund(s, back)
+}
+
+/** Buy a rival outright. Its products are withdrawn and its customers, name and know-how come to you. */
+export function acquire(s: GameState, companyId: string): string | null {
+  const c = s.companies.find((x) => x.id === companyId)
+  if (!c || c.isPlayer || !c.alive) return 'That company cannot be bought'
+  const price = takeoverPrice(s, c)
+  if (s.cash < price) return `A takeover must be paid from cash in hand: ${(price / 1e6).toFixed(0)}M`
+  fund(s, -price)
+  const me = player(s)
+  const theirs = rivalLevels(s, c)
+  let gained = 0
+  for (const t of TRACKS) {
+    if (gained < 2 && theirs[t] > s.levels[t]) {
+      s.levels[t]++
+      gained++
+    }
+  }
+  for (const r of REGIONS) {
+    const st = s.regions[r.id]
+    if (st.open) st.awareness = clamp(st.awareness + (1 - st.awareness) * c.awareness * 0.3 * rivalReach(c, r.id), 0, 1)
+  }
+  me.awareness = worldAwareness(s)
+  me.brand = clamp(Math.max(me.brand, me.brand * 0.9 + c.brand * 0.1), 0.05, 1)
+  s.fans += c.unitsYear.reduce((a, b) => a + b, 0) * 0.03
+  for (const p of s.products) if (p.companyId === c.id && p.status === 'sale') endProduct(s, p)
+  c.alive = false
+  c.acquired = true
+  c.value = 0
+  delete s.stock.holdings[c.id]
+  news(s, 'finance', `You bought ${c.name} for ${(price / 1e6).toFixed(0)}M.${gained ? ' Its engineers brought new know-how.' : ''}`)
+  return null
+}
+
+// ---------------------------------------------------------------- regions
+
+export function enterRegion(s: GameState, id: string): string | null {
+  const blocked = entryBlocked(s, id)
+  if (blocked) return blocked
+  const r = regionInfo(id)
+  if (!canAfford(s, r.entry)) return 'Not enough cash'
+  spend(s, r.entry, 'overhead')
+  const open = REGIONS.filter((x) => s.regions[x.id].open)
+  // word travels: a brand known elsewhere does not start from nothing
+  const known = open.reduce((a, x) => a + s.regions[x.id].awareness, 0) / Math.max(1, open.length)
+  s.regions[id] = { ...newRegion(true, known * 0.3, s.day), history: s.regions[id]?.history ?? [] }
+  news(s, 'finance', `${player(s).name} now sells in ${r.name}.`)
+  return null
+}
+
+export function setRegionPrice(s: GameState, id: string, adj: number) {
+  const st = s.regions[id]
+  if (st) st.priceAdj = clamp(Math.round(adj * 100) / 100, 0.7, 1.4)
+}
+
+// ---------------------------------------------------------------- after-sales
+
+export function setCare(s: GameState, patch: Partial<Pick<GameState['care'], 'warrantyYears' | 'updateYears' | 'tradeIn' | 'refurb' | 'plan' | 'planPrice'>>): string | null {
+  const c = s.care
+  if (patch.warrantyYears !== undefined && WARRANTY_YEARS.includes(patch.warrantyYears)) c.warrantyYears = patch.warrantyYears
+  if (patch.updateYears !== undefined && UPDATE_YEARS.includes(patch.updateYears)) c.updateYears = patch.updateYears
+  if (patch.tradeIn !== undefined) c.tradeIn = patch.tradeIn
+  if (patch.refurb !== undefined) {
+    if (patch.refurb && !s.factory && !s.stores.some((st) => storeStats(st.site).repairs > 0)) return 'Refurbishing needs a factory or a store with a repair bench'
+    c.refurb = patch.refurb
+  }
+  if (patch.plan !== undefined) c.plan = patch.plan
+  if (patch.planPrice !== undefined) c.planPrice = clamp(Math.round(patch.planPrice), 2, 40)
+  return null
+}
+
+/** Recall a faulty product: every unit sold is fixed at the company's expense. */
+export function recallProduct(s: GameState, productId: string): string | null {
+  const p = s.products.find((x) => x.id === productId)
+  if (!p || p.recall?.state !== 'open') return 'There is no recall to decide'
+  const cost = recallCost(p)
+  if (!canAfford(s, cost)) return 'Not enough cash'
+  spend(s, cost, 'production')
+  p.recall = { state: 'done', day: s.day, cost }
+  p.defectRate = Math.min(p.defectRate, 0.01)
+  player(s).brand = clamp(player(s).brand + 0.01, 0.05, 1)
+  news(s, 'alert', `${p.name} was recalled and repaired at a cost of ${cost.toLocaleString()}. Owners noticed that you did the right thing.`, p.id)
+  return null
+}
+
+export { RECALL_DEADLINE, valuation }
+
 // ---------------------------------------------------------------- old saves
+
+/** Old dimensions of each kind of site, from before plots and rooms. */
+const OLD_SIZE: Record<string, [number, number][]> = {
+  office: [[9, 6], [14, 9], [20, 12], [28, 16], [34, 34]],
+  factory: [[14, 8], [22, 12], [32, 18]],
+  store: [[8, 6], [12, 8], [16, 12]],
+}
+
+interface OldSite {
+  tier?: number
+  w?: number
+  h?: number
+  grid?: number[]
+  items?: { id?: string; kind: string; x: number; y: number; rot: number }[]
+}
+
+/**
+ * Turn a site from before rooms into a plot with one big room holding what
+ * was there. Returns the site and the value of anything that could not stay.
+ */
+function convertSite(s: GameState, old: OldSite | null | undefined, kind: SiteKind): { site: Site; refund: number } {
+  if (old && Array.isArray(old.grid)) return { site: old as unknown as Site, refund: 0 }
+  const tier = clamp(old?.tier ?? 0, 0, SITE_TIERS[kind].length - 1)
+  const site = newSite(kind, tier)
+  const [ow, oh] = OLD_SIZE[kind]?.[tier] ?? [old?.w ?? 8, old?.h ?? 6]
+  const rw = Math.min(old?.w ?? ow, site.w - 2)
+  const rh = Math.min(old?.h ?? oh, site.h - 2)
+  const dx = Math.floor((site.w - rw) / 2)
+  const dy = Math.floor((site.h - rh) / 2)
+  const type = kind === 'office' ? 'work' : kind === 'factory' ? 'hall' : 'sales'
+  const { room } = zone(site, type, areaTiles(dx, dy, dx + rw - 1, dy + rh - 1))
+  if (room) autoDoor(site, room.n)
+  let refund = 0
+  for (const it of old?.items ?? []) {
+    const def = ITEMS[kind][it.kind]
+    if (def && !canPlace(site, it.kind, it.x + dx, it.y + dy, it.rot)) site.items.push({ id: it.id ?? `o${s.nextId++}`, kind: it.kind, x: it.x + dx, y: it.y + dy, rot: it.rot })
+    else if (def) refund += def.cost
+  }
+  return { site, refund }
+}
 
 /** Bring a save from an older version up to date. */
 export function migrate(input: GameState): GameState {
@@ -1067,18 +1598,7 @@ export function migrate(input: GameState): GameState {
   s.progress = s.progress ?? {}
 
   // ---- staff gain morale, traits and potential
-  s.staff = (s.staff ?? []).map((e) => ({ ...e, morale: e.morale ?? 70, traits: e.traits ?? [], potential: e.potential ?? Math.min(100, e.skill + 15), lowDays: 0 }))
-
-  // ---- the office becomes a general site; furniture that no longer fits is refunded
-  const old = s.office as unknown as { tier?: number; items?: { kind: string; x: number; y: number; rot: number }[] } | undefined
-  const office = newSite('office', clamp(old?.tier ?? 0, 0, SITE_TIERS.office.length - 1))
-  office.items = []
-  for (const it of old?.items ?? []) {
-    const kind = it.kind === 'wall' ? '' : it.kind
-    if (kind && ITEMS.office[kind] && !canPlace(office, kind, it.x, it.y, it.rot)) office.items.push({ id: `o${s.nextId++}`, kind, x: it.x, y: it.y, rot: it.rot })
-    else if (ITEMS.office[kind]) s.cash += ITEMS.office[kind].cost
-  }
-  s.office = office
+  s.staff = (s.staff ?? []).map((e) => ({ ...e, morale: e.morale ?? 70, traits: e.traits ?? [], potential: e.potential ?? Math.min(100, e.skill + 15), lowDays: e.lowDays ?? 0 }))
 
   // ---- products gain a type, a family and the new tracking fields
   for (const p of s.products) {
@@ -1113,7 +1633,6 @@ export function migrate(input: GameState): GameState {
   })
   for (const c of s.companies) c.software = c.software ?? 0
 
-  s.factory = s.factory ?? null
   s.orders = s.orders ?? []
   s.supply = s.supply ?? newSupply()
   s.stores = s.stores ?? []
@@ -1127,9 +1646,47 @@ export function migrate(input: GameState): GameState {
     r.other = r.other ?? 0
     r.salaries = r.salaries ?? 0
     r.facilities = r.facilities ?? 0
+    r.funding = r.funding ?? 0
   }
   fix(s.cur)
   s.reports.forEach(fix)
+
+  // ---- sites become plots with rooms; what was built stays, in one big room
+  let refund = 0
+  const take = (old: unknown, kind: SiteKind) => {
+    const r = convertSite(s, old as OldSite, kind)
+    refund += r.refund
+    return r.site
+  }
+  s.office = take(s.office, 'office')
+  s.factory = s.factory ? take(s.factory, 'factory') : null
+  s.venue = s.venue ?? null
+  const home = s.config.home ?? DEFAULT_HOME
+  for (const st of s.stores) {
+    st.site = take(st.site, 'store')
+    st.region = st.region ?? REGIONS.find((r) => r.cities.includes(st.name))?.id ?? home
+  }
+  s.cash += refund
+  if (refund > 0) news(s, 'finance', `Your buildings were rebuilt as rooms. Fittings that no longer had a place were sold back for $${Math.round(refund).toLocaleString()}.`)
+
+  // ---- the new systems start from where the company already is
+  s.teams = s.teams ?? []
+  s.policy = s.policy ?? newPolicy()
+  s.care = s.care ?? newCare()
+  if (!s.regions) {
+    // an established company was already selling everywhere
+    const known = player(s).awareness
+    s.regions = Object.fromEntries(REGIONS.map((r) => [r.id, newRegion(true, known, s.day)]))
+  }
+  player(s).home = player(s).home ?? home
+  if (!s.stock) {
+    s.stock = newStock(Math.max(1e6, s.cash))
+    s.stock.price = valuation(s) / s.stock.shares
+  }
+  if (!s.goals) {
+    s.goals = {}
+    checkGoals(s)
+  }
   refreshCandidates(s)
   s.version = SAVE_VERSION
   return s

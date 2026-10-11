@@ -5,13 +5,17 @@ import { useEffect, useRef } from 'react'
 import { sfx } from '../audio/sfx'
 import { fmtDate, player } from '../sim/game'
 import { factoryLine, pendingUnits } from '../sim/ops'
-import { staffEffects } from '../sim/staff'
+import { sealedRooms } from '../sim/sites'
+import { staffEffects, unmanaged } from '../sim/staff'
+import { stageOf } from '../sim/goals'
 import { type GameState, type NewsItem, SUPPLY_CATS } from '../sim/types'
 import { DAYS_PER_SECOND, type Speed, type Tab, useGame, useStore } from '../store/game'
 import { saveGame } from '../store/saves'
 import { OfficeScreen, Staff } from './Company'
 import { Designer } from './Designer'
-import { MarketingScreen, StoresScreen } from './Growth'
+import { CareScreen, GoalsScreen, SharesScreen, WorldScreen } from './Empire'
+import { MarketingScreen, StoresScreen, VenueScreen } from './Growth'
+import { LaunchShow } from './Show'
 import { ProductDrawer } from './Inspector'
 import { LabsScreen } from './Labs'
 import { FactoryScreen } from './Operations'
@@ -35,6 +39,8 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { id: 'products', label: 'Devices', code: 'DEV', key: 'F2' },
       { id: 'research', label: 'Research', code: 'RES', key: 'F3' },
       { id: 'market', label: 'Market', code: 'MKT', key: 'F4' },
+      { id: 'world', label: 'Regions', code: 'WLD' },
+      { id: 'goals', label: 'Goals', code: 'GOL' },
     ],
   },
   {
@@ -42,7 +48,9 @@ const NAV: { group: string; items: NavItem[] }[] = [
     items: [
       { id: 'factory', label: 'Factory', code: 'FAC', key: 'F5' },
       { id: 'stores', label: 'Stores', code: 'STO', key: 'F6' },
+      { id: 'venue', label: 'Venue', code: 'VEN' },
       { id: 'marketing', label: 'Marketing', code: 'ADS', key: 'F7' },
+      { id: 'care', label: 'After-sales', code: 'CAR' },
       { id: 'labs', label: 'Labs', code: 'LAB', key: 'F8' },
     ],
   },
@@ -50,8 +58,9 @@ const NAV: { group: string; items: NavItem[] }[] = [
     group: 'Company',
     items: [
       { id: 'staff', label: 'Staff', code: 'STF', key: 'F9' },
-      { id: 'office', label: 'Office', code: 'OFF' },
+      { id: 'office', label: 'Campus', code: 'HQ' },
       { id: 'finance', label: 'Finance', code: 'FIN' },
+      { id: 'shares', label: 'Shares', code: 'SHR' },
       { id: 'rivals', label: 'Rivals', code: 'RIV' },
     ],
   },
@@ -62,15 +71,17 @@ const SPEEDS: { speed: Speed; label: string }[] = [
   { speed: 2, label: '2x' },
   { speed: 4, label: '4x' },
 ]
-const NEWS_TONE: Record<NewsItem['kind'], string> = { launch: 'text-accent', review: 'text-pos', research: 'text-accent', rival: 'text-faint', finance: 'text-dim', alert: 'text-neg', staff: 'text-dim', event: 'text-pos' }
+const NEWS_TONE: Record<NewsItem['kind'], string> = { launch: 'text-accent', review: 'text-pos', research: 'text-accent', rival: 'text-faint', finance: 'text-dim', alert: 'text-neg', staff: 'text-dim', event: 'text-pos', goal: 'text-warn' }
 /** Screens that are a full 3D view; the feed stays out of their way. */
-const WIDE: Tab[] = ['office', 'factory', 'stores']
+const WIDE: Tab[] = ['office', 'factory', 'stores', 'venue']
 
 /** A count shown beside a nav item when something there needs attention. */
 function badge(g: GameState, tab: Tab): number {
-  if (tab === 'products') return g.products.filter((p) => p.companyId === 'player' && p.status === 'sale' && p.stock <= 0 && !pendingUnits(g, p.id)).length
-  if (tab === 'staff') return g.staff.filter((e) => e.ask).length
-  if (tab === 'office') return staffEffects(g).idle
+  if (tab === 'products') return g.products.filter((p) => p.companyId === 'player' && ((p.status === 'sale' && p.stock <= 0 && !pendingUnits(g, p.id)) || p.recall?.state === 'open')).length
+  if (tab === 'staff') return g.staff.filter((e) => e.ask).length + (unmanaged(g) ? 1 : 0)
+  if (tab === 'office') return staffEffects(g).idle + sealedRooms(g.office).length
+  if (tab === 'care') return g.products.filter((p) => p.companyId === 'player' && p.recall?.state === 'open').length
+  if (tab === 'shares') return g.stock.lowDays > 0 ? 1 : 0
   if (tab === 'factory') return SUPPLY_CATS.filter((c) => g.supply.shockDays[c] > 0).length + (g.orders.some((o) => o.mode === 'factory') && !factoryLine(g)?.running ? 1 : 0)
   return 0
 }
@@ -130,7 +141,10 @@ export function Shell() {
   const designing = useStore((s) => s.designing)
   const railOpen = useStore((s) => s.railOpen)
   const feedOpen = useStore((s) => s.feedOpen)
-  const { setTab, setSpeed, focus, say, quit, toggleRail, toggleFeed, openDesigner } = useStore.getState()
+  const checkpoint = useStore((s) => s.checkpoint)
+  const showing = useStore((s) => s.showing)
+  const { setTab, setSpeed, focus, say, quit, toggleRail, toggleFeed, openDesigner, rewind } = useStore.getState()
+  const stage = stageOf(g)
   useGameLoop()
   useHotkeys()
   const me = player(g)
@@ -157,6 +171,9 @@ export function Shell() {
         <div className="flex items-center gap-2 border-r border-line px-3">
           {me.logo ? <img src={me.logo} alt="" className="h-6 w-6 object-contain" /> : <span className="h-2 w-2" style={{ background: me.color }} />}
           <span className="text-xs text-dim">{me.name}</span>
+          <button className="num hidden border border-line2 px-[5px] py-[1px] text-[9px] uppercase tracking-wider text-faint hover:text-fg xl:block" onClick={() => setTab('goals')} title={`${stage.done} of ${stage.total} goals reached`}>
+            {stage.name}
+          </button>
         </div>
         <div className="flex items-center gap-2 border-r border-line px-3">
           <span className="label text-faint">Date</span>
@@ -234,6 +251,11 @@ export function Shell() {
               {tab === 'office' && <OfficeScreen />}
               {tab === 'finance' && <Finance />}
               {tab === 'rivals' && <Rivals />}
+              {tab === 'venue' && <VenueScreen />}
+              {tab === 'care' && <CareScreen />}
+              {tab === 'world' && <WorldScreen />}
+              {tab === 'shares' && <SharesScreen />}
+              {tab === 'goals' && <GoalsScreen />}
               {tab === 'system' && <System />}
             </>
           )}
@@ -263,19 +285,32 @@ export function Shell() {
         )}
       </div>
 
+      {showing && !g.gameOver && <LaunchShow eventId={showing} />}
+
       {g.gameOver && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-carbon/85">
-          <div className="w-[380px] border border-neg bg-panel p-4">
-            <div className="label text-neg">Bankrupt</div>
-            <div className="mt-2 text-lg text-fg">{me.name} has run out of credit.</div>
+          <div className="w-[420px] border border-neg bg-panel p-4">
+            <div className="label text-neg">{g.overReason === 'ousted' ? 'Removed by the board' : 'Bankrupt'}</div>
+            <div className="mt-2 text-lg text-fg">{g.overReason === 'ousted' ? `The board of ${me.name} has replaced you.` : `${me.name} has run out of credit.`}</div>
             <div className="num mt-2 text-[11px] text-dim">
               Survived until {fmtDate(g.day)}. Sold {me.unitsTotal.toLocaleString()} devices for {money(me.revenueTotal)}.
             </div>
-            <div className="mt-4 flex gap-2">
+            {checkpoint && (
+              <div className="mt-3 border border-line p-2">
+                <div className="text-[11px] leading-snug text-dim">
+                  The game kept a copy from <span className="num text-fg">{fmtDate(checkpoint.day)}</span>, just before the company went into debt. You can pick it up from there and try a different path.
+                </div>
+                <Btn tone="primary" className="mt-2 h-9 w-full" onClick={() => (rewind(), sfx.confirm())}>
+                  Go back to {fmtDate(checkpoint.day)}
+                </Btn>
+              </div>
+            )}
+            <div className="mt-3 flex gap-2">
               <Btn className="flex-1" onClick={quit}>
                 Main menu
               </Btn>
             </div>
+            <div className="mt-2 text-[10px] text-faint">The same copy is in the load menu as "Before the debt", along with the monthly autosave.</div>
           </div>
         </div>
       )}

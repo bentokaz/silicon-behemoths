@@ -3,8 +3,23 @@ import { marketLevel } from '../data/catalog'
 import { SEGMENTS } from '../data/devices'
 import {
   type LaunchOrder,
+  SAVE_VERSION,
+  acquire,
   autoLine,
+  autoTeams,
+  autoVenue,
   buildFactory,
+  buildVenue,
+  buyRivalStake,
+  clearZone,
+  enterRegion,
+  fundingRound,
+  listCompany,
+  recallProduct,
+  setCare,
+  setEdge,
+  setLook,
+  zoneRoom,
   defaultConfig,
   hire,
   lockSupply,
@@ -29,8 +44,11 @@ import { utility } from './market'
 import { pendingUnits, supplyPrice } from './ops'
 import { VARIANTS, deriveVariant } from './rivals'
 import { evaluate } from './scoring'
-import { lineStats, newSite, storeStats, validTile } from './sites'
-import { staffEffects } from './staff'
+import { builtTiles, canPlace, gridAt, hiredVenue, lineStats, newSite, openRooms, sealedRooms, storeStats, venueStats } from './sites'
+import { GOALS } from './goals'
+import { REGIONS } from './regions'
+import { staffEffects, unmanaged } from './staff'
+import { founderStake, valuation } from './stock'
 import { DEVICE_TYPES, type GameState, type Levels, TRACKS } from './types'
 
 const fresh = (seed = 7, extra: Partial<ReturnType<typeof defaultConfig>> = {}) => newGame({ ...defaultConfig(), seed, ...extra })
@@ -192,7 +210,8 @@ describe('devices and production', () => {
     // swap the test station for a conveyor: the line still runs but ships more faults
     s.factory!.items = s.factory!.items.filter((i) => i.kind !== 'test')
     expect(lineStats(s.factory!).running).toBe(false)
-    expect(placeItem(s, 'factory', 'conveyor', 9, 3, 0)).toBeNull()
+    const gap = [13, 6] as const
+    expect(placeItem(s, 'factory', 'conveyor', gap[0], gap[1], 0)).toBeNull()
     expect(lineStats(s.factory!).defectRate).toBeCloseTo(0.06)
 
     expect(startProduct(s, order(s, { mode: 'factory', quantity: 5000 }))).toBeNull()
@@ -258,13 +277,16 @@ describe('people and places', () => {
     expect(fx.research).toBeGreaterThan(1)
     expect(placeItem(s, 'office', 'desk', 6, 4, 0)).toBeNull()
     expect(placeItem(s, 'office', 'desk', 6, 4, 0)).toMatch(/already there/)
-    expect(placeItem(s, 'office', 'meeting', 8, 5, 0)).toMatch(/does not fit/)
+    expect(placeItem(s, 'office', 'meeting', 8, 5, 0)).toMatch(/goes in/)
+    expect(placeItem(s, 'office', 'bench', 7, 5, 0)).toMatch(/goes in: research lab/)
     const before = staffEffects(s).research
-    expect(placeItem(s, 'office', 'bench', 0, 4, 0)).toBeNull()
+    expect(zoneRoom(s, 'office', 'lab', 11, 2, 13, 4)).toBeNull()
+    expect(placeItem(s, 'office', 'bench', 11, 2, 0)).toBeNull()
     fx = staffEffects(s)
     expect(fx.idle).toBe(0)
     expect(fx.research).toBeGreaterThan(before)
     // underpaid, uncomfortable people lose heart and eventually leave
+    s.office.items = s.office.items.filter((i) => i.kind === 'desk' || i.kind === 'bench')
     for (const e of s.staff) {
       e.salary = 500
       e.traits = []
@@ -276,17 +298,61 @@ describe('people and places', () => {
     expect(s.news.some((n) => /quit/.test(n.text))).toBe(true)
   })
 
-  it('moves to a bigger office and keeps the furniture', () => {
+  it('moves to a bigger plot and keeps every room and item', () => {
     const s = rich()
     const count = s.office.items.length
+    const built = builtTiles(s.office)
     expect(upgradeOffice(s)).toBeNull()
-    expect(s.office.w).toBe(14)
+    expect(s.office.w).toBe(22)
     expect(s.office.items.length).toBe(count)
+    expect(builtTiles(s.office)).toBe(built)
+    expect(sealedRooms(s.office)).toEqual([])
+    // everything still stands where a fresh placement would be allowed
+    for (const it of s.office.items) expect(canPlace({ ...s.office, items: [] }, it.kind, it.x, it.y, it.rot), it.kind).toBeNull()
     for (let i = 0; i < 3; i++) expect(upgradeOffice(s)).toBeNull()
-    expect(s.office.shape).toBe('ring')
-    expect(validTile(s.office, 17, 17)).toBe(false)
-    expect(validTile(s.office, 17, 2)).toBe(true)
+    expect(s.office.w).toBe(72)
+    expect(builtTiles(s.office)).toBe(built)
     expect(upgradeOffice(s)).toMatch(/largest/)
+  })
+
+  it('zones rooms, walls them in and only counts rooms with a door', () => {
+    const s = fresh()
+    expect(s.office.rooms).toHaveLength(1)
+    const cash = s.cash
+    expect(zoneRoom(s, 'office', 'lounge', 11, 2, 13, 5)).toBeNull()
+    expect(s.cash).toBe(cash - 12 * 420)
+    const lounge = s.office.rooms.find((r) => r.type === 'lounge')!
+    expect(openRooms(s.office).has(lounge.n)).toBe(true)
+    expect(placeItem(s, 'office', 'coffee', 11, 2, 1)).toBeNull()
+    expect(placeItem(s, 'office', 'desk', 12, 4, 0)).toMatch(/goes in/)
+    expect(placeItem(s, 'office', 'otree', 12, 4, 0)).toMatch(/goes in/)
+    expect(placeItem(s, 'office', 'otree', 0, 4, 0)).toBeNull()
+    expect(zoneRoom(s, 'office', 'lounge', 11, 2, 13, 5)).toMatch(/already built/)
+    // extending a room keeps it one room
+    expect(zoneRoom(s, 'office', 'lounge', 11, 2, 13, 6, 'rect', lounge.n)).toBeNull()
+    expect(s.office.rooms.filter((r) => r.type === 'lounge')).toHaveLength(1)
+
+    // brick up the garage door: its desks stop counting
+    expect(staffEffects(s).seats).toBe(2)
+    const work = s.office.rooms.find((r) => r.type === 'work')!
+    for (const w of [...s.office.walls]) {
+      const sides = [gridAt(s.office, w.x, w.y), w.side === 'n' ? gridAt(s.office, w.x, w.y - 1) : gridAt(s.office, w.x - 1, w.y)]
+      if (sides.includes(work.n)) expect(setEdge(s, 'office', w.x, w.y, w.side, 'wall')).toBeNull()
+    }
+    expect(sealedRooms(s.office).map((r) => r.type)).toEqual(['work'])
+    expect(staffEffects(s).seats).toBe(0)
+    expect(setEdge(s, 'office', 3, 4, 'w', 'door')).toBeNull()
+    expect(setEdge(s, 'office', 0, 0, 'n', 'door')).toMatch(/no wall/)
+    expect(staffEffects(s).seats).toBe(2)
+
+    // knocking a room down sells what was in it
+    const items = s.office.items.length
+    clearZone(s, 'office', 11, 2, 13, 6)
+    expect(s.office.rooms.some((r) => r.type === 'lounge')).toBe(false)
+    expect(s.office.items.length).toBe(items - 1)
+    expect(setLook(s, 'office', { facade: 1, roof: 2, floors: 3 })).toBeNull()
+    expect(s.office.floors).toBe(3)
+    expect(JSON.parse(JSON.stringify(s.office))).toEqual(s.office)
   })
 
   it('sells directly through a store the player has fitted out', () => {
@@ -296,8 +362,10 @@ describe('people and places', () => {
     expect(openStore(s, 1)).toBeNull()
     const store = s.stores[0]
     expect(storeStats(store.site).open).toBe(true)
-    expect(placeItem(s, `store:${store.id}`, 'table', 5, 2, 0)).toBeNull()
-    expect(placeItem(s, `store:${store.id}`, 'plant', 0, 0, 0)).toBeNull()
+    expect(placeItem(s, `store:${store.id}`, 'table', 5, 5, 0)).toBeNull()
+    expect(placeItem(s, `store:${store.id}`, 'plant', 2, 2, 0)).toBeNull()
+    expect(placeItem(s, `store:${store.id}`, 'plant', 0, 0, 0)).toMatch(/goes in/)
+    expect(store.region).toBe('na')
     tick(s, 60)
     expect(store.unitsTotal).toBeGreaterThan(0)
     expect(store.lastVisitors).toBeGreaterThan(0)
@@ -374,19 +442,153 @@ describe('growth and technology', () => {
   })
 })
 
+describe('a bigger world', () => {
+  it('starts at home and sells more after entering another region', () => {
+    const run = (expand: boolean) => {
+      const s = rich()
+      startProduct(s, order(s, { quantity: 4e6 }))
+      tick(s, 80)
+      if (expand) {
+        for (const r of REGIONS) if (!s.regions[r.id].open) expect(enterRegion(s, r.id)).toBeNull()
+        for (const r of REGIONS) s.regions[r.id].awareness = 0.3
+      } else s.regions.na.awareness = 0.3
+      tick(s, 120)
+      return s
+    }
+    const home = run(false)
+    const world = run(true)
+    expect(REGIONS.filter((r) => home.regions[r.id].open).map((r) => r.id)).toEqual(['na'])
+    expect(enterRegion(fresh(), 'eu')).toMatch(/Launch a device/)
+    expect(mine(world)[0].unitsSold).toBeGreaterThan(mine(home)[0].unitsSold * 2)
+    expect(world.regions.ea.history.some((u) => u > 0)).toBe(true)
+    expect(home.regions.ea.history.every((u) => u === 0)).toBe(true)
+    expect(world.cur.overhead).toBeGreaterThan(home.cur.overhead)
+  })
+
+  it('sells shares to investors, lists, and buys a rival', () => {
+    const s = fresh()
+    expect(founderStake(s)).toBe(1)
+    const cash = s.cash
+    expect(fundingRound(s, 0.2)).toBeNull()
+    expect(s.cash).toBeGreaterThan(cash + 500e3)
+    expect(founderStake(s)).toBeCloseTo(0.8)
+    expect(fundingRound(s, 0.1)).toMatch(/days until the next round/)
+    expect(listCompany(s, 0.2)).toMatch(/worth/)
+    tick(s, 400)
+    expect(s.stock.history.length).toBe(13)
+    expect(s.reports.every((r) => r.funding === 0 || r.month === 0)).toBe(true)
+
+    s.cash = 400e6
+    expect(valuation(s)).toBeGreaterThan(50e6)
+    expect(listCompany(s, 0.25)).toBeNull()
+    expect(s.stock.listed).toBe(true)
+    expect(founderStake(s)).toBeCloseTo(0.6)
+    const target = s.companies.filter((c) => !c.isPlayer && c.alive).sort((a, b) => (a.value ?? 0) - (b.value ?? 0))[0]
+    expect(target.value).toBeGreaterThan(0)
+    expect(buyRivalStake(s, target.id, 0.1)).toBeNull()
+    expect(s.stock.holdings[target.id].stake).toBeCloseTo(0.1)
+    s.cash = 50e9
+    expect(acquire(s, target.id)).toBeNull()
+    expect(target.alive).toBe(false)
+    expect(s.products.some((p) => p.companyId === target.id && p.status === 'sale')).toBe(false)
+    tick(s, 60)
+    expect(Number.isFinite(s.stock.price)).toBe(true)
+    expect(s.stock.price).toBeGreaterThan(0)
+  })
+
+  it('charges for a longer warranty and handles a recall', () => {
+    const s = rich()
+    expect(setCare(s, { warrantyYears: 3, updateYears: 5, plan: true, tradeIn: true })).toBeNull()
+    expect(setCare(s, { refurb: true })).toMatch(/factory or a store/)
+    startProduct(s, order(s, { quantity: 500000 }))
+    tick(s, 200)
+    const p = mine(s)[0]
+    expect(s.care.last.repairCost + s.care.month.repairCost).toBeGreaterThan(0)
+    expect(s.care.subscribers).toBeGreaterThan(0)
+    p.defectRate = 0.08
+    p.unitsSold = Math.max(p.unitsSold, 20000)
+    tick(s, 30)
+    expect(p.recall?.state).toBe('open')
+    expect(recallProduct(s, p.id)).toBeNull()
+    expect(p.recall?.state).toBe('done')
+    expect(p.defectRate).toBeLessThanOrEqual(0.01)
+  })
+
+  it('organises staff into teams that get more done', () => {
+    const s = rich()
+    upgradeOffice(s)
+    expect(zoneRoom(s, 'office', 'work', 1, 1, 20, 2)).toBeNull()
+    for (let x = 1; x <= 12; x++) expect(placeItem(s, 'office', 'desk', x, 1, 0)).toBeNull()
+    for (let i = 0; i < 12; i++) {
+      hire(s, s.candidates[0].id)
+      if (!s.candidates.length) tick(s, 30)
+    }
+    for (const e of s.staff) {
+      e.role = 'researcher'
+      e.skill = 50
+      e.traits = []
+      e.morale = 70
+    }
+    expect(unmanaged(s)).toBe(s.staff.length)
+    const loose = staffEffects(s).research
+    autoTeams(s)
+    expect(s.teams.length).toBe(2)
+    expect(unmanaged(s)).toBe(0)
+    expect(staffEffects(s).research).toBeGreaterThan(loose)
+  })
+
+  it('reaches goals and pays their rewards', () => {
+    const s = fresh()
+    expect(Object.keys(s.goals)).toEqual([])
+    startProduct(s, order(s))
+    tick(s, 120)
+    expect(s.goals.launch).toBeGreaterThan(0)
+    expect(s.news.some((n) => n.kind === 'goal')).toBe(true)
+    expect(new Set(GOALS.map((g) => g.id)).size).toBe(GOALS.length)
+    for (const g of GOALS) expect(g.progress(s), g.id).toBeGreaterThanOrEqual(0)
+  })
+
+  it('builds a venue and holds a keynote there', () => {
+    const s = rich()
+    expect(buildVenue(s)).toBeNull()
+    expect(venueStats(s.venue!).ready).toBe(false)
+    expect(autoVenue(s)).toBeNull()
+    const st = venueStats(s.venue!)
+    expect(st.ready).toBe(true)
+    expect(st.seats).toBe(144)
+    expect(startProduct(s, order(s, { keynote: 3 }))).toBeNull()
+    tick(s, 120)
+    const e = s.events.find((x) => x.type === 'keynote')!
+    expect(e.done).toBe(true)
+    expect(e.beats?.seats).toBe(144)
+    for (const kind of [0, 1, 2]) {
+      const hired = hiredVenue(kind)
+      // nothing overlaps and everything stands somewhere it is allowed
+      for (const it of hired.items) expect(canPlace({ ...hired, items: hired.items.filter((x) => x !== it) }, it.kind, it.x, it.y, it.rot), `${kind} ${it.kind}`).toBeNull()
+      expect(venueStats(hired).ready).toBe(kind > 0)
+    }
+  })
+})
+
 describe('old saves', () => {
   it('upgrades a version 2 save', () => {
     const s = tick(fresh(), 40) as unknown as Record<string, unknown> & GameState
     s.version = 2
-    for (const k of ['factory', 'orders', 'supply', 'stores', 'campaigns', 'events', 'chips', 'os', 'owners', 'fans']) delete s[k]
+    for (const k of ['factory', 'orders', 'supply', 'stores', 'campaigns', 'events', 'chips', 'os', 'owners', 'fans', 'venue', 'teams', 'policy', 'stock', 'regions', 'care', 'goals']) delete s[k]
     ;(s as unknown as { office: unknown }).office = { tier: 1, w: 12, h: 8, items: [{ id: 'o1', kind: 'desk', x: 2, y: 2, rot: 0 }, { id: 'o9', kind: 'wall', x: 3, y: 3, rot: 0 }] }
     s.companies = s.companies.filter((c) => !['Lenova', 'Dull', 'HB', 'Fitbyte', 'Garmon'].includes(c.name))
     s.products = s.products.filter((p) => p.type === 'phone')
     for (const p of s.products) for (const k of ['type', 'family', 'variant', 'tiers', 'costParts', 'hype', 'buzz', 'defectRate', 'satisfaction', 'feedback']) delete (p as unknown as Record<string, unknown>)[k]
     const m = migrate(JSON.parse(JSON.stringify(s)) as GameState)
-    expect(m.version).toBe(3)
+    expect(m.version).toBe(SAVE_VERSION)
     expect(m.office.kind).toBe('office')
     expect(m.office.items).toHaveLength(1)
+    expect(m.office.rooms).toHaveLength(1)
+    expect(sealedRooms(m.office)).toEqual([])
+    expect(staffEffects(m).seats).toBe(1)
+    // an established company keeps selling everywhere it already did
+    expect(REGIONS.every((r) => m.regions[r.id].open)).toBe(true)
+    expect(m.stock.founder).toBe(m.stock.shares)
     expect(m.companies.some((c) => c.name === 'Lenova')).toBe(true)
     expect(m.candidates).toHaveLength(9)
     tick(m, 400)

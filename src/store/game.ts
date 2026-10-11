@@ -4,12 +4,21 @@ import { create } from 'zustand'
 import { sfx } from '../audio/sfx'
 import { DAYS_PER_MONTH } from '../data/catalog'
 import { clampPart, newPart, nextPartId } from '../sim/geometry'
-import { newGame, player, starterDesign, tick } from '../sim/game'
+import { migrate, newGame, player, starterDesign, tick } from '../sim/game'
+import { monthCosts } from '../sim/types'
 import { type FingerprintStyle, type FrontStyle, type VariantId, deriveVariant, layoutParts } from '../sim/rivals'
 import type { Body, DeviceDesign, DeviceType, GameConfig, GameState, PartKind, PlacedPart, Product, Specs } from '../sim/types'
-import { AUTOSAVE, saveGame } from './saves'
+import { AUTOSAVE, BEFORE_DEBT, saveGame, saveSnapshot } from './saves'
 
-export type Tab = 'dashboard' | 'products' | 'research' | 'labs' | 'factory' | 'stores' | 'marketing' | 'staff' | 'office' | 'market' | 'rivals' | 'finance' | 'system'
+export type Tab = 'dashboard' | 'products' | 'research' | 'labs' | 'factory' | 'stores' | 'venue' | 'marketing' | 'care' | 'staff' | 'office' | 'market' | 'world' | 'rivals' | 'finance' | 'shares' | 'goals' | 'system'
+
+/** A copy of the game from a little earlier, kept so a doomed company can be rewound. */
+export interface Checkpoint {
+  day: number
+  json: string
+}
+/** The most recent copy taken while the company still had money in the bank. */
+let rolling: Checkpoint | null = null
 export type Speed = 0 | 1 | 2 | 4
 /** Simulated days per real second at each speed. */
 export const DAYS_PER_SECOND: Record<Speed, number> = { 0: 0, 1: 1, 2: 3, 4: 10 }
@@ -79,6 +88,10 @@ interface Store {
   railOpen: boolean
   feedOpen: boolean
   toast: { text: string; tone: 'ok' | 'bad' } | null
+  /** The game as it stood just before cash last went negative. */
+  checkpoint: Checkpoint | null
+  /** Id of the keynote being replayed, if any. */
+  showing: string | null
 
   designing: boolean
   editorMode: EditorMode
@@ -99,6 +112,9 @@ interface Store {
   act<T>(fn: (g: GameState) => T): T
   say(text: string, tone?: 'ok' | 'bad'): void
   focus(productId: string | null): void
+  /** Go back to the save taken before the company went into debt. */
+  rewind(): void
+  watch(eventId: string | null): void
   toggleRail(): void
   toggleFeed(): void
 
@@ -144,6 +160,8 @@ export const useStore = create<Store>((set, get) => {
     railOpen: saved('sb-rail', '1') === '1',
     feedOpen: saved('sb-feed', '1') === '1',
     toast: null,
+    checkpoint: null,
+    showing: null,
 
     designing: false,
     editorMode: saved('sb-editor', 'simple') === 'advanced' ? 'advanced' : 'simple',
@@ -157,22 +175,59 @@ export const useStore = create<Store>((set, get) => {
     setScreen: (screen) => set({ screen }),
     setTab: (tab) => set({ tab, designing: false, selectedPart: null }),
     setSpeed: (speed) => set({ speed }),
-    begin: (cfg) => set({ game: newGame(cfg), screen: 'game', tab: 'dashboard', speed: 0, rev: 0, ...reset }),
-    resume: (state) => set({ game: state, screen: 'game', tab: 'dashboard', speed: 0, rev: 0, ...reset }),
-    quit: () => set({ game: null, screen: 'menu', speed: 0, ...reset }),
+    begin(cfg) {
+      rolling = null
+      set({ game: newGame(cfg), screen: 'game', tab: 'dashboard', speed: 0, rev: 0, checkpoint: null, showing: null, ...reset })
+    },
+    resume(state) {
+      rolling = null
+      set({ game: state, screen: 'game', tab: 'dashboard', speed: 0, rev: 0, checkpoint: null, showing: null, ...reset })
+    },
+    quit() {
+      rolling = null
+      set({ game: null, screen: 'menu', speed: 0, checkpoint: null, showing: null, ...reset })
+    },
+    rewind() {
+      const cp = get().checkpoint
+      if (!cp) return
+      rolling = null
+      set({ game: migrate(JSON.parse(cp.json)), speed: 0, rev: get().rev + 1, showing: null, ...reset })
+    },
+    watch: (showing) => set({ showing, speed: showing ? 0 : get().speed }),
 
     advance(days) {
       const g = get().game
       if (!g || g.gameOver || days <= 0) return
       const lastNews = g.news[0]?.id ?? 0
       const month = Math.floor(g.day / DAYS_PER_MONTH)
+      // while there is money in the bank, keep a recent copy of the game: every
+      // couple of days when cash is running low, less often when it is not
+      const solvent = g.cash >= 0
+      if (solvent && !g.config.unlimitedMoney) {
+        const burn = Math.max(1, monthCosts(g.reports[g.reports.length - 1] ?? g.cur))
+        const every = g.cash < burn * 3 ? 2 : 12
+        if (!rolling || g.day - rolling.day >= every || g.day < rolling.day) rolling = { day: g.day, json: JSON.stringify(g) }
+      }
+      const shown = new Set(g.events.filter((e) => e.done).map((e) => e.id))
       tick(g, days)
+      let checkpoint = get().checkpoint
+      if (solvent && g.cash < 0 && rolling) {
+        // the company just went into debt: this is the copy to come back to
+        checkpoint = rolling
+        void saveSnapshot(BEFORE_DEBT, JSON.parse(rolling.json)).catch(() => {})
+      }
       const fresh = g.news.filter((n) => n.id > lastNews && n.kind !== 'rival')
-      if (fresh.some((n) => n.kind === 'alert')) sfx.error()
-      else if (fresh.some((n) => n.kind === 'review' || n.kind === 'research' || n.kind === 'event')) sfx.confirm()
+      if (fresh.some((n) => n.kind === 'goal')) sfx.goal()
+      else if (fresh.some((n) => n.kind === 'alert')) sfx.alert()
+      else if (fresh.some((n) => n.kind === 'review')) sfx.launch()
+      else if (fresh.some((n) => n.kind === 'research')) sfx.research()
+      else if (fresh.some((n) => n.kind === 'event')) sfx.confirm()
+      else if (fresh.some((n) => n.kind === 'staff')) sfx.hire()
       else if (fresh.length) sfx.notify()
       if (Math.floor(g.day / DAYS_PER_MONTH) !== month) void saveGame(AUTOSAVE, g).catch(() => {})
-      set({ rev: get().rev + 1, speed: g.gameOver ? 0 : get().speed })
+      // a keynote that just happened plays out on screen
+      const keynote = g.events.find((e) => e.done && e.type === 'keynote' && !shown.has(e.id) && e.beats)
+      set({ rev: get().rev + 1, speed: g.gameOver || keynote ? 0 : get().speed, checkpoint, showing: keynote ? keynote.id : get().showing })
     },
 
     act(fn) {

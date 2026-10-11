@@ -58,11 +58,15 @@ export function launchHype(p: Product, day: number): number {
   return (0.25 * (1 - Math.exp(-p.marketing / 3e6)) + 0.35 * p.hype) * Math.exp(-(day - p.launchDay) / 90)
 }
 
+/** How strongly a product pulls a segment's buyers, before counting how many have heard of it. */
+export function pull(p: Product, c: Maker, seg: SegmentInfo, day: number): number {
+  const u = utility(p, c, seg, day)
+  return Math.pow(u, 3.5) * lifecycle(day - p.launchDay) * (0.6 + 0.08 * p.reviewAvg) * (1 + 0.8 * (p.buzz[seg.id] ?? 0)) * (0.8 + 0.4 * p.satisfaction)
+}
+
 /** Weight of a product in a segment's purchase decision. */
 export function attraction(p: Product, c: Company, seg: SegmentInfo, day: number): number {
-  const u = utility(p, c, seg, day)
-  const aw = Math.min(1, c.awareness + launchHype(p, day))
-  return Math.pow(u, 3.5) * aw * lifecycle(day - p.launchDay) * (0.6 + 0.08 * p.reviewAvg) * (1 + 0.8 * (p.buzz[seg.id] ?? 0)) * (0.8 + 0.4 * p.satisfaction)
+  return pull(p, c, seg, day) * Math.min(1, c.awareness + launchHype(p, day))
 }
 
 export const OUTSIDE_OPTION = 1.5

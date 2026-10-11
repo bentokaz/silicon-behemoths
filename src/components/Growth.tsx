@@ -2,9 +2,10 @@
 import { useState } from 'react'
 import { sfx } from '../audio/sfx'
 import { TYPES, segmentsOf } from '../data/devices'
-import { closeStore, fmtDate, openStore, player, scheduleEvent, setCampaignBudget, startCampaign, stopCampaign } from '../sim/game'
-import { CHANNELS, EVENTS, EVENT_LEAD, channelFit, dailyTickets, eventBlocked, hasStage, nextFair } from '../sim/growth'
-import { SITE_TIERS, storeStats, tierOf } from '../sim/sites'
+import { autoVenue, buildVenue, closeStore, fmtDate, openStore, player, scheduleEvent, setCampaignBudget, startCampaign, stopCampaign } from '../sim/game'
+import { CHANNELS, EVENTS, EVENT_LEAD, OWN_VENUE, channelFit, dailyTickets, eventBlocked, hasStage, keynoteReach, nextFair } from '../sim/growth'
+import { homeRegion, openRegions, regionInfo } from '../sim/regions'
+import { SITE_TIERS, sitePrestige, storeStats, tierOf, upkeep, venueStats } from '../sim/sites'
 import { staffEffects } from '../sim/staff'
 import type { ChannelId, EventType, GameState } from '../sim/types'
 import { useGame, useStore } from '../store/game'
@@ -21,6 +22,8 @@ function Campaigns() {
   const [channel, setChannel] = useState<ChannelId>('online')
   const [target, setTarget] = useState('brand')
   const [monthly, setMonthly] = useState(100e3)
+  const [region, setRegion] = useState('all')
+  const regions = openRegions(g)
   const def = CHANNELS[channel]
   const products = own(g)
   const product = products.find((p) => p.id === target)
@@ -39,6 +42,7 @@ function Campaigns() {
         <div className="mt-2 text-[11px] leading-snug text-dim">{def.note}</div>
         <div className="mt-2">
           <Choice label="Advertise" value={target} options={[{ value: 'brand', label: 'The company (awareness)' }, ...products.map((p) => ({ value: p.id, label: p.name }))]} onChange={setTarget} />
+          {regions.length > 1 && <Choice label="Where" value={region} options={[{ value: 'all', label: 'Everywhere you sell' }, ...regions.map((r) => ({ value: r.id, label: `${r.name} only` }))]} onChange={setRegion} />}
           <Slider label="Monthly budget" value={budget} min={def.min} max={Math.max(5e6, def.min * 10)} step={10e3} format={(v) => money(v)} onChange={setMonthly} />
         </div>
         {product && (
@@ -59,7 +63,7 @@ function Campaigns() {
           tone="primary"
           className="mt-3 h-9 w-full"
           onClick={() => {
-            const err = act((s) => startCampaign(s, channel, target, budget))
+            const err = act((s) => startCampaign(s, channel, target, budget, region === 'all' ? undefined : region))
             if (err) say(err, 'bad')
             else (sfx.confirm(), say('Campaign started. It is billed daily until you stop it.'))
           }}
@@ -88,7 +92,10 @@ function Campaigns() {
                 const buzz = p ? Math.max(0, ...Object.values(p.buzz)) : 0
                 return (
                   <tr key={c.id} className="row">
-                    <td className="text-fg">{CHANNELS[c.channel].name}</td>
+                    <td className="text-fg">
+                      {CHANNELS[c.channel].name}
+                      {c.region && <span className="ml-2 text-[10px] text-faint">{regionInfo(c.region).name}</span>}
+                    </td>
                     <td className={p ? 'cursor-pointer text-accent' : 'text-dim'} onClick={() => p && focus(p.id)}>
                       {p ? p.name : 'Company'}
                     </td>
@@ -208,6 +215,7 @@ function EventCard({ type }: { type: EventType }) {
   const pid = productId || inDev[0]?.id
   const blocked = eventBlocked(g, type, venue, pid)
   const fair = nextFair(g.day)
+  const reach = type === 'keynote' ? keynoteReach(g, venue) : def.venues[venue].reach
   const product = g.products.find((p) => p.id === pid)
   const when = type === 'keynote' ? (product ? `on release day, ${fmtDate(g.day + product.devDaysLeft)}` : '') : type === 'expo' ? `${fair.name}, ${fmtDate(fair.day)}` : `${fmtDate(g.day + days)}`
   return (
@@ -218,6 +226,11 @@ function EventCard({ type }: { type: EventType }) {
         <Choice label="Venue" value={venue} options={def.venues.map((v, i) => ({ value: i, label: `${v.name} (${money(v.cost, 1)})`, locked: type === 'keynote' && i === 3 && !hasStage(g) }))} onChange={setVenue} />
         {type === 'keynote' && inDev.length > 0 && <Choice label="Device" value={pid ?? ''} options={inDev.map((p) => ({ value: p.id, label: p.name }))} onChange={setProductId} />}
         {(type === 'fanfest' || type === 'devcon') && <Slider label="Hold it in" value={days} min={EVENT_LEAD} max={180} format={(v) => `${v} days`} onChange={setDays} />}
+        <div className="flex items-center gap-2 py-1">
+          <span className="w-12 text-[10px] uppercase tracking-wider text-faint">Reach</span>
+          <Meter value={reach} max={1.1} tone={reach >= 0.9 ? 'pos' : 'accent'} />
+        </div>
+        {type === 'keynote' && venue === OWN_VENUE && g.venue && <div className="text-[10px] leading-snug text-faint">Your venue seats {venueStats(g.venue).seats}. More seats and better production carry a show further.</div>}
         {when && !blocked && <div className="num py-1 text-[10px] text-faint">{when}</div>}
       </div>
       {blocked ? (
@@ -241,6 +254,7 @@ function EventCard({ type }: { type: EventType }) {
 
 function Events() {
   const g = useGame()
+  const { watch } = useStore.getState()
   const upcoming = g.events.filter((e) => !e.done).sort((a, b) => a.day - b.day)
   const past = g.events.filter((e) => e.done).sort((a, b) => b.day - a.day)
   return (
@@ -274,6 +288,11 @@ function Events() {
                 </div>
                 <div className="text-[11px] text-dim">{e.summary}</div>
               </div>
+              {e.type === 'keynote' && e.beats && (
+                <Btn small onClick={() => watch(e.id)}>
+                  Watch
+                </Btn>
+              )}
             </div>
           ))}
         </Panel>
@@ -311,10 +330,12 @@ export function StoresScreen() {
   const g = useGame()
   const { act, say } = useStore.getState()
   const [openId, setOpenId] = useState<string>('list')
+  const [region, setRegion] = useState(homeRegion(g))
+  const regions = openRegions(g)
   const store = g.stores.find((s) => s.id === openId)
   const onSale = g.products.filter((p) => p.companyId === 'player' && p.status === 'sale')
   const open = (tier: number) => {
-    const err = act((s) => openStore(s, tier))
+    const err = act((s) => openStore(s, tier, region))
     if (err) return say(err, 'bad')
     sfx.confirm()
     setOpenId(useStore.getState().game!.stores.at(-1)!.id)
@@ -325,13 +346,23 @@ export function StoresScreen() {
       <div className="min-h-0 flex-1">
         {!store ? (
           <div className="h-full overflow-y-auto p-2">
+            {regions.length > 1 && (
+              <div className="mb-2 flex items-center gap-2 border border-line bg-panel px-2 py-[6px]">
+                <span className="text-[10px] uppercase tracking-wider text-dim">Open the next store in</span>
+                {regions.map((r) => (
+                  <Btn key={r.id} small active={region === r.id} onClick={() => setRegion(r.id)}>
+                    {r.name}
+                  </Btn>
+                ))}
+              </div>
+            )}
             <div className="grid grid-cols-3 gap-2">
               {SITE_TIERS.store.map((t, i) => (
                 <div key={t.name} className="border border-line bg-panel p-3">
                   <div className="text-[12px] font-semibold uppercase tracking-[0.14em] text-fg">{t.name}</div>
                   <div className="mt-1 min-h-8 text-[11px] leading-snug text-dim">{t.blurb}</div>
                   <div className="mt-2 grid grid-cols-3 gap-1">
-                    <Mini label="Floor" value={`${t.w} x ${t.h} m`} />
+                    <Mini label="Plot" value={`${t.w} x ${t.h} m`} />
                     <Mini label="Passers-by" value={`${num(t.traffic ?? 0)} / day`} />
                     <Mini label="Rent / mo" value={money(t.rent, 0)} />
                   </div>
@@ -343,7 +374,7 @@ export function StoresScreen() {
             </div>
             <Panel title="Your stores" className="mt-2" bodyClass="overflow-auto">
               {g.stores.length === 0 ? (
-                <Empty text="Your own stores sell at full price, with no retailer taking 15%, and every visitor learns your name. You fit each one out yourself: tables, checkouts, a support bar." />
+                <Empty text="Your own stores sell at full price, with no retailer taking 15%, and every visitor learns your name. Each one is yours to design: mark out the rooms, choose the cladding, lay out the tables." />
               ) : (
                 <table className="grid-table">
                   <thead>
@@ -363,12 +394,14 @@ export function StoresScreen() {
                       return (
                         <tr key={s.id} className="row cursor-pointer" onClick={() => setOpenId(s.id)}>
                           <td className="text-fg">{s.name}</td>
-                          <td className="text-dim">{s.location}</td>
+                          <td className="text-dim">
+                            {s.location} <span className="text-faint">/ {regionInfo(s.region).name}</span>
+                          </td>
                           <td>{st.open ? <Tag tone="pos">trading</Tag> : <Tag tone="neg">closed</Tag>}</td>
                           <td className="num r text-dim">{num(s.lastVisitors)}</td>
                           <td className="num r text-fg">{num(s.monthUnits)}</td>
                           <td className="num r text-dim">{num(s.unitsTotal)}</td>
-                          <td className="num r text-dim">{money(tierOf(s.site).rent + st.wages, 1)}</td>
+                          <td className="num r text-dim">{money(upkeep(s.site) + st.wages, 1)}</td>
                         </tr>
                       )
                     })}
@@ -389,7 +422,7 @@ export function StoresScreen() {
                     <Mini label="Visitors / day" value={num(store.lastVisitors)} tone="text-fg" />
                     <Mini label="Can serve" value={num(st.capacity)} />
                     <Mini label="Sold this month" value={num(store.monthUnits)} tone="text-fg" />
-                    <Mini label="Cost / month" value={money(tierOf(store.site).rent + st.wages, 1)} />
+                    <Mini label="Cost / month" value={money(upkeep(store.site) + st.wages, 1)} />
                   </div>
                   <div className="mt-2">
                     <div className="flex items-baseline justify-between">
@@ -397,11 +430,11 @@ export function StoresScreen() {
                       <span className="num text-[11px] text-fg">{pct(st.appeal, 0)}</span>
                     </div>
                     <Meter value={st.appeal} tone={st.appeal > 0.75 ? 'pos' : st.appeal > 0.5 ? 'accent' : 'warn'} />
-                    <div className="mt-1 text-[10px] leading-snug text-faint">Appeal turns more visitors into buyers. Add plants, a logo wall and benches, and leave the floor uncrowded.</div>
+                    <div className="mt-1 text-[10px] leading-snug text-faint">Appeal turns more visitors into buyers. Add plants, a logo wall and benches, give the building its own cladding, and leave the floor uncrowded.</div>
                   </div>
                 </Fold>
                 <Fold title="Manage" open={false} bodyClass="p-2">
-                  <div className="text-[10px] leading-snug text-faint">Each checkout and support bar needs one member of staff. A support bar also makes every owner a little happier.</div>
+                  <div className="text-[10px] leading-snug text-faint">Each checkout, support bar and repair bench needs one member of staff. A support bar makes every owner a little happier; repair benches cut the cost of warranty work.</div>
                   <Btn small tone="danger" className="mt-2 w-full" onClick={() => (act((s) => closeStore(s, store.id)), setOpenId('list'))}>
                     Close this store
                   </Btn>
@@ -412,5 +445,103 @@ export function StoresScreen() {
         )}
       </div>
     </div>
+  )
+}
+
+// ------------------------------------------------------------------ venue
+
+export function VenueScreen() {
+  const g = useGame()
+  const { act, say } = useStore.getState()
+  const [rehearse, setRehearse] = useState(false)
+  const next = SITE_TIERS.venue[g.venue ? g.venue.tier + 1 : 0]
+  const buy = () => {
+    const err = act((s) => buildVenue(s))
+    if (err) say(err, 'bad')
+    else sfx.confirm()
+  }
+  if (!g.venue) {
+    return (
+      <div className="flex h-full items-center justify-center p-4">
+        <div className="w-[520px] border border-line bg-panel p-4">
+          <div className="text-[12px] font-semibold uppercase tracking-[0.14em] text-fg">A venue of your own</div>
+          <div className="mt-2 text-[12px] leading-relaxed text-dim">
+            Hired theatres do the job, but the companies people remember launch on their own stage. Buy a plot and build it your way: an open-air amphitheatre or a hall with a foyer, the stage, the screen, the rigging and every block of seats. Keynotes held there cost a fraction of an arena, and the bigger and better equipped it is, the further each show carries.
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-1">
+            <Mini label="First plot" value={next.name} tone="text-fg" />
+            <Mini label="Size" value={`${next.w} x ${next.h} m`} />
+            <Mini label="Upkeep / month" value={money(next.rent, 1)} />
+          </div>
+          <Btn tone="primary" className="mt-3 h-9 w-full" onClick={buy}>
+            Buy the plot for {money(next.cost, 1)}
+          </Btn>
+        </div>
+      </div>
+    )
+  }
+  const st = venueStats(g.venue)
+  const shows = g.events.filter((e) => e.done && e.type === 'keynote' && e.venue === OWN_VENUE)
+  return (
+    <SiteBuilder siteRef="venue" site={g.venue} products={g.products.filter((p) => p.companyId === 'player' && p.status === 'sale')} show={rehearse ? { crowd: 0.92, cheer: false, presenter: true } : undefined}>
+      <Fold title="Venue" right={st.ready ? <Tag tone="pos">ready</Tag> : <Tag tone="warn">not ready</Tag>} bodyClass="p-2">
+        {st.problem && <div className="mb-2 text-[11px] text-warn">{st.problem}</div>}
+        <div className="grid grid-cols-2 gap-1">
+          <Mini label="Seats" value={num(st.seats)} tone="text-fg" />
+          <Mini label="Shows held" value={shows.length} />
+          <Mini label="Prestige" value={sitePrestige(g.venue).toFixed(0)} />
+          <Mini label="Upkeep / month" value={money(upkeep(g.venue), 1)} />
+        </div>
+        {(
+          [
+            ['Production', st.production, 'Screens, lights, sound and cameras for the size of the crowd.'],
+            ['Reach', st.reach / 1.1, 'How far a keynote here carries. A hired arena is the full bar.'],
+          ] as const
+        ).map(([label, v, note]) => (
+          <div key={label} className="mt-2">
+            <div className="flex items-baseline justify-between">
+              <span className="text-[11px] text-dim">{label}</span>
+              <span className="num text-[11px] text-fg">{pct(v, 0)}</span>
+            </div>
+            <Meter value={v} tone={v > 0.75 ? 'pos' : v > 0.4 ? 'accent' : 'warn'} />
+            <div className="mt-1 text-[10px] leading-snug text-faint">{note}</div>
+          </div>
+        ))}
+        <Btn small className="mt-2 w-full" active={rehearse} onClick={() => setRehearse(!rehearse)}>
+          {rehearse ? 'End the rehearsal' : 'Rehearse with a full house'}
+        </Btn>
+        {!g.venue.items.length && (
+          <Btn
+            small
+            tone="primary"
+            className="mt-2 w-full"
+            onClick={() => {
+              const err = act((s) => autoVenue(s))
+              if (err) say(err, 'bad')
+              else sfx.zone()
+            }}
+          >
+            Lay out a starter stage
+          </Btn>
+        )}
+      </Fold>
+      <Fold title="More land" open={false} bodyClass="p-2">
+        {next ? (
+          <>
+            <div className="text-sm text-fg">{next.name}</div>
+            <div className="text-[11px] leading-snug text-dim">{next.blurb}</div>
+            <div className="num mt-1 text-[10px] text-faint">
+              {next.w} x {next.h} m, upkeep {money(next.rent, 1)} / mo
+            </div>
+            <Btn tone="primary" className="mt-2 w-full" onClick={buy}>
+              Move for {money(next.cost, 1)}
+            </Btn>
+            <div className="mt-1 text-[10px] text-faint">Everything you have built is moved across as it stands.</div>
+          </>
+        ) : (
+          <div className="text-[11px] text-dim">This is the largest venue site there is.</div>
+        )}
+      </Fold>
+    </SiteBuilder>
   )
 }

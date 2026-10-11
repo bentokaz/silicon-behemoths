@@ -1,246 +1,391 @@
-// Factory machinery, with moving parts while the line is running.
+// Factory machinery and yard. One unit is one metre and one floor tile; each
+// model is centred on its footprint with its front toward +Z. Belts run at
+// 0.8 m so everything on the line meets at the same height.
 import { useFrame } from '@react-three/fiber'
 import { useRef } from 'react'
 import type * as THREE from 'three'
-import { B, C, CHARCOAL, DARK, Person, S, STEEL, WHITE, hash } from './kit'
+import { B, C, CHARCOAL, DARK, type PersonLook, Person, S, STEEL, Tree, WHITE, hash } from './kit'
 
 export interface FactoryCtx {
-  /** True if this item is on a working line that has orders to build. */
+  /** True when this item is on a working line that has orders. */
   running: boolean
-  /** For conveyors: direction of travel in the item's own (already rotated) frame. */
+  /** Conveyors: direction of travel in the item's own frame. */
   flow?: [number, number]
   glow: number
   seed: number
 }
 
-const YELLOW = '#e2b93b'
-const CARTON = '#b98d5a'
+const BELT = 0.8
+const YELLOW = '#e0b23a'
+const BOX = '#b98b56'
+const CREW: PersonLook[] = [
+  { look: 211, color: '#e0812a' },
+  { look: 1730, color: '#3a6ea8' },
+  { look: 4099, color: '#e0812a' },
+]
 
-/** Red/amber/green signal tower on top of a machine. */
-function StackLight({ p, state, glow }: { p: [number, number, number]; state: 'run' | 'idle'; glow: number }) {
-  return (
-    <group position={p}>
-      <C p={[0, 0.1, 0]} r={[0.015, 0.015]} h={0.2} c={STEEL} seg={8} cast={false} />
-      {['#3fe08a', '#ffb347', '#ff4d4f'].map((col, i) => {
-        const lit = (state === 'run' && i === 0) || (state === 'idle' && i === 1)
-        return <C key={col} p={[0, 0.24 + i * 0.07, 0]} r={[0.035, 0.035]} h={0.06} c={lit ? col : '#30343a'} glow={lit ? col : undefined} glowPower={2 * glow} seg={12} cast={false} />
-      })}
-    </group>
-  )
-}
-
-function Carton({ p, s = 0.3 }: { p: [number, number, number]; s?: number }) {
+/** A length of belt on legs, running along X, centred on the origin. */
+function BeltRun({ len }: { len: number }) {
   return (
     <>
-      <B p={p} s={[s, s * 0.7, s * 0.8]} c={CARTON} r={0.008} rough={0.9} />
-      <B p={[p[0], p[1] + s * 0.352, p[2]]} s={[s * 0.16, 0.002, s * 0.8]} c="#d9c39a" r={0} cast={false} />
+      {[-len / 2 + 0.12, len / 2 - 0.12].map((x) =>
+        [-0.26, 0.26].map((z) => <B key={`${x}${z}`} p={[x, (BELT - 0.1) / 2, z]} s={[0.05, BELT - 0.1, 0.05]} c={STEEL} r={0.008} metal={0.7} rough={0.4} cast={false} />),
+      )}
+      <B p={[0, BELT - 0.07, 0]} s={[len, 0.1, 0.62]} c="#3a3d42" r={0.01} metal={0.5} rough={0.5} />
+      <B p={[0, BELT - 0.012, 0]} s={[len, 0.02, 0.5]} c="#15171a" r={0} rough={0.9} cast={false} />
+      {[-0.3, 0.3].map((z) => (
+        <B key={z} p={[0, BELT + 0.02, z]} s={[len, 0.06, 0.03]} c={YELLOW} r={0.006} rough={0.6} cast={false} />
+      ))}
     </>
   )
 }
 
-function Pallet({ p, boxes }: { p: [number, number, number]; boxes: number }) {
-  return (
-    <group position={p}>
-      <B p={[0, 0.06, 0]} s={[0.84, 0.03, 0.8]} c="#a07a4f" r={0} rough={0.95} />
-      {[-0.34, 0, 0.34].map((x) => (
-        <B key={x} p={[x, 0.025, 0]} s={[0.1, 0.05, 0.8]} c="#8a6843" r={0} rough={0.95} cast={false} />
-      ))}
-      {Array.from({ length: boxes }, (_, i) => (
-        <Carton key={i} p={[-0.21 + (i % 2) * 0.42, 0.21 + Math.floor(i / 4) * 0.27, -0.19 + (Math.floor(i / 2) % 2) * 0.38]} s={0.38} />
-      ))}
-    </group>
-  )
-}
-
-/** Boxes travelling along a one-tile belt. */
-function BeltBoxes({ dir, running }: { dir: [number, number]; running: boolean }) {
-  const ref = useRef<THREE.Group>(null)
+/** A carton riding a belt from one end of a tile to the other. Live, so never baked. */
+function Parcel({ dir, phase }: { dir: [number, number]; phase: number }) {
+  const ref = useRef<THREE.Mesh>(null)
   useFrame(({ clock }) => {
     if (!ref.current) return
-    ref.current.visible = running
-    if (!running) return
-    const t = (clock.elapsedTime * 0.5) % 1
-    ref.current.children.forEach((child, i) => {
-      const u = ((t + i * 0.5) % 1) - 0.5
-      child.position.set(dir[0] * u, 0.56, dir[1] * u)
-    })
+    const t = ((clock.elapsedTime * 0.6 + phase) % 1) - 0.5
+    ref.current.position.set(dir[0] * t, BELT + 0.1, dir[1] * t)
   })
   return (
-    <group ref={ref}>
-      {[0, 1].map((i) => (
-        <group key={i}>
-          <B p={[0, 0, 0]} s={[0.2, 0.05, 0.3]} c="#22262b" r={0.012} rough={0.4} cast={false} />
-          <B p={[0, 0.027, 0]} s={[0.17, 0.004, 0.26]} c="#16324a" r={0} rough={0.2} cast={false} />
-        </group>
-      ))}
+    <mesh ref={ref} castShadow userData={{ live: true }}>
+      <boxGeometry args={[0.26, 0.18, 0.26]} />
+      <meshStandardMaterial color={BOX} roughness={0.8} />
+    </mesh>
+  )
+}
+
+/** A status beacon on a short mast. */
+function Beacon({ p, on, glow }: { p: [number, number, number]; on: boolean; glow: number }) {
+  return (
+    <group position={p}>
+      <C p={[0, 0.12, 0]} r={[0.015, 0.015]} h={0.24} c={STEEL} seg={8} cast={false} />
+      <C p={[0, 0.29, 0]} r={[0.04, 0.04]} h={0.1} c={on ? '#103018' : '#301010'} glow={on ? '#3fe08a' : '#e5484d'} glowPower={(on ? 1.6 : 0.8) * glow} seg={10} cast={false} />
     </group>
   )
 }
 
-function RobotArm({ running, glow }: { running: boolean; glow: number }) {
-  const turn = useRef<THREE.Group>(null)
-  const elbow = useRef<THREE.Group>(null)
-  useFrame(({ clock }) => {
-    if (!turn.current || !elbow.current || !running) return
-    const t = clock.elapsedTime
-    turn.current.rotation.y = Math.sin(t * 0.9) * 1.1
-    elbow.current.rotation.z = -0.9 + Math.sin(t * 1.8) * 0.35
-  })
+function Dock({ c, out }: { c: FactoryCtx; out: boolean }) {
   return (
-    <group position={[-0.25, 0, -0.2]}>
-      <C p={[0, 0.2, 0]} r={[0.2, 0.26]} h={0.4} c={CHARCOAL} seg={20} />
-      <group ref={turn} position={[0, 0.4, 0]}>
-        <C p={[0, 0.1, 0]} r={[0.15, 0.17]} h={0.2} c={YELLOW} seg={20} rough={0.5} />
-        <group rotation={[0, 0, 0.5]} position={[0, 0.2, 0]}>
-          <B p={[0, 0.35, 0]} s={[0.13, 0.7, 0.14]} c={YELLOW} r={0.04} rough={0.5} />
-          <C p={[0, 0.7, 0]} r={[0.09, 0.09]} h={0.18} c={CHARCOAL} seg={16} rot={[Math.PI / 2, 0, 0]} />
-          <group ref={elbow} position={[0, 0.7, 0]} rotation={[0, 0, -0.9]}>
-            <B p={[0, 0.3, 0]} s={[0.1, 0.6, 0.11]} c={YELLOW} r={0.035} rough={0.5} />
-            <C p={[0, 0.62, 0]} r={[0.05, 0.06]} h={0.1} c={CHARCOAL} seg={12} />
-            <B p={[0, 0.7, 0]} s={[0.16, 0.03, 0.05]} c={STEEL} metal={0.9} rough={0.3} cast={false} />
-            <C p={[0, 0.73, 0]} r={[0.012, 0.012]} h={0.02} c="#fff" glow="#7fd1ff" glowPower={2 * glow} seg={8} cast={false} />
-          </group>
-        </group>
-      </group>
-    </group>
+    <>
+      {/* roller door in a frame at the back, platform and a short belt out front */}
+      <B p={[0, 1.4, -0.42]} s={[1.96, 2.8, 0.12]} c="#c9ccd0" r={0.01} rough={0.7} />
+      <B p={[0, 1.2, -0.355]} s={[1.5, 2.2, 0.012]} c={out ? '#3d6a8c' : '#8c5a3d'} r={0} rough={0.6} metal={0.3} cast={false} />
+      {Array.from({ length: 9 }, (_, i) => (
+        <B key={i} p={[0, 0.25 + i * 0.24, -0.347]} s={[1.5, 0.02, 0.008]} c="#1f2226" r={0} cast={false} />
+      ))}
+      <B p={[0, 2.5, -0.35]} s={[1.5, 0.3, 0.016]} c={YELLOW} r={0} rough={0.6} cast={false} />
+      <B p={[0, 0.3, 0.1]} s={[1.96, 0.6, 0.8]} c="#8c8e90" r={0.012} rough={0.9} />
+      <B p={[0, 0.604, 0.44]} s={[1.96, 0.012, 0.12]} c={YELLOW} r={0} rough={0.7} cast={false} />
+      <B p={[0, 0.7, 0.1]} s={[1.2, 0.2, 0.62]} c="#3a3d42" r={0.01} metal={0.5} rough={0.5} />
+      <B p={[0, BELT - 0.01, 0.1]} s={[1.2, 0.02, 0.5]} c="#15171a" r={0} rough={0.9} cast={false} />
+      {[-0.7, 0.72].map((x, i) => (
+        <B key={x} p={[x, 0.74 + i * 0.06, 0.14]} s={[0.3, 0.28 + i * 0.12, 0.34]} c={BOX} r={0.008} rough={0.85} cast={false} />
+      ))}
+      <Beacon p={[0.9, 2.8, -0.42]} on={c.running} glow={c.glow} />
+    </>
   )
 }
 
 /** The model for one factory item. */
 export function FactoryItem({ kind, c }: { kind: string; c: FactoryCtx }) {
-  const state = c.running ? 'run' : 'idle'
   switch (kind) {
     case 'dock_in':
-    case 'dock_out': {
-      const out = kind === 'dock_out'
+      return <Dock c={c} out={false} />
+    case 'dock_out':
+      return <Dock c={c} out />
+    case 'conveyor': {
+      const f = c.flow ?? [1, 0]
+      const alongZ = Math.abs(f[1]) > Math.abs(f[0])
       return (
         <>
-          <B p={[0, 0.02, 0]} s={[1.96, 0.04, 0.96]} c={out ? '#2f6b4c' : '#2f5a8f'} r={0} rough={0.6} cast={false} />
-          {[-0.96, 0.96].map((x) => (
-            <B key={x} p={[x, 1.3, -0.44]} s={[0.08, 2.6, 0.08]} c={YELLOW} rough={0.5} />
-          ))}
-          <B p={[0, 2.64, -0.44]} s={[2.0, 0.1, 0.1]} c={YELLOW} rough={0.5} />
-          {Array.from({ length: 9 }, (_, i) => (
-            <B key={i} p={[0, 0.2 + i * 0.27, -0.45]} s={[1.84, 0.25, 0.03]} c={i % 2 ? '#aeb4ba' : '#bcc2c8'} r={0} metal={0.6} rough={0.45} cast={false} />
-          ))}
-          <B p={[0, 2.82, -0.42]} s={[0.9, 0.2, 0.02]} c={out ? '#123322' : '#12233a'} r={0} glow={out ? '#3fe08a' : '#5aa9ff'} glowPower={0.9 * c.glow} cast={false} />
-          <Pallet p={[-0.5, 0.04, 0.05]} boxes={out ? 8 : 4} />
-          <Pallet p={[0.5, 0.04, 0.05]} boxes={out ? 6 : 8} />
+          <group rotation={[0, alongZ ? Math.PI / 2 : 0, 0]}>
+            <BeltRun len={1} />
+          </group>
+          {c.running && <Parcel dir={f} phase={hash(c.seed)} />}
         </>
-      )
-    }
-    case 'conveyor': {
-      const dir = c.flow ?? [1, 0]
-      const alongX = dir[0] !== 0
-      return (
-        <group rotation={[0, alongX ? 0 : Math.PI / 2, 0]}>
-          <B p={[0, 0.5, 0]} s={[1.0, 0.05, 0.46]} c="#23262b" r={0} rough={0.85} />
-          {[-0.25, 0.25].map((z) => (
-            <B key={z} p={[0, 0.52, z]} s={[1.0, 0.1, 0.04]} c={STEEL} r={0} metal={0.8} rough={0.4} cast={false} />
-          ))}
-          {[-0.4, 0.4].map((x) => [-0.2, 0.2].map((z) => <B key={`${x}${z}`} p={[x, 0.24, z]} s={[0.04, 0.48, 0.04]} c={STEEL} r={0} metal={0.8} rough={0.4} cast={false} />))}
-          {[-0.33, 0, 0.33].map((x) => (
-            <C key={x} p={[x, 0.47, 0]} r={[0.03, 0.03]} h={0.44} c="#3a3f46" seg={8} rot={[Math.PI / 2, 0, 0]} cast={false} />
-          ))}
-          <BeltBoxes dir={[alongX ? dir[0] : dir[1], 0]} running={c.running} />
-        </group>
       )
     }
     case 'smt':
       return (
         <>
-          <B p={[0, 0.5, 0]} s={[2.9, 1.0, 0.86]} c={WHITE} r={0.02} rough={0.45} metal={0.2} />
-          <B p={[0, 1.28, 0]} s={[2.9, 0.56, 0.86]} c="#dfe3e6" r={0.02} rough={0.45} metal={0.2} />
-          {[-0.95, 0, 0.95].map((x) => (
+          <B p={[0, 0.36, 0]} s={[2.9, 0.72, 0.9]} c="#d9dde1" r={0.015} rough={0.5} />
+          <B p={[0, 1.12, 0]} s={[2.9, 0.8, 0.9]} c="#eceff2" r={0.02} rough={0.4} />
+          {[-0.95, 0, 0.95].map((x, i) => (
             <group key={x}>
-              <B p={[x, 1.26, 0.435]} s={[0.78, 0.4, 0.01]} c="#12202e" r={0} glass={0.55} cast={false} />
-              <B p={[x, 1.1, 0.3]} s={[0.6, 0.02, 0.2]} c="#2f6b4c" r={0} glow={c.running ? '#3fe08a' : undefined} glowPower={0.4 * c.glow} cast={false} />
+              <B p={[x, 1.14, 0.452]} s={[0.8, 0.5, 0.012]} c="#0c1622" r={0} glow="#3aa0ff" glowPower={(c.running ? 0.9 : 0.25) * c.glow} rough={0.1} cast={false} />
+              <B p={[x, 0.5, 0.452]} s={[0.6, 0.3, 0.012]} c="#2b2d31" r={0} cast={false} />
+              <B p={[x + 0.28, 0.5, 0.46]} s={[0.04, 0.2, 0.01]} c={STEEL} r={0} metal={0.9} rough={0.3} cast={false} />
+              <B p={[x, 1.535, 0]} s={[0.5, 0.03, 0.5]} c="#3a3d42" r={0.006} cast={false} />
+              <C p={[x, 1.62, 0]} r={[0.12, 0.16]} h={0.14} c={STEEL} seg={12} metal={0.6} rough={0.4} cast={false} />
+              {i === 1 && <Beacon p={[x + 0.4, 1.52, -0.3]} on={c.running} glow={c.glow} />}
             </group>
           ))}
-          <B p={[1.2, 0.72, 0.445]} s={[0.3, 0.22, 0.02]} c="#0b1016" r={0} glow="#58b6ff" glowPower={0.8 * c.glow} cast={false} />
-          <B p={[0, 0.06, 0.44]} s={[2.9, 0.1, 0.02]} c={YELLOW} r={0} cast={false} />
-          <StackLight p={[1.3, 1.56, -0.3]} state={state} glow={c.glow} />
-          <B p={[-1.47, 0.78, 0]} s={[0.06, 0.12, 0.4]} c={DARK} r={0} cast={false} />
-          <B p={[1.47, 0.78, 0]} s={[0.06, 0.12, 0.4]} c={DARK} r={0} cast={false} />
+          <B p={[-1.455, 0.82, 0]} s={[0.012, 0.16, 0.56]} c="#0b0c0e" r={0} cast={false} />
+          <B p={[1.455, 0.82, 0]} s={[0.012, 0.16, 0.56]} c="#0b0c0e" r={0} cast={false} />
         </>
       )
     case 'robot':
       return (
         <>
-          <B p={[0, 0.02, 0]} s={[1.96, 0.04, 1.96]} c="#3a3f46" r={0} rough={0.7} cast={false} />
-          {[-0.94, 0.94].map((x) => [-0.94, 0.94].map((z) => <B key={`${x}${z}`} p={[x, 0.95, z]} s={[0.06, 1.9, 0.06]} c={YELLOW} r={0} />))}
-          {[-0.94, 0.94].map((x) => (
-            <B key={x} p={[x, 1.0, 0]} s={[0.02, 1.5, 1.82]} c="#cfe6f5" glass={0.14} r={0} cast={false} />
+          {/* fenced cell with two arms working over a belt */}
+          <B p={[0, 0.02, 0]} s={[1.96, 0.04, 1.96]} c="#2b2d31" r={0.006} rough={0.8} />
+          {[-0.95, 0.95].map((x) => [-0.95, 0.95].map((z) => <B key={`${x}${z}`} p={[x, 0.92, z]} s={[0.06, 1.76, 0.06]} c={YELLOW} r={0.008} rough={0.6} />))}
+          {[-0.95, 0.95].map((z) => (
+            <group key={z}>
+              <B p={[0, 1.77, z]} s={[1.84, 0.05, 0.05]} c={YELLOW} r={0.008} rough={0.6} cast={false} />
+              <B p={[0, 0.98, z]} s={[1.84, 1.5, 0.012]} c="#bfe0f2" glass={0.16} r={0} cast={false} />
+            </group>
           ))}
-          <B p={[0, 1.0, -0.94]} s={[1.82, 1.5, 0.02]} c="#cfe6f5" glass={0.14} r={0} cast={false} />
-          <B p={[0.45, 0.42, 0.3]} s={[0.8, 0.84, 0.7]} c={WHITE} r={0.015} rough={0.45} metal={0.2} />
-          <B p={[0.45, 0.86, 0.3]} s={[0.3, 0.03, 0.45]} c="#1b1e22" r={0.01} cast={false} />
-          <RobotArm running={c.running} glow={c.glow} />
-          <StackLight p={[0.88, 1.9, 0.88]} state={state} glow={c.glow} />
+          {[-0.95, 0.95].map((x) => (
+            <B key={x} p={[x, 1.77, 0]} s={[0.05, 0.05, 1.84]} c={YELLOW} r={0.008} rough={0.6} cast={false} />
+          ))}
+          <BeltRun len={1.84} />
+          {[-0.45, 0.45].map((x, i) => (
+            <group key={x} position={[x, 0.04, i ? 0.6 : -0.6]} rotation={[0, i ? Math.PI : 0, 0]}>
+              <C p={[0, 0.15, 0]} r={[0.16, 0.2]} h={0.3} c="#2b2d31" seg={14} />
+              <C p={[0, 0.4, 0]} r={[0.11, 0.11]} h={0.2} c="#e0812a" seg={12} rough={0.5} />
+              <group position={[0, 0.5, 0]} rotation={[0.55, 0, 0]}>
+                <B p={[0, 0.3, 0]} s={[0.13, 0.6, 0.13]} c="#e0812a" r={0.03} rough={0.5} />
+                <group position={[0, 0.6, 0]} rotation={[0.9, 0, 0]}>
+                  <S p={[0, 0, 0]} r={0.09} c="#2b2d31" detail={2} cast={false} />
+                  <B p={[0, 0.24, 0]} s={[0.1, 0.48, 0.1]} c="#e0812a" r={0.025} rough={0.5} />
+                  <B p={[0, 0.52, 0]} s={[0.14, 0.08, 0.06]} c={STEEL} r={0.01} metal={0.9} rough={0.3} cast={false} />
+                </group>
+              </group>
+            </group>
+          ))}
+          <Beacon p={[0.95, 1.8, 0.95]} on={c.running} glow={c.glow} />
         </>
       )
     case 'manual':
       return (
         <>
-          <B p={[0, 0.86, -0.12]} s={[0.94, 0.04, 0.56]} c="#c9b28a" r={0.01} rough={0.6} />
+          <B p={[0, 0.39, -0.16]} s={[0.05, 0.78, 0.5]} c={STEEL} r={0.008} metal={0.7} rough={0.4} cast={false} />
           {[-0.42, 0.42].map((x) => (
-            <B key={x} p={[x, 0.43, -0.12]} s={[0.05, 0.86, 0.5]} c={STEEL} r={0} metal={0.8} rough={0.4} />
+            <B key={x} p={[x, 0.39, -0.16]} s={[0.05, 0.78, 0.5]} c={STEEL} r={0.008} metal={0.7} rough={0.4} />
           ))}
-          <B p={[0, 1.5, -0.36]} s={[0.94, 0.04, 0.12]} c={STEEL} r={0} metal={0.8} rough={0.4} cast={false} />
-          <B p={[0, 1.47, -0.3]} s={[0.7, 0.015, 0.06]} c="#fff" r={0} glow="#fff4dc" glowPower={1.6 * c.glow} cast={false} />
-          {[-0.44, 0.44].map((x) => (
-            <B key={x} p={[x, 1.2, -0.38]} s={[0.03, 0.62, 0.03]} c={STEEL} r={0} metal={0.8} rough={0.4} cast={false} />
-          ))}
-          {['#c9553d', '#2f6f8f', '#e2b93b'].map((col, i) => (
-            <B key={col} p={[-0.28 + i * 0.28, 0.93, -0.3]} s={[0.2, 0.1, 0.14]} c={col} r={0.008} cast={false} />
-          ))}
-          <B p={[0, 0.89, 0]} s={[0.16, 0.02, 0.3]} c="#22262b" r={0.01} cast={false} />
-          <Person who={{ look: c.seed * 37 + 11, color: '#3b6ea5' }} pose="stand" busy={c.running} p={[0, 0, 0.3]} />
+          <B p={[0, BELT, -0.16]} s={[0.94, 0.04, 0.58]} c="#3d6a54" r={0.008} rough={0.6} />
+          <B p={[0, 1.25, -0.42]} s={[0.94, 0.86, 0.03]} c={CHARCOAL} r={0.006} />
+          <B p={[-0.2, 0.86, -0.12]} s={[0.2, 0.08, 0.14]} c="#101114" r={0.01} cast={false} />
+          <B p={[0.25, 0.85, -0.2]} s={[0.22, 0.06, 0.16]} c={BOX} r={0.008} cast={false} />
+          <C p={[0.3, 1.0, -0.38]} r={[0.012, 0.012]} h={0.36} c={STEEL} seg={8} cast={false} />
+          <C p={[0.3, 1.2, -0.3]} r={[0.05, 0.09]} h={0.1} c={DARK} glow="#fff1d6" glowPower={0.6 * c.glow} seg={12} rot={[0.6, 0, 0]} cast={false} />
+          <C p={[0, 0.015, 0.3]} r={[0.17, 0.19]} h={0.03} c={STEEL} seg={14} cast={false} />
+          <C p={[0, 0.26, 0.3]} r={[0.02, 0.02]} h={0.46} c={STEEL} seg={8} cast={false} />
+          <C p={[0, 0.5, 0.3]} r={[0.16, 0.16]} h={0.04} c={DARK} seg={14} />
+          {c.running && <Person who={CREW[c.seed % 3]} p={[0, 0.02, 0.3]} />}
         </>
       )
     case 'test':
       return (
         <>
-          <B p={[0, 0.9, -0.05]} s={[0.84, 1.8, 0.7]} c="#2b3038" r={0.02} rough={0.5} metal={0.3} />
-          <B p={[0, 1.36, 0.305]} s={[0.56, 0.36, 0.01]} c="#081018" r={0} glow={c.running ? '#3fe08a' : '#3a5a7a'} glowPower={0.9 * c.glow} cast={false} />
-          <B p={[0, 0.9, 0.3]} s={[0.6, 0.3, 0.02]} c="#12151a" r={0} glass={0.5} cast={false} />
-          <B p={[0, 0.82, 0.2]} s={[0.16, 0.02, 0.3]} c="#22262b" r={0.01} cast={false} />
-          {[-0.2, 0, 0.2].map((x) => (
-            <C key={x} p={[x, 0.56, 0.305]} r={[0.03, 0.03]} h={0.02} c={['#e5484d', '#f2b631', '#4cc38a'][Math.round(x * 5 + 1)]} seg={12} rot={[Math.PI / 2, 0, 0]} cast={false} />
+          <B p={[0, 0.36, 0]} s={[0.94, 0.72, 0.9]} c="#d9dde1" r={0.012} rough={0.5} />
+          <B p={[0, 1.3, -0.3]} s={[0.94, 1.16, 0.3]} c="#22262b" r={0.012} rough={0.5} />
+          <B p={[0, 1.35, -0.146]} s={[0.7, 0.5, 0.008]} c="#06140c" r={0} glow="#55e39f" glowPower={(c.running ? 1 : 0.3) * c.glow} cast={false} />
+          <B p={[0, 0.76, 0.1]} s={[0.94, 0.08, 0.6]} c="#3a3d42" r={0.008} metal={0.5} rough={0.5} />
+          <B p={[0, 0.83, 0.1]} s={[0.4, 0.06, 0.4]} c="#101114" r={0.01} cast={false} />
+          {[-0.3, 0.3].map((x) => (
+            <C key={x} p={[x, 0.96, 0.1]} r={[0.02, 0.02]} h={0.32} c={STEEL} seg={8} metal={0.9} rough={0.3} cast={false} />
           ))}
-          <StackLight p={[0.3, 1.8, -0.2]} state={state} glow={c.glow} />
+          <B p={[0, 1.13, 0.1]} s={[0.7, 0.04, 0.3]} c={YELLOW} r={0.008} cast={false} />
+          <Beacon p={[0.36, 1.88, -0.3]} on={c.running} glow={c.glow} />
         </>
       )
     case 'pack':
       return (
         <>
-          <B p={[-0.3, 0.6, 0]} s={[1.2, 1.2, 0.86]} c={WHITE} r={0.02} rough={0.45} metal={0.2} />
-          <B p={[-0.3, 1.0, 0.435]} s={[0.9, 0.3, 0.01]} c="#12202e" r={0} glass={0.5} cast={false} />
-          <B p={[-0.3, 1.5, 0]} s={[0.7, 0.6, 0.6]} c="#3d6ea8" r={0.03} rough={0.5} />
-          <B p={[0.62, 0.5, 0]} s={[0.66, 0.06, 0.6]} c="#23262b" r={0} rough={0.85} />
-          {[0.36, 0.88].map((x) => (
-            <B key={x} p={[x, 0.25, 0]} s={[0.05, 0.5, 0.5]} c={STEEL} r={0} metal={0.8} rough={0.4} cast={false} />
+          <B p={[0, 0.36, 0]} s={[1.92, 0.72, 0.9]} c="#d9dde1" r={0.012} rough={0.5} />
+          <B p={[0, 0.76, 0]} s={[1.92, 0.08, 0.64]} c="#3a3d42" r={0.008} metal={0.5} rough={0.5} />
+          <B p={[-0.4, 1.3, 0]} s={[0.9, 1.0, 0.86]} c="#2f5d8a" r={0.02} rough={0.5} />
+          <B p={[-0.4, 1.3, 0.432]} s={[0.6, 0.6, 0.01]} c="#bfe0f2" glass={0.3} r={0} cast={false} />
+          <B p={[-0.855, 0.95, 0]} s={[0.012, 0.28, 0.5]} c="#0b0c0e" r={0} cast={false} />
+          <B p={[0.055, 0.95, 0]} s={[0.012, 0.28, 0.5]} c="#0b0c0e" r={0} cast={false} />
+          {[0.35, 0.72].map((x, i) => (
+            <B key={x} p={[x, 0.9 + i * 0.02, 0]} s={[0.24, 0.2 + i * 0.04, 0.26]} c={BOX} r={0.008} rough={0.85} cast={false} />
           ))}
-          <Carton p={[0.5, 0.64, 0.02]} s={0.28} />
-          <Carton p={[0.8, 0.64, -0.05]} s={0.28} />
-          {c.seed % 2 === 0 && <Carton p={[0.66, 0.84, 0]} s={0.26} />}
-          <StackLight p={[-0.8, 1.2, -0.3]} state={state} glow={c.glow} />
+          <C p={[0.9, 1.25, -0.38]} r={[0.02, 0.02]} h={0.9} c={STEEL} seg={8} cast={false} />
+          <C p={[0.9, 1.6, -0.2]} r={[0.14, 0.14]} h={0.1} c="#c9b28a" seg={16} rot={[Math.PI / 2, 0, 0]} cast={false} />
+          <Beacon p={[-0.4, 1.8, -0.3]} on={c.running} glow={c.glow} />
         </>
       )
     case 'rack':
       return (
         <>
-          {[-0.94, 0, 0.94].map((x) => [-0.36, 0.36].map((z) => <B key={`${x}${z}`} p={[x, 1.3, z]} s={[0.06, 2.6, 0.06]} c="#2f5a8f" r={0} rough={0.5} />))}
-          {[0.12, 0.98, 1.84].map((y, level) => (
+          {[-0.92, 0, 0.92].map((x) => [-0.36, 0.36].map((z) => <B key={`${x}${z}`} p={[x, 1.5, z]} s={[0.06, 3.0, 0.06]} c="#2f5d8a" r={0.008} rough={0.5} />))}
+          {[0.14, 1.1, 2.06].map((y, row) => (
             <group key={y}>
-              <B p={[0, y, 0]} s={[1.9, 0.06, 0.8]} c="#d17a2f" r={0} rough={0.6} />
-              {[-0.66, -0.22, 0.22, 0.66].map((x, i) => hash(c.seed + level * 7 + i) > 0.25 && <Carton key={x} p={[x, y + 0.2, 0]} s={0.4} />)}
+              <B p={[0, y, 0]} s={[1.9, 0.06, 0.8]} c="#e0812a" r={0.008} rough={0.6} />
+              {[-0.62, -0.02, 0.56].map((x, i) => {
+                const h = 0.3 + hash(c.seed + row * 5 + i) * 0.4
+                return <B key={x} p={[x, y + 0.03 + h / 2, 0]} s={[0.5, h, 0.6]} c={i === 1 ? '#8c8e90' : BOX} r={0.01} rough={0.85} />
+              })}
             </group>
           ))}
         </>
       )
     case 'pallets':
-      return <Pallet p={[0, 0, 0]} boxes={4 + (c.seed % 3) * 4} />
+      return (
+        <>
+          {[-0.36, 0, 0.36].map((x) => (
+            <B key={x} p={[x, 0.05, 0]} s={[0.1, 0.1, 0.9]} c="#a5855f" r={0.006} rough={0.9} cast={false} />
+          ))}
+          <B p={[0, 0.115, 0]} s={[0.9, 0.03, 0.9]} c="#b6966e" r={0.006} rough={0.9} />
+          {[[-0.21, 0.31, -0.2, 0.42, 0.36], [0.22, 0.29, -0.2, 0.4, 0.32], [-0.2, 0.3, 0.22, 0.42, 0.34], [0.22, 0.33, 0.22, 0.4, 0.4], [0, 0.68, 0, 0.5, 0.3]].map(([x, y, z, w, h], i) => (
+            <B key={i} p={[x, y, z]} s={[w, h, 0.4]} c={i % 2 ? '#c49a62' : BOX} r={0.008} rough={0.85} />
+          ))}
+        </>
+      )
+    case 'forklift':
+      return (
+        <>
+          {[-0.36, 0.36].map((x) => [-0.55, 0.3].map((z) => <C key={`${x}${z}`} p={[x, 0.2, z]} r={[0.2, 0.2]} h={0.16} c="#15171a" seg={14} rot={[0, 0, Math.PI / 2]} />))}
+          <B p={[0, 0.5, -0.2]} s={[0.8, 0.5, 1.2]} c={YELLOW} r={0.04} rough={0.5} />
+          <B p={[0, 0.72, -0.62]} s={[0.76, 0.4, 0.34]} c="#2b2d31" r={0.03} rough={0.6} />
+          {[-0.36, 0.36].map((x) => [-0.42, 0.3].map((z) => <B key={`${x}${z}`} p={[x, 1.35, z]} s={[0.04, 1.2, 0.04]} c={DARK} r={0.008} cast={false} />))}
+          <B p={[0, 1.97, -0.06]} s={[0.8, 0.04, 0.8]} c={DARK} r={0.008} />
+          <B p={[0, 0.86, -0.12]} s={[0.42, 0.1, 0.42]} c="#15171a" r={0.03} cast={false} />
+          <B p={[0, 1.05, -0.33]} s={[0.42, 0.44, 0.08]} c="#15171a" r={0.03} cast={false} />
+          {[-0.2, 0.2].map((x) => (
+            <group key={x}>
+              <B p={[x, 1.1, 0.46]} s={[0.07, 2.0, 0.08]} c={DARK} r={0.008} />
+              <B p={[x, 0.14, 0.78]} s={[0.1, 0.04, 0.72]} c={STEEL} r={0.006} metal={0.8} rough={0.4} />
+            </group>
+          ))}
+          <B p={[0, 0.3, 0.52]} s={[0.56, 0.4, 0.04]} c={DARK} r={0.008} cast={false} />
+        </>
+      )
+    case 'console':
+      return (
+        <>
+          <B p={[0, 0.38, -0.12]} s={[1.92, 0.76, 0.6]} c="#2a3038" r={0.012} rough={0.5} />
+          <B p={[0, 0.8, 0.02]} s={[1.92, 0.08, 0.4]} c="#3a424c" r={0.01} rot={[0.25, 0, 0]} />
+          {[-0.62, 0, 0.62].map((x, i) => (
+            <group key={x}>
+              <B p={[x, 1.16, -0.34]} s={[0.58, 0.4, 0.03]} c="#0c0d0f" r={0.008} />
+              <B p={[x, 1.16, -0.321]} s={[0.54, 0.36, 0.008]} c="#081420" r={0} glow={['#3aa0ff', '#55e39f', '#ffb347'][i]} glowPower={0.8 * c.glow} cast={false} />
+              <B p={[x, 0.88, -0.34]} s={[0.05, 0.2, 0.03]} c={DARK} r={0.006} cast={false} />
+            </group>
+          ))}
+          {[-0.4, 0.4].map((x) => (
+            <group key={x} position={[x, 0, 0.5]}>
+              <C p={[0, 0.03, 0]} r={[0.25, 0.27]} h={0.04} c={DARK} seg={5} />
+              <C p={[0, 0.23, 0]} r={[0.03, 0.03]} h={0.36} c={STEEL} seg={8} cast={false} />
+              <B p={[0, 0.45, 0]} s={[0.44, 0.08, 0.42]} c={CHARCOAL} r={0.03} />
+              <B p={[0, 0.76, 0.2]} s={[0.42, 0.5, 0.06]} c={CHARCOAL} r={0.03} />
+            </group>
+          ))}
+        </>
+      )
+    case 'qa':
+      return (
+        <>
+          {[-0.88, 0.88].map((x) => (
+            <B key={x} p={[x, 0.43, 0]} s={[0.06, 0.86, 0.7]} c={STEEL} r={0.008} metal={0.7} rough={0.4} />
+          ))}
+          <B p={[0, 0.88, 0]} s={[1.92, 0.04, 0.8]} c={WHITE} r={0.008} rough={0.4} />
+          <B p={[-0.5, 1.02, -0.1]} s={[0.5, 0.24, 0.4]} c="#d9dde1" r={0.015} rough={0.4} />
+          <C p={[-0.5, 1.24, -0.1]} r={[0.14, 0.14]} h={0.2} c="#bfe0f2" glass={0.3} seg={16} cast={false} />
+          <C p={[0.2, 0.92, 0.1]} r={[0.09, 0.1]} h={0.04} c={DARK} seg={14} cast={false} />
+          <C p={[0.2, 1.1, 0.1]} r={[0.012, 0.012]} h={0.32} c={STEEL} seg={8} cast={false} />
+          <C p={[0.2, 1.28, 0.1]} r={[0.11, 0.11]} h={0.03} c="#fff6e0" glow="#fff1d6" glowPower={1.1 * c.glow} seg={16} cast={false} />
+          {[0.55, 0.7].map((x) => (
+            <B key={x} p={[x, 0.91, 0.1]} s={[0.08, 0.016, 0.16]} c="#26282c" r={0.006} cast={false} />
+          ))}
+        </>
+      )
+    case 'lockers':
+      return (
+        <>
+          <B p={[0, 0.95, -0.2]} s={[1.92, 1.9, 0.5]} c="#4f7a8c" r={0.012} rough={0.5} metal={0.3} />
+          {Array.from({ length: 6 }, (_, i) => (
+            <group key={i}>
+              <B p={[-0.8 + i * 0.32, 0.95, 0.052]} s={[0.012, 1.8, 0.008]} c="#22323a" r={0} cast={false} />
+              <B p={[-0.7 + i * 0.32, 1.1, 0.056]} s={[0.03, 0.08, 0.012]} c={STEEL} r={0.004} metal={0.9} rough={0.3} cast={false} />
+              <B p={[-0.64 + i * 0.32, 1.6, 0.052]} s={[0.18, 0.06, 0.008]} c="#22323a" r={0} cast={false} />
+            </group>
+          ))}
+          <B p={[0, 0.2, 0.28]} s={[1.7, 0.05, 0.3]} c="#b28d66" r={0.01} />
+          {[-0.75, 0.75].map((x) => (
+            <B key={x} p={[x, 0.09, 0.28]} s={[0.05, 0.18, 0.26]} c={DARK} r={0.008} cast={false} />
+          ))}
+        </>
+      )
+    case 'canteen':
+      return (
+        <>
+          {[-0.8, 0.8].map((x) => (
+            <B key={x} p={[x, 0.36, 0]} s={[0.06, 0.72, 0.5]} c={DARK} r={0.008} />
+          ))}
+          <B p={[0, 0.74, 0]} s={[1.9, 0.04, 0.6]} c="#d9c3a0" r={0.01} rough={0.5} />
+          {[-0.42, 0.42].map((z) => (
+            <group key={z}>
+              <B p={[0, 0.44, z]} s={[1.8, 0.04, 0.22]} c="#b28d66" r={0.01} rough={0.6} />
+              {[-0.8, 0.8].map((x) => (
+                <B key={x} p={[x, 0.21, z]} s={[0.05, 0.42, 0.2]} c={DARK} r={0.008} cast={false} />
+              ))}
+            </group>
+          ))}
+          <C p={[-0.4, 0.8, 0.05]} r={[0.035, 0.03]} h={0.08} c="#f4f4f4" seg={12} cast={false} />
+          <B p={[0.3, 0.775, -0.05]} s={[0.3, 0.03, 0.2]} c="#c9553d" r={0.008} cast={false} />
+        </>
+      )
+    case 'vending':
+      return (
+        <>
+          <B p={[0, 0.92, -0.06]} s={[0.84, 1.84, 0.72]} c="#1f2a36" r={0.015} rough={0.5} metal={0.3} />
+          <B p={[-0.1, 1.1, 0.304]} s={[0.52, 1.2, 0.008]} c="#0c1218" r={0} glow="#cfe6ff" glowPower={0.5 * c.glow} rough={0.1} cast={false} />
+          {Array.from({ length: 12 }, (_, i) => (
+            <B key={i} p={[-0.28 + (i % 4) * 0.12, 0.7 + Math.floor(i / 4) * 0.34, 0.31]} s={[0.07, 0.16, 0.006]} c={['#d65f7c', '#f2b631', '#58b98a', '#4f8fd6'][(i + c.seed) % 4]} r={0} cast={false} />
+          ))}
+          <B p={[0.29, 1.2, 0.304]} s={[0.14, 0.3, 0.008]} c="#2b2d31" r={0} cast={false} />
+        </>
+      )
+    case 'tank':
+      return (
+        <>
+          {[-0.6, 0.6].map((x) => [-0.6, 0.6].map((z) => <B key={`${x}${z}`} p={[x, 0.4, z]} s={[0.1, 0.8, 0.1]} c={STEEL} r={0.01} metal={0.7} rough={0.4} />))}
+          <C p={[0, 2.0, 0]} r={[0.92, 0.92]} h={2.5} c="#c9ccd0" seg={24} metal={0.6} rough={0.4} />
+          <C p={[0, 0.65, 0]} r={[0.92, 0.5]} h={0.3} c="#b6babe" seg={24} metal={0.6} rough={0.4} />
+          <C p={[0, 3.35, 0]} r={[0.3, 0.92]} h={0.2} c="#b6babe" seg={24} metal={0.6} rough={0.4} />
+          {[1.2, 2.0, 2.8].map((y) => (
+            <C key={y} p={[0, y, 0]} r={[0.935, 0.935]} h={0.05} c="#8a8f95" seg={24} metal={0.7} rough={0.4} cast={false} />
+          ))}
+          <B p={[0.95, 1.8, 0]} s={[0.04, 3.0, 0.3]} c={YELLOW} r={0.006} cast={false} />
+        </>
+      )
+    case 'truck':
+      return (
+        <>
+          {[-1.42, 1.42].map((x) => (
+            <B key={x} p={[x, 0.006, 0]} s={[0.1, 0.012, 7.9]} c={YELLOW} r={0} rough={0.9} cast={false} />
+          ))}
+          {/* cab toward +Z, box trailer behind */}
+          {[-0.95, 0.95].map((x) => [3.0, -0.6, -1.7, -2.8].map((z) => <C key={`${x}${z}`} p={[x, 0.48, z]} r={[0.48, 0.48]} h={0.3} c="#15171a" seg={16} rot={[0, 0, Math.PI / 2]} />))}
+          <B p={[0, 0.72, -0.3]} s={[2.0, 0.24, 6.6]} c="#2b2d31" r={0.02} rough={0.7} />
+          <B p={[0, 2.2, -1.0]} s={[2.4, 2.7, 5.4]} c="#e4e6e8" r={0.03} rough={0.6} />
+          <B p={[1.206, 2.3, -1.0]} s={[0.012, 0.9, 3.4]} c={['#c9553d', '#2f5d8a', '#3f7d4d'][c.seed % 3]} r={0} cast={false} />
+          <B p={[-1.206, 2.3, -1.0]} s={[0.012, 0.9, 3.4]} c={['#c9553d', '#2f5d8a', '#3f7d4d'][c.seed % 3]} r={0} cast={false} />
+          <B p={[0, 1.75, 2.9]} s={[2.3, 1.9, 1.7]} c={['#c9553d', '#2f5d8a', '#3f7d4d'][c.seed % 3]} r={0.12} rough={0.4} metal={0.4} />
+          <B p={[0, 2.2, 3.756]} s={[2.0, 0.7, 0.012]} c="#141a20" r={0} rough={0.1} metal={0.6} cast={false} />
+          {[-0.8, 0.8].map((x) => (
+            <B key={x} p={[x, 1.1, 3.756]} s={[0.36, 0.16, 0.012]} c="#f4f6f8" r={0} glow="#fff6e0" glowPower={0.3} cast={false} />
+          ))}
+          <B p={[0, 0.82, 3.7]} s={[2.3, 0.3, 0.16]} c="#2b2d31" r={0.03} />
+        </>
+      )
+    case 'otree':
+      return <Tree seed={c.seed} />
+    case 'lamp':
+      return (
+        <>
+          <C p={[0, 0.06, 0]} r={[0.1, 0.13]} h={0.12} c={DARK} seg={12} />
+          <C p={[0, 2.5, 0]} r={[0.04, 0.06]} h={4.76} c={STEEL} seg={8} metal={0.6} rough={0.4} />
+          <B p={[0, 4.9, 0.3]} s={[0.16, 0.06, 0.8]} c={STEEL} r={0.012} metal={0.6} rough={0.4} />
+          <B p={[0, 4.864, 0.45]} s={[0.12, 0.012, 0.4]} c="#fff6e0" r={0} glow="#ffe9c2" glowPower={0.3 + 2 * c.glow} cast={false} />
+        </>
+      )
   }
-  return <S p={[0, 0.4, 0]} r={0.3} c="#ff00ff" />
+  return <B p={[0, 0.25, 0]} s={[0.8, 0.5, 0.8]} c="#ff00ff" />
 }

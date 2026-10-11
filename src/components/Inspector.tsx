@@ -7,7 +7,7 @@ import { deviceThumbnail } from '../3d/thumbnail'
 import { sfx } from '../audio/sfx'
 import { CHARGE_W, EXTRAS, LENSES, SUPPLY_LABELS, materialInfo, panelInfo, sensorInfo } from '../data/catalog'
 import { GPUS, KEYBOARDS, PORTS, SENSORS, STRAPS, TYPES, segmentInfo, subLabel } from '../data/devices'
-import { RETAIL_CUT, companyOf, discontinue, fmtDate, orderProduction, player, setPrice } from '../sim/game'
+import { RECALL_DEADLINE, RETAIL_CUT, companyOf, discontinue, fmtDate, orderProduction, player, recallProduct, setPrice } from '../sim/game'
 import { normalised, tierAverages } from '../sim/market'
 import { CONTRACT, buildCost, factoryLine, pendingUnits, supplyPrice } from '../sim/ops'
 import { VARIANTS } from '../sim/rivals'
@@ -341,6 +341,25 @@ export function ProductDrawer() {
               </div>
             </div>
           )}
+        </div>
+      )}
+      {mine && product.recall?.state === 'open' && (
+        <div className="m-2 border border-neg p-2">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-neg">Recall decision</div>
+          <div className="mt-1 text-[11px] leading-snug text-dim">
+            {pct(product.defectRate)} of units are faulty and owners are talking. Recall and repair every unit sold, or leave it: in {Math.max(0, RECALL_DEADLINE - (g.day - product.recall.day))} days it becomes a scandal that costs brand reputation and fans.
+          </div>
+          <Btn
+            small
+            tone="primary"
+            className="mt-2 w-full"
+            onClick={() => {
+              const err = useStore.getState().act((s) => recallProduct(s, product.id))
+              if (err) useStore.getState().say(err, 'bad')
+            }}
+          >
+            Recall and repair ({money(product.recall.cost, 1)})
+          </Btn>
         </div>
       )}
       {tab === 'manage' && mine && <Manage key={product.id} p={product} />}

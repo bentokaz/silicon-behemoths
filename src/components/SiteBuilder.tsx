@@ -1,17 +1,19 @@
-// Shared builder for offices, factories and stores: the 3D view fills the
-// space, with a floating build palette and whatever stats the screen passes in.
-import { type ReactNode, useEffect, useState } from 'react'
-import { type Edge, type SiteTool, SiteView } from '../3d/SiteView'
-import type { Mood } from '../3d/site/shells'
+// Shared builder for campuses, factories, stores and venues: the 3D view fills
+// the space, with a floating palette for zoning rooms, furnishing them and
+// choosing how the building looks, plus whatever stats the screen passes in.
+import { type ReactNode, useCallback, useEffect, useState } from 'react'
+import { type AreaShape, type Edge, type ShowState, type SiteTool, SiteView } from '../3d/SiteView'
+import type { Mood } from '../3d/site/env'
+import type { ViewMode } from '../3d/site/structure'
 import { sfx } from '../audio/sfx'
-import { paintFloor, placeItem, placeWall, player, removeItem, removeWall, rotateItem } from '../sim/game'
-import { FLOORS, ITEMS, type LineStats, WALLS, tierOf, wallAt } from '../sim/sites'
-import type { Employee, Product, Site, SiteItem, SiteWall } from '../sim/types'
+import { clearZone, lookCost, paintArea, placeItem, player, removeItem, removeRoom, roomCost, rotateItem, setEdge, setLook, setRoomStyle, zoneRoom } from '../sim/game'
+import { FACADES, GROUNDS, ITEMS, type LineStats, MAX_FLOORS, OUT, ROOFS, ROOMS, builtTiles, gridAt, roomNames, roomOf, roomTiles, sealedRooms, tierOf } from '../sim/sites'
+import type { Employee, Product, Site, SiteItem } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { Btn, Tabs, money } from './ui'
 
 interface Props {
-  /** 'office', 'factory' or 'store:<id>'. */
+  /** 'office', 'factory', 'venue' or 'store:<id>'. */
   siteRef: string
   site: Site
   /** Cards shown down the right-hand side. */
@@ -21,22 +23,46 @@ interface Props {
   producing?: boolean
   products?: Product[]
   busy?: number
+  show?: ShowState
 }
 
+type Tab = 'Rooms' | 'Furnish' | 'Walls' | 'Grounds' | 'Look'
 const FACING = ['north', 'east', 'south', 'west']
+const VIEWS: { id: ViewMode; label: string }[] = [
+  { id: 'cut', label: 'Cutaway' },
+  { id: 'walls', label: 'Walls' },
+  { id: 'full', label: 'Outside' },
+]
+const EDGES: { kind: 'door' | 'glass' | 'open' | 'wall'; name: string; cost: number; note: string }[] = [
+  { kind: 'door', name: 'Door', cost: 300, note: 'A way in. Every room needs one.' },
+  { kind: 'glass', name: 'Glass wall', cost: 120, note: 'Lets light and views through.' },
+  { kind: 'open', name: 'Opening', cost: 0, note: 'Removes the wall so two rooms flow together.' },
+  { kind: 'wall', name: 'Plain wall', cost: 0, note: 'Puts the wall back.' },
+]
 
-export function SiteBuilder({ siteRef, site, children, seated, line, producing, products, busy }: Props) {
+const row = (on: boolean) => `flex w-full items-baseline justify-between gap-2 border-b border-l-2 border-b-line px-2 py-[7px] text-left ${on ? 'border-l-accent bg-accent/10 text-accent' : 'border-l-transparent text-fg hover:bg-hover'}`
+
+export function SiteBuilder({ siteRef, site, children, seated, line, producing, products, busy, show }: Props) {
   const g = useGame()
   const { act, say } = useStore.getState()
   const defs = ITEMS[site.kind]
-  const groups = [...new Set(Object.values(defs).map((d) => d.group)), 'Walls', 'Floors']
+  const rooms = ROOMS[site.kind]
+  const groups = [...new Set(Object.values(defs).map((d) => d.group))]
   const [open, setOpen] = useState(true)
+  const [tab, setTab] = useState<Tab>(site.rooms.length ? 'Furnish' : 'Rooms')
   const [group, setGroup] = useState(groups[0])
   const [tool, setTool] = useState<SiteTool>(null)
   const [rot, setRot] = useState(0)
+  const [shape, setShape] = useState<AreaShape>('rect')
   const [mood, setMood] = useState<Mood>('day')
+  const [mode, setMode] = useState<ViewMode>('cut')
+  const [selected, setSelected] = useState(0)
+  const [pending, setPending] = useState(0)
   const me = player(g)
-  const active: SiteTool = tool?.type === 'item' ? { ...tool, rot } : tool
+  const active: SiteTool = tool?.type === 'item' ? { ...tool, rot } : tool && 'shape' in tool ? { ...tool, shape } : tool
+  const room = selected ? roomOf(site, selected) : undefined
+  const sealed = sealedRooms(site)
+  const onPreview = useCallback((n: number) => setPending(n), [])
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -50,106 +76,297 @@ export function SiteBuilder({ siteRef, site, children, seated, line, producing, 
   }, [])
 
   const report = (err: string | null | void, ok?: () => void) => {
-    if (err) say(err, 'bad')
-    else ok?.()
+    if (err) {
+      say(err, 'bad')
+      sfx.error()
+    } else ok?.()
+  }
+  const pick = (next: SiteTool) => {
+    setTool(next)
+    if (next) setSelected(0)
   }
   const onTile = (x: number, y: number, item: SiteItem | undefined) => {
+    if (!active) {
+      setSelected(gridAt(site, x, y))
+      return
+    }
+    if (active.type === 'item') report(act((s) => placeItem(s, siteRef, active.kind, x, y, active.rot)), sfx.build)
+    else if (active.type === 'rotate' && item) report(act((s) => rotateItem(s, siteRef, item.id)), sfx.toggle)
+    else if (active.type === 'remove' && item) (act((s) => removeItem(s, siteRef, item.id)), sfx.cash())
+  }
+  const onArea = (x0: number, y0: number, x1: number, y1: number) => {
     if (!active) return
-    if (active.type === 'item') report(act((s) => placeItem(s, siteRef, active.kind, x, y, active.rot)), sfx.cash)
-    else if (active.type === 'floor') act((s) => paintFloor(s, siteRef, x, y, active.id))
-    else if (active.type === 'rotate' && item) report(act((s) => rotateItem(s, siteRef, item.id)))
-    else if (active.type === 'remove' && item) (act((s) => removeItem(s, siteRef, item.id)), sfx.click())
+    if (active.type === 'room') {
+      // starting inside a room of the same kind extends it
+      const start = roomOf(site, gridAt(site, x0, y0))
+      report(act((s) => zoneRoom(s, siteRef, active.room, x0, y0, x1, y1, active.shape, start?.type === active.room ? start.n : undefined)), sfx.zone)
+    } else if (active.type === 'clear') (act((s) => clearZone(s, siteRef, x0, y0, x1, y1, active.shape)), sfx.demolish())
+    else if (active.type === 'ground') (act((s) => paintArea(s, siteRef, x0, y0, x1, y1, active.shape, active.id)), sfx.toggle())
   }
   const onEdge = (e: Edge) => {
-    if (active?.type !== 'wall') return
-    // clicking a wall of the same kind takes it down again
-    if (wallAt(site, e.x, e.y, e.side)?.kind === active.kind) act((s) => removeWall(s, siteRef, e.x, e.y, e.side))
-    else report(act((s) => placeWall(s, siteRef, e.x, e.y, e.side, active.kind)), sfx.click)
+    if (active?.type === 'edge') report(act((s) => setEdge(s, siteRef, e.x, e.y, e.side, active.kind)), sfx.build)
   }
 
+  const areaHint = 'Click one corner, then the opposite corner. Esc cancels.'
   const info =
     tool?.type === 'item'
-      ? `${defs[tool.kind].name}: ${defs[tool.kind].note} Facing ${FACING[rot]} (press R to turn).`
-      : tool?.type === 'wall'
-        ? `${WALLS[tool.kind].name}: click a tile edge to build, click it again to remove.`
-        : tool?.type === 'floor'
-          ? 'Click tiles to change their finish. Flooring is free.'
-          : tool?.type === 'rotate'
-            ? 'Click an item to turn it a quarter turn.'
-            : tool?.type === 'remove'
-              ? 'Click an item to sell it for half its price.'
-              : 'Pick something to build. Drag to orbit, right-drag to pan, scroll to zoom.'
+      ? `${defs[tool.kind].name}: ${defs[tool.kind].note} Goes in: ${roomNames(site.kind, defs[tool.kind])}. Facing ${FACING[rot]} (R turns it).`
+      : tool?.type === 'room'
+        ? pending
+          ? `${rooms[tool.room].name}: ${pending} m² for ${money(roomCost(site, tool.room, pending), 0)}. Click to build.`
+          : `${rooms[tool.room].name}: ${rooms[tool.room].note} ${areaHint} Start inside a room of the same kind to extend it.`
+        : tool?.type === 'clear'
+          ? pending
+            ? `Demolish ${pending} m² of rooms. Anything inside is sold for half its price.`
+            : `Demolish rooms. ${areaHint}`
+          : tool?.type === 'ground'
+            ? `${GROUNDS.find((x) => x.id === tool.id)?.name}: lay it on open land. Free. ${areaHint}`
+            : tool?.type === 'edge'
+              ? `${EDGES.find((e) => e.kind === tool.kind)?.name}: click a stretch of wall. ${EDGES.find((e) => e.kind === tool.kind)?.note}`
+              : tool?.type === 'rotate'
+                ? 'Click an item to turn it a quarter turn.'
+                : tool?.type === 'remove'
+                  ? 'Click an item to sell it for half its price.'
+                  : sealed.length
+                    ? `${sealed.length === 1 ? `The ${rooms[sealed[0].type].name.toLowerCase()} has` : `${sealed.length} rooms have`} no door, so nothing inside counts. Add one from the Walls tab.`
+                    : site.rooms.length
+                      ? 'Click a room to restyle it. Drag to orbit, right-drag to pan, scroll to zoom.'
+                      : 'An empty plot. Open Rooms and mark out your first room.'
+
+  const tiles = builtTiles(site)
+  const items = Object.entries(defs).filter(([, d]) => d.group === group && (!room || d.rooms.includes(room.type)))
 
   return (
     <div className="relative h-full min-h-0 overflow-hidden">
       <div className="absolute inset-0">
-        <SiteView key={`${site.kind}-${site.tier}`} site={site} mood={mood} tool={active} company={me.name} color={me.color} logo={me.logo} onTile={onTile} onEdge={onEdge} seated={seated} line={line} producing={producing} products={products} busy={busy} />
+        <SiteView
+          key={`${site.kind}-${site.tier}`}
+          site={site}
+          mode={mode}
+          mood={mood}
+          tool={active}
+          company={me.name}
+          color={me.color}
+          logo={me.logo}
+          selectedRoom={selected}
+          sealed={sealed.map((r) => r.n)}
+          onTile={onTile}
+          onEdge={onEdge}
+          onArea={onArea}
+          onPreview={onPreview}
+          seated={seated}
+          line={line}
+          producing={producing}
+          products={products}
+          busy={busy}
+          show={show}
+        />
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-2">
-        <div className="pointer-events-auto flex items-center gap-2">
+      <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-start justify-between gap-2 p-2">
+        <div className="pointer-events-auto flex flex-wrap items-center gap-2">
           <Btn small tone={open ? 'default' : 'primary'} active={open} onClick={() => setOpen(!open)}>
             Build
           </Btn>
           <div className="flex border border-line2 bg-panel/95">
-            <Btn small tone="ghost" active={tool?.type === 'rotate'} onClick={() => setTool(tool?.type === 'rotate' ? null : { type: 'rotate' })}>
+            <Btn small tone="ghost" active={tool?.type === 'rotate'} onClick={() => pick(tool?.type === 'rotate' ? null : { type: 'rotate' })}>
               Turn
             </Btn>
-            <Btn small tone="ghost" active={tool?.type === 'remove'} onClick={() => setTool(tool?.type === 'remove' ? null : { type: 'remove' })}>
-              Remove
+            <Btn small tone="ghost" active={tool?.type === 'remove'} onClick={() => pick(tool?.type === 'remove' ? null : { type: 'remove' })}>
+              Sell item
+            </Btn>
+            <Btn small tone="ghost" active={tool?.type === 'clear'} onClick={() => pick(tool?.type === 'clear' ? null : { type: 'clear', shape })}>
+              Demolish
             </Btn>
           </div>
           <span className="num border border-line2 bg-panel/95 px-2 py-[5px] text-[10px] uppercase tracking-wider text-dim">
-            {tierOf(site).name} <span className="text-faint">/ {site.w} x {site.h} m</span>
+            {tierOf(site).name} <span className="text-faint">/ {site.w} x {site.h} m / {tiles} m² built</span>
           </span>
         </div>
-        <div className="pointer-events-auto flex border border-line2 bg-panel/95">
-          {(['day', 'dusk', 'night'] as Mood[]).map((m) => (
-            <Btn key={m} small tone="ghost" active={mood === m} onClick={() => setMood(m)}>
-              {m}
-            </Btn>
-          ))}
+        <div className="pointer-events-auto flex gap-2">
+          <div className="flex border border-line2 bg-panel/95">
+            {VIEWS.map((v) => (
+              <Btn key={v.id} small tone="ghost" active={mode === v.id} onClick={() => setMode(v.id)}>
+                {v.label}
+              </Btn>
+            ))}
+          </div>
+          <div className="flex border border-line2 bg-panel/95">
+            {(['day', 'dusk', 'night'] as Mood[]).map((m) => (
+              <Btn key={m} small tone="ghost" active={mood === m} onClick={() => setMood(m)}>
+                {m}
+              </Btn>
+            ))}
+          </div>
         </div>
       </div>
 
       {open && (
-        <div className="absolute bottom-12 left-2 top-12 flex w-[250px] flex-col border border-line2 bg-panel/95">
-          <Tabs value={group} options={groups.map((x) => ({ value: x, label: x }))} onChange={setGroup} className="flex-wrap" />
+        <div className="absolute bottom-12 left-2 top-12 flex w-[262px] flex-col border border-line2 bg-panel/95">
+          <Tabs value={tab} options={(['Rooms', 'Furnish', 'Walls', 'Grounds', 'Look'] as Tab[]).map((x) => ({ value: x, label: x }))} onChange={setTab} className="flex-wrap" />
+          {(tab === 'Rooms' || tab === 'Grounds') && (
+            <div className="flex items-center gap-2 border-b border-line px-2 py-[6px]">
+              <span className="text-[10px] uppercase tracking-wider text-dim">Shape</span>
+              {(['rect', 'round'] as AreaShape[]).map((sh) => (
+                <Btn key={sh} small active={shape === sh} onClick={() => setShape(sh)}>
+                  {sh === 'rect' ? 'Rectangle' : 'Round'}
+                </Btn>
+              ))}
+            </div>
+          )}
+          {tab === 'Furnish' && <Tabs value={group} options={groups.map((x) => ({ value: x, label: x }))} onChange={setGroup} className="flex-wrap" />}
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {group === 'Walls' &&
-              (Object.keys(WALLS) as SiteWall['kind'][]).map((k) => {
-                const on = tool?.type === 'wall' && tool.kind === k
+            {tab === 'Rooms' &&
+              Object.entries(rooms).map(([id, r]) => {
+                const on = tool?.type === 'room' && tool.room === id
                 return (
-                  <button key={k} onClick={() => setTool(on ? null : { type: 'wall', kind: k })} className={`flex w-full items-baseline justify-between border-b border-l-2 border-b-line px-2 py-[7px] text-left ${on ? 'border-l-accent bg-accent/10 text-accent' : 'border-l-transparent text-fg hover:bg-hover'}`}>
-                    <span className="text-xs uppercase tracking-wider">{WALLS[k].name}</span>
-                    <span className="num text-[11px] text-dim">{money(WALLS[k].cost)}</span>
+                  <button key={id} onClick={() => pick(on ? null : { type: 'room', room: id, shape })} className={row(on)}>
+                    <span className="min-w-0">
+                      <span className="flex items-center gap-2 text-xs uppercase tracking-wider">
+                        <span className="h-3 w-3 shrink-0 border border-line2" style={{ background: r.styles[0].floor }} />
+                        {r.name}
+                      </span>
+                      <span className="mt-[2px] block text-[10px] normal-case leading-snug tracking-normal text-dim">{r.note}</span>
+                    </span>
+                    <span className="num shrink-0 text-[11px] text-dim">{money(r.cost, 0)}/m²</span>
                   </button>
                 )
               })}
-            {group === 'Floors' &&
-              FLOORS[site.kind].map((f) => {
-                const on = tool?.type === 'floor' && tool.id === f.id
+            {tab === 'Furnish' && room && (
+              <div className="flex items-center justify-between border-b border-line px-2 py-[6px] text-[10px] uppercase tracking-wider text-dim">
+                <span>For the {rooms[room.type].name}</span>
+                <Btn small tone="ghost" onClick={() => setSelected(0)}>
+                  Show all
+                </Btn>
+              </div>
+            )}
+            {tab === 'Furnish' &&
+              (items.length ? (
+                items.map(([kind, d]) => {
+                  const on = tool?.type === 'item' && tool.kind === kind
+                  const usable = d.rooms.some((r) => r === OUT || site.rooms.some((x) => x.type === r))
+                  return (
+                    <button key={kind} onClick={() => pick(on ? null : { type: 'item', kind, rot })} className={row(on)}>
+                      <span className={`truncate text-xs uppercase tracking-wider ${usable ? '' : 'text-faint'}`}>
+                        {d.name}
+                        {(d.w > 1 || d.h > 1) && (
+                          <span className="num ml-2 text-[9px] text-faint">
+                            {d.w}x{d.h}
+                          </span>
+                        )}
+                      </span>
+                      <span className="num shrink-0 text-[11px] text-dim">{money(d.cost, 0)}</span>
+                    </button>
+                  )
+                })
+              ) : (
+                <div className="px-2 py-3 text-[11px] text-dim">Nothing in this group goes in that room.</div>
+              ))}
+            {tab === 'Walls' && (
+              <>
+                <div className="border-b border-line px-2 py-2 text-[11px] leading-snug text-dim">Walls stand wherever two rooms meet, or a room meets the outdoors. Change any stretch of them here.</div>
+                {EDGES.map((e) => {
+                  const on = tool?.type === 'edge' && tool.kind === e.kind
+                  return (
+                    <button key={e.kind} onClick={() => pick(on ? null : { type: 'edge', kind: e.kind })} className={row(on)}>
+                      <span className="text-xs uppercase tracking-wider">{e.name}</span>
+                      <span className="num text-[11px] text-dim">{e.cost ? money(e.cost, 0) : 'free'}</span>
+                    </button>
+                  )
+                })}
+              </>
+            )}
+            {tab === 'Grounds' &&
+              GROUNDS.map((f) => {
+                const on = tool?.type === 'ground' && tool.id === f.id
                 return (
-                  <button key={f.id} onClick={() => setTool(on ? null : { type: 'floor', id: f.id })} className={`flex w-full items-center gap-2 border-b border-l-2 border-b-line px-2 py-[7px] text-left ${on ? 'border-l-accent bg-accent/10 text-accent' : 'border-l-transparent text-fg hover:bg-hover'}`}>
+                  <button key={f.id} onClick={() => pick(on ? null : { type: 'ground', id: f.id, shape })} className={`${row(on)} !items-center !justify-start`}>
                     <span className="h-4 w-4 shrink-0 border border-line2" style={{ background: f.color }} />
                     <span className="text-xs uppercase tracking-wider">{f.name}</span>
                   </button>
                 )
               })}
-            {Object.entries(defs)
-              .filter(([, d]) => d.group === group)
-              .map(([kind, d]) => {
-                const on = tool?.type === 'item' && tool.kind === kind
-                return (
-                  <button key={kind} onClick={() => setTool(on ? null : { type: 'item', kind, rot })} className={`flex w-full items-baseline justify-between gap-2 border-b border-l-2 border-b-line px-2 py-[7px] text-left ${on ? 'border-l-accent bg-accent/10 text-accent' : 'border-l-transparent text-fg hover:bg-hover'}`}>
-                    <span className="truncate text-xs uppercase tracking-wider">
-                      {d.name}
-                      {(d.w > 1 || d.h > 1) && <span className="num ml-2 text-[9px] text-faint">{d.w}x{d.h}</span>}
-                    </span>
-                    <span className="num shrink-0 text-[11px] text-dim">{money(d.cost)}</span>
-                  </button>
-                )
-              })}
+            {tab === 'Look' && (
+              <div className="space-y-3 p-2">
+                <div className="text-[11px] leading-snug text-dim">How the building looks from outside. Switch to the Outside view to see it.</div>
+                <div>
+                  <div className="mb-1 text-[10px] uppercase tracking-wider text-dim">Cladding</div>
+                  {FACADES.map((f, i) => {
+                    const cost = lookCost(site, { facade: i })
+                    return (
+                      <button key={f.id} onClick={() => report(act((s) => setLook(s, siteRef, { facade: i })), () => (sfx.zone(), setMode('full')))} className={`${row(site.facade === i)} !items-center`}>
+                        <span className="flex items-center gap-2 text-xs uppercase tracking-wider">
+                          <span className="h-4 w-4 shrink-0 border border-line2" style={{ background: f.color }} />
+                          {f.name}
+                        </span>
+                        <span className="num text-[11px] text-dim">{site.facade === i ? 'fitted' : cost ? money(cost, 0) : 'free'}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+                <div>
+                  <div className="mb-1 text-[10px] uppercase tracking-wider text-dim">Roof</div>
+                  {ROOFS.map((r, i) => {
+                    const cost = lookCost(site, { roof: i })
+                    return (
+                      <button key={r.id} onClick={() => report(act((s) => setLook(s, siteRef, { roof: i })), () => (sfx.zone(), setMode('full')))} className={`${row(site.roof === i)} !items-center`}>
+                        <span className="flex items-center gap-2 text-xs uppercase tracking-wider">
+                          <span className="h-4 w-4 shrink-0 border border-line2" style={{ background: r.color }} />
+                          {r.name}
+                        </span>
+                        <span className="num text-[11px] text-dim">{site.roof === i ? 'fitted' : cost ? money(cost, 0) : 'free'}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+                <div>
+                  <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-wider text-dim">
+                    <span>Storeys</span>
+                    <span className="num text-fg">{site.floors}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <Btn small className="flex-1" disabled={site.floors <= 1} onClick={() => report(act((s) => setLook(s, siteRef, { floors: site.floors - 1 })), () => setMode('full'))}>
+                      Remove one
+                    </Btn>
+                    <Btn small className="flex-1" disabled={site.floors >= MAX_FLOORS || !tiles} onClick={() => report(act((s) => setLook(s, siteRef, { floors: site.floors + 1 })), () => (sfx.zone(), setMode('full')))}>
+                      Add one {tiles ? `(${money(lookCost(site, { floors: site.floors + 1 }), 0)})` : ''}
+                    </Btn>
+                  </div>
+                  <div className="mt-1 text-[10px] leading-snug text-dim">Upper floors hold the departments you do not manage desk by desk. They add prestige and upkeep, and make new rooms cost more.</div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {room && !tool && (
+        <div className={`absolute bottom-12 ${open ? 'left-[278px]' : 'left-2'} w-[250px] border border-line2 bg-panel/95`}>
+          <div className="flex items-center justify-between border-b border-line px-2 py-[6px]">
+            <span className="text-xs uppercase tracking-wider text-fg">{rooms[room.type].name}</span>
+            <span className="num text-[10px] text-dim">{roomTiles(site, room.n)} m²</span>
+          </div>
+          <div className="space-y-2 p-2">
+            <div className="text-[10px] uppercase tracking-wider text-dim">Finish</div>
+            <div className="grid grid-cols-2 gap-1">
+              {rooms[room.type].styles.map((st, i) => (
+                <button key={st.name} onClick={() => (act((s) => setRoomStyle(s, siteRef, room.n, i)), sfx.toggle())} className={`flex items-center gap-2 border px-[6px] py-[5px] text-left text-[10px] uppercase tracking-wider ${room.style === i ? 'border-accent text-accent' : 'border-line2 text-dim hover:text-fg'}`}>
+                  <span className="flex h-4 w-6 shrink-0 border border-line2">
+                    <span className="flex-1" style={{ background: st.floor }} />
+                    <span className="flex-1" style={{ background: st.wall }} />
+                  </span>
+                  <span className="truncate">{st.name}</span>
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <Btn small className="flex-1" onClick={() => (setTab('Furnish'), setOpen(true))}>
+                Furnish
+              </Btn>
+              <Btn small tone="danger" className="flex-1" onClick={() => (act((s) => removeRoom(s, siteRef, room.n)), sfx.demolish(), setSelected(0))}>
+                Demolish
+              </Btn>
+            </div>
           </div>
         </div>
       )}
@@ -157,7 +374,7 @@ export function SiteBuilder({ siteRef, site, children, seated, line, producing, 
       {children && <div className="pointer-events-none absolute bottom-12 right-2 top-12 flex w-[270px] flex-col gap-2 overflow-y-auto [&>*]:pointer-events-auto">{children}</div>}
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 p-2">
-        <div className="pointer-events-auto inline-block max-w-full border border-line2 bg-panel/95 px-3 py-[7px] text-[11px] text-dim">{info}</div>
+        <div className={`pointer-events-auto inline-block max-w-full border bg-panel/95 px-3 py-[7px] text-[11px] ${sealed.length && !tool ? 'border-warn text-warn' : pending ? 'border-accent text-fg' : 'border-line2 text-dim'}`}>{info}</div>
       </div>
     </div>
   )

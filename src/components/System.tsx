@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { getVolume, setVolume, sfx } from '../audio/sfx'
 import { fmtDate, player } from '../sim/game'
 import { useGame, useStore } from '../store/game'
-import { AUTOSAVE, type SaveMeta, deleteSave, exportGame, importGame, listSaves, loadGame, saveGame } from '../store/saves'
+import { AUTOSAVE, BEFORE_DEBT, type SaveMeta, deleteSave, exportGame, importGame, listSaves, loadGame, saveGame, slotName } from '../store/saves'
 import { THEMES, type ThemeId, applyTheme, getTheme } from '../store/theme'
 import { LogoPicker } from './Company'
 import { Btn, Panel, Row, Slider, TextInput, money } from './ui'
@@ -31,7 +31,7 @@ export function SaveList({ onChange, nonce = 0 }: { onChange?: () => void; nonce
       <tbody>
         {saves.map((s) => (
           <tr key={s.slot} className="row">
-            <td className={s.slot === AUTOSAVE ? 'text-dim' : ''}>{s.slot}</td>
+            <td className={s.slot === AUTOSAVE || s.slot === BEFORE_DEBT ? 'text-dim' : ''}>{slotName(s.slot)}</td>
             <td>{s.company}</td>
             <td className="num">{fmtDate(s.day)}</td>
             <td className="num r">{money(s.cash)}</td>
@@ -120,7 +120,7 @@ export function System() {
           </Btn>
           <Btn onClick={() => exportGame(g)}>Export to file</Btn>
           <ImportButton />
-          <span className="text-[11px] text-faint">The game also autosaves at the end of every month.</span>
+          <span className="text-[11px] text-faint">The game also autosaves at the end of every month, and keeps a copy from just before the company goes into debt.</span>
         </Panel>
         <Panel title="Saved games on this device" bodyClass="overflow-auto">
           <SaveList nonce={nonce} />

@@ -3,7 +3,8 @@ import { type SegmentInfo, segmentsOf } from '../data/devices'
 import { DAYS_PER_YEAR } from '../data/catalog'
 import { bestSegment } from './market'
 import { clamp, rand } from './rng'
-import { ITEMS } from './sites'
+import { addAwareness } from './regions'
+import { sitePrestige, sumOf, venueStats } from './sites'
 import { staffEffects } from './staff'
 import type { Campaign, ChannelId, EventType, GameEvent, GameState, Product } from './types'
 
@@ -35,7 +36,7 @@ export const BUZZ_DECAY = 0.03
  * Daily effect of one campaign, given what it spends today.
  * Returns the awareness gained as a fraction of the audience not yet reached.
  */
-export function campaignDay(s: GameState, c: Campaign, spend: number, product: Product | undefined): number {
+export function campaignDay(s: GameState, c: Pick<Campaign, 'channel'>, spend: number, product: Product | undefined): number {
   const def = CHANNELS[c.channel]
   const skill = staffEffects(s).marketing
   if (product) {
@@ -85,7 +86,7 @@ export const EVENTS: Record<EventType, EventDef> = {
       { name: 'Livestream', cost: 150e3, reach: 0.4 },
       { name: 'Theatre', cost: 1.2e6, reach: 0.7 },
       { name: 'Arena', cost: 6e6, reach: 1 },
-      { name: 'Your campus stage', cost: 500e3, reach: 0.85 },
+      { name: 'Your own venue', cost: 250e3, reach: 0.85 },
     ],
   },
   expo: {
@@ -131,7 +132,13 @@ export function nextFair(day: number, lead = EVENT_LEAD): { name: string; day: n
   }
 }
 
-export const hasStage = (s: GameState) => s.office.items.some((i) => i.kind === 'stage' && ITEMS.office.stage)
+export const hasStage = (s: GameState) => !!s.venue && venueStats(s.venue).ready
+/** The index of "your own venue" in the keynote venue list. */
+export const OWN_VENUE = 3
+/** Seats a hired venue holds, for the replay. */
+export const VENUE_SEATS = [0, 420, 1400]
+/** How far a keynote carries from a given venue. */
+export const keynoteReach = (s: GameState, venue: number) => (venue === OWN_VENUE && s.venue ? venueStats(s.venue).reach : EVENTS.keynote.venues[venue].reach)
 
 /** Why an event cannot be booked, or null if it can. */
 export function eventBlocked(s: GameState, type: EventType, venue: number, productId?: string): string | null {
@@ -140,7 +147,7 @@ export function eventBlocked(s: GameState, type: EventType, venue: number, produ
     const p = s.products.find((x) => x.id === productId)
     if (!p || p.companyId !== 'player' || p.status !== 'dev') return 'A keynote needs a device that is still in development'
     if (s.events.some((e) => e.type === 'keynote' && e.productId === productId && !e.done)) return 'This device already has a keynote booked'
-    if (venue === 3 && !hasStage(s)) return 'Build an auditorium stage in your office first'
+    if (venue === OWN_VENUE && !hasStage(s)) return s.venue ? 'Your venue is not ready. ' + (venueStats(s.venue).problem ?? '') : 'Build a venue of your own first'
   }
   if (type === 'fanfest' && s.fans < 20e3) return 'You need at least 20,000 fans'
   if (type === 'devcon' && !s.os.own) return 'You need your own operating system'
@@ -154,7 +161,7 @@ const verdict = (score: number) => (score >= 85 ? 'A triumph.' : score >= 70 ? '
 export function resolveEvent(s: GameState, e: GameEvent): string {
   const me = s.companies[0]
   const def = EVENTS[e.type]
-  const v = def.venues[e.venue]
+  const v = e.type === 'keynote' ? { ...def.venues[e.venue], reach: keynoteReach(s, e.venue) } : def.venues[e.venue]
   const fx = staffEffects(s)
   const crew = Math.min(1, (fx.marketing - 1) / 0.6)
   const mine = s.products.filter((p) => p.companyId === 'player' && p.status !== 'ended')
@@ -168,19 +175,21 @@ export function resolveEvent(s: GameState, e: GameEvent): string {
       return (e.summary = 'The keynote was cancelled because the device was shelved.')
     }
     const wow = clamp(bestSegment(p, me, s.day).u / 1.15, 0, 1)
-    score = 100 * (0.45 * wow + 0.25 * v.reach + 0.15 * crew + 0.15 * rand(s))
+    const luck = rand(s)
+    score = 100 * (0.45 * wow + 0.25 * Math.min(1, v.reach) + 0.15 * crew + 0.15 * luck)
     p.hype = (score / 100) * (0.5 + 0.5 * v.reach)
-    me.awareness += (1 - me.awareness) * 0.05 * v.reach * (score / 100)
+    addAwareness(s, 0.05 * v.reach * (score / 100))
+    e.beats = { wow, reach: v.reach, crew, luck, seats: e.venue === OWN_VENUE && s.venue ? sumOf(s.venue, 'crowd') : (VENUE_SEATS[e.venue] ?? 0) }
     s.fans += s.fans * 0.04 * (score / 100) + 3000 * v.reach * (score / 100)
     detail = `${p.name} was unveiled at the ${v.name.toLowerCase()}.`
   } else if (e.type === 'expo') {
     const quality = mine.length ? mine.reduce((a, p) => a + clamp(bestSegment(p, me, s.day).u, 0, 1.2), 0) / mine.length / 1.2 : 0.2
     score = 100 * (0.4 * v.reach + 0.3 * quality + 0.15 * crew + 0.15 * rand(s))
-    me.awareness += (1 - me.awareness) * 0.07 * v.reach * (score / 100)
+    addAwareness(s, 0.07 * v.reach * (score / 100))
     for (const p of mine) for (const seg of segmentsOf(p.type)) p.buzz[seg.id] = clamp((p.buzz[seg.id] ?? 0) + 0.25 * v.reach, 0, 1)
     detail = `Your ${v.name.toLowerCase()} drew the crowds.`
   } else if (e.type === 'fanfest') {
-    score = 100 * (0.45 * v.reach + 0.25 * crew + 0.15 * Math.min(1, fx.prestige / 20) + 0.15 * rand(s))
+    score = 100 * (0.45 * v.reach + 0.25 * crew + 0.15 * Math.min(1, (fx.prestige + (s.venue ? sitePrestige(s.venue) : 0)) / 30) + 0.15 * rand(s))
     s.fans += (s.fans * 0.1 + 8000) * v.reach * (score / 100)
     detail = 'Fans met the team and each other.'
   } else {

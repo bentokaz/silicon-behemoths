@@ -7,7 +7,11 @@ import { SEGMENTS, TYPES, segmentInfo, segmentsOf } from '../data/devices'
 import { companyOf, fmtDate, monthLabel, player, trailingUnits } from '../sim/game'
 import { OUTSIDE_OPTION, attraction, segmentDemand } from '../sim/market'
 import { factoryLine, marketPrice, pendingUnits } from '../sim/ops'
-import { staffEffects } from '../sim/staff'
+import { nextGoals, stageOf } from '../sim/goals'
+import { REGIONS } from '../sim/regions'
+import { sealedRooms } from '../sim/sites'
+import { staffEffects, unmanaged } from '../sim/staff'
+import { founderStake, marketCap } from '../sim/stock'
 import { COST_KEYS, DEVICE_TYPES, type DeviceType, type GameState, type Product, SUPPLY_CATS, TRACKS, monthCosts } from '../sim/types'
 import { type Tab, useGame, useStore } from '../store/game'
 import { Thumb, statusText, statusTone } from './Inspector'
@@ -90,6 +94,13 @@ function todos(g: GameState): Todo[] {
   if (g.staff.length && fx.morale < 40) out.push({ text: 'Morale is low. People may quit.', tab: 'staff', tone: 'neg' })
   if (g.factory && g.orders.some((o) => o.mode === 'factory') && !factoryLine(g)?.running) out.push({ text: 'Factory orders are waiting but the line is not working.', tab: 'factory', tone: 'neg' })
   for (const c of SUPPLY_CATS) if (g.supply.shockDays[c] > 0 && !(g.supply.locks[c] && g.supply.locks[c]!.until > g.day)) out.push({ text: `${SUPPLY_LABELS[c]} are in short supply (prices x${marketPrice(g.supply, c).toFixed(2)}).`, tab: 'factory', tone: 'warn' })
+  for (const p of own) if (p.recall?.state === 'open') out.push({ text: `Faults in ${p.name} are spreading. Decide on a recall.`, tab: 'care', tone: 'neg', productId: p.id })
+  const sealed = sealedRooms(g.office).length
+  if (sealed) out.push({ text: `${sealed === 1 ? 'A room' : `${sealed} rooms`} on the campus ${sealed === 1 ? 'has' : 'have'} no door. Nothing inside counts.`, tab: 'office', tone: 'warn' })
+  const loose = unmanaged(g)
+  if (loose) out.push({ text: `${loose} people have no team lead and work at 90%.`, tab: 'staff', tone: 'accent' })
+  if (g.stock.lowDays > 0) out.push({ text: 'The board has lost confidence in you.', tab: 'shares', tone: 'neg' })
+  if (own.some((p) => p.status === 'sale') && REGIONS.filter((r) => g.regions[r.id].open).length === 1 && g.cash > 6e6) out.push({ text: 'You only sell at home. Other regions are waiting.', tab: 'world', tone: 'accent' })
   if (g.rdBudget > 0 && !g.activeResearch.length) out.push({ text: 'You have a research budget but no project running.', tab: 'research', tone: 'warn' })
   if (!g.rdBudget && own.length) out.push({ text: 'No research is funded. Rivals keep advancing.', tab: 'research', tone: 'accent' })
   return out
@@ -107,13 +118,16 @@ export function Dashboard() {
   const products = mine(g).filter((p) => p.status !== 'ended')
   const list = todos(g)
   const fx = staffEffects(g)
+  const goals = nextGoals(g, 3)
+  const stage = stageOf(g)
   return (
     <div className="grid h-full min-h-0 grid-cols-12 grid-rows-[auto_auto_minmax(0,1fr)_minmax(0,1fr)] gap-2 p-2">
-      <div className="col-span-12 grid grid-cols-4 gap-2">
+      <div className="col-span-12 grid grid-cols-5 gap-2">
         <Kpi label="Cash" value={g.config.unlimitedMoney ? 'UNLIMITED' : money(g.cash)} tone={g.cash < 0 && !g.config.unlimitedMoney ? 'neg' : 'accent'} sub={g.debtDays > 0 ? `in debt ${g.debtDays} days` : `this month +${money(g.cur.revenue + g.cur.other, 1)}`} />
         <Kpi label="Profit, last month" value={last ? money(profit) : '--'} tone={profit >= 0 ? 'pos' : 'neg'} sub={last ? `income ${money(last.revenue + last.other, 1)}` : 'first month in progress'} />
         <Kpi label="Market share" value={pct(units / total, 2)} sub={`${num(units)} of ${num(total)} devices in 12 months`} />
         <Kpi label="Fans" value={num(g.fans)} sub={`${num(g.owners)} people own your devices`} />
+        <Kpi label={g.stock.listed ? 'Market value' : 'Company value'} value={marketCap(g) >= 1e9 ? `${(marketCap(g) / 1e9).toFixed(2)}B` : money(marketCap(g), 1)} sub={`you own ${pct(founderStake(g), 0)}${g.stock.listed ? ` / ${g.stock.price.toFixed(2)} a share` : ''}`} />
       </div>
       <div className="col-span-12 grid grid-cols-8 gap-1">
         <Mini label="Brand" value={Math.round(me.brand * 100)} />
@@ -121,7 +135,7 @@ export function Dashboard() {
         <Mini label="Devices on sale" value={products.filter((p) => p.status === 'sale').length} />
         <Mini label="In development" value={products.filter((p) => p.status === 'dev').length} />
         <Mini label="Staff" value={`${g.staff.length}${g.staff.length ? ` / morale ${Math.round(fx.morale)}` : ''}`} />
-        <Mini label="Stores" value={g.stores.length} />
+        <Mini label="Stores / regions" value={`${g.stores.length} / ${REGIONS.filter((r) => g.regions[r.id].open).length}`} />
         <Mini label="Industry level" value={marketLevel(g.day).toFixed(1)} />
         <Mini label="R&D / month" value={money(g.rdBudget, 1)} />
       </div>
@@ -154,7 +168,22 @@ export function Dashboard() {
           <ProductTable g={g} rows={products} compact />
         )}
       </Panel>
-      <Panel title="Research" right={<Btn small tone="ghost" onClick={() => setTab('research')}>Open</Btn>} className="col-span-4" bodyClass="overflow-y-auto px-2 py-1">
+      <Panel title={`Goals / ${stage.name}`} right={<Btn small tone="ghost" onClick={() => setTab('goals')}>All {stage.done}/{stage.total}</Btn>} className="col-span-4" bodyClass="overflow-y-auto px-2 py-1">
+        {goals.map(({ goal, progress }) => (
+          <button key={goal.id} onClick={() => setTab('goals')} className="block w-full py-[3px] text-left">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="truncate text-[11px] text-fg">{goal.name}</span>
+              <span className="truncate text-[10px] text-faint">{goal.note}</span>
+            </div>
+            <Meter value={progress} tone={progress > 0.66 ? 'pos' : 'accent'} />
+          </button>
+        ))}
+        <div className="mb-1 mt-2 flex items-center justify-between border-t border-line pt-1">
+          <span className="label text-faint">Research</span>
+          <button className="num text-[10px] text-faint hover:text-fg" onClick={() => setTab('research')}>
+            OPEN
+          </button>
+        </div>
         {TRACKS.map((t) => (
           <div key={t} className="flex items-center gap-2 py-[3px]">
             <span className={`w-28 text-[11px] ${g.activeResearch.includes(t) ? 'text-accent' : 'text-dim'}`}>{TRACK_INFO[t].name}</span>
@@ -406,6 +435,7 @@ export function Finance() {
         <Kpi label="Profit, 12 months" value={money(income - costs)} tone={income - costs >= 0 ? 'pos' : 'neg'} sub={`unsold stock at cost ${money(stockValue, 1)}`} />
       </div>
       <div className="grid shrink-0 grid-cols-8 gap-1">
+        <Mini label="Shares and stakes, 12 mo" value={money(year.reduce((a, r) => a + (r.funding ?? 0), 0), 1)} />
         {COST_KEYS.map((k) => (
           <Mini key={k} label={`${COST_LABELS[k]}, 12 mo`} value={money(year.reduce((a, r) => a + r[k], 0), 1)} />
         ))}

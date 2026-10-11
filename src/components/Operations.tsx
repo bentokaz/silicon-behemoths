@@ -4,9 +4,9 @@ import { Line, LineChart, ReferenceLine, ResponsiveContainer, YAxis } from 'rech
 import { sfx } from '../audio/sfx'
 import { SUPPLY_LABELS } from '../data/catalog'
 import { TYPES } from '../data/devices'
-import { autoLine, buildFactory, cancelOrder, fmtDate, lockSupply } from '../sim/game'
+import { autoLine, buildFactory, cancelOrder, fmtDate, lockSupply, roomCost, zoneable } from '../sim/game'
 import { CONTRACT, FACTORY_SAVING, LOCK_DAYS, LOCK_FEE, buildCost, factoryLine, marketPrice, orderLeft } from '../sim/ops'
-import { ITEMS, SITE_TIERS, starterLine, tierOf } from '../sim/sites'
+import { ITEMS, SITE_TIERS, starterLine, tierOf, upkeep } from '../sim/sites'
 import { SUPPLY_CATS } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { SiteBuilder } from './SiteBuilder'
@@ -134,7 +134,8 @@ export function FactoryScreen() {
     if (err) say(err, 'bad')
     else (sfx.confirm(), setView('floor'))
   }
-  const starterCost = g.factory ? starterLine(g.factory).reduce((a, p) => a + ITEMS.factory[p.kind].cost, 0) : 0
+  const plan = g.factory ? starterLine(g.factory) : null
+  const starterCost = plan && g.factory ? plan.items.reduce((a, p) => a + ITEMS.factory[p.kind].cost, 0) + roomCost(g.factory, 'hall', zoneable(g.factory, ...plan.hall, 'rect').length) : 0
   const stages: [string, number][] = line ? [['Board assembly', line.caps.smt], ['Device assembly', line.caps.assembly], ['Packaging', line.caps.pack], ['Testing', line.caps.test]] : []
   const peak = Math.max(1, ...stages.map((s) => s[1]))
 
@@ -220,7 +221,7 @@ export function FactoryScreen() {
               <Fold title="Factory" open={false} bodyClass="p-2">
                 <div className="grid grid-cols-2 gap-1">
                   <Mini label="Size" value={tierOf(g.factory).name} tone="text-fg" />
-                  <Mini label="Upkeep / month" value={money(tierOf(g.factory).rent, 1)} />
+                  <Mini label="Upkeep / month" value={money(upkeep(g.factory), 1)} />
                 </div>
                 {next ? (
                   <Btn small className="mt-2 w-full" onClick={build}>

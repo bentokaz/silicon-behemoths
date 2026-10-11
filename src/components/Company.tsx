@@ -1,13 +1,15 @@
 // Staff and office screens, plus the company logo uploader.
 import { useRef, useState } from 'react'
 import { sfx } from '../audio/sfx'
-import { declineRaise, fire, fmtDate, giveRaise, headhunt, hire, train, upgradeOffice } from '../sim/game'
-import { SITE_TIERS, tierOf } from '../sim/sites'
+import { assignTeam, autoTeams, createTeam, declineRaise, deleteTeam, fire, fmtDate, giveRaise, headhunt, hire, renameTeam, setLead, setPolicy, train, upgradeOffice } from '../sim/game'
+import { ROOMS, SITE_TIERS, builtTiles, reachable, sealedRooms, sumOf, upkeep } from '../sim/sites'
+import { HOURS, PERKS, TEAM_SPAN, meetingFactor, perksCost, teamBonus, teamOf, unmanaged } from '../sim/staff'
+import type { StaffPolicy } from '../sim/types'
 import { HEADHUNT_COST, ROLE_INFO, TRAITS, inTraining, monthlySalaries, salaryFor, seatedStaff, staffEffects, titleFor, trainingCost } from '../sim/staff'
 import { type Employee, ROLES, type Role } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { SiteBuilder } from './SiteBuilder'
-import { Btn, Drawer, Empty, Fold, Kpi, Meter, Mini, Panel, Row, Tabs, Tag, money, pct } from './ui'
+import { Btn, Choice, Drawer, Empty, Fold, Kpi, Meter, Mini, Panel, Row, Tabs, Tag, TextInput, money, pct } from './ui'
 
 // ------------------------------------------------------------------ logo
 
@@ -174,7 +176,16 @@ function EmployeeDrawer({ e, seated, onClose }: { e: Employee; seated: boolean; 
               {e.skill >= e.potential ? 'At full potential' : `Send on a course (${money(trainingCost(e))}, 30 days)`}
             </Btn>
           )}
-          {!seated && <div className="mt-2 text-[11px] text-warn">No desk: not contributing. Add a desk in the office.</div>}
+          {!seated && <div className="mt-2 text-[11px] text-warn">No desk: not contributing. Add a desk on the campus.</div>}
+        </div>
+        <div className="border border-line p-2">
+          <div className="label mb-1 text-faint">Team</div>
+          <Choice label="Works in" value={teamOf(g, e.id)?.id ?? ''} options={[{ value: '', label: 'No team' }, ...g.teams.map((t) => ({ value: t.id, label: t.name }))]} onChange={(v) => act((s) => assignTeam(s, e.id, v || null))} />
+          {teamOf(g, e.id) && (
+            <Btn small className="mt-1 w-full" active={teamOf(g, e.id)?.leadId === e.id} onClick={() => act((s) => setLead(s, teamOf(s, e.id)!.id, teamOf(s, e.id)!.leadId === e.id ? undefined : e.id))}>
+              {teamOf(g, e.id)?.leadId === e.id ? 'Leads this team' : 'Make team lead'}
+            </Btn>
+          )}
         </div>
         <Btn small tone="danger" className="w-full" onClick={() => (act((s) => fire(s, e.id)), onClose())}>
           Let {e.name.split(' ')[0]} go
@@ -187,7 +198,9 @@ function EmployeeDrawer({ e, seated, onClose }: { e: Employee; seated: boolean; 
 export function Staff() {
   const g = useGame()
   const { act, say, setTab } = useStore.getState()
-  const [view, setView] = useState<'team' | 'hire'>(g.staff.length ? 'team' : 'hire')
+  const [view, setView] = useState<'team' | 'teams' | 'policy' | 'hire'>(g.staff.length ? 'team' : 'hire')
+  const loose = unmanaged(g)
+  const meet = meetingFactor(g)
   const [role, setRole] = useState<'all' | Role>('all')
   const [openId, setOpenId] = useState<string | null>(null)
   const fx = staffEffects(g)
@@ -212,7 +225,7 @@ export function Staff() {
         <Mini label="Support, tickets / day" value={Math.round(fx.support + 20)} />
       </div>
       <div className="flex shrink-0 items-center justify-between">
-        <Tabs value={view} onChange={setView} options={[{ value: 'team', label: 'Team', badge: g.staff.length }, { value: 'hire', label: 'Applicants', badge: g.candidates.length }]} className="flex-1" />
+        <Tabs value={view} onChange={setView} options={[{ value: 'team', label: 'People', badge: g.staff.length }, { value: 'teams', label: 'Teams', badge: loose ? `${loose} unled` : g.teams.length || undefined }, { value: 'policy', label: 'Policies' }, { value: 'hire', label: 'Applicants', badge: g.candidates.length }]} className="flex-1" />
         <div className="flex gap-1 pl-2">
           <Btn small active={role === 'all'} onClick={() => setRole('all')}>
             All
@@ -267,6 +280,99 @@ export function Staff() {
               </tbody>
             </table>
           ))}
+        {view === 'teams' && (
+          <div className="p-2">
+            <div className="mb-2 flex items-start justify-between gap-3">
+              <div className="max-w-[640px] text-[11px] leading-snug text-dim">
+                A team with a lead gets more done: the lead gives up part of their own work to lift everyone else, by more the more skilled they are. One lead can look after {TEAM_SPAN} people. Once the company passes {TEAM_SPAN} people, anyone without a lead works at 90%. Teams also need somewhere to meet: one place at a meeting table for every two members.
+              </div>
+              <div className="flex shrink-0 gap-1">
+                <Btn small onClick={() => (act((s) => autoTeams(s)), sfx.confirm(), say('Everyone was sorted into teams by role.'))} disabled={g.staff.length < 2}>
+                  Organise by role
+                </Btn>
+                <Btn small tone="primary" onClick={() => act((s) => createTeam(s, ''))}>
+                  New team
+                </Btn>
+              </div>
+            </div>
+            <div className="mb-2 grid grid-cols-4 gap-1">
+              <Mini label="Teams with a lead" value={g.teams.filter((t) => teamBonus(g, t) > 0).length} tone="text-fg" />
+              <Mini label="People without a lead" value={loose} tone={loose ? 'text-warn' : undefined} />
+              <Mini label="Meeting places" value={sumOf(g.office, 'meet', reachable(g.office))} />
+              <Mini label="Meeting space" value={meet >= 1 ? 'enough' : `${pct(meet, 0)} effective`} tone={meet >= 1 ? undefined : 'text-warn'} />
+            </div>
+            {g.teams.length === 0 && <Empty text="No teams yet. Create one and add people from their page, or let the game sort everyone by role." />}
+            <div className="grid grid-cols-2 gap-2">
+              {g.teams.map((t) => {
+                const members = t.members.map((id) => g.staff.find((e) => e.id === id)).filter((e): e is Employee => !!e)
+                const bonus = teamBonus(g, t)
+                return (
+                  <div key={t.id} className="border border-line">
+                    <div className="flex items-center gap-2 border-b border-line px-2 py-[5px]">
+                      <TextInput value={t.name} onChange={(v) => act((s) => renameTeam(s, t.id, v))} maxLength={24} className="h-6 flex-1 !border-transparent !bg-transparent !px-0 text-xs uppercase tracking-wider text-fg" />
+                      <span className={`num text-[11px] ${bonus > 0 ? 'text-pos' : 'text-warn'}`}>{bonus > 0 ? `+${pct(bonus, 0)} output` : members.length < 2 ? 'needs 2 people' : 'no lead'}</span>
+                      <Btn small tone="ghost" onClick={() => act((s) => deleteTeam(s, t.id))}>
+                        Disband
+                      </Btn>
+                    </div>
+                    {members.length > TEAM_SPAN && <div className="border-b border-line px-2 py-1 text-[10px] text-warn">Too many for one lead: the bonus is spread thin.</div>}
+                    {members.map((e) => (
+                      <div key={e.id} className="flex items-center gap-2 border-b border-line px-2 py-[4px] text-[11px] last:border-b-0">
+                        <RoleDot role={e.role} />
+                        <button className="flex-1 truncate text-left text-fg hover:text-accent" onClick={() => setOpenId(e.id)}>
+                          {e.name}
+                        </button>
+                        <span className="num w-6 text-right text-dim">{Math.floor(e.skill)}</span>
+                        <Btn small tone={t.leadId === e.id ? 'primary' : 'ghost'} onClick={() => act((s) => setLead(s, t.id, t.leadId === e.id ? undefined : e.id))}>
+                          {t.leadId === e.id ? 'Lead' : 'Make lead'}
+                        </Btn>
+                        <Btn small tone="ghost" onClick={() => act((s) => assignTeam(s, e.id, null))}>
+                          Remove
+                        </Btn>
+                      </div>
+                    ))}
+                    <div className="px-2 py-[5px]">
+                      <Choice label="Add" value="" options={[{ value: '', label: g.staff.some((e) => !teamOf(g, e.id)) ? 'Choose someone without a team' : 'Everyone has a team' }, ...g.staff.filter((e) => !teamOf(g, e.id)).map((e) => ({ value: e.id, label: `${e.name} (${ROLE_INFO[e.role].name.toLowerCase()}, ${Math.floor(e.skill)})` }))]} onChange={(v) => v && act((s) => assignTeam(s, v, t.id))} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+        {view === 'policy' && (
+          <div className="grid grid-cols-2 gap-2 p-2">
+            <div className="border border-line p-2">
+              <div className="label mb-2 text-faint">Working hours</div>
+              {(Object.keys(HOURS) as StaffPolicy['hours'][]).map((h) => (
+                <button key={h} onClick={() => (act((s) => setPolicy(s, { hours: h })), sfx.toggle())} className={`mb-1 block w-full border p-2 text-left ${g.policy.hours === h ? 'border-accent bg-accent/10' : 'border-line hover:border-line2'}`}>
+                  <div className="flex items-baseline justify-between">
+                    <span className={`text-xs uppercase tracking-wider ${g.policy.hours === h ? 'text-accent' : 'text-fg'}`}>{HOURS[h].name}</span>
+                    <span className="num text-[10px] text-dim">
+                      output {Math.round(HOURS[h].output * 100)}% / morale {HOURS[h].morale > 0 ? '+' : ''}
+                      {HOURS[h].morale}
+                    </span>
+                  </div>
+                  <div className="mt-[2px] text-[11px] text-dim">{HOURS[h].note}</div>
+                </button>
+              ))}
+            </div>
+            <div className="border border-line p-2">
+              <div className="label mb-2 text-faint">Perks</div>
+              {PERKS.map((p, i) => (
+                <button key={p.name} onClick={() => (act((s) => setPolicy(s, { perks: i })), sfx.toggle())} className={`mb-1 flex w-full items-baseline justify-between border p-2 text-left ${g.policy.perks === i ? 'border-accent bg-accent/10' : 'border-line hover:border-line2'}`}>
+                  <span className={`text-xs uppercase tracking-wider ${g.policy.perks === i ? 'text-accent' : 'text-fg'}`}>{p.name}</span>
+                  <span className="num text-[10px] text-dim">
+                    {money(p.perHead, 0)} a head / morale +{p.morale}
+                  </span>
+                </button>
+              ))}
+              <div className="mt-2 text-[11px] leading-snug text-dim">
+                Free lunches, health cover, shuttle buses, on-site childcare. Perks lift everyone's morale and are paid monthly with salaries. At today's headcount: <span className="num text-fg">{money(perksCost(g), 0)}</span> a month.
+              </div>
+            </div>
+          </div>
+        )}
         {view === 'hire' && (
           <table className="grid-table">
             <thead>
@@ -332,33 +438,52 @@ export function OfficeScreen() {
   const g = useGame()
   const { act, say } = useStore.getState()
   const fx = staffEffects(g)
-  const tier = tierOf(g.office)
   const next = SITE_TIERS.office[g.office.tier + 1]
+  const sealed = sealedRooms(g.office)
+  const kinds = new Set(g.office.rooms.map((r) => r.type))
   return (
     <SiteBuilder siteRef="office" site={g.office} seated={seatedStaff(g)}>
-      <Fold title="Office" bodyClass="p-2">
+      <Fold title="Campus" bodyClass="p-2">
         <div className="grid grid-cols-2 gap-1">
           <Mini label="Desks used" value={`${fx.seated} of ${fx.seats}`} tone={fx.idle ? 'text-warn' : 'text-fg'} />
           <Mini label="Without a desk" value={fx.idle} tone={fx.idle ? 'text-warn' : undefined} />
+          <Mini label="Rooms" value={`${g.office.rooms.length} / ${builtTiles(g.office)} m²`} />
+          <Mini label="Upkeep / month" value={money(upkeep(g.office), 1)} />
           <Mini label="Prestige" value={fx.prestige.toFixed(0)} />
-          <Mini label="Rent / month" value={money(tier.rent, 1)} />
+          <Mini label="Meeting places" value={sumOf(g.office, 'meet', reachable(g.office))} />
         </div>
+        {sealed.length > 0 && <div className="mt-2 text-[11px] text-warn">{sealed.length === 1 ? `The ${ROOMS.office[sealed[0].type].name.toLowerCase()} has no door.` : `${sealed.length} rooms have no door.`} Nothing in a sealed room counts.</div>}
         <div className="mt-2">
           <div className="flex items-baseline justify-between">
             <span className="text-[11px] text-dim">Comfort</span>
             <span className="num text-[11px] text-fg">{pct(fx.comfort, 0)}</span>
           </div>
           <Meter value={fx.comfort} tone={fx.comfort > 0.7 ? 'pos' : fx.comfort > 0.35 ? 'accent' : 'warn'} />
-          <div className="mt-1 text-[10px] leading-snug text-faint">Comfort lifts morale. Prestige attracts better applicants and helps fan events.</div>
+          <div className="mt-1 text-[10px] leading-snug text-faint">Comfort lifts morale: build a lounge, a fitness room or an atrium garden. Prestige attracts better applicants and helps fan events.</div>
         </div>
       </Fold>
-      <Fold title="Move up" open={!!next} bodyClass="p-2">
+      <Fold title="Specialist rooms" open={false} bodyClass="px-2 py-1">
+        {(
+          [
+            ['lab', 'Research lab', 'researchers'],
+            ['eng', 'Hardware workshop', 'hardware engineers'],
+            ['server', 'Server room', 'software engineers'],
+            ['studio', 'Design studio', 'designers'],
+            ['media', 'Marketing suite', 'marketers'],
+            ['support', 'Support centre', 'support agents'],
+          ] as const
+        ).map(([id, name, who]) => (
+          <Row key={id} k={name} v={kinds.has(id) ? 'built' : `+25% for ${who}`} tone={kinds.has(id) ? 'text-pos' : undefined} />
+        ))}
+        <div className="py-1 text-[10px] leading-snug text-faint">Each holds a station that boosts one person of that role. Stations only go in their own kind of room.</div>
+      </Fold>
+      <Fold title="More land" open={!!next} bodyClass="p-2">
         {next ? (
           <>
             <div className="text-sm text-fg">{next.name}</div>
             <div className="text-[11px] leading-snug text-dim">{next.blurb}</div>
             <div className="num mt-1 text-[10px] text-faint">
-              {next.w} x {next.h} m, rent {money(next.rent, 1)} / mo
+              {next.w} x {next.h} m, land {money(next.rent, 1)} / mo
             </div>
             <Btn
               tone="primary"
@@ -366,15 +491,15 @@ export function OfficeScreen() {
               onClick={() => {
                 const err = act((s) => upgradeOffice(s))
                 if (err) say(err, 'bad')
-                else sfx.confirm()
+                else sfx.zone()
               }}
             >
-              Move in for {money(next.cost, 1)}
+              Move for {money(next.cost, 1)}
             </Btn>
-            <div className="mt-1 text-[10px] text-faint">Furniture moves with you. Anything that does not fit the new floor is sold back at full price.</div>
+            <div className="mt-1 text-[10px] text-faint">Every room and everything in it is rebuilt on the new plot as it stands, with open land all around to grow into.</div>
           </>
         ) : (
-          <div className="text-[11px] text-dim">You own the ring campus, the largest home there is.</div>
+          <div className="text-[11px] text-dim">You own the campus, the largest plot there is. The rest is up to you.</div>
         )}
       </Fold>
       <Fold title="Team effects" open={false} bodyClass="px-2 py-1">

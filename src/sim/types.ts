@@ -193,6 +193,8 @@ export interface Product {
   /** How happy owners are, 0-1. */
   satisfaction: number
   feedback: Feedback[]
+  /** A fault serious enough for a recall: waiting for a decision, done, or ignored. */
+  recall?: { state: 'open' | 'done' | 'ignored'; day: number; cost: number }
   monthUnits: number
   history: number[]
   segUnits: Record<string, number>
@@ -222,6 +224,16 @@ export interface Company {
   software: number
   /** Uploaded logo as a small PNG data URL (player only). */
   logo?: string
+  /** Region id the company is based in. */
+  home?: string
+  /** Sales revenue for each of the last 12 months. */
+  revYear?: number[]
+  revMonth?: number
+  /** What the company is worth, updated monthly, and its history. */
+  value?: number
+  valueHistory?: number[]
+  /** Set when the player bought the company outright. */
+  acquired?: boolean
 }
 
 export type Role = 'engineer' | 'software' | 'designer' | 'researcher' | 'marketer' | 'support'
@@ -250,9 +262,23 @@ export interface Employee {
   raiseAfter?: number
 }
 
+/** A group of employees working under a lead. */
+export interface Team {
+  id: string
+  name: string
+  leadId?: string
+  members: string[]
+}
+
+export interface StaffPolicy {
+  hours: 'relaxed' | 'standard' | 'crunch'
+  /** 0-3: none, basics, generous, lavish. */
+  perks: number
+}
+
 // ---- buildable sites: offices, factories, stores
 
-export type SiteKind = 'office' | 'factory' | 'store'
+export type SiteKind = 'office' | 'factory' | 'store' | 'venue'
 
 export interface SiteItem {
   id: string
@@ -263,13 +289,24 @@ export interface SiteItem {
   rot: number
 }
 
-/** A wall segment on the north or west edge of a tile. */
+/**
+ * A change to the wall on the north or west edge of a tile. Walls stand
+ * wherever two rooms meet; this swaps one stretch for glass, a door or a gap.
+ */
 export interface SiteWall {
   id: string
   x: number
   y: number
   side: 'n' | 'w'
-  kind: 'wall' | 'glass' | 'door'
+  kind: 'glass' | 'door' | 'open'
+}
+
+export interface Room {
+  /** Number stored in the site grid for this room's tiles. */
+  n: number
+  type: string
+  /** Index into the room type's styles. */
+  style: number
 }
 
 export interface Site {
@@ -277,17 +314,28 @@ export interface Site {
   tier: number
   w: number
   h: number
-  shape: 'rect' | 'ring'
+  /** Room number per tile, row by row; 0 is open ground. */
+  grid: number[]
+  rooms: Room[]
+  nextRoom: number
   items: SiteItem[]
   walls: SiteWall[]
-  /** Floor finish per tile, keyed "x,y". Missing tiles use the default. */
+  /** Ground finish per open tile, keyed "x,y". Missing tiles are lawn. */
   floor: Record<string, string>
+  /** Index into FACADES and ROOFS, and how many storeys the building has. */
+  facade: number
+  roof: number
+  floors: number
+  /** Bumped on every change, so the 3D view knows when to rebuild. */
+  rev: number
 }
 
 export interface Store {
   id: string
   name: string
   location: string
+  /** Region id the store trades in. */
+  region: string
   site: Site
   openedDay: number
   unitsTotal: number
@@ -324,6 +372,8 @@ export interface Campaign {
   monthly: number
   startedDay: number
   spent: number
+  /** Region id the campaign runs in; missing means every region the company sells in. */
+  region?: string
 }
 
 export type EventType = 'keynote' | 'expo' | 'fanfest' | 'devcon'
@@ -339,6 +389,70 @@ export interface GameEvent {
   done: boolean
   score?: number
   summary?: string
+  /** What happened on stage, for the replay. */
+  beats?: { wow: number; reach: number; crew: number; luck: number; seats: number }
+}
+
+// ---- stock market
+
+export interface Investor {
+  name: string
+  kind: string
+  shares: number
+  paid: number
+  day: number
+}
+
+export interface StockState {
+  listed: boolean
+  /** Shares in issue, and how many the founder (the player) holds. */
+  shares: number
+  founder: number
+  price: number
+  /** Month-end share prices. */
+  history: number[]
+  investors: Investor[]
+  /** Market mood toward the company, -1 to 1. */
+  sentiment: number
+  /** The board's confidence in the founder, 0-100. */
+  confidence: number
+  lowDays: number
+  /** Share of monthly profit paid out as dividends, 0-0.5. */
+  payout: number
+  /** Day of the last funding round or share issue. */
+  lastRaise: number
+  /** Fraction of each rival the company owns. */
+  holdings: Record<string, { stake: number; paid: number }>
+  dividendsPaid: number
+}
+
+// ---- regions
+
+export interface RegionState {
+  open: boolean
+  awareness: number
+  since: number
+  /** Local price as a multiple of the list price. */
+  priceAdj: number
+  /** Units sold here this month, and month by month. */
+  monthUnits: number
+  history: number[]
+}
+
+// ---- after-sales
+
+export interface CareState {
+  warrantyYears: number
+  updateYears: number
+  tradeIn: boolean
+  refurb: boolean
+  plan: boolean
+  /** Monthly price of the care plan. */
+  planPrice: number
+  subscribers: number
+  /** This month so far, and last month, for the screen. */
+  month: { repairs: number; repairCost: number; updates: number; planIncome: number; tradeIns: number; refurbIncome: number }
+  last: { repairs: number; repairCost: number; updates: number; planIncome: number; tradeIns: number; refurbIncome: number }
 }
 
 export interface CustomChip {
@@ -383,6 +497,8 @@ export interface GameConfig {
   unlimitedMoney: boolean
   seed: number
   logo?: string
+  /** Region id the company starts in. */
+  home?: string
 }
 
 export interface MonthReport {
@@ -401,6 +517,8 @@ export interface MonthReport {
   interest: number
   units: number
   cash: number
+  /** Money in from investors and share sales, less buybacks, dividends and stakes bought. */
+  funding: number
 }
 export const COST_KEYS = ['production', 'rd', 'marketing', 'development', 'overhead', 'salaries', 'facilities', 'interest'] as const
 export type CostKey = (typeof COST_KEYS)[number]
@@ -409,7 +527,7 @@ export const monthCosts = (r: MonthReport) => COST_KEYS.reduce((a, k) => a + r[k
 export interface NewsItem {
   id: number
   day: number
-  kind: 'launch' | 'review' | 'research' | 'rival' | 'finance' | 'alert' | 'staff' | 'event'
+  kind: 'launch' | 'review' | 'research' | 'rival' | 'finance' | 'alert' | 'staff' | 'event' | 'goal'
   text: string
   productId?: string
 }
@@ -423,6 +541,8 @@ export interface GameState {
   cash: number
   debtDays: number
   gameOver: boolean
+  /** Why the game ended: out of money, or removed by the board. */
+  overReason?: 'bankrupt' | 'ousted'
   companies: Company[]
   products: Product[]
   levels: Levels
@@ -436,6 +556,7 @@ export interface GameState {
   candidates: Employee[]
   office: Site
   factory: Site | null
+  venue: Site | null
   orders: ProductionOrder[]
   supply: SupplyState
   stores: Store[]
@@ -446,6 +567,13 @@ export interface GameState {
   /** People who own one of the company's devices. */
   owners: number
   fans: number
+  teams: Team[]
+  policy: StaffPolicy
+  stock: StockState
+  regions: Record<string, RegionState>
+  care: CareState
+  /** Goal id to the day it was reached. */
+  goals: Record<string, number>
   cur: MonthReport
   reports: MonthReport[]
   shareHistory: { month: number; units: Record<string, number> }[]

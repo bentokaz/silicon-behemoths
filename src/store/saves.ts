@@ -5,6 +5,9 @@ import type { GameState } from '../sim/types'
 
 const PREFIX = 'sb-save:'
 export const AUTOSAVE = 'autosave'
+/** Written automatically the moment the company's cash goes negative. */
+export const BEFORE_DEBT = 'before-debt'
+export const slotName = (slot: string) => (slot === AUTOSAVE ? 'Autosave' : slot === BEFORE_DEBT ? 'Before the debt' : slot === 'quick' ? 'Quick save' : slot)
 
 export interface SaveMeta {
   slot: string
@@ -22,6 +25,9 @@ export async function saveGame(slot: string, state: GameState): Promise<void> {
   const meta: SaveMeta = { slot, company: player(state).name, day: state.day, cash: state.cash, savedAt: Date.now() }
   await set(PREFIX + slot, { meta, state } satisfies SaveFile)
 }
+
+/** Save a copy of the game that is not the live one. */
+export const saveSnapshot = (slot: string, state: GameState) => saveGame(slot, state)
 
 export async function listSaves(): Promise<SaveMeta[]> {
   const all = (await keys()).filter((k): k is string => typeof k === 'string' && k.startsWith(PREFIX))

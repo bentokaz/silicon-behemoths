@@ -1,4 +1,5 @@
 // Main menu and the new-game setup screen.
+import { REGIONS } from '../sim/regions'
 import { useState } from 'react'
 import { sfx } from '../audio/sfx'
 import { TRACK_INFO } from '../data/catalog'
@@ -85,6 +86,16 @@ export function NewGame() {
             <label className="flex items-center justify-between gap-2 py-1">
               <span className="text-[11px] text-dim">Brand colour</span>
               <input type="color" value={cfg.color} onChange={(e) => up({ color: e.target.value })} />
+            </label>
+            <label className="flex items-center justify-between gap-2 py-1">
+              <span className="text-[11px] text-dim">Home market</span>
+              <select value={cfg.home ?? 'na'} onChange={(e) => up({ home: e.target.value })} className="h-7 w-48 rounded-none border border-line2 bg-raise px-2 text-xs text-fg outline-none focus:border-accent">
+                {REGIONS.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
             </label>
             <label className="flex items-center justify-between gap-2 py-1">
               <span className="text-[11px] text-dim">World seed</span>
