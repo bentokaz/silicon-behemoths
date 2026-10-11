@@ -3,6 +3,7 @@
 import { marketLevel, refScore } from '../data/catalog'
 import { OUTLETS, type SegmentInfo, TYPES, segmentsOf, subLabel } from '../data/devices'
 import { type RngHolder, clamp, pick, range } from './rng'
+import { priceIndex } from './world'
 import { type Company, type Feedback, type Product, type Review, SUBS, type SubScores } from './types'
 
 type Probe = Pick<Product, 'raw' | 'featureBonus' | 'price' | 'type'>
@@ -31,7 +32,8 @@ export function segmentQuality(n: SubScores, maker: Maker, featureBonus: number,
 
 export function utility(p: Probe, maker: Maker, seg: SegmentInfo, day: number): number {
   const q = segmentQuality(normalised(p.raw, day), maker, p.featureBonus, seg)
-  return Math.pow(Math.max(0, q), 1.5) * priceFactor(p.price, seg)
+  // what counts as cheap or dear moves with the years
+  return Math.pow(Math.max(0, q), 1.5) * priceFactor(p.price / priceIndex(day), seg)
 }
 
 /** Appeal on a 0-100 scale for the designer readout. 100 = a strong fit. */
@@ -95,7 +97,7 @@ export function tierAverages(p: Pick<Product, 'price' | 'tiers' | 'design'>): { 
 export function makeReviews(r: RngHolder, p: Product, maker: Maker, day: number, issues: string[]): Review[] {
   const n = normalised(p.raw, day)
   const { seg, u } = bestSegment(p, maker, day)
-  const pf = priceFactor(p.price, seg)
+  const pf = priceFactor(p.price / priceIndex(day), seg)
   return OUTLETS.map((o) => {
     let nw = 0
     for (const k of SUBS) nw += o.weights[k] * n[k]
@@ -174,7 +176,7 @@ export function makeFeedback(r: RngHolder, p: Product, maker: Maker, day: number
     if (rel > 1.05) good.push(key(k))
     if (rel < 0.85) bad.push(key(k))
   }
-  const pf = priceFactor(p.price, seg)
+  const pf = priceFactor(p.price / priceIndex(day), seg)
   if (pf > 1.1) good.push('price')
   if (pf < 0.9) bad.push('price')
   if (p.defectRate > 0.02) bad.push('defect')

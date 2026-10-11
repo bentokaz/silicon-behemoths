@@ -3,6 +3,7 @@
 import { DAYS_PER_MONTH, DAYS_PER_YEAR, MAX_LEVEL, START_YEAR, SUPPLY_LABELS, TRACK_INFO, TRUNK_REQS, featureCost, featureInfo, featuresAtLevels, marketLevel, researchCost } from '../data/catalog'
 import { RIVALS, type RivalSeed, SEGMENTS, TIERS, TYPES, segmentInfo, segmentsOf } from '../data/devices'
 import { BUZZ_DECAY, CHANNELS, EVENTS, EVENT_LEAD, FAN_CYCLE, campaignDay, dailyTickets, eventBlocked, nextFair, productSatisfaction, resolveEvent } from './growth'
+import { INCIDENTS } from './world'
 import { RECALL_DEADLINE, TRADE_CREDIT, TRADE_PULL, REFURB_RETURN, UPDATE_YEARS, WARRANTY_YEARS, careBonus, careSatisfaction, checkRecalls, closeCareMonth, newCare, recallCost, stepCare, warrantyLoad } from './care'
 import { type Goal, checkGoals } from './goals'
 import { OUTSIDE_OPTION, bestSegment, launchHype, lifecycle, makeFeedback, makeReviews, priceFactor, pull, segmentDemand, tierAverages, utility } from './market'
@@ -10,6 +11,7 @@ import { DEFAULT_HOME, REGIONS, addAwareness, entryBlocked, homeRegion, newRegio
 import { buyBack, buyStake, goPublic, holdingIncome, issueShares, monthlyStock, moveSentiment, newStock, raiseRound, sellStake, stakeIn, stakePrice, stepStock, takeoverPrice, valuation } from './stock'
 import { CONTRACT, LOCK_DAYS, LOCK_FEE, buildCost, costNow, factoryLine, marketPrice, newSupply, stepProduction, stepSupply } from './ops'
 import { type VariantId, generateDesign, layoutParts } from './rivals'
+import { INCIDENT_WAIT, STARTUPS, economyNow, hasType, makeOriginal, originalName, priceIndex, rivalStrategy, rollIncident, settleIncident, unlockBlocked, unlockCost } from './world'
 import { clamp, int, pick, rand, range } from './rng'
 import { evaluate } from './scoring'
 import { FACADES, FLOOR_COST, GROUNDS, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, type Shape, areaTiles, autoDoor, builtTiles, canPlace, gridAt, inPlot, isBoundary, itemAt, itemTiles, newSite, roomOf, shapeCuts, starterLine, storeStats, tidy, tierOf, upkeep, zone } from './sites'
@@ -152,7 +154,7 @@ function rivalLaunch(s: GameState, c: Company, segment: SegmentId, backdate = 0)
   const name = `${family} ${c.counter}`
   const { product, issues } = createProduct(s, c, { name, family, variant: '', design, price: 0, segment }, levels, false)
   const costBased = (product.unitCost / (1 - RETAIL_CUT)) * (1 + TIERS[segment].margin) * c.priceMult
-  const refBased = seg.priceRef * c.priceMult * 0.95
+  const refBased = seg.priceRef * priceIndex(s.day) * c.priceMult * 0.95
   product.price = roundPrice(Math.max((product.unitCost * 1.12) / (1 - RETAIL_CUT), 0.5 * costBased + 0.5 * refBased))
   product.stock = 1e12 // rivals never run out; a finite number keeps saves valid JSON
   release(s, product, c, issues)
@@ -231,6 +233,9 @@ export function newGame(cfg: GameConfig): GameState {
     regions: newRegions(cfg.home ?? DEFAULT_HOME, START_AWARENESS),
     care: newCare(),
     goals: {},
+    types: cfg.startType && cfg.startType !== 'all' ? [cfg.startType] : undefined,
+    incidents: [],
+    guide: 0,
     cur: emptyReport(0),
     reports: [],
     shareHistory: [],
@@ -246,6 +251,7 @@ export function newGame(cfg: GameConfig): GameState {
   })
   RIVALS.forEach((seed, i) => {
     const c = makeCompany(`r${i}`, seed)
+    if (!cfg.parody) makeOriginal(c)
     s.companies.push(c)
     for (const seg of c.segments) {
       rivalLaunch(s, c, seg, int(s, 20, 330))
@@ -321,6 +327,7 @@ export function startProduct(s: GameState, o: LaunchOrder): string | null {
   const ev = evaluate(o.design, s.levels, marketLevel(s.day), s.features, s.chips)
   const blocking = ev.report.issues.find((i) => i.level === 'error')
   if (blocking) return blocking.text
+  if (!hasType(s, o.design.type)) return `Your company does not make ${TYPES[o.design.type].plural.toLowerCase()} yet. Open that line under Research.`
   if (!o.family.trim()) return 'The device needs a name'
   if (o.price <= 0) return 'Set a price'
   const name = productName(o.family, o.variant)
@@ -1086,7 +1093,7 @@ function stepSales(s: GameState) {
   for (const seg of SEGMENTS) {
     const pool = onSale.filter((p) => p.type === seg.type)
     if (!pool.length) continue
-    const demand = segmentDemand(seg, s.day)
+    const demand = segmentDemand(seg, s.day) * (seg.sens > 1.9 ? Math.sqrt(economyNow(s)) : economyNow(s))
     const makers = pool.map((p) => companies.get(p.companyId)!)
     const base = pool.map((p, i) => (p.stock <= 0 ? 0 : pull(p, makers[i], seg, s.day)))
     const hype = pool.map((p) => launchHype(p, s.day))
@@ -1332,6 +1339,11 @@ function closeMonth(s: GameState) {
     }
   }
   for (const n of checkRecalls(s)) news(s, 'alert', n.text, n.productId)
+  for (const n of rivalStrategy(s, (id) => endProduct(s, s.products.find((p) => p.id === id)!))) news(s, 'rival', n.text)
+  // something happens; anything left undecided for a month takes its second option
+  for (const i of s.incidents) if (!i.done && s.day - i.day >= INCIDENT_WAIT) decide(s, i.id, 1)
+  const incident = rollIncident(s)
+  if (incident) news(s, 'alert', `${INCIDENTS[incident.kind].title}: ${INCIDENTS[incident.kind].text(s, incident)}`)
   closeCareMonth(s)
   for (const r of REGIONS) {
     const st = s.regions[r.id]
@@ -1377,7 +1389,7 @@ function closeMonth(s: GameState) {
 
   const alive = s.companies.filter((c) => !c.isPlayer && c.alive)
   const used = new Set(s.companies.map((c) => c.name))
-  const free = STARTUP_NAMES.filter((n) => !used.has(n))
+  const free = (s.config.parody ? STARTUP_NAMES : STARTUPS).filter((n) => !used.has(n))
   if (alive.length < 9 && free.length && rand(s) < 0.08) {
     const name = pick(s, free)
     const segs = [pick(s, SEGMENTS).id]
@@ -1513,6 +1525,28 @@ export function acquire(s: GameState, companyId: string): string | null {
   return null
 }
 
+// ---------------------------------------------------------------- device lines and incidents
+
+/** Start making a new kind of device. */
+export function unlockType(s: GameState, type: DeviceType): string | null {
+  const blocked = unlockBlocked(s, type)
+  if (blocked) return blocked
+  const cost = unlockCost(s, type)
+  if (!canAfford(s, cost)) return 'Not enough cash'
+  spend(s, cost, 'rd')
+  s.types = [...(s.types ?? []), type]
+  news(s, 'research', `${player(s).name} can now design ${TYPES[type].plural.toLowerCase()}.`)
+  return null
+}
+
+/** Choose how to respond to an incident (0 is the first option). */
+export function decide(s: GameState, incidentId: string, choice: number): string | null {
+  const r = settleIncident(s, incidentId, choice, (n) => canAfford(s, n))
+  if (r.error) return r.error
+  if (r.text) news(s, 'event', r.text)
+  return null
+}
+
 // ---------------------------------------------------------------- regions
 
 export function enterRegion(s: GameState, id: string): string | null {
@@ -1611,7 +1645,7 @@ function convertSite(s: GameState, old: OldSite | null | undefined, kind: SiteKi
 /** Bring a save from an older version up to date. */
 export function migrate(input: GameState): GameState {
   const s = input as GameState & Record<string, unknown>
-  if (s.version >= SAVE_VERSION) return s
+  if (s.version >= SAVE_VERSION && s.incidents && s.guide !== undefined) return s
   const max = Object.fromEntries(TRACKS.map((t) => [t, MAX_LEVEL])) as Levels
   if (!Array.isArray(s.features)) s.features = featuresAtLevels(s.levels)
   s.progress = s.progress ?? {}
@@ -1638,11 +1672,13 @@ export function migrate(input: GameState): GameState {
   RIVALS.forEach((seed, i) => {
     let c = s.companies.find((x) => x.id === `r${i}`)
     // a start-up founded during play may already hold this id; the seeded company then takes a fresh one
-    const taken = !!c && c.name !== seed.name && !seed.segments.some((seg) => c!.segments.includes(seg))
+    const known = (x: Company) => x.name === seed.name || x.name === originalName(seed.name)
+    const taken = !!c && !known(c) && !seed.segments.some((seg) => c!.segments.includes(seg))
     if (taken) c = undefined
     if (!c) {
-      if (s.companies.some((x) => x.name === seed.name)) return
+      if (s.companies.some(known)) return
       c = makeCompany(taken ? `r${s.nextId++}` : `r${i}`, seed)
+      if (!s.config.parody) makeOriginal(c)
       s.companies.push(c)
     }
     c.software = c.software ?? seed.software
@@ -1709,6 +1745,9 @@ export function migrate(input: GameState): GameState {
     s.goals = {}
     checkGoals(s)
   }
+  s.incidents = s.incidents ?? []
+  // a company that predates the guided start has no use for it
+  s.guide = s.guide ?? -1
   refreshCandidates(s)
   s.version = SAVE_VERSION
   return s

@@ -519,6 +519,24 @@ export interface GameConfig {
   logo?: string
   /** Region id the company starts in. */
   home?: string
+  /** The kind of device the company begins with; 'all' starts with every kind open. */
+  startType?: DeviceType | 'all'
+  /** Use the old parody names for rivals instead of invented ones. */
+  parody?: boolean
+}
+
+/** Something that has happened to the company and may need a decision. */
+export interface Incident {
+  id: string
+  kind: string
+  day: number
+  done: boolean
+  result?: string
+  productId?: string
+  staffId?: string
+  rivalId?: string
+  amount?: number
+  note?: string
 }
 
 export interface MonthReport {
@@ -594,6 +612,13 @@ export interface GameState {
   care: CareState
   /** Goal id to the day it was reached. */
   goals: Record<string, number>
+  /** Kinds of device the company may build. Missing means all of them. */
+  types?: DeviceType[]
+  incidents: Incident[]
+  /** A boom or a downturn: a multiplier on every market until the day given. */
+  economy?: { mult: number; until: number }
+  /** Step of the guided start the player has reached; -1 once finished or switched off. */
+  guide: number
   cur: MonthReport
   reports: MonthReport[]
   shareHistory: { month: number; units: Record<string, number> }[]

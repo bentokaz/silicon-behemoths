@@ -812,7 +812,7 @@ describe('old saves', () => {
     s.version = 2
     for (const k of ['factory', 'orders', 'supply', 'stores', 'campaigns', 'events', 'chips', 'os', 'owners', 'fans', 'venue', 'teams', 'policy', 'stock', 'regions', 'care', 'goals']) delete s[k]
     ;(s as unknown as { office: unknown }).office = { tier: 1, w: 12, h: 8, items: [{ id: 'o1', kind: 'desk', x: 2, y: 2, rot: 0 }, { id: 'o9', kind: 'wall', x: 3, y: 3, rot: 0 }] }
-    s.companies = s.companies.filter((c) => !['Lenova', 'Dull', 'HB', 'Fitbyte', 'Garmon'].includes(c.name))
+    s.companies = s.companies.filter((c) => !['Lyra', 'Dalton', 'Halberg', 'Stride', 'Garrow'].includes(c.name))
     s.products = s.products.filter((p) => p.type === 'phone')
     for (const p of s.products) for (const k of ['type', 'family', 'variant', 'tiers', 'costParts', 'hype', 'buzz', 'defectRate', 'satisfaction', 'feedback']) delete (p as unknown as Record<string, unknown>)[k]
     const m = migrate(JSON.parse(JSON.stringify(s)) as GameState)
@@ -825,7 +825,7 @@ describe('old saves', () => {
     // an established company keeps selling everywhere it already did
     expect(REGIONS.every((r) => m.regions[r.id].open)).toBe(true)
     expect(m.stock.founder).toBe(m.stock.shares)
-    expect(m.companies.some((c) => c.name === 'Lenova')).toBe(true)
+    expect(m.companies.some((c) => c.name === 'Lyra')).toBe(true)
     expect(m.candidates).toHaveLength(9)
     tick(m, 400)
     expect(Number.isFinite(m.cash)).toBe(true)

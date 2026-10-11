@@ -1,6 +1,6 @@
 // Goals: milestones on the way from a garage to a behemoth. Each pays a small
 // reward the first time it is reached.
-import { DEVICE_TYPES, type GameState } from './types'
+import { DEVICE_TYPES, type GameState, monthCosts } from './types'
 import { REGIONS } from './regions'
 import { builtTiles, lineStats } from './sites'
 import { founderStake, marketCap } from './stock'
@@ -43,6 +43,11 @@ export const GOALS: Goal[] = [
   { id: 'chip', group: 'Products', name: 'Own silicon', note: 'Finish a chip of your own.', progress: (s) => (s.chips.some((c) => c.status === 'ready') ? 1 : 0), cash: 1e6 },
   { id: 'os', group: 'Products', name: 'Own platform', note: 'Ship your own operating system.', progress: (s) => (s.os.own ? 1 : 0), cash: 1e6 },
 
+  { id: 'variants', group: 'Products', name: 'A full range', note: 'Sell three versions of the same device at once (such as a Pro and a Lite).', progress: (s) => { const by = new Map<string, number>(); for (const p of mine(s)) if (p.status === 'sale') by.set(p.family, (by.get(p.family) ?? 0) + 1); return ratio(Math.max(0, ...by.values()), 3) }, cash: 800e3 },
+  { id: 'design90', group: 'Products', name: 'Object of desire', note: 'Ship a device with a design score of 90% or more.', progress: (s) => ratio(mine(s).filter((p) => p.status !== 'dev').reduce((m, p) => Math.max(m, p.designPct), 0), 90), cash: 600e3, fans: 5000 },
+  { id: 'hit', group: 'Products', name: 'A hit', note: 'Sell a million units of a single device.', progress: (s) => ratio(mine(s).reduce((m, p) => Math.max(m, p.unitsSold), 0), 1e6), cash: 3e6 },
+  { id: 'lines4', group: 'Products', name: 'Branching out', note: 'Open four kinds of device.', progress: (s) => ratio(s.types ? s.types.length : DEVICE_TYPES.length, 4), cash: 1.5e6 },
+  { id: 'happy', group: 'Products', name: 'Loved', note: 'Have a device on sale with owner satisfaction of 85% or more.', progress: (s) => ratio(mine(s).filter((p) => p.status === 'sale').reduce((m, p) => Math.max(m, p.satisfaction), 0), 0.85), cash: 500e3, fans: 8000 },
   { id: 'staff10', group: 'Company', name: 'A real team', note: 'Employ 10 people.', progress: (s) => ratio(s.staff.length, 10), cash: 100e3 },
   { id: 'staff50', group: 'Company', name: 'All hands', note: 'Employ 50 people.', progress: (s) => ratio(s.staff.length, 50), cash: 600e3 },
   { id: 'staff150', group: 'Company', name: 'Org chart', note: 'Employ 150 people.', progress: (s) => ratio(s.staff.length, 150), cash: 3e6 },
@@ -53,6 +58,11 @@ export const GOALS: Goal[] = [
   { id: 'factory', group: 'Company', name: 'Made here', note: 'Run a working production line in your own factory.', progress: (s) => (!s.factory ? 0 : lineStats(s.factory).running ? 1 : 0.5), cash: 500e3 },
   { id: 'venue', group: 'Company', name: 'Our own stage', note: 'Host a keynote at a venue you built.', progress: (s) => (s.events.some((e) => e.done && e.type === 'keynote' && e.venue === 3) ? 1 : s.venue ? 0.5 : 0), cash: 1e6, fans: 10e3 },
 
+  { id: 'morale', group: 'Company', name: 'A good place to work', note: 'Keep average morale at 80 or more with at least 20 staff.', progress: (s) => (s.staff.length >= 20 ? ratio(s.staff.reduce((a, e) => a + e.morale, 0) / s.staff.length, 80) : s.staff.length / 40), cash: 500e3 },
+  { id: 'tower', group: 'Company', name: 'Skyline', note: 'Give head office five storeys.', progress: (s) => ratio(s.office.floors, 5), cash: 1e6 },
+  { id: 'crisis', group: 'Company', name: 'Steady hands', note: 'Deal with five incidents.', progress: (s) => ratio(s.incidents.filter((i) => i.done).length, 5), cash: 400e3 },
+  { id: 'care', group: 'Reach', name: 'Looked after', note: 'Sign up 100,000 care plan members.', progress: (s) => ratio(s.care.subscribers, 100e3), cash: 1e6 },
+  { id: 'flagships', group: 'Reach', name: 'On every high street', note: 'Run a store in three different regions.', progress: (s) => ratio(new Set(s.stores.map((st) => st.region)).size, 3), cash: 2e6 },
   { id: 'fans100k', group: 'Reach', name: 'A following', note: 'Reach 100,000 fans.', progress: (s) => ratio(s.fans, 100e3), cash: 500e3 },
   { id: 'fans1m', group: 'Reach', name: 'A movement', note: 'Reach a million fans.', progress: (s) => ratio(s.fans, 1e6), cash: 4e6 },
   { id: 'store1', group: 'Reach', name: 'Open for business', note: 'Open your first store.', progress: (s) => ratio(s.stores.length, 1), cash: 200e3 },
@@ -65,6 +75,8 @@ export const GOALS: Goal[] = [
 
   { id: 'rev10m', group: 'Money', name: 'Eight figures', note: 'Earn $10M from sales in one month.', progress: (s) => ratio(bestMonth(s), 10e6), cash: 500e3 },
   { id: 'rev100m', group: 'Money', name: 'Nine figures', note: 'Earn $100M from sales in one month.', progress: (s) => ratio(bestMonth(s), 100e6), cash: 5e6 },
+  { id: 'profit1', group: 'Money', name: 'In the black', note: 'Finish a month in profit.', progress: (s) => (s.reports.some((r) => r.revenue + r.other - monthCosts(r) > 0) ? 1 : 0), cash: 100e3 },
+  { id: 'stake', group: 'Money', name: 'A seat at their table', note: 'Own a quarter of a rival.', progress: (s) => ratio(Math.max(0, ...Object.values(s.stock.holdings).map((h) => h.stake)), 0.25), cash: 1e6 },
   { id: 'backed', group: 'Money', name: 'Backed', note: 'Close a funding round with an investor.', progress: (s) => (s.stock.investors.length || s.stock.listed ? 1 : 0), cash: 0, fans: 500 },
   { id: 'ipo', group: 'Money', name: 'Ring the bell', note: 'List the company on the stock market.', progress: (s) => (s.stock.listed ? 1 : 0), cash: 0, fans: 20e3 },
   { id: 'cap1b', group: 'Money', name: 'Unicorn', note: 'Be worth a billion dollars.', progress: (s) => ratio(marketCap(s), 1e9), cash: 5e6 },
