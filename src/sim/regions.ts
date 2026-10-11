@@ -23,12 +23,12 @@ export interface RegionDef {
 }
 
 export const REGIONS: RegionDef[] = [
-  { id: 'na', name: 'North America', share: 0.22, wealth: 1.25, tariff: 0.06, entry: 4e6, overhead: 90e3, cities: ['Fifth Avenue', 'Union Square', 'Yorkville', 'Michigan Avenue', 'The Grove'], blurb: 'Rich, brand-led and ruthless about reviews.' },
-  { id: 'eu', name: 'Europe', share: 0.21, wealth: 1.12, tariff: 0.07, entry: 4e6, overhead: 90e3, cities: ['Regent Street', 'Kurfürstendamm', 'Champs-Élysées', 'Passeig de Gràcia', 'Via Torino'], blurb: 'Many countries, one set of rules, steady spenders.' },
-  { id: 'ea', name: 'East Asia', share: 0.25, wealth: 1.0, tariff: 0.08, entry: 5e6, overhead: 100e3, cities: ['Shibuya', 'Gangnam', 'Nanjing Road', 'Ginza', 'Xinyi'], blurb: 'The biggest market, and the most crowded.' },
-  { id: 'sa', name: 'South Asia and Oceania', share: 0.15, wealth: 0.6, tariff: 0.12, entry: 2.5e6, overhead: 50e3, cities: ['Orchard Road', 'Bandra', 'Connaught Place', 'Sukhumvit', 'Bonifacio'], blurb: 'Huge volumes for anything priced right.' },
-  { id: 'la', name: 'Latin America', share: 0.09, wealth: 0.7, tariff: 0.14, entry: 2e6, overhead: 45e3, cities: ['Avenida Paulista', 'Polanco', 'Palermo', 'Providencia', 'Zona T'], blurb: 'High duties, loyal buyers.' },
-  { id: 'me', name: 'Middle East and Africa', share: 0.08, wealth: 0.75, tariff: 0.1, entry: 2e6, overhead: 45e3, cities: ['Dubai Marina', 'Sandton', 'Zamalek', 'Victoria Island', 'Bağdat Avenue'], blurb: 'Young, growing and split between luxury and value.' },
+  { id: 'na', name: 'North America', share: 0.22, wealth: 1.25, tariff: 0.06, entry: 1.8e6, overhead: 55e3, cities: ['Fifth Avenue', 'Union Square', 'Yorkville', 'Michigan Avenue', 'The Grove'], blurb: 'Rich, brand-led and ruthless about reviews.' },
+  { id: 'eu', name: 'Europe', share: 0.21, wealth: 1.12, tariff: 0.07, entry: 1.8e6, overhead: 55e3, cities: ['Regent Street', 'Kurfürstendamm', 'Champs-Élysées', 'Passeig de Gràcia', 'Via Torino'], blurb: 'Many countries, one set of rules, steady spenders.' },
+  { id: 'ea', name: 'East Asia', share: 0.25, wealth: 1.0, tariff: 0.08, entry: 2.2e6, overhead: 60e3, cities: ['Shibuya', 'Gangnam', 'Nanjing Road', 'Ginza', 'Xinyi'], blurb: 'The biggest market, and the most crowded.' },
+  { id: 'sa', name: 'South Asia and Oceania', share: 0.15, wealth: 0.6, tariff: 0.12, entry: 1.2e6, overhead: 35e3, cities: ['Orchard Road', 'Bandra', 'Connaught Place', 'Sukhumvit', 'Bonifacio'], blurb: 'Huge volumes for anything priced right.' },
+  { id: 'la', name: 'Latin America', share: 0.09, wealth: 0.7, tariff: 0.14, entry: 1e6, overhead: 30e3, cities: ['Avenida Paulista', 'Polanco', 'Palermo', 'Providencia', 'Zona T'], blurb: 'High duties, loyal buyers.' },
+  { id: 'me', name: 'Middle East and Africa', share: 0.08, wealth: 0.75, tariff: 0.1, entry: 1e6, overhead: 30e3, cities: ['Dubai Marina', 'Sandton', 'Zamalek', 'Victoria Island', 'Bağdat Avenue'], blurb: 'Young, growing and split between luxury and value.' },
 ]
 export const regionInfo = (id: string) => REGIONS.find((r) => r.id === id) ?? REGIONS[0]
 export const DEFAULT_HOME = 'na'

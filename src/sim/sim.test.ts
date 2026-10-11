@@ -52,7 +52,7 @@ import { GOALS } from './goals'
 import { REGIONS } from './regions'
 import { staffEffects, unmanaged } from './staff'
 import { founderStake, valuation } from './stock'
-import { unlockBlocked, unlockCost } from './world'
+import { typeDemand, unlockBlocked, unlockCost } from './world'
 import { DEVICE_TYPES, type DeviceType, type GameState, type Levels, SUBS, TRACKS } from './types'
 
 const fresh = (seed = 7, extra: Partial<ReturnType<typeof defaultConfig>> = {}) => newGame({ ...defaultConfig(), seed, ...extra })
@@ -735,7 +735,7 @@ describe('desktops, consoles, earbuds and TVs', () => {
           expect(p.price, `${p.name} (${seg.id})`).toBeLessThan(seg.priceRef * 1.9)
         }
         // over six years the makers aiming at a segment sell at least a year's worth of it between them
-        expect(made.reduce((a, p) => a + p.unitsSold, 0), `${seg.id} units`).toBeGreaterThan(seg.size * 0.7)
+        expect(made.reduce((a, p) => a + p.unitsSold, 0), `${seg.id} units`).toBeGreaterThan(seg.size * 0.7 * typeDemand(seg.type))
       }
     }
   })

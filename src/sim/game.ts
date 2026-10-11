@@ -11,7 +11,7 @@ import { DEFAULT_HOME, REGIONS, addAwareness, entryBlocked, homeRegion, newRegio
 import { buyBack, buyStake, goPublic, holdingIncome, issueShares, monthlyStock, moveSentiment, newStock, raiseRound, sellStake, stakeIn, stakePrice, stepStock, takeoverPrice, valuation } from './stock'
 import { CONTRACT, LOCK_DAYS, LOCK_FEE, buildCost, costNow, factoryLine, marketPrice, newSupply, stepProduction, stepSupply } from './ops'
 import { type VariantId, generateDesign, layoutParts } from './rivals'
-import { INCIDENT_WAIT, STARTUPS, economyNow, hasType, makeOriginal, originalName, priceIndex, rivalStrategy, rollIncident, settleIncident, unlockBlocked, unlockCost } from './world'
+import { INCIDENT_WAIT, STARTUPS, economyNow, typeDemand, hasType, makeOriginal, originalName, priceIndex, rivalStrategy, rollIncident, settleIncident, unlockBlocked, unlockCost } from './world'
 import { clamp, int, pick, rand, range } from './rng'
 import { evaluate } from './scoring'
 import { FACADES, FLOOR_COST, GROUNDS, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, type Shape, areaTiles, autoDoor, builtTiles, canPlace, gridAt, inPlot, isBoundary, itemAt, itemTiles, newSite, roomOf, shapeCuts, starterLine, storeStats, tidy, tierOf, upkeep, zone } from './sites'
@@ -21,11 +21,13 @@ import { type ChannelId, type Company, type CostKey, type DeviceDesign, type Dev
 
 export const SAVE_VERSION = 4
 export const RETAIL_CUT = 0.15
+/** Games licence income a console maker books for each console sold. */
+export const GAME_ROYALTY = 45
 
 export const DIFFICULTY: Record<Difficulty, { label: string; blurb: string; startCash: number; rivalOffset: number; awareness: number; overhead: number; debtDays: number; overdraft: number }> = {
   relaxed: { label: 'Relaxed', blurb: 'Forgiving market, slow rivals, generous credit.', startCash: 15e6, rivalOffset: -0.5, awareness: 1.6, overhead: 0.6, debtDays: 720, overdraft: 5e6 },
   normal: { label: 'Normal', blurb: 'Balanced rivals and a fair market.', startCash: 6e6, rivalOffset: 0, awareness: 1, overhead: 1, debtDays: 360, overdraft: 2e6 },
-  tough: { label: 'Tough', blurb: 'Aggressive rivals, thin credit, slow brand growth.', startCash: 3e6, rivalOffset: 0.4, awareness: 0.8, overhead: 1.5, debtDays: 180, overdraft: 0.5e6 },
+  tough: { label: 'Tough', blurb: 'Aggressive rivals, thin credit, slow brand growth.', startCash: 3e6, rivalOffset: 0.4, awareness: 0.65, overhead: 1.5, debtDays: 180, overdraft: 0.5e6 },
 }
 
 export const defaultConfig = (): GameConfig => ({
@@ -35,7 +37,7 @@ export const defaultConfig = (): GameConfig => ({
   startCash: DIFFICULTY.normal.startCash,
   researchSpeed: 1,
   rivalStrength: 1,
-  techLevel: 2,
+  techLevel: 3,
   unlimitedMoney: false,
   seed: 1,
 })
@@ -245,7 +247,7 @@ export function newGame(cfg: GameConfig): GameState {
   for (const t of TRACKS) s.levels[t] = clamp(Math.round(cfg.techLevel), 0, MAX_LEVEL)
   s.features = featuresAtLevels(s.levels)
   s.companies.push({
-    ...makeCompany('player', { name: cfg.companyName, color: cfg.color, brand: 0.35, awareness: 0, techOffset: 0, priceMult: 1, software: 0, segments: [], layout: 0, palette: [], series: {}, counter: 1 }),
+    ...makeCompany('player', { name: cfg.companyName, color: cfg.color, brand: 0.38, awareness: 0, techOffset: 0, priceMult: 1, software: 0, segments: [], layout: 0, palette: [], series: {}, counter: 1 }),
     isPlayer: true,
     logo: cfg.logo,
   })
@@ -1071,6 +1073,8 @@ function sell(s: GameState, p: Product, c: Company, units: number, segment: stri
     spend(s, units * avg.extraCost + repairs, 'production')
     s.care.month.repairs += units * p.defectRate
     s.care.month.repairCost += repairs
+    // console makers earn a licence fee on the games each machine will sell
+    if (p.type === 'console') earn(s, units * GAME_ROYALTY, 'other')
     if (p.stock === 0) {
       p.carry = 0
       news(s, 'alert', `${p.name} is sold out. Order more units to keep selling.`, p.id)
@@ -1087,13 +1091,15 @@ function stepSales(s: GameState) {
   const gain = DIFFICULTY[s.config.difficulty].awareness * fx.marketing
   const home = homeRegion(s)
   const regionUnits: Record<string, number> = {}
+  /** Sales weighted by how much each one gets the company noticed. */
+  const regionTalk: Record<string, number> = {}
   let mineToday = 0
 
   // ---- every segment in every region chooses between everything on sale for its device type
   for (const seg of SEGMENTS) {
     const pool = onSale.filter((p) => p.type === seg.type)
     if (!pool.length) continue
-    const demand = segmentDemand(seg, s.day) * (seg.sens > 1.9 ? Math.sqrt(economyNow(s)) : economyNow(s))
+    const demand = segmentDemand(seg, s.day) * typeDemand(seg.type) * (seg.sens > 1.9 ? Math.sqrt(economyNow(s)) : economyNow(s))
     const makers = pool.map((p) => companies.get(p.companyId)!)
     const base = pool.map((p, i) => (p.stock <= 0 ? 0 : pull(p, makers[i], seg, s.day)))
     const hype = pool.map((p) => launchHype(p, s.day))
@@ -1118,6 +1124,7 @@ function stepSales(s: GameState) {
         if (makers[i].isPlayer) {
           kept[i] += units * regionIncome(s, r.id)
           regionUnits[r.id] = (regionUnits[r.id] ?? 0) + units
+          regionTalk[r.id] = (regionTalk[r.id] ?? 0) + units * clamp(pool[i].price / 350, 0.8, 1.5)
         }
       })
     }
@@ -1224,7 +1231,7 @@ function stepSales(s: GameState) {
     if (!st.open) continue
     const units = regionUnits[r.id] ?? 0
     st.monthUnits += units
-    st.awareness = clamp(st.awareness + (1 - st.awareness) * ((units / (3e6 * r.share)) * gain + s.fans / 4e7), 0, 1)
+    st.awareness = clamp(st.awareness + (1 - st.awareness) * ((Math.max(units, regionTalk[r.id] ?? 0) / (4.5e6 * r.share)) * gain + s.fans / 4e7), 0, 1)
   }
   me.awareness = worldAwareness(s)
 
@@ -1341,7 +1348,7 @@ function closeMonth(s: GameState) {
   for (const n of checkRecalls(s)) news(s, 'alert', n.text, n.productId)
   for (const n of rivalStrategy(s, (id) => endProduct(s, s.products.find((p) => p.id === id)!))) news(s, 'rival', n.text)
   // something happens; anything left undecided for a month takes its second option
-  for (const i of s.incidents) if (!i.done && s.day - i.day >= INCIDENT_WAIT) decide(s, i.id, 1)
+  for (const i of s.incidents) if (!i.done && s.day - i.day >= INCIDENT_WAIT) decide(s, i.id, Math.min(1, INCIDENTS[i.kind].choices(s, i).length - 1))
   const incident = rollIncident(s)
   if (incident) news(s, 'alert', `${INCIDENTS[incident.kind].title}: ${INCIDENTS[incident.kind].text(s, incident)}`)
   closeCareMonth(s)

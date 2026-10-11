@@ -206,6 +206,8 @@ export interface Product {
   /** How happy owners are, 0-1. */
   satisfaction: number
   feedback: Feedback[]
+  /** Rivals: the day this was last marked down in answer to the player. */
+  lastCut?: number
   /** A fault serious enough for a recall: waiting for a decision, done, or ignored. */
   recall?: { state: 'open' | 'done' | 'ignored'; day: number; cost: number }
   monthUnits: number

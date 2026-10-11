@@ -404,6 +404,10 @@ export function settleIncident(s: GameState, id: string, choice: number, canAffo
   return { text }
 }
 
+/** Buyers for the big-ticket kinds of device, relative to the sizes in the market data. */
+const TYPE_DEMAND: Partial<Record<DeviceType, number>> = { laptop: 0.6, desktop: 0.6, tv: 0.6 }
+export const typeDemand = (type: DeviceType) => TYPE_DEMAND[type] ?? 1
+
 /** How many buyers there are this year, relative to normal. */
 export const economyNow = (s: GameState) => (s.economy && s.day <= s.economy.until ? s.economy.mult : 1)
 
@@ -429,8 +433,9 @@ export function rivalStrategy(s: GameState, endProduct: (id: string) => void): R
       const lost = (threat.history.at(-1) ?? 0) > (theirs.history.at(-1) ?? 0) * 1.2
       if (!lost) continue
       // losing a segment to the player: answer on price, then bring the next model forward
-      if (theirs.price * 0.85 > theirs.unitCost * 1.18 && rand(s) < 0.5) {
-        theirs.price = Math.round(theirs.price * 0.94)
+      if (theirs.price * 0.85 > theirs.unitCost * 1.18 && s.day - (theirs.lastCut ?? -999) > 120 && rand(s) < 0.4) {
+        theirs.price = Math.round(theirs.price * 0.95)
+        theirs.lastCut = s.day
         if (rand(s) < 0.25) notes.push({ text: `${c.name} cut the price of ${theirs.name} to $${theirs.price} to answer ${threat.name}.` })
       } else if ((c.nextLaunch[seg] ?? 0) - s.day > 90) {
         c.nextLaunch[seg] = s.day + int(s, 30, 80)

@@ -49,10 +49,10 @@ export function trailing(s: GameState): { revenue: number; profit: number; growt
 export function valuation(s: GameState): number {
   const me = s.companies[0]
   const t = trailing(s)
-  const multiple = 6 + 10 * (t.growth - 0.5)
+  const multiple = 4 + 8 * (t.growth - 0.5)
   const estate = [s.office, s.factory, s.venue, ...s.stores.map((x) => x.site)].reduce((a, site) => a + (site ? builtTiles(site) * 900 : 0), 0)
   const stakes = Object.entries(s.stock.holdings).reduce((a, [id, h]) => a + h.stake * (s.companies.find((c) => c.id === id)?.value ?? 0), 0)
-  const v = Math.max(0, s.cash) + Math.max(0, t.profit) * multiple + t.revenue * 0.4 * t.growth + me.brand * me.awareness * 120e6 + s.fans * 35 + estate + stakes + (s.os.own ? s.os.quality * 150e3 : 0)
+  const v = Math.max(0, s.cash) + Math.max(0, t.profit) * multiple + t.revenue * 0.4 * t.growth + me.brand * me.awareness * 80e6 + s.fans * 35 + estate + stakes + (s.os.own ? s.os.quality * 150e3 : 0)
   return Math.max(500e3, v + Math.min(0, s.cash) * 1.5)
 }
 
