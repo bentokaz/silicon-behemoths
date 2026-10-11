@@ -1,15 +1,17 @@
 // Draws the crowd. Every person is a handful of boxes and balls, and all of
 // them share four instanced meshes, so sixty people walking about cost four
-// draw calls. Limbs are posed by hand each frame: there is no skeleton.
+// draw calls. Limbs are posed by hand each frame: there is no skeleton, but
+// arms have a shoulder and an elbow and legs a hip and a knee, and each pose
+// is a set of joint angles the body eases toward.
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
-import { Act, type Body, type Crowd, Kind, Mode } from './crowd'
+import { Act, type Body, Kind, Mode, Tool } from './crowd'
 import { DARK, HAIR, SKIN, TROUSERS } from './kit'
 import { Pose } from './spots'
 import { useTick } from './tick'
 
-const BOXES = 11
+const BOXES = 14
 const BALLS = 4
 const MARKS = 2
 // box slots
@@ -17,42 +19,81 @@ const TORSO = 0
 const THIGH = 1
 const SHIN = 3
 const FOOT = 5
-const ARM = 7
-const LONG = 9
-const PROP = 10
+const UARM = 7
+const FARM = 9
+const LONG = 11
+const PROP = 12
+const PROP2 = 13
 // ball slots
 const HEAD = 0
 const HAIRB = 1
 const HAND = 2
 
-/** Resting joint angles for each pose: lean, head, left arm, right arm, spread, thighs (l, r), knees (l, r). */
-const REST: Record<number, number[]> = {
-  [Pose.Stand]: [0, 0, 0.06, 0.06, 0.07, 0, 0, 0, 0],
-  [Pose.Sit]: [0, 0, 0.5, 0.5, 0.05, 1.5, 1.5, 1.5, 1.5],
-  [Pose.Type]: [0.06, 0.08, 1.12, 1.12, 0.02, 1.5, 1.5, 1.5, 1.5],
-  [Pose.StandType]: [0.04, 0.1, 0.9, 0.9, 0.02, 0, 0, 0, 0],
-  [Pose.Perch]: [0.08, 0.1, 1.0, 1.0, 0.03, 1.2, 1.2, 1.1, 1.1],
-  [Pose.Lounge]: [-0.2, 0, 0.45, 0.45, 0.1, 1.45, 1.45, 1.3, 1.3],
-  [Pose.Run]: [0.14, 0, 0.6, 0.6, 0.06, 0, 0, 0, 0],
-  [Pose.Stretch]: [0, -0.15, 1.5, 1.5, 0.22, 0, 0, 0, 0],
-  [Pose.Curl]: [0, 0, 0.8, 0.8, 0.05, 0, 0, 0, 0],
-  [Pose.Write]: [0, -0.1, 0.1, 2.0, 0.05, 0, 0, 0, 0],
-  [Pose.Play]: [0.12, 0, 0.3, 1.0, 0.1, 0.15, -0.15, 0.2, 0.2],
-  [Pose.Hold]: [0.03, 0.3, 0.1, 1.3, 0.02, 0, 0, 0, 0],
-  [Pose.Phone]: [0, 0, 0.45, 2.6, 0.02, 1.5, 1.5, 1.5, 1.5],
-  [Pose.Look]: [0, 0, 0.06, 0.06, 0.07, 0, 0, 0, 0],
-  [Pose.Pack]: [0.25, 0.3, 1.1, 1.1, 0.02, 0, 0, 0, 0],
-  [Pose.Meet]: [0.05, 0, 0.95, 0.95, 0.05, 1.5, 1.5, 1.5, 1.5],
-  // on a high stool at a counter: legs hang nearly straight, so the knees stay clear of it
-  [Pose.Bar]: [0.1, 0.05, 1.0, 1.0, 0.04, 0.55, 0.55, 0.75, 0.75],
+/** Lengths of the upper arm and the forearm. */
+const UPPER = 0.25
+const FORE = 0.22
+
+// What someone has in their hands.
+const Prop = { None: 0, Box: 1, Bag: 2, Tray: 3, Cup: 4, Device: 5, Phone: 6, Weights: 7, Broom: 8, Clipboard: 9 } as const
+const PROP_COLOR: Record<number, [string, string]> = {
+  [Prop.Box]: ['#b98b56', '#b98b56'],
+  [Prop.Bag]: ['#ece7dc', '#ece7dc'],
+  [Prop.Tray]: ['#8a6a4f', '#e9e4da'],
+  [Prop.Cup]: ['#f4f4f4', '#f4f4f4'],
+  [Prop.Device]: ['#1c2028', '#1c2028'],
+  [Prop.Phone]: ['#1c2028', '#1c2028'],
+  [Prop.Weights]: ['#2b2f36', '#2b2f36'],
+  [Prop.Broom]: ['#b28d66', '#3a3d42'],
+  [Prop.Clipboard]: ['#d9c3a0', '#f4f1ea'],
 }
-const AMP = 9
-const HIP = 10
+
+/**
+ * Resting joint angles for each pose, in radians:
+ * lean, head, shoulder (l, r), spread (l, r), thigh (l, r), knee (l, r), elbow (l, r), turn-in (l, r).
+ * A shoulder angle swings the arm forward and up; an elbow only ever bends the forearm forward from there;
+ * turn-in swings the bent forearm across the body.
+ */
+const REST: Record<number, number[]> = {
+  [Pose.Stand]: [0, 0, 0.04, 0.04, 0.07, 0.07, 0, 0, 0, 0, 0.14, 0.14, 0.1, 0.1],
+  [Pose.Look]: [0, 0, 0.04, 0.04, 0.07, 0.07, 0, 0, 0, 0, 0.14, 0.14, 0.1, 0.1],
+  [Pose.Queue]: [0, 0.06, 0.02, 0.1, 0.06, 0.05, 0.04, -0.03, 0.02, 0.1, 0.12, 0.5, 0.1, 0.5],
+  [Pose.Sit]: [0, 0, 0.45, 0.45, 0.05, 0.05, 1.5, 1.5, 1.5, 1.5, 0.75, 0.75, 0.25, 0.25],
+  [Pose.Type]: [0.06, 0.08, 0.37, 0.37, 0.03, 0.03, 1.5, 1.5, 1.5, 1.5, 1.22, 1.22, 0.45, 0.45],
+  [Pose.StandType]: [0.03, 0.12, 0.29, 0.29, 0.03, 0.03, 0, 0, 0, 0, 1.16, 1.16, 0.45, 0.45],
+  [Pose.Tend]: [0.03, 0.02, 0.75, 0.75, 0.04, 0.04, 0, 0, 0, 0, 0.5, 0.5, 0.25, 0.25],
+  [Pose.Perch]: [0.08, 0.12, 0.45, 0.45, 0.04, 0.04, 1.2, 1.2, 1.1, 1.1, 1.1, 1.1, 0.3, 0.3],
+  [Pose.Lounge]: [-0.2, 0, 0.5, 0.5, 0.1, 0.1, 1.45, 1.45, 1.3, 1.3, 0.6, 0.6, 0.4, 0.4],
+  [Pose.Run]: [0.14, 0, 0.1, 0.1, 0.06, 0.06, 0, 0, 0, 0, 1.5, 1.5, 0.1, 0.1],
+  [Pose.Stretch]: [0, -0.15, 1.6, 1.6, 0.25, 0.25, 0, 0, 0, 0, 0.06, 0.06, 0, 0],
+  [Pose.Curl]: [0, 0, 0.05, 0.05, 0.08, 0.08, 0, 0, 0, 0, 1.2, 1.2, 0.05, 0.05],
+  [Pose.Write]: [0, -0.1, 0.06, 1.5, 0.06, 0.05, 0, 0, 0, 0, 0.15, 0.55, 0.1, 0.15],
+  [Pose.Play]: [0.12, 0, 0.2, 0.5, 0.12, 0.2, 0.15, -0.15, 0.2, 0.2, 0.6, 1.2, 0.2, 0.1],
+  [Pose.Hold]: [0.03, 0.32, 0.15, 0.25, 0.03, 0.03, 0, 0, 0, 0, 1.3, 1.75, 0.5, 0.35],
+  [Pose.Phone]: [0, 0.02, 0.45, 0.95, 0.05, 0.02, 1.5, 1.5, 1.5, 1.5, 0.75, 2.55, 0.25, 0.95],
+  [Pose.Pack]: [0.25, 0.3, 0.7, 0.7, 0.03, 0.03, 0, 0, 0, 0, 0.7, 0.7, 0.2, 0.2],
+  [Pose.Meet]: [0.05, 0, 1.0, 1.0, 0.05, 0.05, 1.5, 1.5, 1.5, 1.5, 0.15, 0.15, 0.2, 0.2],
+  // on a high stool at a counter: legs hang nearly straight, so the knees stay clear of it
+  [Pose.Bar]: [0.1, 0.05, 0.42, 0.42, 0.04, 0.04, 0.55, 0.55, 0.75, 0.75, 0.65, 0.65, 0.2, 0.2],
+  [Pose.Present]: [0, 0, 0.5, 0.3, 0.06, 1.0, 0, 0, 0, 0, 1.2, 0.3, 0.3, 0],
+  [Pose.Shake]: [0.05, 0, 0.04, 0.75, 0.07, 0.03, 0, 0, 0, 0, 0.14, 0.55, 0.1, 0.1],
+  [Pose.Sweep]: [0.16, 0.2, 0.25, 0.5, 0.03, 0.03, 0, 0, 0, 0, 1.3, 0.9, 0.6, 0.5],
+  [Pose.Fix]: [-0.04, -0.3, 1.9, 1.7, 0.08, 0.08, 0, 0, 0, 0, 0.5, 0.7, 0.1, 0.1],
+  [Pose.Film]: [0.04, 0.05, 0.55, 0.55, 0.03, 0.03, 0, 0, 0, 0, 1.2, 1.2, 0.35, 0.35],
+}
+/** Arms only: lean, head, shoulders, spreads, elbows, turn-ins. */
+const CARRY = [0.02, 0, 0.2, 0.2, 0.03, 0.03, 1.4, 1.4, 0.15, 0.15]
+const CLAP = [0.02, 0, 0.6, 0.6, 0.03, 0.03, 1.45, 1.45, 0.8, 0.8]
+const CHEER = [-0.04, -0.2, 2.85, 2.85, 0.3, 0.3, 0.2, 0.2, 0, 0]
+const ARMS = [0, 1, 2, 3, 4, 5, 10, 11, 12, 13]
+const AMP = 14
+const HIP = 15
 
 const R = new THREE.Matrix4()
 const TF = new THREE.Matrix4()
 const F1 = new THREE.Matrix4()
 const F2 = new THREE.Matrix4()
+const HL = new THREE.Matrix4()
+const HR = new THREE.Matrix4()
 const A = new THREE.Matrix4()
 const B = new THREE.Matrix4()
 const OUT = new THREE.Matrix4()
@@ -104,10 +145,12 @@ function paint(m: Meshes, bodies: Body[]) {
       m.boxes.setColorAt(bx + THIGH + k, col.set(legs))
       m.boxes.setColorAt(bx + SHIN + k, col.set(legs))
       m.boxes.setColorAt(bx + FOOT + k, col.set(DARK))
-      m.boxes.setColorAt(bx + ARM + k, col.set(b.shirt))
+      m.boxes.setColorAt(bx + UARM + k, col.set(b.shirt))
+      m.boxes.setColorAt(bx + FARM + k, col.set(b.shirt))
     }
     m.boxes.setColorAt(bx + LONG, col.set(hair))
-    m.boxes.setColorAt(bx + PROP, col.set(b.kind === Kind.Shopper ? '#ece7dc' : '#b98b56'))
+    // whatever they hold is coloured when it is first put in their hands
+    b.prop = -1
     const sx = i * BALLS
     m.balls.setColorAt(sx + HEAD, col.set(skin))
     m.balls.setColorAt(sx + HAIRB, col.set(hair))
@@ -133,18 +176,48 @@ function hide(m: Meshes, i: number) {
   m.blobs.setMatrixAt(i, ZERO)
 }
 
+/** What a body has in its hands right now. */
+function propOf(b: Body, walking: boolean): number {
+  if (b.carry) return Prop.Box
+  if (b.tool === Tool.Broom) return Prop.Broom
+  if (b.tool === Tool.Clipboard) return Prop.Clipboard
+  if (b.bag) return Prop.Bag
+  if (walking) return b.act === Act.Lunch && !b.leaving ? Prop.Tray : b.act === Act.Coffee && (b.seed & 1) === 0 ? Prop.Cup : Prop.None
+  if (b.mode !== Mode.Do) return Prop.None
+  switch (b.pose) {
+    case Pose.Hold:
+      return Prop.Device
+    case Pose.Phone:
+      return Prop.Phone
+    case Pose.Curl:
+      return Prop.Weights
+    case Pose.Sit:
+    case Pose.Bar:
+    case Pose.Lounge:
+      return (b.act === Act.Coffee || b.act === Act.Lunch) && b.clap <= 0 ? Prop.Cup : Prop.None
+  }
+  return Prop.None
+}
+
 /** Writes one person's parts. */
-function pose(m: Meshes, i: number, b: Body, dt: number) {
+function pose(m: Meshes, i: number, b: Body, dt: number): boolean {
   const c = b.cur
-  const walking = b.mode === Mode.Walk || b.mode === Mode.In || b.mode === Mode.Out
+  const walking = b.mode === Mode.Walk || b.mode === Mode.In || b.mode === Mode.Out || b.striding
   const rest = REST[walking ? Pose.Stand : b.pose] ?? REST[Pose.Stand]
   const k = b.shown ? Math.min(1, dt * 9) : 1
   const slump = b.slump
-  for (let j = 0; j < 9; j++) {
+  const prop = propOf(b, walking)
+  const bothHands = prop === Prop.Box || prop === Prop.Tray
+  // whatever the hands are busy with wins over what the pose would have them do
+  const arms = b.cheer ? CHEER : b.clap > 0.05 ? CLAP : bothHands && b.pose !== Pose.Pack ? CARRY : null
+  for (let j = 0; j < 14; j++) {
     let goal = rest[j]
+    if (arms) {
+      const a = ARMS.indexOf(j)
+      if (a >= 0 && (a > 1 || arms !== CARRY)) goal = arms[a]
+    }
     if (slump && j === 0) goal += walking ? 0.2 : 0.26
     if (slump && j === 1) goal += 0.38
-    if (b.carry && (j === 2 || j === 3) && b.pose !== Pose.Pack) goal = 1.12
     c[j] += (goal - c[j]) * k
   }
   c[AMP] += ((walking ? 1 : 0) - c[AMP]) * k
@@ -152,17 +225,23 @@ function pose(m: Meshes, i: number, b: Body, dt: number) {
 
   let lean = c[0]
   let head = c[1]
-  let armL = c[2]
-  let armR = c[3]
-  const spread = c[4]
-  let thighL = c[5]
-  let thighR = c[6]
-  let kneeL = c[7]
-  let kneeR = c[8]
+  let shL = c[2]
+  let shR = c[3]
+  let spL = c[4]
+  let spR = c[5]
+  let thighL = c[6]
+  let thighR = c[7]
+  let kneeL = c[8]
+  let kneeR = c[9]
+  let elL = c[10]
+  let elR = c[11]
+  let inL = c[12]
+  let inR = c[13]
   let turn = 0
   let side = 0
   let bob = 0
   const t = b.cycle
+  const p = b.seed
   if (c[AMP] > 0.02) {
     const a = c[AMP] * (slump ? 0.6 : 1)
     const s = Math.sin(t)
@@ -170,73 +249,168 @@ function pose(m: Meshes, i: number, b: Body, dt: number) {
     thighR -= 0.5 * s * a
     kneeL += Math.max(0, Math.sin(t + 2.2)) * 0.75 * a
     kneeR += Math.max(0, Math.sin(t + 2.2 + Math.PI)) * 0.75 * a
-    if (!b.carry) {
-      armL -= 0.42 * s * a
-      armR += (b.bag ? 0.15 : 0.42) * s * a
+    if (!arms) {
+      // arms swing against the legs, the elbow closing a little as the hand comes forward
+      const one = prop === Prop.Bag || prop === Prop.Cup || prop === Prop.Broom
+      shL -= 0.42 * s * a
+      elL += (0.18 + 0.28 * Math.max(0, -s)) * a
+      if (prop === Prop.Cup) {
+        shR += (0.15 - shR) * a
+        elR += (1.5 - elR) * a
+        inR += (0.3 - inR) * a
+      } else {
+        shR += (one ? 0.12 : 0.42) * s * a
+        elR += (0.18 + (one ? 0.05 : 0.28) * Math.max(0, s)) * a
+      }
     }
     bob = Math.abs(Math.cos(t)) * 0.035 * a
+  } else if (b.cheer) {
+    const s = Math.sin(t * 7 + p)
+    shL += 0.18 * s
+    shR -= 0.18 * s
+    bob = Math.abs(s) * 0.03
+  } else if (b.clap > 0.05) {
+    // hands come together and part, a little out of time with the neighbours
+    const s = Math.sin(t * (15 + (p % 5)) + p)
+    inL += 0.24 * s * b.clap
+    inR += 0.24 * s * b.clap
+    head += 0.03 * Math.sin(t * 1.3 + p)
   } else if (b.mode === Mode.Do) {
-    const p = b.seed
     switch (b.pose) {
       case Pose.Type:
       case Pose.StandType:
       case Pose.Perch: {
+        // fingers on the keys: the forearms bob, the upper arms hardly move
         const rate = slump ? 3 : 9
-        armL += 0.05 * Math.sin(t * rate + p)
-        armR += 0.05 * Math.sin(t * rate + p + 2)
+        elL += 0.045 * Math.sin(t * rate + p)
+        elR += 0.045 * Math.sin(t * rate + p + 2)
+        inL += 0.06 * Math.sin(t * 1.9 + p)
+        inR += 0.06 * Math.sin(t * 2.3 + p + 1)
         head += 0.03 * Math.sin(t * 0.7 + p)
         break
       }
+      case Pose.Tend:
+        shL += 0.08 * Math.sin(t * 1.7 + p)
+        elR += 0.2 * Math.sin(t * 2.6 + p)
+        head += 0.08 * Math.sin(t * 0.6 + p)
+        break
       case Pose.Run: {
         const s = Math.sin(t * 9.5)
-        thighL += 0.85 * s
-        thighR -= 0.85 * s
-        kneeL += Math.max(0, Math.sin(t * 9.5 + 2.2)) * 1.3
-        kneeR += Math.max(0, Math.sin(t * 9.5 + 2.2 + Math.PI)) * 1.3
-        armL -= 0.7 * s
-        armR += 0.7 * s
+        thighL += 0.6 * s
+        thighR -= 0.6 * s
+        kneeL += Math.max(0, Math.sin(t * 9.5 + 2.2)) * 1.05
+        kneeR += Math.max(0, Math.sin(t * 9.5 + 2.2 + Math.PI)) * 1.05
+        shL -= 0.6 * s
+        shR += 0.6 * s
         bob = Math.abs(Math.cos(t * 9.5)) * 0.05
         break
       }
       case Pose.Stretch: {
+        // arms sweep up overhead and down to the sides, with a slow bend forward at the bottom
         const s = Math.sin(t * 0.9 + p)
-        armL += 1.35 * s
-        armR += 1.35 * s
-        lean += 0.18 * Math.max(0, -s)
+        shL += 1.3 * s
+        shR += 1.3 * s
+        spL += 0.5 * Math.max(0, -s)
+        spR += 0.5 * Math.max(0, -s)
+        lean += 0.22 * Math.max(0, -s)
         break
       }
-      case Pose.Curl:
-        armL += 0.9 * Math.sin(t * 3)
-        armR -= 0.9 * Math.sin(t * 3)
+      case Pose.Curl: {
+        const s = Math.sin(t * 3)
+        elL += 0.95 * s
+        elR -= 0.95 * s
         break
+      }
       case Pose.Write:
-        armR += 0.25 * Math.sin(t * 5 + p)
+        shR += 0.2 * Math.sin(t * 5 + p)
+        elR += 0.25 * Math.sin(t * 3.1 + p)
         turn = 0.2 * Math.sin(t * 0.4 + p)
         break
       case Pose.Play:
-        armR += 0.7 * Math.sin(t * 7 + p)
+        shR += 0.5 * Math.sin(t * 7 + p)
+        elR += 0.4 * Math.sin(t * 7 + p + 1)
         side = 0.22 * Math.sin(t * 3.3 + p)
         bob = Math.abs(Math.sin(t * 3.3 + p)) * 0.03
         break
       case Pose.Hold:
+        // the other hand taps and swipes at the screen
         head += 0.06 * Math.sin(t * 0.9 + p)
-        armR += 0.08 * Math.sin(t * 1.7 + p)
+        elL += 0.12 * Math.sin(t * 4.3 + p)
+        inL += 0.1 * Math.sin(t * 2.1 + p)
+        break
+      case Pose.Phone:
+        turn = 0.25 * Math.sin(t * 0.5 + p)
+        elL += 0.25 * Math.max(0, Math.sin(t * 1.1 + p))
         break
       case Pose.Look:
       case Pose.Stand:
         turn = 0.55 * Math.sin(t * 0.55 + p)
         lean += 0.015 * Math.sin(t * 1.1 + p)
         break
+      case Pose.Queue:
+        // weight from one foot to the other, and a glance up the line
+        side = 0.03 * Math.sin(t * 0.7 + p)
+        turn = 0.3 * Math.sin(t * 0.45 + p)
+        head += 0.2 * Math.max(0, Math.sin(t * 0.3 + p))
+        break
       case Pose.Pack:
-        armL += 0.3 * Math.sin(t * 6)
-        armR += 0.3 * Math.sin(t * 6 + 1.6)
+        elL += 0.3 * Math.sin(t * 6)
+        elR += 0.3 * Math.sin(t * 6 + 1.6)
         break
       case Pose.Meet:
         turn = 0.35 * Math.sin(t * 0.5 + p)
-        armR += Math.max(0, Math.sin(t * 1.3 + p)) * 0.5
+        elR += Math.max(0, Math.sin(t * 1.3 + p)) * 0.9
+        shR -= Math.max(0, Math.sin(t * 1.3 + p)) * 0.35
+        break
+      case Pose.Sit:
+      case Pose.Bar:
+      case Pose.Lounge:
+        turn = 0.3 * Math.sin(t * 0.4 + p)
+        if (prop === Prop.Cup) {
+          // now and then the cup comes up for a sip
+          const sip = Math.max(0, Math.sin(t * 0.8 + p) - 0.6) * 2.5
+          shR += 0.5 * sip
+          elR += 1.3 * sip
+          inR += 0.3 * sip
+        }
+        break
+      case Pose.Present: {
+        // one arm out toward the screen, the other making the point
+        const g = Math.sin(t * 1.6 + p)
+        elL += 0.5 * g
+        shL += 0.2 * Math.sin(t * 0.9 + p)
+        spR += 0.15 * Math.sin(t * 0.7 + p)
+        turn = 0.5 * Math.sin(t * 0.35 + p)
+        break
+      }
+      case Pose.Shake: {
+        const g = Math.sin(t * 9)
+        elR += 0.16 * g
+        shR += 0.06 * g
+        head += 0.1 * Math.max(0, Math.sin(t * 4.5))
+        break
+      }
+      case Pose.Sweep: {
+        const g = Math.sin(t * 2.6 + p)
+        shL += 0.16 * g
+        shR += 0.22 * g
+        elR -= 0.2 * g
+        lean += 0.04 * g
+        break
+      }
+      case Pose.Fix:
+        elL += 0.3 * Math.sin(t * 3.4 + p)
+        elR += 0.3 * Math.sin(t * 2.7 + p + 1)
+        shR += 0.12 * Math.sin(t * 1.3 + p)
+        break
+      case Pose.Film:
+        turn = 0.12 * Math.sin(t * 0.4 + p)
         break
     }
   }
+  // an elbow bends one way only
+  if (elL < 0) elL = 0
+  if (elR < 0) elR = 0
 
   const hip = c[HIP]
   const cy = Math.cos(b.yaw)
@@ -257,24 +431,73 @@ function pose(m: Meshes, i: number, b: Body, dt: number) {
   TF.multiplyMatrices(R, A.makeRotationX(-lean).setPosition(0, hip, 0))
   box(m, bx + TORSO, TF, 0.34, 0.54, 0.2, 0, 0.3, 0.01)
 
-  let prop = false
   for (let arm = 0; arm < 2; arm++) {
     const sgn = arm ? 1 : -1
-    B.makeRotationZ(sgn * spread)
-    B.multiply(A.makeRotationX(arm ? armR : armL)).setPosition(sgn * 0.215, 0.53, 0.01)
+    // shoulder: out to the side, forward and up, then turned so the elbow hinges the right way
+    B.makeRotationZ(sgn * (arm ? spR : spL))
+    B.multiply(A.makeRotationX(arm ? shR : shL))
+    B.multiply(A.makeRotationY(sgn * (arm ? inR : inL))).setPosition(sgn * 0.215, 0.53, 0.01)
     F1.multiplyMatrices(TF, B)
-    box(m, bx + ARM + arm, F1, 0.088, 0.46, 0.092, 0, -0.22, 0)
-    ball(m, sx + HAND + arm, F1, 0.047, 0.047, 0.047, 0, -0.48, 0)
-    if (arm && b.bag && !b.carry) {
-      box(m, bx + PROP, F1, 0.24, 0.27, 0.09, 0, -0.66, 0)
-      prop = true
+    box(m, bx + UARM + arm, F1, 0.09, UPPER + 0.05, 0.094, 0, -UPPER / 2 + 0.01, 0)
+    const H = arm ? HR : HL
+    H.multiplyMatrices(F1, A.makeRotationX(arm ? elR : elL).setPosition(0, -UPPER, 0))
+    box(m, bx + FARM + arm, H, 0.08, FORE + 0.04, 0.084, 0, -FORE / 2, 0)
+    ball(m, sx + HAND + arm, H, 0.047, 0.047, 0.047, 0, -FORE - 0.025, 0)
+  }
+
+  // ---- whatever is in their hands
+  let fresh = false
+  if (b.prop !== prop) {
+    b.prop = prop
+    const colours = PROP_COLOR[prop]
+    if (colours) {
+      m.boxes.setColorAt(bx + PROP, col.set(colours[0]))
+      m.boxes.setColorAt(bx + PROP2, col.set(colours[1]))
+      fresh = true
     }
   }
-  if (b.carry) {
-    box(m, bx + PROP, TF, 0.38, 0.25, 0.3, 0, 0.3, -0.32)
-    prop = true
+  let second = false
+  switch (prop) {
+    case Prop.Box:
+      box(m, bx + PROP, TF, 0.38, 0.25, 0.3, 0, 0.3, -0.34)
+      break
+    case Prop.Tray:
+      box(m, bx + PROP, TF, 0.42, 0.02, 0.3, 0, 0.3, -0.36)
+      box(m, bx + PROP2, TF, 0.16, 0.05, 0.16, 0.06, 0.335, -0.36)
+      second = true
+      break
+    case Prop.Bag:
+      box(m, bx + PROP, HR, 0.24, 0.27, 0.09, 0, -FORE - 0.19, 0)
+      break
+    case Prop.Cup:
+      box(m, bx + PROP, HR, 0.062, 0.085, 0.062, 0, -FORE - 0.03, -0.055)
+      break
+    case Prop.Device:
+    case Prop.Phone:
+      box(m, bx + PROP, HR, 0.074, 0.15, 0.014, 0, -FORE - 0.05, -0.035)
+      break
+    case Prop.Weights:
+      box(m, bx + PROP, HR, 0.2, 0.075, 0.075, 0, -FORE - 0.03, 0)
+      box(m, bx + PROP2, HL, 0.2, 0.075, 0.075, 0, -FORE - 0.03, 0)
+      second = true
+      break
+    case Prop.Broom: {
+      // a long handle from the upper hand down to a head on the floor in front
+      F1.multiplyMatrices(TF, A.makeRotationX(-0.62).setPosition(0.02, 0.36, -0.2))
+      box(m, bx + PROP, F1, 0.03, 1.36, 0.03, 0, -0.52, 0)
+      box(m, bx + PROP2, F1, 0.34, 0.07, 0.09, 0, -1.2, 0)
+      second = true
+      break
+    }
+    case Prop.Clipboard:
+      box(m, bx + PROP, HL, 0.17, 0.24, 0.016, 0.03, -FORE - 0.04, -0.05)
+      box(m, bx + PROP2, HL, 0.14, 0.19, 0.008, 0.03, -FORE - 0.04, -0.061)
+      second = true
+      break
+    default:
+      m.boxes.setMatrixAt(bx + PROP, ZERO)
   }
-  if (!prop) m.boxes.setMatrixAt(bx + PROP, ZERO)
+  if (!second) m.boxes.setMatrixAt(bx + PROP2, ZERO)
 
   B.makeRotationY(turn)
   B.multiply(A.makeRotationX(-head)).setPosition(0, 0.6, 0.01)
@@ -288,13 +511,21 @@ function pose(m: Meshes, i: number, b: Body, dt: number) {
   if (b.y < 0.3) m.blobs.setMatrixAt(i, A.makeScale(0.27, 1, 0.27).setPosition(b.x, b.y + 0.014, b.z))
   else m.blobs.setMatrixAt(i, ZERO)
   b.shown = true
+  return fresh
 }
 
 const GOLD = '#f2b631'
 const BLUE = '#5aa2f0'
 const SPARK = '#fff3c9'
 
-export function People({ crowd, cap, neg, markers = true }: { crowd: Crowd; cap: number; neg: string; markers?: boolean }) {
+/** Anything with people in it to draw: a crowd, or a cast put together by hand. */
+export interface Cast {
+  bodies: Body[]
+  /** Bumped when the set of bodies changes. */
+  version: number
+}
+
+export function People({ crowd, cap, neg, markers = true }: { crowd: Cast; cap: number; neg: string; markers?: boolean }) {
   const m = useMemo(() => build(cap), [cap])
   useEffect(
     () => () => {
@@ -321,6 +552,7 @@ export function People({ crowd, cap, neg, markers = true }: { crowd: Crowd; cap:
     m.balls.count = n * BALLS
     m.blobs.count = n
     m.marks.count = markers ? n * MARKS : 0
+    let recolour = false
     for (let i = 0; i < n; i++) {
       const b = bodies[i]
       const mi = i * MARKS
@@ -339,7 +571,7 @@ export function People({ crowd, cap, neg, markers = true }: { crowd: Crowd; cap:
           mark = 1
         }
       } else {
-        pose(m, i, b, dt)
+        if (pose(m, i, b, dt)) recolour = true
         if (markers && b.kind === Kind.Staff && !b.quit) {
           const top = b.y + b.cur[HIP] + 1.08
           const working = b.mode === Mode.Do && (b.act === Act.Desk || b.act === Act.Station || b.act === Act.Meet)
@@ -364,6 +596,7 @@ export function People({ crowd, cap, neg, markers = true }: { crowd: Crowd; cap:
       if (mark < 1) m.marks.setMatrixAt(mi, ZERO)
       if (mark < 2) m.marks.setMatrixAt(mi + 1, ZERO)
     }
+    if (recolour) m.boxes.instanceColor!.needsUpdate = true
     m.boxes.instanceMatrix.needsUpdate = true
     m.balls.instanceMatrix.needsUpdate = true
     m.blobs.instanceMatrix.needsUpdate = true

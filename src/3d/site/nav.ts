@@ -26,6 +26,12 @@ export interface Nav {
   outside: [number, number]
   /** Every door, with the middle of its opening in world coordinates, for swinging them. */
   doors: { x: number; y: number; side: 'n' | 'w'; cx: number; cz: number }[]
+  /** 1 on tiles that are the way through a door in a curved wall: as narrow as a doorway. */
+  narrow: Uint8Array
+  /** Extra cost of routing through a tile, so paths keep clear of where people stand about. Written by the crowd; never negative. */
+  penalty: Float32Array
+  /** Whether someone can step from a tile to its neighbour (dx, dy each -1, 0 or 1). A diagonal needs both ways round the corner to be clear. */
+  step(tile: number, dx: number, dy: number): boolean
   /** Writes the tiles from `from` (exclusive) to `to` (inclusive) into `out`; returns how many, 0 if there is no way. */
   find(from: number, to: number, out: Int16Array): number
   /** Nearest tile to this one that someone can stand on, or -1. */
@@ -51,26 +57,40 @@ export function buildNav(site: Site): Nav {
       else if (!site.grid[i] && site.floor[`${x},${y}`] === 'water') walk[i] = 0
     }
   }
+  const blocked = new Uint8Array(n)
   for (const it of site.items) {
     const def = defs[it.kind]
     if (!def || def.flat) continue
-    for (const [x, y] of itemTiles(site, it)) if (x >= 0 && y >= 0 && x < w && y < h) walk[y * w + x] = 0
+    for (const [x, y] of itemTiles(site, it)) {
+      if (x < 0 || y < 0 || x >= w || y >= h) continue
+      walk[y * w + x] = 0
+      blocked[y * w + x] = 1
+    }
   }
   // a curved wall runs through its tiles, so nobody stands on them; a door or
   // opening in the curve makes its tiles a way through
   const portal = new Uint8Array(n)
-  for (const key of curveTiles(site).keys()) {
+  /** For each way through a curved wall: the middle of its bay and the way out of the room there, in tiles from the plot's corner. */
+  const through = new Map<number, [number, number, number, number]>()
+  const curved = curveTiles(site)
+  for (const key of curved.keys()) {
     const [x, y] = key.split(',').map(Number)
-    walk[y * w + x] = 0
+    if (x >= 0 && y >= 0 && x < w && y < h) walk[y * w + x] = 0
   }
   site.curves?.forEach((c) => {
-    for (const [bay, kind] of Object.entries(c.walls ?? {})) {
+    for (const [key, kind] of Object.entries(c.walls ?? {})) {
       if (kind === 'glass') continue
-      for (const key of geomOf(c).bays.get(bay)?.tiles ?? []) {
-        const [x, y] = key.split(',').map(Number)
-        if (x < 0 || y < 0 || x >= w || y >= h || site.grid[y * w + x] !== c.room) continue
-        portal[y * w + x] = 1
-        walk[y * w + x] = 1
+      const bay = geomOf(c).bays.get(key)
+      if (!bay) continue
+      for (const tileKey of bay.tiles) {
+        const [x, y] = tileKey.split(',').map(Number)
+        // only a tile that still carries the curve, with nothing standing on it, is a way through
+        if (x < 0 || y < 0 || x >= w || y >= h || !curved.has(tileKey) || site.grid[y * w + x] !== c.room) continue
+        const i = y * w + x
+        if (blocked[i]) continue
+        portal[i] = 1
+        walk[i] = 1
+        if (!through.has(i)) through.set(i, [bay.x, bay.y, bay.nx, bay.ny])
       }
     }
   })
@@ -81,14 +101,23 @@ export function buildNav(site: Site): Nav {
     gaps.add(`${wl.x},${wl.y},${wl.side}`)
     if (wl.kind === 'door') doors.push({ x: wl.x, y: wl.y, side: wl.side, cx: wl.x - w / 2 + (wl.side === 'n' ? 0.5 : 0), cz: wl.y - h / 2 + (wl.side === 'w' ? 0.5 : 0) })
   }
+  /** True if tile p is a way through a curved wall and tile q lies in front of or behind that doorway. */
+  const via = (px: number, py: number, qx: number, qy: number): boolean => {
+    if (px < 0 || py < 0 || px >= w || py >= h) return false
+    const bay = through.get(py * w + px)
+    if (!bay) return false
+    // distance of q's middle from the line through the doorway, measured along the wall
+    return Math.abs((qx + 0.5 - bay[0]) * -bay[3] + (qy + 0.5 - bay[1]) * bay[2]) <= 0.85
+  }
   /** Whether the edge on the north or west of a tile can be walked through. Works for the plot's outer edges too. */
   const open = (x: number, y: number, side: 'n' | 'w') => {
     const a = side === 'n' ? faceId(site, x, y, 'n') : faceId(site, x, y, 'w')
     const b = side === 'n' ? faceId(site, x, y - 1, 's') : faceId(site, x - 1, y, 'e')
     if (a === b || gaps.has(`${x},${y},${side}`)) return true
-    const here = x < w && y < h ? portal[y * w + x] : 0
-    const there = side === 'n' ? (y > 0 && x < w ? portal[(y - 1) * w + x] : 0) : x > 0 && y < h ? portal[y * w + x - 1] : 0
-    return here === 1 || there === 1
+    // a door in a curved wall leads to the tiles in front of it and behind it, never out sideways along the wall
+    const bx = side === 'n' ? x : x - 1
+    const by = side === 'n' ? y - 1 : y
+    return via(x, y, bx, by) || via(bx, by, x, y)
   }
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -148,6 +177,14 @@ export function buildNav(site: Site): Nav {
   }
   const reach = new Uint8Array(n)
   if (entry >= 0) for (let i = 0; i < n; i++) if (zone[i] === zone[entry]) reach[i] = 1
+
+  /** A step in any of the eight directions; a diagonal needs both ways round the corner to be clear. */
+  const move = (i: number, dx: number, dy: number): boolean => {
+    if (i < 0 || i >= n) return false
+    if (dx !== 0 && dy !== 0) return step(i, dx, 0) && step(i, 0, dy) && step(i + dx, 0, dy) && step(i + dy * w, dx, 0)
+    return dx !== 0 || dy !== 0 ? step(i, dx, dy) : true
+  }
+  const penalty = new Float32Array(n)
 
   // ---- A* over eight directions, without cutting corners
   const cost = new Float32Array(n)
@@ -212,22 +249,9 @@ export function buildNav(site: Site): Nav {
       for (let d = 0; d < 8; d++) {
         const dx = d === 0 || d === 4 || d === 5 ? 1 : d === 1 || d === 6 || d === 7 ? -1 : 0
         const dy = d === 2 || d === 4 || d === 6 ? 1 : d === 3 || d === 5 || d === 7 ? -1 : 0
-        let j: number
-        let c: number
-        if (d < 4) {
-          if (!step(i, dx, dy)) continue
-          j = i + dx + dy * w
-          c = 1
-        } else {
-          // a diagonal needs both ways round the corner to be clear
-          if (!step(i, dx, 0) || !step(i, 0, dy)) continue
-          const viaX = i + dx
-          const viaY = i + dy * w
-          if (!step(viaX, 0, dy) || !step(viaY, dx, 0)) continue
-          j = i + dx + dy * w
-          c = 1.4142
-        }
-        const ng = g + c
+        if (!move(i, dx, dy)) continue
+        const j = i + dx + dy * w
+        const ng = g + (d < 4 ? 1 : 1.4142) + penalty[j]
         if (seen[j] === stamp && cost[j] <= ng) continue
         seen[j] = stamp
         cost[j] = ng
@@ -279,6 +303,9 @@ export function buildNav(site: Site): Nav {
     entry,
     outside,
     doors,
+    narrow: portal,
+    penalty,
+    step: move,
     find,
     nearest,
     cx: (tile) => (tile % w) - w / 2 + 0.5,

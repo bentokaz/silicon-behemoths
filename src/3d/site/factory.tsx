@@ -13,6 +13,8 @@ export interface FactoryCtx {
   flow?: [number, number]
   glow: number
   seed: number
+  /** Truck bays: the view draws this bay's lorry itself, coming and going, so only the markings are left here. */
+  away?: boolean
   /** How full the warehouse is, 0-1: racks empty out as stock sells. */
   fill?: number
 }
@@ -390,7 +392,7 @@ export function FactoryItem({ kind, c }: { kind: string; c: FactoryCtx }) {
           {[-1.42, 1.42].map((x) => (
             <B key={x} p={[x, 0.006, 0]} s={[0.1, 0.012, 7.9]} c={YELLOW} r={0} rough={0.9} cast={false} />
           ))}
-          <Lorry seed={c.seed} />
+          {!c.away && <Lorry seed={c.seed} />}
         </>
       )
     case 'otree':

@@ -7,8 +7,9 @@ import type { Target } from '../3d/SiteView'
 import { meetingSlot } from '../3d/site/crowd'
 import { sfx } from '../audio/sfx'
 import { TYPES } from '../data/devices'
-import { hire, researchItem, setCampaignBudget, stopCampaign, toggleResearch } from '../sim/game'
-import { devProgress, factoryLife, officeLife, researchLines, storeLife } from '../sim/life'
+import { fmtDate, hire, researchItem, setCampaignBudget, stopCampaign, toggleResearch } from '../sim/game'
+import { devProgress, factoryLife, officeLife, researchLines, storeLife, venueLife } from '../sim/life'
+import { ITEMS } from '../sim/sites'
 import { ROLE_INFO, staffEffects, titleFor } from '../sim/staff'
 import { TRACKS } from '../sim/types'
 import { type Tab, useGame, useStore } from '../store/game'
@@ -28,11 +29,12 @@ const TITLES: Record<Target['kind'], { title: string; icon: IconName }> = {
   quality: { title: 'Testing', icon: 'factory' },
   takings: { title: 'Takings', icon: 'stores' },
   person: { title: 'Person', icon: 'person' },
+  venue: { title: 'Venue', icon: 'venue' },
 }
 
 const hourText = (h: number) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`
 
-function Frame({ target, close, children, more }: { target: Target; close: () => void; children: ReactNode; more?: { label: string; tab: Tab } }) {
+function Frame({ target, close, children, more, title }: { target: Target; close: () => void; children: ReactNode; more?: { label: string; tab: Tab }; title?: string }) {
   const t = TITLES[target.kind]
   const stop = (e: { stopPropagation: () => void }) => e.stopPropagation()
   return (
@@ -40,7 +42,7 @@ function Frame({ target, close, children, more }: { target: Target; close: () =>
       <div className="flex h-7 items-center justify-between border-b border-line px-2">
         <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-fg">
           <Icon name={t.icon} size={13} className="text-accent" />
-          {t.title}
+          {title ?? t.title}
         </span>
         <button className="flex h-5 w-5 items-center justify-center text-faint hover:text-fg" onClick={close} title="Close">
           <Icon name="close" size={11} />
@@ -404,6 +406,82 @@ function TakingsCard({ target, close, siteRef }: { target: Target; close: () => 
   )
 }
 
+/** What each part of a venue is for, in a line. */
+const VENUE_NOTES: Record<string, string> = {
+  stage: 'Where the presenter stands. A venue needs one before it can hold a keynote.',
+  screen: 'The device goes up here at the reveal. The biggest single lift to the production.',
+  lights: 'Moving heads that sweep the house during a show.',
+  speakers: 'Carries the show to the back row.',
+  camera: 'The press and the livestream film from here. A show is only as big as the audience that sees it.',
+  seats: 'Twelve seats on the flat. Guests fill them when the doors open.',
+  seats_mid: 'Twelve seats on a low riser, so the rows behind can see.',
+  seats_high: 'Twelve seats on a tall riser, for the back of the house.',
+  demo: 'Guests try the device here on their way out.',
+  reception: 'Where guests collect their badges before the doors open.',
+  logowall: 'Your name, lit, for every photograph taken in the foyer.',
+  people: 'On a show day the crew sets up in the morning, the presenter rehearses, the doors open after lunch and the house fills for the keynote.',
+}
+
+function VenueCard({ target, close }: { target: Target; close: () => void }) {
+  const g = useGame()
+  const v = venueLife(g)
+  if (!v) return null
+  const def = target.id ? ITEMS.venue[target.id] : undefined
+  const st = v.stats
+  const here = v.upcoming.filter((e) => e.here)
+  return (
+    <Frame target={target} close={close} title={target.id === 'people' ? 'Show day' : target.label} more={{ label: 'Book an event', tab: 'marketing' }}>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <span className="flex flex-wrap gap-1">
+          {def?.crowd ? <Tag tone="accent">{def.crowd} seats</Tag> : null}
+          {def?.show ? <Tag tone="accent">production +{def.show}</Tag> : null}
+        </span>
+        <Tag tone={st.ready ? 'pos' : 'warn'}>{st.ready ? 'ready for a keynote' : 'not ready'}</Tag>
+      </div>
+      <Note>{VENUE_NOTES[target.id ?? ''] ?? def?.note ?? ''}</Note>
+      {st.problem && <Note tone="mt-1 text-warn">{st.problem}</Note>}
+      <div className="mt-2">
+        <Row k="Seats in the house" v={num(st.seats)} />
+        <Row k="A show here fills" v={pct(v.draw, 0)} />
+      </div>
+      <div className="mt-2 flex items-baseline justify-between">
+        <span className="text-[10px] uppercase tracking-wider text-dim">Production</span>
+        <span className="num text-[10px] text-dim">{pct(st.production, 0)}</span>
+      </div>
+      <Meter value={st.production} tone={st.production > 0.7 ? 'pos' : st.production > 0.35 ? 'accent' : 'warn'} className="mt-[2px]" />
+      <div className="mt-2 flex items-baseline justify-between">
+        <span className="text-[10px] uppercase tracking-wider text-dim">Reach of a keynote here</span>
+        <span className="num text-[10px] text-dim">{pct(st.reach / 1.1, 0)}</span>
+      </div>
+      <Meter value={st.reach / 1.1} tone="accent" className="mt-[2px]" />
+      <div className="mb-1 mt-3 text-[10px] uppercase tracking-wider text-dim">Coming up</div>
+      {!v.upcoming.length && <Note>Nothing is booked. A keynote for a device in development can be held on this stage.</Note>}
+      {v.upcoming.slice(0, 4).map((e) => (
+        <div key={e.id} className="flex items-center justify-between gap-2 border-b border-line py-[4px] last:border-0">
+          <span className="min-w-0">
+            <span className="block truncate text-[11px] text-fg">{e.product ?? e.kind}</span>
+            <span className="block truncate text-[10px] text-dim">
+              {e.product ? `${e.kind}, ` : ''}
+              {e.here ? 'on this stage' : e.place.toLowerCase()}
+            </span>
+          </span>
+          <span className="shrink-0 text-right">
+            <span className="num block text-[11px] text-fg">{e.daysLeft === 0 ? 'today' : `in ${e.daysLeft} d`}</span>
+            <span className="num block text-[10px] text-faint">{fmtDate(e.day)}</span>
+          </span>
+        </div>
+      ))}
+      {here.length > 0 && <Note tone="mt-1 text-dim">Until the day, the house rehearses each morning and fills each afternoon.</Note>}
+      {v.last && (
+        <div className="mt-2">
+          <Row k={`Last show: ${v.last.product}`} v={`score ${v.last.score}`} tone={v.last.score >= 70 ? 'text-pos' : v.last.score >= 45 ? undefined : 'text-neg'} />
+          <Row k="Keynotes held here" v={v.held} />
+        </div>
+      )}
+    </Frame>
+  )
+}
+
 /** The card for whatever was clicked in the building. */
 export function WorldCard({ target, close, siteRef }: { target: Target; close: () => void; siteRef: string }) {
   switch (target.kind) {
@@ -427,6 +505,8 @@ export function WorldCard({ target, close, siteRef }: { target: Target; close: (
       return <QualityCard target={target} close={close} />
     case 'takings':
       return <TakingsCard target={target} close={close} siteRef={siteRef} />
+    case 'venue':
+      return <VenueCard target={target} close={close} />
   }
   return null
 }

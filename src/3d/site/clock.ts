@@ -10,15 +10,33 @@ const SECONDS_PER_HOUR = 45
 const NIGHT_RUSH = 14
 /** How fast the clock runs, and how briskly people move, at each game speed. */
 const RATE: Record<number, { clock: number; move: number }> = { 0: { clock: 0, move: 1 }, 1: { clock: 1, move: 1 }, 2: { clock: 1.7, move: 1.45 }, 4: { clock: 2.6, move: 2 } }
+/** Mid-morning: everyone is in and at work, and the light is daylight. */
+const FIRST_LOOK = 9.6
 
 export const campus = {
   /** Hours since the first midnight; the hour of the day is this modulo 24. */
-  t: 8.4,
+  t: FIRST_LOOK,
 }
 
 export const hourOf = (t: number) => ((t % 24) + 24) % 24
 export const dayOf = (t: number) => Math.floor(t / 24)
 export const isNight = (hour: number) => hour >= 20.5 || hour < 6.5
+
+const looked = new Set<string>()
+
+/**
+ * Called when a site is opened. The first time each site is looked at, the
+ * clock is moved on to the next mid-morning if it is not already the working
+ * day, so a first look never opens on an empty building in the dark. After
+ * that the site is shown at whatever time it is.
+ */
+export function firstLook(site: string) {
+  if (looked.has(site)) return
+  looked.add(site)
+  const hour = hourOf(campus.t)
+  if (hour >= 8.9 && hour < 16.4) return
+  campus.t = (dayOf(campus.t) + (hour >= 16.4 ? 1 : 0)) * 24 + FIRST_LOOK
+}
 
 /** Moves the clock on by `dt` real seconds. Returns how much faster than usual people should move. */
 export function advanceClock(dt: number, speed: number): number {
