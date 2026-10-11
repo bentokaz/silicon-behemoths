@@ -2,10 +2,10 @@
 // rooms show this instead of a list. Everything here is read-only and derived
 // from the game state; nothing is stored.
 import { DAYS_PER_MONTH } from '../data/catalog'
-import { CHANNELS, dailyTickets } from './growth'
+import { CHANNELS, EVENTS, OWN_VENUE, dailyTickets } from './growth'
 import { researchItem } from './game'
 import { factoryLine, orderLeft } from './ops'
-import { type LineStats, storeStats } from './sites'
+import { type LineStats, type VenueStats, storeStats, venueStats } from './sites'
 import { ROLE_INFO, output, staffEffects, teamBonus } from './staff'
 import { industryOs, servicesPerMonth } from './tech'
 import type { Employee, GameState, Product, Role } from './types'
@@ -205,5 +205,51 @@ export function storeLife(s: GameState, storeId: string): StoreLife | null {
     unitsTotal: st.unitsTotal,
     products,
     soldOut: new Set(products.filter((p) => p.stock <= 0).map((p) => p.id)),
+  }
+}
+
+export interface ShowLine {
+  id: string
+  /** What kind of event it is, in words. */
+  kind: string
+  /** The device being launched, for a keynote. */
+  product?: string
+  productId?: string
+  day: number
+  daysLeft: number
+  /** Held on this stage, rather than a hired one or online. */
+  here: boolean
+  place: string
+}
+
+export interface VenueLife {
+  stats: VenueStats
+  /** Events booked and not yet held, soonest first. */
+  upcoming: ShowLine[]
+  /** A keynote is booked for this stage: the house rehearses, fills and applauds on the day. */
+  booked: boolean
+  /** Share of the seats a show here fills, 0-1: a company with a following packs the house. */
+  draw: number
+  /** Keynotes held on this stage so far, and how the last one went. */
+  held: number
+  last?: { product: string; score: number; day: number }
+}
+
+export function venueLife(s: GameState): VenueLife | undefined {
+  if (!s.venue) return undefined
+  const stats = venueStats(s.venue)
+  const name = (id?: string) => s.products.find((p) => p.id === id)?.name
+  const upcoming = s.events
+    .filter((e) => !e.done)
+    .sort((a, b) => a.day - b.day)
+    .map((e) => ({ id: e.id, kind: EVENTS[e.type].name, product: name(e.productId), productId: e.productId, day: e.day, daysLeft: Math.max(0, e.day - s.day), here: e.type === 'keynote' && e.venue === OWN_VENUE, place: EVENTS[e.type].venues[e.venue]?.name ?? '' }))
+  const past = s.events.filter((e) => e.done && e.type === 'keynote' && e.venue === OWN_VENUE).sort((a, b) => b.day - a.day)
+  return {
+    stats,
+    upcoming,
+    booked: stats.ready && upcoming.some((e) => e.here),
+    draw: Math.min(1, 0.62 + 0.38 * Math.min(1, s.fans / Math.max(2000, stats.seats * 60))),
+    held: past.length,
+    last: past[0] ? { product: name(past[0].productId) ?? 'A device', score: Math.round(past[0].score ?? 0), day: past[0].day } : undefined,
   }
 }

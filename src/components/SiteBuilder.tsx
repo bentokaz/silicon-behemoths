@@ -3,13 +3,13 @@
 // choosing how the building looks, plus whatever stats the screen passes in.
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import { type AreaShape, type Edge, type ShowState, type SiteLife, type SiteTool, SiteView, type Target, seatOwners } from '../3d/SiteView'
-import { campus, clockText, hourOf, moodAt } from '../3d/site/clock'
+import { campus, clockText, firstLook, hourOf, moodAt } from '../3d/site/clock'
 import type { Mood } from '../3d/site/env'
 import type { ViewMode } from '../3d/site/structure'
 import { sfx } from '../audio/sfx'
 import { MIN_THICK } from '../sim/curves'
 import { clearZone, lookCost, paintArea, placeItem, player, removeItem, removeRoom, roomCost, rotateItem, setCurveEdge, setEdge, setLook, setRoomStyle, zoneRoom } from '../sim/game'
-import { factoryLife, officeLife, storeLife } from '../sim/life'
+import { factoryLife, officeLife, storeLife, venueLife } from '../sim/life'
 import { FACADES, GROUNDS, ITEMS, type LineStats, MAX_FLOORS, OUT, ROOFS, ROOMS, builtTiles, gridAt, roomNames, roomOf, roomTiles, sealedRooms, tierOf } from '../sim/sites'
 import type { Employee, Product, Site, SiteItem } from '../sim/types'
 import { useGame, useStore } from '../store/game'
@@ -99,14 +99,16 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
   const [rot, setRot] = useState(0)
   const [shape, setShape] = useState<AreaShape>('rect')
   // sites that have people on them follow their own clock unless a time of day is picked by hand
-  const alive = site.kind !== 'venue'
-  const [light, setLight] = useState<Mood | 'clock'>(alive ? 'clock' : 'day')
+  const alive = true
+  // the first look at a site is always in working hours
+  useState(() => firstLook(siteRef))
+  const [light, setLight] = useState<Mood | 'clock'>('clock')
   const clock = useSiteClock()
   const mood: Mood = light === 'clock' ? clock.light : light
   const speed = useStore((s) => s.speed)
   const storeId = siteRef.startsWith('store:') ? siteRef.slice(6) : ''
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const life = useMemo<SiteLife | undefined>(() => (siteRef === 'office' ? { office: officeLife(g) } : siteRef === 'factory' ? { factory: factoryLife(g) } : storeId ? { store: storeLife(g, storeId) ?? undefined } : undefined), [g, siteRef, storeId, useStore.getState().rev])
+  const life = useMemo<SiteLife | undefined>(() => (siteRef === 'office' ? { office: officeLife(g) } : siteRef === 'factory' ? { factory: factoryLife(g) } : storeId ? { store: storeLife(g, storeId) ?? undefined } : siteRef === 'venue' ? { venue: venueLife(g) } : undefined), [g, siteRef, storeId, useStore.getState().rev])
   const card = useCallback((target: Target, close: () => void) => <WorldCard target={target} close={close} siteRef={siteRef} />, [siteRef])
   const [thick, setThick] = useState(5)
   const [sweep, setSweep] = useState(360)
@@ -178,7 +180,7 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
   const turnKey = keyName(keysFor('rotate')[0] ?? 'KeyR')
   const areaHint = `Click one corner, then the opposite corner. Esc cancels.${curvy && sweep < 360 ? ` The arc is open to the ${OPEN_SIDE[sweep][rot]} (${turnKey} turns it).` : ''}`
   const legend = site.kind === 'office' && (idle?.length || (seated ?? []).some((e) => e.ask || e.morale < 35)) ? ' Markers over people: red is unhappy or has no desk, gold wants a raise, blue over an empty chair is away on a course.' : ''
-  const pointAt = site.kind === 'office' ? 'Point at a bench, a screen, the reception or a person and click to see what they are doing.' : site.kind === 'factory' ? 'Click a dock or a test station to see what the line is making.' : site.kind === 'store' ? 'Click a checkout or a table to see how the store is doing.' : ''
+  const pointAt = site.kind === 'office' ? 'Point at a bench, a screen, the reception or a person and click to see what they are doing.' : site.kind === 'factory' ? 'Click a dock or a test station to see what the line is making.' : site.kind === 'store' ? 'Click a checkout or a table to see how the store is doing.' : site.kind === 'venue' ? 'Click the stage, the screen or a block of seats to see what it adds and what is booked.' : ''
   const info =
     tool?.type === 'item'
       ? `${defs[tool.kind].name}: ${defs[tool.kind].note} Goes in: ${roomNames(site.kind, defs[tool.kind])}. Facing ${FACING[rot]} (${turnKey} turns it).`
@@ -200,9 +202,7 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
                   ? 'Click an item to sell it for half its price.'
                   : sealed.length
                     ? `${sealed.length === 1 ? `The ${rooms[sealed[0].type].name.toLowerCase()} has` : `${sealed.length} rooms have`} no door, so nothing inside counts. Add one from the Walls tab.`
-                    : cutOff
-                      ? `${cutOff === 1 ? 'One room cannot' : `${cutOff} rooms cannot`} be walked to from the street: a door is blocked by furniture, or only leads to another closed-off room. People there appear at their desks instead of walking in. Add or clear a door from the Walls tab.`
-                      : site.rooms.length
+                    : site.rooms.length
                       ? `${pointAt} Click a room's floor to restyle it. Drag to turn, right-drag or ${keysFor('camForward').slice(0, 1).map(keyName).join('')}${keysFor('camLeft').slice(0, 1).map(keyName).join('')}${keysFor('camBack').slice(0, 1).map(keyName).join('')}${keysFor('camRight').slice(0, 1).map(keyName).join('')} to move, scroll to zoom.${legend}`
                       : 'An empty plot. Open Rooms and mark out your first room.'
 
@@ -278,13 +278,14 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
           </div>
           <div className="flex border border-line2 bg-panel/95">
             {alive && (
-              <Btn small className="flex items-center gap-[5px] !px-2" tone="ghost" title={`The time on site: ${clock.time}. People come in around eight and go home after five; the clock runs with the game and stops when it is paused. Click to let the light follow it.`} active={light === 'clock'} onClick={() => setLight('clock')}>
+              <Btn small className="flex items-center gap-[5px] !px-2" tone="ghost" title={light === 'clock' ? `Site time ${clock.time}. The light follows the site clock: day, dusk, then a short night. People come in around eight and go home after five. The clock runs with the game speed and stops when the game is paused.` : `Site time ${clock.time}. The light is held at ${light}; people still keep to the clock. Click to let the light follow the clock again.`} active={light === 'clock'} onClick={() => setLight('clock')}>
                 <Icon name="clock" size={15} />
                 <span className="num text-[11px]">{clock.time}</span>
+                <span className={`text-[9px] uppercase tracking-wider ${light === 'clock' ? 'text-accent' : 'text-faint'}`}>{light === 'clock' ? 'auto' : 'held'}</span>
               </Btn>
             )}
             {(['day', 'dusk', 'night'] as Mood[]).map((m) => (
-              <Btn key={m} small className="flex items-center !px-2" tone="ghost" title={m === 'day' ? 'Always show daylight' : m === 'dusk' ? 'Always show dusk' : 'Always show night'} active={light === m} onClick={() => setLight(m)}>
+              <Btn key={m} small className="flex items-center !px-2" tone="ghost" title={`Hold the light at ${m === 'day' ? 'daylight' : m}, whatever the site clock says. People still come and go by the clock.`} active={light === m} onClick={() => setLight(m)}>
                 <Icon name={m} size={15} />
               </Btn>
             ))}
@@ -512,8 +513,18 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
 
       {children && <div className="pointer-events-none absolute bottom-12 right-2 top-12 flex w-[270px] flex-col gap-2 overflow-y-auto [&>*]:pointer-events-auto">{children}</div>}
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 p-2">
-        <div className={`pointer-events-auto inline-block max-w-full border bg-panel/95 px-3 py-[7px] text-[11px] ${(sealed.length || cutOff) && !tool ? 'border-warn text-warn' : pending ? 'border-accent text-fg' : 'border-line2 text-dim'}`}>{info}</div>
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end gap-2 p-2">
+        {cutOff > 0 && (
+          <div
+            className="pointer-events-auto flex shrink-0 items-center gap-[6px] border border-warn bg-panel/95 px-2 py-[7px] text-[11px] text-warn"
+            title="A door is blocked by furniture, or only leads to another closed-off room. People who work there appear at their desks instead of walking in. Add or clear a door from the Walls tab."
+          >
+            <Icon name="alert" size={13} />
+            <span className="num">{cutOff}</span>
+            <span className="uppercase tracking-wider">{cutOff === 1 ? 'room cut off' : 'rooms cut off'}</span>
+          </div>
+        )}
+        <div className={`pointer-events-auto inline-block min-w-0 max-w-full border bg-panel/95 px-3 py-[7px] text-[11px] ${sealed.length && !tool ? 'border-warn text-warn' : pending ? 'border-accent text-fg' : 'border-line2 text-dim'}`}>{info}</div>
       </div>
     </div>
   )

@@ -5,8 +5,9 @@ import { useFrame } from '@react-three/fiber'
 import { useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import type { Product } from '../../sim/types'
-import { B, C, DARK, S, STEEL, Sign, WALNUT, hash } from './kit'
+import { B, C, DARK, S, STEEL, Sign, WALNUT } from './kit'
 import { OfficeItem } from './office'
+import { STAGE_H, seatRows } from './spots'
 import { DisplayTable } from './store'
 
 export interface VenueCtx {
@@ -25,59 +26,29 @@ export interface VenueCtx {
   products: Product[]
 }
 
-export const STAGE_H = 0.9
-const SHIRTS = ['#c9553d', '#31506b', '#e9e4da', '#3f7d4d', '#d6a24f', '#6a5a7a', '#2c3036', '#8a5a44', '#4f8fd6']
-const SKIN = ['#f1c9a5', '#e0ac69', '#c68642', '#8d5524', '#ffdbac', '#6b4423']
-const HAIR = ['#1c1612', '#3b2a1e', '#6b4a2e', '#c9a46a', '#101010']
+export { STAGE_H }
 
-/** A seated member of the audience, from the lap up: the row in front hides the rest. */
-function Spectator({ x, y, z, n, cheer }: { x: number; y: number; z: number; n: number; cheer: boolean }) {
-  const shirt = SHIRTS[Math.floor(hash(n) * SHIRTS.length)]
-  const skin = SKIN[Math.floor(hash(n + 1) * SKIN.length)]
-  const up = cheer && hash(n + 2) > 0.35
-  return (
-    <group position={[x, y, z]}>
-      <B p={[0, 0.06, -0.14]} s={[0.3, 0.12, 0.36]} c="#2b3140" r={0} cast={false} />
-      <B p={[0, 0.3, 0.02]} s={[0.32, 0.5, 0.2]} c={shirt} r={0.03} rough={0.9} cast={false} />
-      <S p={[0, 0.7, 0.02]} r={0.105} c={skin} detail={1} rough={0.75} cast={false} />
-      <S p={[0, 0.735, 0.035]} r={0.11} c={HAIR[Math.floor(hash(n + 3) * HAIR.length)]} detail={1} rough={0.95} scale={[1, 0.8, 1]} cast={false} />
-      {up && (
-        <>
-          <B p={[-0.22, 0.66, 0]} s={[0.08, 0.42, 0.08]} c={shirt} r={0} rot={[0, 0, 0.25]} cast={false} />
-          <B p={[0.22, 0.66, 0]} s={[0.08, 0.42, 0.08]} c={shirt} r={0} rot={[0, 0, -0.25]} cast={false} />
-        </>
-      )}
-    </group>
-  )
-}
-
-/** Two rows of six seats on a riser `h` metres high. */
+/** Two rows of six seats on a riser `h` metres high. Whoever sits in them is drawn by the view (see audience.tsx). */
 function SeatBlock({ h, c }: { h: number; c: VenueCtx }) {
-  const step = h > 0 ? 0.24 : 0
+  const rows = seatRows(h)
   return (
     <>
       {h > 0 && <B p={[0, h / 2, 0]} s={[2.98, h, 1.98]} c="#2b2d31" r={0.01} rough={0.8} />}
-      {step > 0 && <B p={[0, h + step / 2, 0.5]} s={[2.98, step, 0.98]} c="#2b2d31" r={0.01} rough={0.8} />}
-      {[0, 1].map((row) => {
-        const base = h + row * step
-        const z = row ? 0.56 : -0.44
-        return (
-          <group key={row}>
-            {Array.from({ length: 6 }, (_, i) => {
-              const x = -1.25 + i * 0.5
-              const n = c.seed * 31 + row * 7 + i
-              return (
-                <group key={i}>
-                  <B p={[x, base + 0.21, z]} s={[0.06, 0.42, 0.34]} c={DARK} r={0} cast={false} />
-                  <B p={[x, base + 0.455, z]} s={[0.44, 0.08, 0.42]} c={c.color} r={0} rough={0.95} cast={false} />
-                  <B p={[x, base + 0.76, z + 0.2]} s={[0.44, 0.56, 0.06]} c={c.color} r={0} rough={0.95} />
-                  {hash(n + 11) < c.crowd && <Spectator x={x} y={base + 0.495} z={z} n={n} cheer={c.cheer} />}
-                </group>
-              )
-            })}
-          </group>
-        )
-      })}
+      {h > 0 && <B p={[0, (h + rows[1].y) / 2, 0.5]} s={[2.98, rows[1].y - h, 0.98]} c="#2b2d31" r={0.01} rough={0.8} />}
+      {rows.map(({ y: base, z }) => (
+        <group key={z}>
+          {Array.from({ length: 6 }, (_, i) => {
+            const x = -1.25 + i * 0.5
+            return (
+              <group key={i}>
+                <B p={[x, base + 0.21, z]} s={[0.06, 0.42, 0.34]} c={DARK} r={0} cast={false} />
+                <B p={[x, base + 0.455, z]} s={[0.44, 0.08, 0.42]} c={c.color} r={0} rough={0.95} cast={false} />
+                <B p={[x, base + 0.76, z + 0.2]} s={[0.44, 0.56, 0.06]} c={c.color} r={0} rough={0.95} />
+              </group>
+            )
+          })}
+        </group>
+      ))}
     </>
   )
 }

@@ -232,7 +232,13 @@ export function Person({ who, pose = 'sit', p = [0, 0, 0], rotY = 0, arms = 'des
   const longHair = (who.look >> 7) % 3 === 0
   const sit = pose === 'sit'
   const hip = sit ? 0.5 : 0.86
-  const reach = sit && arms === 'desk'
+  const reach = arms === 'desk'
+  // hands on a keyboard: upper arms a little forward, forearms level and turned in toward the keys
+  const sh = sit ? 0.37 : 0.29
+  const fore = sh + (sit ? 1.22 : 1.16)
+  const elbowY = hip + 0.53 - 0.25 * Math.cos(sh)
+  const elbowZ = 0.01 - 0.25 * Math.sin(sh)
+  const turnIn = 0.42
   return (
     <group position={p} rotation={[0, rotY, 0]}>
       {sit ? (
@@ -254,12 +260,19 @@ export function Person({ who, pose = 'sit', p = [0, 0, 0], rotY = 0, arms = 'des
       )}
       <B p={[0, hip + 0.3, 0.01]} s={[0.34, 0.52, 0.2]} c={who.color} r={0.07} rough={0.9} />
       {reach ? (
-        <>
-          <B p={[-0.2, hip + 0.3, -0.13]} s={[0.085, 0.085, 0.36]} c={who.color} r={0.035} rough={0.9} cast={false} rot={[0.35, 0, 0]} />
-          <B p={[0.2, hip + 0.3, -0.13]} s={[0.085, 0.085, 0.36]} c={who.color} r={0.035} rough={0.9} cast={false} rot={[0.35, 0, 0]} />
-          <S p={[-0.2, hip + 0.235, -0.31]} r={0.045} c={skin} cast={false} />
-          <S p={[0.2, hip + 0.235, -0.31]} r={0.045} c={skin} cast={false} />
-        </>
+        [-1, 1].map((sgn) => {
+          // the way the forearm points from the elbow
+          const fx = -sgn * Math.sin(turnIn)
+          const fy = -Math.cos(fore) * Math.cos(turnIn)
+          const fz = -Math.sin(fore) * Math.cos(turnIn)
+          return (
+            <group key={sgn}>
+              <B p={[sgn * 0.215, hip + 0.53 - 0.115 * Math.cos(sh), 0.01 - 0.115 * Math.sin(sh)]} s={[0.09, 0.3, 0.094]} c={who.color} r={0.035} rough={0.9} cast={false} rot={[sh, 0, 0]} />
+              <B p={[sgn * 0.215 + fx * 0.11, elbowY + fy * 0.11, elbowZ + fz * 0.11]} s={[0.08, 0.26, 0.084]} c={who.color} r={0.035} rough={0.9} cast={false} rot={[fore, 0, -sgn * turnIn]} />
+              <S p={[sgn * 0.215 + fx * 0.245, elbowY + fy * 0.245, elbowZ + fz * 0.245]} r={0.047} c={skin} cast={false} />
+            </group>
+          )
+        })
       ) : arms === 'up' ? (
         <>
           <B p={[-0.23, hip + 0.66, 0]} s={[0.085, 0.42, 0.085]} c={who.color} r={0.035} rough={0.9} cast={false} rot={[0, 0, 0.25]} />

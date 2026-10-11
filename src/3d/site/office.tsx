@@ -17,7 +17,7 @@ export interface OfficeCtx {
   /** The devices to show on this item: prototypes on the benches, the latest in the showcase. */
   devices?: Product[]
   seed: number
-  /** Someone works here but is drawn by the view, walking about: light the screen, leave the chair empty. */
+  /** Someone works here but is drawn by the view, walking about: the chair is left empty, and the screen and lamp are left dark for the view to light while they are in (see lights.tsx). */
   on?: boolean
   /** The view draws this item's lights, screen or turning device itself. */
   live?: boolean
@@ -67,7 +67,7 @@ function Desk({ c, top = WOOD, height = 0.74, chair = true, wide = false }: { c:
         </group>
       ))}
       <B p={[0, height - 0.16, -0.41]} s={[0.795, 0.24, 0.018]} c={CHARCOAL} r={0.004} cast={false} />
-      <Monitor y={height} glow={c.glow} on={!!c.who || !!c.on} />
+      <Monitor y={height} glow={c.glow} on={!!c.who} />
       <B p={[-0.02, height + 0.009, -0.09]} s={[0.32, 0.018, 0.11]} c="#26282c" r={0.006} cast={false} />
       <B p={[0.25, height + 0.012, -0.08]} s={[0.055, 0.024, 0.09]} c="#26282c" r={0.01} cast={false} />
       <C p={[-0.34, height + 0.045, -0.04]} r={[0.035, 0.03]} h={0.09} c={hash(c.seed) > 0.5 ? '#e9e4da' : '#c9553d'} seg={12} cast={false} />
@@ -131,7 +131,7 @@ export function OfficeItem({ kind, c }: { kind: string; c: OfficeCtx }) {
       return (
         <>
           <Desk c={c} top="#e9e6e0" wide />
-          <Monitor x={0.3} z={-0.33} y={0.74} w={0.3} glow={c.glow} on={!!c.who || !!c.on} />
+          <Monitor x={0.3} z={-0.33} y={0.74} w={0.3} glow={c.glow} on={!!c.who} />
           <B p={[-0.33, 0.8, -0.3]} s={[0.1, 0.12, 0.1]} c={DARK} r={0.02} cast={false} />
           {!c.live && <C p={[-0.33, 0.9, -0.3]} r={[0.02, 0.02]} h={0.08} c="#3fe08a" glow="#3fe08a" glowPower={0.8 * c.glow} seg={8} cast={false} />}
           {c.who && <Person who={c.who} p={[0, 0, 0.24]} />}
@@ -147,11 +147,11 @@ export function OfficeItem({ kind, c }: { kind: string; c: OfficeCtx }) {
           {[0.2, 0.45].map((y) => (
             <B key={y} p={[0.62, y, 0.235]} s={[0.18, 0.02, 0.014]} c="#c9a25a" r={0.004} metal={0.9} rough={0.3} cast={false} />
           ))}
-          <Monitor x={-0.25} z={-0.3} y={0.765} w={0.7} glow={c.glow} on={!!c.who || !!c.on} />
+          <Monitor x={-0.25} z={-0.3} y={0.765} w={0.7} glow={c.glow} on={!!c.who} />
           <Laptop p={[0.5, 0.765, -0.14]} glow={c.glow} />
           <C p={[-0.78, 0.775, -0.34]} r={[0.07, 0.08]} h={0.02} c={STEEL} metal={0.9} rough={0.3} seg={12} cast={false} />
           <C p={[-0.78, 0.94, -0.34]} r={[0.012, 0.012]} h={0.31} c={STEEL} metal={0.9} rough={0.3} seg={8} cast={false} />
-          <C p={[-0.78, 1.15, -0.34]} r={[0.08, 0.13]} h={0.14} c="#e8dcc0" glow="#ffe2a8" glowPower={0.8 * c.glow} seg={16} cast={false} />
+          <C p={[-0.78, 1.15, -0.34]} r={[0.08, 0.13]} h={0.14} c="#e8dcc0" glow={c.on ? undefined : '#ffe2a8'} glowPower={0.8 * c.glow} seg={16} cast={false} />
           <Chair color="#3a2a22" x={-0.2} z={0.3} />
           {c.who && <Person who={c.who} p={[-0.2, 0, 0.3]} />}
         </>

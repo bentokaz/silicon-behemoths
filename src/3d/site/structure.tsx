@@ -326,7 +326,7 @@ export function Ground({ site, dim }: { site: Site; dim: number }) {
 }
 
 /** Walls, doors, glazing, upper floors and roof. */
-export function Structure({ site, mode, glow }: { site: Site; mode: ViewMode; glow: number }) {
+export function Structure({ site, mode, glow, dark }: { site: Site; mode: ViewMode; glow: number; dark?: ReadonlySet<number> }) {
   const meshes = useMeshes(() => {
     const b = new Batch()
     const rooms = new Map<number, Room>(site.rooms.map((r) => [r.n, r]))
@@ -345,6 +345,8 @@ export function Structure({ site, mode, glow }: { site: Site; mode: ViewMode; gl
     /** Posts wanted off the grid corners, where a curved wall ends or turns: position to height. */
     const loose = new Map<string, [number, number, number]>()
     const litKey = glow > 0.05 ? 'lit' : 'pane'
+    /** Ground-floor windows of a room with nobody in it after dark stay unlit. */
+    const litFor = (room?: Room) => (room && dark?.has(room.n) ? 'pane' : litKey)
     /** Upper floors seen through a glass wall are lit from within at night. */
     const plateKey = full && glow > 0.05 && facade.kind === 'glass' ? 'plate' : 'wall'
     const postH = full ? top + 0.345 : H + 0.035
@@ -472,7 +474,7 @@ export function Structure({ site, mode, glow }: { site: Site; mode: ViewMode; gl
         // a window in the outside wall, where the wall is tall enough to have one
         if (exterior && whole && mode !== 'cut' && hash(seed + 3) > 0.25) {
           const toward = a ? -1 : 1
-          slab(hash(seed + 9) > 0.45 ? litKey : 'pane', x, y, side, toward, 0.95, 2.3, '#27353f', 1, 0.014, half)
+          slab(hash(seed + 9) > 0.45 ? litFor(ra ?? rc) : 'pane', x, y, side, toward, 0.95, 2.3, '#27353f', 1, 0.014, half)
         }
       }
       // the cut line: a dark cap along the top of every wall
@@ -838,7 +840,7 @@ export function Structure({ site, mode, glow }: { site: Site; mode: ViewMode; gl
     }
     // only the outside view lights its glass: indoors, glowing partitions would get in the way
     return b.build((k) => surface(k, k === 'lit' || k === 'plate' || (k === 'glass' && full) ? Math.round(glow * 10) / 10 : 0))
-  }, [site, site.rev, mode, glow])
+  }, [site, site.rev, mode, glow, dark])
   return (
     <>
       {meshes.map((m) => (
