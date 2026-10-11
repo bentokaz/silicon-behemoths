@@ -4,6 +4,7 @@ import type { CSSProperties } from 'react'
 
 const PATHS = {
   // navigation
+  city: 'M2 21h20M4 21V11h5v10M9 21V4h6v17M15 21V8h5v13M12 8v0M12 12v0M12 16v0M6.500 15v0M17.500 12v0M17.500 16v0',
   overview: 'M3 3h8v8H3zM13 3h8v5h-8zM13 10h8v11h-8zM3 13h8v8H3z',
   devices: 'M7 2h10v20H7zM10 5h4M11 19h2',
   research: 'M9 2h6M10 2v7L4 20h16L14 9V2M7 15h10',
@@ -31,6 +32,8 @@ const PATHS = {
   feed: 'M4 5h16M4 10h16M4 15h10M4 20h6',
   calendar: 'M4 5h16v16H4zM4 10h16M8 2v5M16 2v5',
   cash: 'M2 6h20v12H2zM12 9a3 3 0 100 6 3 3 0 000-6zM5 9v0M19 15v0',
+  clock: 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 7v5l3.500 2',
+  tag: 'M4 7h12l4 5-4 5H4zM8 12v0',
   plus: 'M12 4v16M4 12h16',
   collapse: 'M14 5l-7 7 7 7M20 5l-7 7 7 7',
   expand: 'M10 5l7 7-7 7M4 5l7 7-7 7',
@@ -54,6 +57,10 @@ const PATHS = {
   box: 'M4 4h16v16H4z',
   round: 'M12 3a9 9 0 100 18 9 9 0 000-18z',
   diagonal: 'M4 20h16L4 4z',
+  ring: 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 8a4 4 0 100 8 4 4 0 000-8z',
+  arc: 'M3 16a9 9 0 0118 0h-5a4 4 0 00-8 0z',
+  arc34: 'M12 12h9a9 9 0 11-9-9z',
+  arc14: 'M4 20V15A11 11 0 0115 4h5v5h-5a6 6 0 00-6 6v5z',
   door: 'M6 21V3h12v18M3 21h18M14 12v1',
   glass: 'M4 3h16v18H4zM12 3v18M4 12h16M7 6l2-1M15 15l2-1',
   opening: 'M4 21V3h3M17 3h3v18M7 21H4M20 21h-3',
@@ -76,6 +83,7 @@ export function Icon({ name, size = 14, className = '', style }: { name: IconNam
 
 /** The icon for each main screen. */
 export const TAB_ICON: Record<string, IconName> = {
+  city: 'city',
   dashboard: 'overview',
   products: 'devices',
   research: 'research',

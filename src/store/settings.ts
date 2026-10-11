@@ -43,6 +43,7 @@ export const ACTIONS: Action[] = [
   { id: 'save', group: 'Game', label: 'Quick save', keys: ['F5'] },
   { id: 'newDevice', group: 'Game', label: 'Design a new device', keys: ['KeyN'] },
   { id: 'feed', group: 'Game', label: 'Show or hide the news feed', keys: ['KeyF'] },
+  { id: 'tab:city', group: 'Screens', label: 'City', keys: ['KeyG'] },
   { id: 'tab:dashboard', group: 'Screens', label: 'Overview', keys: ['F1'] },
   { id: 'tab:products', group: 'Screens', label: 'Devices', keys: ['F2'] },
   { id: 'tab:research', group: 'Screens', label: 'Research', keys: ['F3'] },

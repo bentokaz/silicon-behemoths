@@ -17,7 +17,10 @@ import {
   listCompany,
   recallProduct,
   setCare,
+  setCurveEdge,
   setEdge,
+  removeRoom,
+  paintArea,
   setLook,
   zoneRoom,
   defaultConfig,
@@ -45,7 +48,8 @@ import { bestSegment, utility } from './market'
 import { pendingUnits, supplyPrice } from './ops'
 import { VARIANTS, deriveVariant, fitInside, layoutParts, syncSockets } from './rivals'
 import { budWeight, evaluate, minThickness, thermal } from './scoring'
-import { builtTiles, canPlace, gridAt, hiredVenue, lineStats, newSite, openRooms, sealedRooms, storeStats, venueStats } from './sites'
+import { bayStands, curveAt, curveTiles, geomOf, polyArea } from './curves'
+import { areaTiles, builtTiles, canPlace, curveFor, faceId, gridAt, hiredVenue, isBoundary, lineStats, newSite, openRooms, roomTiles, sealedRooms, storeStats, venueStats } from './sites'
 import { GOALS } from './goals'
 import { REGIONS } from './regions'
 import { staffEffects, unmanaged } from './staff'
@@ -538,24 +542,195 @@ describe('a bigger world', () => {
     expect(staffEffects(s).research).toBeGreaterThan(loose)
   })
 
-  it('cuts the stepped edges of round and diagonal rooms to 45 degrees', () => {
+  it('cuts the stepped edges of diagonal rooms to 45 degrees', () => {
     const s = rich()
     for (let i = 0; i < 2; i++) upgradeOffice(s)
-    expect(zoneRoom(s, 'office', 'atrium', 1, 1, 9, 9, 'round')).toBeNull()
-    const cuts = Object.keys(s.office.cuts ?? {})
-    expect(cuts.length).toBeGreaterThanOrEqual(4)
-    const [cx, cy] = cuts[0].split(',').map(Number)
-    expect(placeItem(s, 'office', 'plant', cx, cy, 0)).toMatch(/cut away/)
-    expect(sealedRooms(s.office).some((r) => r.type === 'atrium')).toBe(false)
     // a triangle keeps its square corner where the drag began
     expect(zoneRoom(s, 'office', 'gym', 23, 13, 29, 19, 'diag')).toBeNull()
     expect(gridAt(s.office, 23, 13)).toBeGreaterThan(0)
     expect(gridAt(s.office, 29, 19)).toBe(0)
+    const cuts = Object.keys(s.office.cuts ?? {})
+    expect(cuts.length).toBeGreaterThanOrEqual(4)
+    const [cx, cy] = cuts[0].split(',').map(Number)
+    expect(placeItem(s, 'office', 'plant', cx, cy, 0)).toMatch(/cut away/)
+    expect(sealedRooms(s.office).some((r) => r.type === 'gym')).toBe(false)
     // building against a cut edge squares it off again
-    const before = Object.keys(s.office.cuts ?? {}).length
-    clearZone(s, 'office', 1, 1, 9, 9)
-    expect(Object.keys(s.office.cuts ?? {}).length).toBeLessThan(before)
+    expect(zoneRoom(s, 'office', 'lounge', 24, 14, 30, 20)).toBeNull()
+    expect(Object.keys(s.office.cuts ?? {}).length).toBeLessThan(cuts.length)
     expect(JSON.parse(JSON.stringify(s.office))).toEqual(s.office)
+  })
+
+  it('works out a curve tile by tile without gaps or overlaps', () => {
+    const shapes = [
+      curveFor(1, 1, 9, 9, 'round')!,
+      curveFor(0, 0, 14, 8, 'round')!,
+      curveFor(2, 3, 31, 28, 'ring', { thick: 6 })!,
+      curveFor(0, 0, 19, 9, 'ring', { thick: 4, sweep: 180 })!,
+      curveFor(0, 0, 13, 13, 'ring', { thick: 3, sweep: 90, turn: 2 })!,
+      curveFor(0, 0, 16, 16, 'ring', { thick: 5, sweep: 270, turn: 1 })!,
+      curveFor(0, 0, 9, 4, 'round', { sweep: 180, turn: 2 })!,
+    ]
+    for (const c of shapes) {
+      const g = geomOf(c)
+      const hole = c.t ? Math.PI * (c.rx - c.t) * (c.ry - c.t) : 0
+      const want = ((Math.PI * c.rx * c.ry - hole) * (c.sweep ?? 360)) / 360
+      const got = g.all.reduce((a, t) => a + t.cover, 0)
+      expect(Math.abs(got - want) / want, JSON.stringify(c)).toBeLessThan(0.01)
+      let wall = 0
+      for (const t of g.tiles.values()) {
+        // the room's part and the ground's part make up the whole tile
+        const inside = t.inside.reduce((a, p) => a + polyArea(p), 0)
+        const outside = t.outside.reduce((a, p) => a + polyArea(p), 0)
+        expect(inside + outside, `${t.x},${t.y} of ${JSON.stringify(c)}`).toBeCloseTo(1, 5)
+        // and both tiles either side of a shared edge agree where the room crosses it
+        const east = g.tiles.get(`${t.x + 1},${t.y}`)
+        if (east) expect(east.sides.w.flat().map((v) => v.toFixed(5))).toEqual(t.sides.e.flat().map((v) => v.toFixed(5)))
+        const south = g.tiles.get(`${t.x},${t.y + 1}`)
+        if (south) expect(south.sides.n.flat().map((v) => v.toFixed(5))).toEqual(t.sides.s.flat().map((v) => v.toFixed(5)))
+        for (const p of t.pieces) wall += (p.t1 - p.t0) * g.facets[p.facet].len
+      }
+      // every bay is about a metre of wall, and all of the wall off the grid lines is handed to some tile
+      const onGrid = [...g.bays.values()].filter((b) => !b.solid).reduce((a, b) => a + b.len, 0)
+      const total = g.facets.reduce((a, f) => a + f.len, 0)
+      expect(wall).toBeGreaterThan(total - onGrid - 0.01)
+      expect(wall).toBeLessThan(total + 0.01)
+      for (const b of g.bays.values()) expect(b.len, b.key).toBeLessThan(1.6)
+      // each run of wall is closed: every facet starts where the one before it ended
+      for (const loop of g.loops) {
+        loop.forEach((f, i) => {
+          const prev = g.facets[loop[(i + loop.length - 1) % loop.length]]
+          expect(Math.hypot(prev.x1 - g.facets[f].x0, prev.y1 - g.facets[f].y0)).toBeLessThan(1e-6)
+        })
+      }
+    }
+    // the same numbers always give the same shape
+    expect(JSON.stringify([...geomOf({ cx: 5.5, cy: 5.5, rx: 4.5, ry: 4.5 }).tiles.values()])).toBe(JSON.stringify([...geomOf(curveFor(1, 1, 9, 9, 'round')!).tiles.values()]))
+  })
+
+  it('builds round rooms with a true curved wall', () => {
+    const s = rich()
+    for (let i = 0; i < 2; i++) upgradeOffice(s)
+    const site = () => s.office
+    s.config.unlimitedMoney = false
+    s.cash = 1e9
+    const cash = s.cash
+    expect(zoneRoom(s, 'office', 'atrium', 1, 1, 9, 9, 'round')).toBeNull()
+    // charged for the floor inside the wall, not for whole tiles
+    expect(Math.abs(cash - s.cash - Math.PI * 4.5 * 4.5 * 650)).toBeLessThan(650)
+    s.config.unlimitedMoney = true
+    expect(site().cuts ?? {}).toEqual({})
+    expect(site().curves).toHaveLength(1)
+    const atrium = site().rooms.find((r) => r.type === 'atrium')!
+    expect(site().curves![0]).toMatchObject({ room: atrium.n, cx: 5.5, cy: 5.5, rx: 4.5, ry: 4.5 })
+    // the grid holds every tile the circle touches; the corners of its box stay open
+    expect(gridAt(site(), 5, 5)).toBe(atrium.n)
+    expect(gridAt(site(), 1, 1)).toBe(0)
+    expect(roomTiles(site(), atrium.n)).toBeGreaterThan(64)
+    // tiles the wall runs through take no furniture, the middle does
+    const edge = [...curveTiles(site()).values()]
+    expect(edge.length).toBeGreaterThan(20)
+    expect(edge.every((t) => t.shape.cover > 0 && t.shape.cover < 1)).toBe(true)
+    expect(placeItem(s, 'office', 'otree', edge[0].shape.x, edge[0].shape.y, 0)).toMatch(/curved wall/)
+    expect(placeItem(s, 'office', 'otree', 5, 5, 0)).toBeNull()
+    // it got a door in the curved wall, facing south, and counts as open
+    const doors = Object.entries(site().curves![0].walls ?? {})
+    expect(doors).toHaveLength(1)
+    expect(doors[0][1]).toBe('door')
+    const bay = geomOf(site().curves![0]).bays.get(doors[0][0])!
+    expect(bay.ny).toBeGreaterThan(0.95)
+    expect(sealedRooms(site()).some((r) => r.type === 'atrium')).toBe(false)
+    // no straight wall stands where the curve has taken the tile's side away
+    expect(isBoundary(site(), 1, 5, 'w')).toBe(false)
+    expect(faceId(site(), 5, 9, 's')).toBe(0)
+    // brick the door up and the room is sealed; glaze a bay and it still is; open one and it is not
+    expect(setCurveEdge(s, 'office', 0, doors[0][0], 'wall')).toBeNull()
+    expect(sealedRooms(site()).some((r) => r.type === 'atrium')).toBe(true)
+    expect(setCurveEdge(s, 'office', 0, 'o3', 'glass')).toBeNull()
+    expect(sealedRooms(site()).some((r) => r.type === 'atrium')).toBe(true)
+    expect(setCurveEdge(s, 'office', 0, 'o4', 'open')).toBeNull()
+    expect(sealedRooms(site()).some((r) => r.type === 'atrium')).toBe(false)
+    expect(setCurveEdge(s, 'office', 0, 'o999', 'door')).toMatch(/no wall/)
+    expect(setCurveEdge(s, 'office', 3, 'o1', 'door')).toMatch(/no wall/)
+    // it survives a save and a move to a bigger plot, door and all
+    expect(JSON.parse(JSON.stringify(site()))).toEqual(site())
+    const before = { tiles: roomTiles(site(), atrium.n), edge: curveTiles(site()).size, w: site().w }
+    expect(upgradeOffice(s)).toBeNull()
+    const dx = (site().w - before.w) / 2
+    expect(site().curves![0].cx).toBe(5.5 + dx)
+    expect(roomTiles(site(), atrium.n)).toBe(before.tiles)
+    expect(curveTiles(site()).size).toBe(before.edge)
+    expect(site().curves![0].walls).toEqual({ o3: 'glass', o4: 'open' })
+    expect(sealedRooms(site()).some((r) => r.type === 'atrium')).toBe(false)
+    expect(placeItem(s, 'office', 'gbench', 5 + dx, 6 + (site().h - 22) / 2, 0)).toBeNull()
+    // a room built against it squares off the tiles it touches and leaves the rest curved
+    const y0 = 1 + (site().h - 22) / 2
+    expect(zoneRoom(s, 'office', 'lounge', 10 + dx, y0 + 3, 13 + dx, y0 + 6)).toBeNull()
+    const squared = Object.keys(site().curves![0].square ?? {})
+    expect(squared.length).toBeGreaterThan(0)
+    expect(squared.length).toBeLessThan(8)
+    expect(curveTiles(site()).size).toBe(before.edge - squared.length)
+    const [qx, qy] = squared[0].split(',').map(Number)
+    expect(curveAt(site(), qx, qy)).toBeUndefined()
+    expect(placeItem(s, 'office', 'otree', qx, qy, 0)).toBeNull()
+    expect(isBoundary(site(), 10 + dx, y0 + 4, 'w')).toBe(true)
+    expect(setEdge(s, 'office', 10 + dx, y0 + 4, 'w', 'door')).toBeNull()
+    // knocking part of it down keeps the curve on what is left; knocking it all down forgets the curve
+    clearZone(s, 'office', 1 + dx, y0, 4 + dx, y0 + 8)
+    expect(site().curves).toHaveLength(1)
+    expect(curveTiles(site()).size).toBeGreaterThan(4)
+    expect(JSON.parse(JSON.stringify(site()))).toEqual(site())
+    removeRoom(s, 'office', atrium.n)
+    expect(site().curves).toBeUndefined()
+    expect(roomTiles(site(), atrium.n)).toBe(0)
+    // an old save has no curves at all, and loads as it was
+    const old = migrate(JSON.parse(JSON.stringify(s)))
+    expect(old.office.curves).toBeUndefined()
+    expect(sealedRooms(old.office)).toEqual([])
+  })
+
+  it('builds rings and arcs round an open courtyard', () => {
+    const s = rich()
+    for (let i = 0; i < 4; i++) upgradeOffice(s)
+    const site = s.office
+    removeRoom(s, 'office', site.rooms[0].n)
+    const [x0, y0, x1, y1] = [20, 4, 59, 43]
+    expect(zoneRoom(s, 'office', 'work', x0, y0, x1, y1, 'ring', undefined, { thick: 6 })).toBeNull()
+    const ring = site.rooms[site.rooms.length - 1]
+    expect(site.curves![site.curves!.length - 1]).toMatchObject({ room: ring.n, cx: 40, cy: 24, rx: 20, ry: 20, t: 6 })
+    // the courtyard stays open ground, and can be planted
+    expect(gridAt(site, 40, 24)).toBe(0)
+    expect(gridAt(site, 40, 6)).toBe(ring.n)
+    expect(placeItem(s, 'office', 'fountain', 44, 26, 0)).toBeNull()
+    expect(placeItem(s, 'office', 'desk', 40, 6, 0)).toBeNull()
+    expect(sealedRooms(site).some((r) => r.n === ring.n)).toBe(false)
+    // its door is in the outer wall; the courtyard can be given one too
+    const ci = site.curves!.length - 1
+    expect(Object.keys(site.curves![ci].walls!)).toEqual([expect.stringMatching(/^o/)])
+    expect(bayStands(site, ci, 'i0')).toBe(true)
+    expect(setCurveEdge(s, 'office', ci, 'i0', 'door')).toBeNull()
+    // paving the courtyard reaches the strip of ground inside the curved wall
+    paintArea(s, 'office', x0 + 6, y0 + 6, x1 - 6, y1 - 6, 'round', 'paving')
+    const inner = [...curveTiles(site).values()].filter((t) => Math.hypot(t.shape.x + 0.5 - 40, t.shape.y + 0.5 - 24) < 16)
+    expect(inner.length).toBeGreaterThan(40)
+    expect(inner.every((t) => site.floor[`${t.shape.x},${t.shape.y}`] === 'paving')).toBe(true)
+    expect(site.floor['40,6']).toBeUndefined()
+    // a second ring cannot be built over the first, but a quarter arc fits beside it
+    expect(zoneRoom(s, 'office', 'work', x0, y0, x1, y1, 'ring', undefined, { thick: 6 })).toMatch(/already built/)
+    expect(zoneRoom(s, 'office', 'lounge', 2, 30, 15, 43, 'ring', undefined, { thick: 4, sweep: 90, turn: 1 })).toBeNull()
+    const arc = site.curves![site.curves!.length - 1]
+    expect(arc).toMatchObject({ cx: 2, cy: 44, rx: 14, ry: 14, t: 4, from: 270, sweep: 90 })
+    // its straight ends lie on grid lines, so they are ordinary walls that can take ordinary doors
+    expect(isBoundary(site, 2, 31, 'w')).toBe(true)
+    expect(isBoundary(site, 14, 44, 'n')).toBe(true)
+    expect(gridAt(site, 3, 42)).toBe(0)
+    // every way of drawing a shape gives tiles on the plot the same way round
+    expect(areaTiles(0, 0, 19, 9, 'ring', { thick: 4, sweep: 180 }).length).toBeLessThan(areaTiles(0, 0, 19, 9, 'ring', { thick: 4, sweep: 180 }, true).length)
+    expect(areaTiles(0, 0, 0, 5, 'round')).toHaveLength(6)
+    // too thin for a courtyard: a ring falls back to a solid disc
+    expect(curveFor(0, 0, 5, 5, 'ring', { thick: 4 })!.t).toBeUndefined()
+    expect(JSON.parse(JSON.stringify(site))).toEqual(site)
+    const days = tick(s, 40)
+    expect(days.office.curves).toHaveLength(2)
   })
 
   it('reaches goals and pays their rewards', () => {

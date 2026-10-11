@@ -1,7 +1,8 @@
 // Buildable sites: campuses, factories, stores and event venues share one
 // model. A site is an empty plot; the player zones rooms on it, the walls
 // follow the rooms, and each kind of room takes its own furniture.
-import type { Corner, Role, Room, Site, SiteItem, SiteKind, SiteWall } from './types'
+import { type CurveSpec, MIN_RADIUS, MIN_THICK, bayStands, curveAt, geomOf, holeOf, settle } from './curves'
+import type { Corner, Role, Room, Site, SiteItem, SiteKind } from './types'
 
 export type Stage = 'in' | 'out' | 'belt' | 'smt' | 'assembly' | 'test' | 'pack'
 
@@ -327,14 +328,27 @@ export const roomAt = (site: Site, x: number, y: number) => {
 export const typeAt = (site: Site, x: number, y: number) => roomAt(site, x, y)?.type ?? OUT
 export const roomTiles = (site: Site, n: number) => site.grid.reduce((a, v) => a + (v === n ? 1 : 0), 0)
 
-export type Shape = 'rect' | 'round' | 'diag'
+export type Shape = 'rect' | 'round' | 'ring' | 'diag'
+/** How a round or ring shape is drawn out. */
+export interface ShapeOpts {
+  /** Rings: depth of the building from its outer wall to its inner wall, in metres. */
+  thick?: number
+  /** How much of a full turn to build, in degrees: 360, 270, 180 or 90. */
+  sweep?: number
+  /** Arcs: quarter turns, choosing which way the open side faces. */
+  turn?: number
+}
 export const cutAt = (site: Pick<Site, 'cuts'>, x: number, y: number): Corner | undefined => site.cuts?.[`${x},${y}`]
 /** The room seen through one side of a tile: 0 for open ground, and for the sides a diagonal cut has removed. */
 export function faceId(site: Site, x: number, y: number, side: 'n' | 's' | 'e' | 'w'): number {
   const n = gridAt(site, x, y)
   if (!n) return 0
   const cut = cutAt(site, x, y)
-  return cut && cut.includes(side) ? 0 : n
+  if (cut) return cut.includes(side) ? 0 : n
+  // a tile on a curved edge only shows the room through the sides the curve leaves it
+  const live = curveAt(site, x, y)
+  if (live && live.shape.sides[side].reduce((a, [u, v]) => a + v - u, 0) < 0.02) return 0
+  return n
 }
 /** Room numbers on the two sides of an edge: [the tile's own side, the far side]. */
 export const edgeIds = (site: Site, x: number, y: number, side: 'n' | 'w'): [number, number] => (side === 'n' ? [faceId(site, x, y, 'n'), faceId(site, x, y - 1, 's')] : [faceId(site, x, y, 'w'), faceId(site, x - 1, y, 'e')])
@@ -358,6 +372,9 @@ export function openRooms(site: Site): Set<number> {
     if (na) open.add(na)
     if (nb) open.add(nb)
   }
+  site.curves?.forEach((c, i) => {
+    for (const [bay, kind] of Object.entries(c.walls ?? {})) if (kind !== 'glass' && bayStands(site, i, bay)) open.add(c.room)
+  })
   return open
 }
 
@@ -367,29 +384,86 @@ export function newSite(kind: SiteKind, tier: number): Site {
 }
 
 /**
- * Tiles of a drag from one corner to the other: a rectangle, the ellipse
- * inside it, or a right-angled triangle with its square corner where the
- * drag began.
+ * The curve a round or ring drag stands for, or null for the straight shapes
+ * and for boxes too small to curve. A full turn sits inside the box. An arc
+ * fills the box instead: half a turn has its centre on the middle of the open
+ * side, a quarter turn in the corner the arc bends round.
  */
-export function areaTiles(x0: number, y0: number, x1: number, y1: number, shape: Shape = 'rect'): [number, number][] {
+export function curveFor(x0: number, y0: number, x1: number, y1: number, shape: Shape, opts: ShapeOpts = {}): CurveSpec | null {
+  if (shape !== 'round' && shape !== 'ring') return null
   const ax = Math.min(x0, x1)
   const bx = Math.max(x0, x1)
   const ay = Math.min(y0, y1)
   const by = Math.max(y0, y1)
+  const w = bx - ax + 1
+  const h = by - ay + 1
+  const sweep = opts.sweep === 90 || opts.sweep === 180 || opts.sweep === 270 ? opts.sweep : 360
+  const turn = (((opts.turn ?? 0) % 4) + 4) % 4
+  let cx = ax + w / 2
+  let cy = ay + h / 2
+  let rx = w / 2
+  let ry = h / 2
+  let from = 0
+  if (sweep === 180) {
+    // open to the south, west, north or east
+    from = 180 + 90 * turn
+    if (turn === 0) (cy = by + 1), (ry = h)
+    else if (turn === 1) (cx = ax), (rx = w)
+    else if (turn === 2) (cy = ay), (ry = h)
+    else (cx = bx + 1), (rx = w)
+  } else if (sweep === 90) {
+    from = 180 + 90 * turn
+    cx = turn === 0 || turn === 3 ? bx + 1 : ax
+    cy = turn === 0 || turn === 1 ? by + 1 : ay
+    rx = w
+    ry = h
+  } else if (sweep === 270) from = 90 + 90 * turn
+  if (Math.min(rx, ry) < MIN_RADIUS) return null
+  const spec: CurveSpec = { cx, cy, rx, ry }
+  if (shape === 'ring') {
+    const t = Math.max(MIN_THICK, Math.round(opts.thick ?? 4))
+    if (holeOf({ ...spec, t })) spec.t = t
+  }
+  if (sweep < 360) {
+    spec.from = from % 360
+    spec.sweep = sweep
+  }
+  return spec
+}
+
+/**
+ * Tiles of a drag from one corner to the other: a rectangle, a right-angled
+ * triangle with its square corner where the drag began, or a round shape (an
+ * ellipse, ring or arc). Round shapes give the tiles at least half covered,
+ * or with `touch` every tile the shape reaches at all, which is what a room
+ * with a curved wall is built from.
+ */
+export function areaTiles(x0: number, y0: number, x1: number, y1: number, shape: Shape = 'rect', opts?: ShapeOpts, touch = false): [number, number][] {
+  const ax = Math.min(x0, x1)
+  const bx = Math.max(x0, x1)
+  const ay = Math.min(y0, y1)
+  const by = Math.max(y0, y1)
+  const curve = curveFor(x0, y0, x1, y1, shape, opts)
+  if (curve) return geomOf(curve).all.filter((t) => touch || t.cover >= 0.5).map((t): [number, number] => [t.x, t.y])
   const out: [number, number][] = []
-  const cx = (ax + bx + 1) / 2
-  const cy = (ay + by + 1) / 2
-  const rx = (bx - ax + 1) / 2
-  const ry = (by - ay + 1) / 2
   for (let x = ax; x <= bx; x++) {
     for (let y = ay; y <= by; y++) {
-      if (shape === 'round' && ((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2 > 1.02) continue
       if (shape === 'diag' && Math.abs(x - x0) / (bx - ax + 1) + Math.abs(y - y0) / (by - ay + 1) > 1 - 0.5 / Math.max(bx - ax + 1, by - ay + 1)) continue
       out.push([x, y])
     }
   }
   return out
 }
+
+/** Floor area of a set of tiles: a tile a curve cuts through counts only for the part inside it. */
+export function areaOf(tiles: [number, number][], curve: CurveSpec | null): number {
+  if (!curve) return tiles.length
+  const cut = geomOf(curve).tiles
+  return tiles.reduce((a, [x, y]) => a + (cut.get(`${x},${y}`)?.cover ?? 1), 0)
+}
+
+/** True where some open ground shows on a tile: open land, and the part of a room tile outside a slanted or curved wall. */
+export const hasGround = (site: Site, x: number, y: number) => inPlot(site, x, y) && (!gridAt(site, x, y) || !!cutAt(site, x, y) || !!curveAt(site, x, y))
 
 /** Corners to cut off a set of tiles so its stepped edges become diagonals. */
 export function shapeCuts(tiles: [number, number][]): Record<string, Corner> {
@@ -419,10 +493,11 @@ function cutFits(site: Site, x: number, y: number, c: Corner): boolean {
 
 /**
  * Zones tiles as a room without charging for it. Tiles that already belong to
- * a room are left alone. Pass `into` to extend an existing room.
+ * a room are left alone. Pass `into` to extend an existing room, and `curve`
+ * (with every tile it touches) to give the new part a curved wall.
  * Returns the room and how many tiles were added.
  */
-export function zone(site: Site, type: string, tiles: [number, number][], into?: number, style = 0, cuts: Record<string, Corner> = {}): { room: Room | null; added: number } {
+export function zone(site: Site, type: string, tiles: [number, number][], into?: number, style = 0, cuts: Record<string, Corner> = {}, curve?: CurveSpec | null): { room: Room | null; added: number } {
   const free = tiles.filter(([x, y]) => inPlot(site, x, y) && !site.grid[y * site.w + x])
   if (!free.length) return { room: null, added: 0 }
   let room = into ? roomOf(site, into) : undefined
@@ -430,14 +505,18 @@ export function zone(site: Site, type: string, tiles: [number, number][], into?:
     room = { n: site.nextRoom++, type, style }
     site.rooms.push(room)
   }
+  const edge = curve ? geomOf(curve).tiles : null
   for (const [x, y] of free) {
     site.grid[y * site.w + x] = room.n
-    delete site.floor[`${x},${y}`]
+    // ground still shows on the part of a tile outside a curved wall, so its finish is kept
+    if (!edge?.has(`${x},${y}`)) delete site.floor[`${x},${y}`]
   }
   for (const [x, y] of free) {
     const c = cuts[`${x},${y}`]
     if (c && cutFits(site, x, y, c)) (site.cuts ??= {})[`${x},${y}`] = c
   }
+  if (curve) (site.curves ??= []).push({ room: room.n, ...curve })
+  settle(site)
   site.rev++
   return { room, added: free.length }
 }
@@ -460,18 +539,36 @@ export function autoDoor(site: Site, n: number) {
   if (!count) return
   cx /= count
   cy /= count
+  const wall = (x: number, y: number, side: 'n' | 'w', score: number) => isBoundary(site, x, y, side) && edges.push({ x, y, side, score })
   for (let y = 0; y < site.h; y++) {
     for (let x = 0; x < site.w; x++) {
       if (site.grid[y * site.w + x] !== n) continue
       // south edge first, then the others; nearest the room's middle wins
-      if (gridAt(site, x, y + 1) !== n && y + 1 <= site.h) edges.push({ x, y: y + 1, side: 'n', score: Math.abs(x - cx) + (y + 1 >= site.h ? 50 : 0) })
-      if (gridAt(site, x, y - 1) !== n) edges.push({ x, y, side: 'n', score: 20 + Math.abs(x - cx) + (y === 0 ? 50 : 0) })
-      if (gridAt(site, x + 1, y) !== n) edges.push({ x: x + 1, y, side: 'w', score: 10 + Math.abs(y - cy) + (x + 1 >= site.w ? 50 : 0) })
-      if (gridAt(site, x - 1, y) !== n) edges.push({ x, y, side: 'w', score: 10 + Math.abs(y - cy) + (x === 0 ? 50 : 0) })
+      if (gridAt(site, x, y + 1) !== n && y + 1 <= site.h) wall(x, y + 1, 'n', Math.abs(x - cx) + (y + 1 >= site.h ? 50 : 0))
+      if (gridAt(site, x, y - 1) !== n) wall(x, y, 'n', 20 + Math.abs(x - cx) + (y === 0 ? 50 : 0))
+      if (gridAt(site, x + 1, y) !== n) wall(x + 1, y, 'w', 10 + Math.abs(y - cy) + (x + 1 >= site.w ? 50 : 0))
+      if (gridAt(site, x - 1, y) !== n) wall(x, y, 'w', 10 + Math.abs(y - cy) + (x === 0 ? 50 : 0))
     }
   }
   edges.sort((a, b) => a.score - b.score)
+  // a curved wall takes the door in the bay that faces most nearly south, on the outer side of a ring
+  const bays: { curve: number; key: string; score: number }[] = []
+  site.curves?.forEach((c, i) => {
+    if (c.room !== n) return
+    for (const b of geomOf(c).bays.values()) {
+      if (!bayStands(site, i, b.key)) continue
+      const beyond = !inPlot(site, Math.floor(b.x + b.nx * 1.2), Math.floor(b.y + b.ny * 1.2))
+      bays.push({ curve: i, key: b.key, score: (1 - b.ny) * 10 + Math.abs(b.x - 0.5 - cx) * 0.2 + (b.band === 'i' ? 30 : b.band === 'o' ? 0 : 12) + (beyond ? 50 : 0) })
+    }
+  })
+  bays.sort((a, b) => a.score - b.score)
   const e = edges[0]
+  const bay = bays[0]
+  if (bay && (!e || bay.score <= e.score)) {
+    ;(site.curves![bay.curve].walls ??= {})[bay.key] = 'door'
+    site.rev++
+    return
+  }
   if (!e) return
   site.walls = site.walls.filter((w) => !(w.x === e.x && w.y === e.y && w.side === e.side))
   site.walls.push({ id: `d${n}_${e.x}_${e.y}${e.side}`, x: e.x, y: e.y, side: e.side, kind: 'door' })
@@ -486,6 +583,7 @@ export function tidy(site: Site) {
     const [x, y] = key.split(',').map(Number)
     if (!gridAt(site, x, y) || !cutFits(site, x, y, c)) delete site.cuts![key]
   }
+  settle(site)
   site.walls = site.walls.filter((w) => isBoundary(site, w.x, w.y, w.side))
 }
 
@@ -518,6 +616,7 @@ export function canPlace(site: Site, kind: string, x: number, y: number, rot: nu
   for (const [a, b] of tilesOf(def, x, y, rot)) {
     if (!inPlot(site, a, b)) return 'It does not fit on the plot'
     if (cutAt(site, a, b)) return 'That corner of the room is cut away'
+    if (curveAt(site, a, b)) return 'The curved wall runs through there'
     if (!def.rooms.includes(typeAt(site, a, b))) return `${def.name} goes in: ${roomNames(site.kind, def)}`
     const n = gridAt(site, a, b)
     if (room >= 0 && n !== room) return 'It cannot straddle a wall'

@@ -316,6 +316,31 @@ export interface SiteWall {
 
 export type Corner = 'ne' | 'nw' | 'se' | 'sw'
 
+/**
+ * A smooth outline for part of a room: an ellipse, a ring or an arc of one.
+ * The grid still says which tiles are the room; this says where, within the
+ * tiles on its edge, the wall really runs. Lengths are in metres from the
+ * plot's north-west corner.
+ */
+export interface Curve {
+  /** Room number the outline belongs to. */
+  room: number
+  cx: number
+  cy: number
+  /** Outer radii east-west and north-south. */
+  rx: number
+  ry: number
+  /** Rings: depth of the building from outer wall to inner wall. Missing for a solid disc. */
+  t?: number
+  /** Arcs: where the arc starts and how far it runs, in degrees. 0 is east, 90 south. Missing for a full turn. */
+  from?: number
+  sweep?: number
+  /** Doors, glazing and openings in the curved wall, keyed by bay (see sim/curves.ts). */
+  walls?: Record<string, 'glass' | 'door' | 'open'>
+  /** Tiles, keyed "x,y", that gave up their curved edge because another room was built against them. */
+  square?: Record<string, 1>
+}
+
 export interface Room {
   /** Number stored in the site grid for this room's tiles. */
   n: number
@@ -340,6 +365,8 @@ export interface Site {
    * 45 degrees. The value names the corner that is cut away.
    */
   cuts?: Record<string, Corner>
+  /** Curved outlines of round, ring and arc rooms. Missing in older saves and on sites with none. */
+  curves?: Curve[]
   /** Ground finish per open tile, keyed "x,y". Missing tiles are lawn. */
   floor: Record<string, string>
   /** Index into FACADES and ROOFS, and how many storeys the building has. */

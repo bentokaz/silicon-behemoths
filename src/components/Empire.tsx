@@ -9,6 +9,7 @@ import { GOALS, type Goal, STAGES, stageOf } from '../sim/goals'
 import { REGIONS, type RegionDef, entryBlocked, homeOf, homeRegion, regionOverheads } from '../sim/regions'
 import { IPO_MIN_VALUE, RAISE_GAP, founderStake, ipoBlocked, issueBlocked, marketCap, netWorth, raiseBlocked, rivalValue, roundQuote, stakeIn, stakePrice, takeoverPrice, trailing, valuation } from '../sim/stock'
 import type { GameState } from '../sim/types'
+import { takeAim } from '../store/focus'
 import { useGame, useStore } from '../store/game'
 import { Btn, Empty, Kpi, Meter, Mini, Panel, Row, Slider, Tabs, Tag, chart, money, num, pct } from './ui'
 
@@ -367,7 +368,8 @@ function RegionPanel({ r }: { r: RegionDef }) {
 
 export function WorldScreen() {
   const g = useGame()
-  const [selected, setSelected] = useState(homeRegion(g))
+  // a region picked in the city view is the one shown first
+  const [selected, setSelected] = useState(() => takeAim('region') ?? homeRegion(g))
   const open = REGIONS.filter((r) => g.regions[r.id].open)
   const total = open.reduce((a, r) => a + (g.regions[r.id].history.at(-1) ?? 0), 0)
   const region = REGIONS.find((r) => r.id === selected) ?? REGIONS[0]
