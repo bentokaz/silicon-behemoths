@@ -15,6 +15,19 @@ export interface StoreCtx {
   logo?: string
   color: string
   seed: number
+  /** Ids of products with none left to sell. */
+  soldOut?: Set<string>
+}
+
+/** The empty stand a sold-out device leaves behind, with a small card on it. */
+function Gap({ p }: { p: [number, number, number] }) {
+  return (
+    <group position={p}>
+      <B p={[0, 0.012, 0]} s={[0.095, 0.024, 0.08]} c="#e9e6e0" r={0.008} cast={false} />
+      <B p={[0, 0.05, 0.02]} s={[0.07, 0.05, 0.004]} c="#f4f1ea" r={0} rot={[-0.5, 0, 0]} cast={false} />
+      <B p={[0, 0.052, 0.0225]} s={[0.05, 0.008, 0.004]} c="#c2402f" r={0} rot={[-0.5, 0, 0]} cast={false} />
+    </group>
+  )
 }
 
 const STAFF: PersonLook[] = [
@@ -24,16 +37,18 @@ const STAFF: PersonLook[] = [
 ]
 
 /** A long oak table carrying a row of devices. */
-export function DisplayTable({ products, seed }: { products: Product[]; seed: number }) {
+export function DisplayTable({ products, seed, soldOut }: { products: Product[]; seed: number; soldOut?: Set<string> }) {
   return (
     <>
       {[-0.8, 0.8].map((x) => (
         <B key={x} p={[x, 0.43, 0]} s={[0.08, 0.86, 0.7]} c={OAK_PALE} r={0.012} rough={0.55} />
       ))}
       <B p={[0, 0.89, 0]} s={[1.92, 0.06, 0.84]} c={OAK_PALE} r={0.016} rough={0.5} />
-      {[-0.7, -0.35, 0, 0.35, 0.7].map((x, i) => (
-        <DeviceProp key={x} product={products.length ? products[(i + seed) % products.length] : undefined} p={[x, 0.92, i % 2 ? -0.12 : 0.14]} rotY={i % 2 ? Math.PI : 0} />
-      ))}
+      {[-0.7, -0.35, 0, 0.35, 0.7].map((x, i) => {
+        const product = products.length ? products[(i + seed) % products.length] : undefined
+        const p: [number, number, number] = [x, 0.92, i % 2 ? -0.12 : 0.14]
+        return product && soldOut?.has(product.id) ? <Gap key={x} p={p} /> : <DeviceProp key={x} product={product} p={p} rotY={i % 2 ? Math.PI : 0} />
+      })}
     </>
   )
 }
@@ -42,14 +57,14 @@ export function DisplayTable({ products, seed }: { products: Product[]; seed: nu
 export function StoreItem({ kind, c }: { kind: string; c: StoreCtx }) {
   switch (kind) {
     case 'table':
-      return <DisplayTable products={c.products} seed={c.seed} />
+      return <DisplayTable products={c.products} seed={c.seed} soldOut={c.soldOut} />
     case 'demo':
       return (
         <>
           <C p={[0, 0.02, 0]} r={[0.3, 0.32]} h={0.04} c={DARK} seg={20} />
           <C p={[0, 0.5, 0]} r={[0.05, 0.05]} h={0.92} c={STEEL} seg={10} metal={0.8} rough={0.35} />
           <C p={[0, 0.98, 0]} r={[0.36, 0.36]} h={0.04} c={WHITE} seg={24} rough={0.4} />
-          <DeviceProp product={c.products.length ? c.products[c.seed % c.products.length] : undefined} p={[0, 1.0, 0]} />
+          {c.products.length && c.soldOut?.has(c.products[c.seed % c.products.length].id) ? <Gap p={[0, 1.0, 0]} /> : <DeviceProp product={c.products.length ? c.products[c.seed % c.products.length] : undefined} p={[0, 1.0, 0]} />}
           <C p={[0, 0.995, 0]} r={[0.3, 0.3]} h={0.012} c="#ffffff" glow="#fff1d6" glowPower={0.5 * c.glow} seg={24} cast={false} />
         </>
       )

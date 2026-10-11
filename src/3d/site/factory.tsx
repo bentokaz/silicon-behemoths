@@ -90,6 +90,26 @@ function Dock({ c, out }: { c: FactoryCtx; out: boolean }) {
   )
 }
 
+/** A lorry about 7.5 m long: cab toward +Z, box trailer behind. Parked in the yard, or driven up to a dock. */
+export function Lorry({ seed }: { seed: number }) {
+  const paint = ['#c9553d', '#2f5d8a', '#3f7d4d'][seed % 3]
+  return (
+    <>
+      {[-0.95, 0.95].map((x) => [3.0, -0.6, -1.7, -2.8].map((z) => <C key={`${x}${z}`} p={[x, 0.48, z]} r={[0.48, 0.48]} h={0.3} c="#15171a" seg={16} rot={[0, 0, Math.PI / 2]} />))}
+      <B p={[0, 0.72, -0.3]} s={[2.0, 0.24, 6.6]} c="#2b2d31" r={0.02} rough={0.7} />
+      <B p={[0, 2.2, -1.0]} s={[2.4, 2.7, 5.4]} c="#e4e6e8" r={0.03} rough={0.6} />
+      <B p={[1.206, 2.3, -1.0]} s={[0.012, 0.9, 3.4]} c={paint} r={0} cast={false} />
+      <B p={[-1.206, 2.3, -1.0]} s={[0.012, 0.9, 3.4]} c={paint} r={0} cast={false} />
+      <B p={[0, 1.75, 2.9]} s={[2.3, 1.9, 1.7]} c={paint} r={0.12} rough={0.4} metal={0.4} />
+      <B p={[0, 2.2, 3.756]} s={[2.0, 0.7, 0.012]} c="#141a20" r={0} rough={0.1} metal={0.6} cast={false} />
+      {[-0.8, 0.8].map((x) => (
+        <B key={x} p={[x, 1.1, 3.756]} s={[0.36, 0.16, 0.012]} c="#f4f6f8" r={0} glow="#fff6e0" glowPower={0.3} cast={false} />
+      ))}
+      <B p={[0, 0.82, 3.7]} s={[2.3, 0.3, 0.16]} c="#2b2d31" r={0.03} />
+    </>
+  )
+}
+
 /** The model for one factory item. */
 export function FactoryItem({ kind, c }: { kind: string; c: FactoryCtx }) {
   switch (kind) {
@@ -192,6 +212,12 @@ export function FactoryItem({ kind, c }: { kind: string; c: FactoryCtx }) {
             <C key={x} p={[x, 0.96, 0.1]} r={[0.02, 0.02]} h={0.32} c={STEEL} seg={8} metal={0.9} rough={0.3} cast={false} />
           ))}
           <B p={[0, 1.13, 0.1]} s={[0.7, 0.04, 0.3]} c={YELLOW} r={0.008} cast={false} />
+          {/* a bin on the front for the units that fail */}
+          <B p={[0.22, 0.03, 0.56]} s={[0.4, 0.06, 0.2]} c="#7a1f24" r={0.006} rough={0.7} cast={false} />
+          {[-0.19, 0.19].map((x) => (
+            <B key={x} p={[0.22 + x, 0.2, 0.56]} s={[0.02, 0.34, 0.2]} c="#a3262c" r={0.004} rough={0.7} cast={false} />
+          ))}
+          <B p={[0.22, 0.2, 0.65]} s={[0.4, 0.34, 0.02]} c="#a3262c" r={0.004} rough={0.7} cast={false} />
           <Beacon p={[0.36, 1.88, -0.3]} on={c.running} glow={c.glow} />
         </>
       )
@@ -364,18 +390,7 @@ export function FactoryItem({ kind, c }: { kind: string; c: FactoryCtx }) {
           {[-1.42, 1.42].map((x) => (
             <B key={x} p={[x, 0.006, 0]} s={[0.1, 0.012, 7.9]} c={YELLOW} r={0} rough={0.9} cast={false} />
           ))}
-          {/* cab toward +Z, box trailer behind */}
-          {[-0.95, 0.95].map((x) => [3.0, -0.6, -1.7, -2.8].map((z) => <C key={`${x}${z}`} p={[x, 0.48, z]} r={[0.48, 0.48]} h={0.3} c="#15171a" seg={16} rot={[0, 0, Math.PI / 2]} />))}
-          <B p={[0, 0.72, -0.3]} s={[2.0, 0.24, 6.6]} c="#2b2d31" r={0.02} rough={0.7} />
-          <B p={[0, 2.2, -1.0]} s={[2.4, 2.7, 5.4]} c="#e4e6e8" r={0.03} rough={0.6} />
-          <B p={[1.206, 2.3, -1.0]} s={[0.012, 0.9, 3.4]} c={['#c9553d', '#2f5d8a', '#3f7d4d'][c.seed % 3]} r={0} cast={false} />
-          <B p={[-1.206, 2.3, -1.0]} s={[0.012, 0.9, 3.4]} c={['#c9553d', '#2f5d8a', '#3f7d4d'][c.seed % 3]} r={0} cast={false} />
-          <B p={[0, 1.75, 2.9]} s={[2.3, 1.9, 1.7]} c={['#c9553d', '#2f5d8a', '#3f7d4d'][c.seed % 3]} r={0.12} rough={0.4} metal={0.4} />
-          <B p={[0, 2.2, 3.756]} s={[2.0, 0.7, 0.012]} c="#141a20" r={0} rough={0.1} metal={0.6} cast={false} />
-          {[-0.8, 0.8].map((x) => (
-            <B key={x} p={[x, 1.1, 3.756]} s={[0.36, 0.16, 0.012]} c="#f4f6f8" r={0} glow="#fff6e0" glowPower={0.3} cast={false} />
-          ))}
-          <B p={[0, 0.82, 3.7]} s={[2.3, 0.3, 0.16]} c="#2b2d31" r={0.03} />
+          <Lorry seed={c.seed} />
         </>
       )
     case 'otree':
