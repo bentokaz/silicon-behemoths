@@ -314,7 +314,10 @@ export function Products() {
                   const blocked = open ? null : unlockBlocked(g, t)
                   return (
                     <button key={t} onClick={() => (setPicking(false), open ? openDesigner({ type: t }) : useStore.getState().setTab('research'))} className="flex w-full items-center justify-between border-b border-line px-2 py-[6px] text-left last:border-0 hover:bg-hover">
-                      <span className={`text-[11px] uppercase tracking-wider ${open ? 'text-fg' : 'text-faint'}`}>{TYPES[t].name}</span>
+                      <span className={`flex items-center gap-[7px] text-[11px] uppercase tracking-wider ${open ? 'text-fg' : 'text-faint'}`}>
+                        <Icon name={open ? typeIcon(t) : 'lock'} size={13} className={open ? 'text-accent' : 'text-faint'} />
+                        {TYPES[t].name}
+                      </span>
                       <span className="num text-[10px] text-faint">
                         {open ? `${segmentsOf(t).length} markets / ${num(segmentsOf(t).reduce((a, s) => a + segmentDemand(s, g.day) * 360, 0))} a year` : blocked ? 'needs research' : `open for ${money(unlockCost(g, t), 1)}`}
                       </span>

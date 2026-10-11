@@ -412,7 +412,7 @@ export function starterDesign(s: GameState, type: DeviceType = 'phone'): DeviceD
   const c = player(s)
   const logo = c.name.split(' ')[0].slice(0, 10).toUpperCase()
   const segment = STARTER_SEGMENT[type]
-  const d = generateDesign(holder, { segment, levels: s.levels, mLevel: marketLevel(s.day), layout: 1, palette: [STARTER_COLOR[type] ?? '#b9c7d8'], logo, logoImage: !!c.logo })
+  const d = generateDesign(holder, { segment, levels: s.levels, mLevel: marketLevel(s.day), layout: 1, palette: [STARTER_COLOR[type] ?? '#b9c7d8'], logo, logoImage: !!c.logo, flip: false })
   const owned = (id: string) => s.features.includes(id)
   d.specs.extras = d.specs.extras.filter(owned)
   if (d.specs.refresh > 60 && !owned(`hz${d.specs.refresh}`)) d.specs.refresh = 60

@@ -1,13 +1,14 @@
 // The device designer. The 3D studio fills the screen; everything else is a
 // floating toolbar or a drawer that opens over it when asked for.
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { DeviceView, type ViewName, fourthView } from '../3d/DeviceView'
 import { useStudio } from '../3d/studio'
 import { sfx } from '../audio/sfx'
 import { CHARGE_W, CHIP_TIERS, EXTRAS, LENSES, MATERIALS, PANEL_NAMES, RAM_OPTIONS, REFRESH, SENSOR_NAMES, STORAGE_OPTIONS, chipInfo, marketLevel, sensorInfo } from '../data/catalog'
-import { ANC, COOLERS, DRIVERS, GPUS, HEAD_STRAPS, HINGES, INPUT_NAMES, MIC_ARRAYS, OPTICS, SPEAKERS, SPEAKER_DRIVERS, STRAPS, TYPES, headStrap, inputOptions, ioOptions, segmentsOf, standInfo, standsFor, subLabel } from '../data/devices'
+import { ANC, COOLERS, DRIVERS, FLIP, FLIP_COVERS, GPUS, HEAD_STRAPS, HINGES, INPUT_NAMES, MIC_ARRAYS, OPTICS, SPEAKERS, SPEAKER_DRIVERS, STRAPS, TYPES, headStrap, inputOptions, ioOptions, segmentsOf, sizeLimits, standInfo, standsFor, subLabel } from '../data/devices'
 import { RETAIL_CUT, canAfford, devPlan, isVariantOf, player, productName, startProduct } from '../sim/game'
-import { faceLabel, facesFor, faceSize, isEdge, kindsFor, partLabel, speakerShape } from '../sim/geometry'
+import { faceLabel, facesFor, faceSize, isCoverCam, isEdge, isFlip, kindsFor, partLabel, speakerShape } from '../sim/geometry'
+import { specShares } from '../sim/internals'
 import { EVENTS, hasStage } from '../sim/growth'
 import { has } from '../sim/progress'
 import { appeal, bestSegment, normalised } from '../sim/market'
@@ -17,6 +18,7 @@ import { batteryLabel, chargeWatts, evaluate, foldedThickness, minBezel, minThic
 import { type Colorway, DEVICE_TYPES, type DeviceType, type Face, type Lens, type PlacedPart, type ProductionOrder, SUBS, type StorageTier } from '../sim/types'
 import { hasType } from '../sim/world'
 import { useGame, useStore } from '../store/game'
+import { typeIcon } from './icons'
 import { Btn, Choice, Meter, Mini, NumInput, Row, Slider, Tabs, Tag, TextInput, money, num, pct } from './ui'
 
 const SWATCHES = ['#17191d', '#2b2f36', '#5b6470', '#c9ccd1', '#ecebe6', '#c8b89a', '#2e4a3c', '#2f4f73', '#8c2f39', '#d98a3d']
@@ -99,7 +101,15 @@ function BodyPanel({ simple }: { simple: boolean }) {
   // an earbud case is moulded or machined in one of the all-round materials
   const mats = (use: 'frame' | 'back') =>
     MATERIALS.filter((m) => (type === 'earbuds' && use === 'back' ? m.use === 'both' : m.use === use || m.use === 'both' || (oneShell && m.use === 'frame'))).map((m) => ({ value: m.id, label: m.name, locked: m.level > g.levels.materials }))
-  const sizes = T.sizes ?? [0.12, 0.42, 0.7, 0.95].map((f, i) => ({ name: ['Compact', 'Standard', 'Large', 'Max'][i], width: Math.round(T.width[0] + (T.width[1] - T.width[0]) * f), height: Math.round(T.height[0] + (T.height[1] - T.height[0]) * f), thickness: undefined as number | undefined }))
+  const lim = sizeLimits(type, body.fold)
+  const sizes = T.sizes ?? [0.12, 0.42, 0.7, 0.95].map((f, i) => ({ name: ['Compact', 'Standard', 'Large', 'Max'][i], width: Math.round(lim.width[0] + (lim.width[1] - lim.width[0]) * f), height: Math.round(lim.height[0] + (lim.height[1] - lim.height[0]) * f), thickness: undefined as number | undefined }))
+  /** Changing how a foldable folds changes its whole shape, so it starts from that form's usual size and its parts are laid out afresh. */
+  const setFold = (fold: 'book' | 'flip') => {
+    if ((body.fold ?? 'book') === fold) return
+    const to = fold === 'flip' ? FLIP : TYPES.foldable
+    setBody({ fold, width: to.width[2], height: to.height[2], cover: fold === 'flip' ? (body.cover ?? 1) : undefined })
+    useStore.getState().setSimple({})
+  }
   const sizeIndex = sizes.findIndex((z) => z.width === body.width && z.height === body.height)
   const pickSize = (i: number) => {
     const z = sizes[i]
@@ -123,8 +133,8 @@ function BodyPanel({ simple }: { simple: boolean }) {
           <Choice label="Size" value={sizeIndex} options={[...(sizeIndex < 0 ? [{ value: -1, label: `Custom (${body.width} x ${body.height} mm)` }] : []), ...sizes.map((z, i) => ({ value: i, label: `${z.name} (${z.width} x ${z.height} mm)` }))]} onChange={(i) => i >= 0 && pickSize(i)} />
         ) : (
           <>
-            <Slider label={dimW} value={body.width} min={T.width[0]} max={T.width[1]} step={0.5} format={size} onChange={(v) => setBody({ width: v })} />
-            <Slider label={dimH} value={body.height} min={T.height[0]} max={T.height[1]} step={0.5} format={size} onChange={(v) => setBody({ height: v })} />
+            <Slider label={dimW} value={body.width} min={lim.width[0]} max={lim.width[1]} step={0.5} format={size} onChange={(v) => setBody({ width: v })} />
+            <Slider label={dimH} value={body.height} min={lim.height[0]} max={lim.height[1]} step={0.5} format={size} onChange={(v) => setBody({ height: v })} />
           </>
         )}
         <Slider
@@ -140,6 +150,13 @@ function BodyPanel({ simple }: { simple: boolean }) {
         {(type !== 'speaker' || body.form === 'block') && <Slider label={type === 'earbuds' ? 'Roundness' : 'Corner radius'} value={Math.min(body.corner, maxCorner)} min={type === 'earbuds' ? 2 : 0} max={maxCorner} step={0.5} format={mm} onChange={(v) => setBody({ corner: v })} />}
         {(type !== 'speaker' || body.form !== 'orb') && <Toggle label={type === 'earbuds' ? 'Top and bottom' : type === 'speaker' ? 'Top edge' : 'Edge profile'} value={body.edge} options={['flat', 'round'] as const} onChange={(edge) => setBody({ edge })} />}
       </Group>
+      {type === 'foldable' && (
+        <Group title="Fold">
+          <Toggle label="Form" value={body.fold ?? 'book'} options={['book', 'flip'] as const} onChange={setFold} />
+          {isFlip(body) && <Choice label="Cover screen" value={body.cover ?? 1} options={FLIP_COVERS.map((x, i) => ({ value: i, label: x.name }))} onChange={(v) => (setBody({ cover: v }), useStore.getState().setSimple({}))} />}
+          <div className="text-[10px] leading-snug text-faint">{isFlip(body) ? 'A flip is a tall phone that folds in half across the middle. Its cameras and its cover screen share the outside of the upper half; a larger cover screen costs more and uses a little more power.' : 'A book opens sideways to a screen the size of a small tablet, with a full cover screen on the outside.'}</div>
+        </Group>
+      )}
       {type === 'speaker' && (
         <Group title="Shape">
           <Toggle label="Form" value={body.form ?? 'column'} options={['column', 'orb', 'block'] as const} onChange={(form) => setBody({ form })} />
@@ -168,7 +185,7 @@ function BodyPanel({ simple }: { simple: boolean }) {
             Minimum {minBez} mm at Industrial design level {g.levels.design}
             {flank ? `, plus ${flank} mm each side for the controls` : ''}
           </div>
-          {type === 'foldable' && <div className="mt-1 text-[10px] leading-snug text-faint">The cover screen on the outside follows the side bezel. Use the Shut button above the model to see it.</div>}
+          {type === 'foldable' && <div className="mt-1 text-[10px] leading-snug text-faint">{isFlip(body) ? 'Use the Shut button above the model to see it folded.' : 'The cover screen on the outside follows the side bezel. Use the Shut button above the model to see it.'}</div>}
         </Group>
       )}
       <Group title={frameName}>
@@ -350,8 +367,8 @@ function PartsPanel() {
         {d.parts.map((p) => (
           <div key={p.id} onClick={() => selectPart(p.id)} role="button" className={`flex cursor-pointer items-center justify-between border-l-2 px-2 py-[3px] text-[11px] ${selected === p.id ? 'border-accent bg-accent/10 text-accent' : 'border-transparent text-fg hover:bg-hover'}`}>
             <span className="truncate">
-              {partLabel(p, d.type)}
-              {p.kind === 'camera' && p.face === 'back' ? ` / ${p.lens}` : ''}
+              {isCoverCam(d, p) ? 'Cover camera' : partLabel(p, d.type)}
+              {p.kind === 'camera' && p.face === 'back' && !isCoverCam(d, p) ? ` / ${p.lens}` : ''}
               {(p.kind === 'port' || p.kind === 'slot') && p.text ? <span className="text-faint"> / {socketName(d.type, p.text)}</span> : ''}
             </span>
             <span className="flex shrink-0 items-center gap-2">
@@ -372,17 +389,32 @@ const socketName = (type: DeviceType, id: string) => ({ power: 'power', hdmi: 'H
 
 // ---------------------------------------------------------------- internals
 
-function Checks({ items, selected, onToggle }: { items: { id: string; name: string; cost: number; locked: boolean; why?: string }[]; selected: string[]; onToggle: (id: string) => void }) {
+/**
+ * A row of the Internals panel that stands for something inside the device. Pointing at it lights the component
+ * up on the opened model, and picking the component there marks the row.
+ */
+function Spec({ k, children }: { k: string; children: React.ReactNode }) {
+  const on = useStudio((s) => s.hover === k || !!s.pick?.specs.includes(k))
+  return (
+    <div data-spec={k} onMouseEnter={() => useStudio.setState({ hover: k })} onMouseLeave={() => useStudio.getState().hover === k && useStudio.setState({ hover: null })} className={`-mx-2 border-l-2 px-[6px] ${on ? 'border-accent bg-accent/10' : 'border-transparent'}`}>
+      {children}
+    </div>
+  )
+}
+
+function Checks({ items, selected, onToggle, spec }: { items: { id: string; name: string; cost: number; locked: boolean; why?: string }[]; selected: string[]; onToggle: (id: string) => void; spec: string }) {
   return (
     <>
       {items.map((e) => (
-        <label key={e.id} className={`flex items-center justify-between py-[3px] text-[11px] ${e.locked ? 'text-faint' : 'text-fg'}`} title={e.why}>
-          <span>
-            <input type="checkbox" className="mr-2 accent-accent" disabled={e.locked} checked={selected.includes(e.id)} onChange={() => onToggle(e.id)} />
-            {e.name}
-          </span>
-          <span className="num text-dim">{e.locked ? 'locked' : `+${money(e.cost)}`}</span>
-        </label>
+        <Spec key={e.id} k={`${spec}:${e.id}`}>
+          <label className={`flex items-center justify-between py-[3px] text-[11px] ${e.locked ? 'text-faint' : 'text-fg'}`} title={e.why}>
+            <span>
+              <input type="checkbox" className="mr-2 accent-accent" disabled={e.locked} checked={selected.includes(e.id)} onChange={() => onToggle(e.id)} />
+              {e.name}
+            </span>
+            <span className="num text-dim">{e.locked ? 'locked' : `+${money(e.cost)}`}</span>
+          </label>
+        </Spec>
       ))}
     </>
   )
@@ -405,12 +437,23 @@ function InternalsPanel({ maxBattery }: { maxBattery: number }) {
   const speakers = SPEAKERS[s.speakers ?? 0]
   const shape = type === 'speaker' ? speakerShape(d.body) : null
   const woofer = SPEAKER_DRIVERS[s.driver ?? 0] ?? SPEAKER_DRIVERS[0]
+  // picking a component on the opened device brings its row into view
+  const pick = useStudio((st) => st.pick)
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    for (const k of pick?.specs ?? []) {
+      const row = box.current?.querySelector(`[data-spec="${k}"]`)
+      if (!row) continue
+      row.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+      break
+    }
+  }, [pick])
   return (
-    <>
+    <div ref={box}>
       {shape && (
         <Group title="Sound and voice">
-          <Choice label="Drivers" value={s.driver ?? 0} options={SPEAKER_DRIVERS.map((x, i) => ({ value: i, label: `${x.name} (${money(x.cost)})`, locked: x.level > lv.materials }))} onChange={(v) => setSpecs({ driver: v })} />
-          <Choice label="Microphones" value={s.mics ?? 0} options={MIC_ARRAYS.map((x, i) => ({ value: i, label: `${x.name} (${money(x.cost)})`, locked: x.level > lv.chipset }))} onChange={(v) => setSpecs({ mics: v })} />
+          <Spec k="driver"><Choice label="Drivers" value={s.driver ?? 0} options={SPEAKER_DRIVERS.map((x, i) => ({ value: i, label: `${x.name} (${money(x.cost)})`, locked: x.level > lv.materials }))} onChange={(v) => setSpecs({ driver: v })} /></Spec>
+          <Spec k="mics"><Choice label="Microphones" value={s.mics ?? 0} options={MIC_ARRAYS.map((x, i) => ({ value: i, label: `${x.name} (${money(x.cost)})`, locked: x.level > lv.chipset }))} onChange={(v) => setSpecs({ mics: v })} /></Spec>
           <div className="mt-1 grid grid-cols-2 gap-1">
             <Mini label="Enclosure" value={`${shape.litres.toFixed(2)} L`} tone={shape.litres < woofer.litres ? 'text-neg' : undefined} />
             <Mini label="These drivers need" value={woofer.litres ? `${woofer.litres.toFixed(1)} L` : 'any size'} />
@@ -420,24 +463,24 @@ function InternalsPanel({ maxBattery }: { maxBattery: number }) {
       )}
       {shape && !d.body.screen ? null : type === 'earbuds' ? (
         <Group title="Sound">
-          <Choice label="Driver" value={s.driver ?? 0} options={DRIVERS.map((x, i) => ({ value: i, label: `${x.name} (${money(x.cost)})`, locked: x.level > lv.materials }))} onChange={(v) => setSpecs({ driver: v })} />
-          <Choice label="Noise cancelling" value={s.anc ?? 0} options={ANC.map((x, i) => ({ value: i, label: x.cost ? `${x.name} (${money(x.cost)})` : x.name, locked: x.level > lv.chipset }))} onChange={(v) => setSpecs({ anc: v })} />
+          <Spec k="driver"><Choice label="Driver" value={s.driver ?? 0} options={DRIVERS.map((x, i) => ({ value: i, label: `${x.name} (${money(x.cost)})`, locked: x.level > lv.materials }))} onChange={(v) => setSpecs({ driver: v })} /></Spec>
+          <Spec k="anc"><Choice label="Noise cancelling" value={s.anc ?? 0} options={ANC.map((x, i) => ({ value: i, label: x.cost ? `${x.name} (${money(x.cost)})` : x.name, locked: x.level > lv.chipset }))} onChange={(v) => setSpecs({ anc: v })} /></Spec>
           <div className="text-[10px] leading-snug text-faint">Better drivers need Materials research, better noise cancelling needs Chipset research. Both use more power and add weight to each bud.</div>
         </Group>
       ) : (
         <Group title={type === 'console' ? 'Video output' : type === 'headset' ? 'Displays and lenses' : type === 'foldable' ? 'Display and hinge' : type === 'speaker' ? 'Screen' : 'Display'}>
-          <Choice label={type === 'console' ? 'Drives up to' : type === 'headset' ? 'Panels' : 'Panel'} value={s.panel} options={PANEL_NAMES.map((_, i) => ({ value: i, label: panelName(type, i), locked: i > lv.display }))} onChange={(v) => setSpecs({ panel: v })} />
-          {type !== 'watch' && <Choice label="Refresh rate" value={s.refresh} options={REFRESH.map((r) => ({ value: r.hz, label: `${r.hz} Hz`, locked: !!r.feat && !g.features.includes(r.feat) }))} onChange={(v) => setSpecs({ refresh: v })} />}
+          <Spec k="panel"><Choice label={type === 'console' ? 'Drives up to' : type === 'headset' ? 'Panels' : 'Panel'} value={s.panel} options={PANEL_NAMES.map((_, i) => ({ value: i, label: panelName(type, i), locked: i > lv.display }))} onChange={(v) => setSpecs({ panel: v })} /></Spec>
+          <Spec k="refresh">{type !== 'watch' && <Choice label="Refresh rate" value={s.refresh} options={REFRESH.map((r) => ({ value: r.hz, label: `${r.hz} Hz`, locked: !!r.feat && !g.features.includes(r.feat) }))} onChange={(v) => setSpecs({ refresh: v })} />}</Spec>
           {type === 'console' && <div className="text-[10px] leading-snug text-faint">A sharper output only pays off with the graphics card to drive it.</div>}
           {type === 'headset' && (
             <>
-              <Choice label="Lenses" value={s.optics ?? 0} options={OPTICS.map((x, i) => ({ value: i, label: `${x.name} (${money(x.cost)})`, locked: x.level > lv.display }))} onChange={(v) => setSpecs({ optics: v })} />
+              <Spec k="optics"><Choice label="Lenses" value={s.optics ?? 0} options={OPTICS.map((x, i) => ({ value: i, label: `${x.name} (${money(x.cost)})`, locked: x.level > lv.display }))} onChange={(v) => setSpecs({ optics: v })} /></Spec>
               <div className="text-[10px] leading-snug text-faint">The picture reaches the eye through the lenses, so they count as much as the panels. Better ones are also thinner and lighter: these need {OPTICS[s.optics ?? 0].depth} mm of extra depth in the visor.</div>
             </>
           )}
           {type === 'foldable' && (
             <>
-              <Choice label="Hinge" value={s.hinge ?? 0} options={HINGES.map((x, i) => ({ value: i, label: `${x.name} (${money(x.cost)})`, locked: x.level > lv.materials }))} onChange={(v) => setSpecs({ hinge: v })} />
+              <Spec k="hinge"><Choice label="Hinge" value={s.hinge ?? 0} options={HINGES.map((x, i) => ({ value: i, label: `${x.name} (${money(x.cost)})`, locked: x.level > lv.materials }))} onChange={(v) => setSpecs({ hinge: v })} /></Spec>
               <div className="text-[10px] leading-snug text-faint">A better hinge leaves a shallower crease in the screen and a smaller gap when shut. With this one it closes to {foldedThickness(d).toFixed(1)} mm.</div>
             </>
           )}
@@ -454,30 +497,30 @@ function InternalsPanel({ maxBattery }: { maxBattery: number }) {
         )}
         {!s.customChip && (
           <>
-            <Choice label="Generation" value={s.chipGen} options={Array.from({ length: 9 }, (_, i) => ({ value: i, label: `Helix x${i}0`, locked: i > lv.chipset }))} onChange={(v) => setSpecs({ chipGen: v })} />
-            <Choice label="Tier" value={s.chipTier} options={CHIP_TIERS.map((n, i) => ({ value: i, label: `${n} (${chipInfo(s.chipGen, i).name}, ${money(chipInfo(s.chipGen, i).cost * T.chipCost)})` }))} onChange={(v) => setSpecs({ chipTier: v })} />
+            <Spec k="chip"><Choice label="Generation" value={s.chipGen} options={Array.from({ length: 9 }, (_, i) => ({ value: i, label: `Helix x${i}0`, locked: i > lv.chipset }))} onChange={(v) => setSpecs({ chipGen: v })} /></Spec>
+            <Spec k="chip"><Choice label="Tier" value={s.chipTier} options={CHIP_TIERS.map((n, i) => ({ value: i, label: `${n} (${chipInfo(s.chipGen, i).name}, ${money(chipInfo(s.chipGen, i).cost * T.chipCost)})` }))} onChange={(v) => setSpecs({ chipTier: v })} /></Spec>
           </>
         )}
-        {T.gpu && <Choice label="Graphics" value={s.gpu ?? 0} options={GPUS.map((x, i) => ({ value: i, label: `${x.name}${x.cost ? ` (${money(x.cost * (T.gpuCost ?? 1))}+)` : ''}` }))} onChange={(v) => setSpecs({ gpu: v })} />}
+        <Spec k="gpu">{T.gpu && <Choice label="Graphics" value={s.gpu ?? 0} options={GPUS.map((x, i) => ({ value: i, label: `${x.name}${x.cost ? ` (${money(x.cost * (T.gpuCost ?? 1))}+)` : ''}` }))} onChange={(v) => setSpecs({ gpu: v })} />}</Spec>
         {T.memory > 0 && (
           <>
-            <Choice label="RAM" value={s.ram} options={RAM_OPTIONS.map((r) => ({ value: r, label: `${r} GB` }))} onChange={(v) => setSpecs({ ram: v })} />
-            <Choice label="Storage" value={s.storage} options={STORAGE_OPTIONS.map((r) => ({ value: r, label: storageLabel(r) }))} onChange={(v) => setSpecs({ storage: v })} />
+            <Spec k="ram"><Choice label="RAM" value={s.ram} options={RAM_OPTIONS.map((r) => ({ value: r, label: `${r} GB` }))} onChange={(v) => setSpecs({ ram: v })} /></Spec>
+            <Spec k="storage"><Choice label="Storage" value={s.storage} options={STORAGE_OPTIONS.map((r) => ({ value: r, label: storageLabel(r) }))} onChange={(v) => setSpecs({ storage: v })} /></Spec>
           </>
         )}
       </Group>
       {!T.mains && (
         <Group title="Power">
-          <Slider label={type === 'earbuds' ? 'Case battery' : 'Battery'} value={Math.min(s.battery, Math.max(maxBattery, 100))} min={small ? 100 : 500} max={Math.max(maxBattery, small ? 100 : 500)} step={small ? 10 : 50} format={(v) => batteryLabel(type, v)} onChange={(v) => setSpecs({ battery: v })} />
+          <Spec k="battery"><Slider label={type === 'earbuds' ? 'Case battery' : 'Battery'} value={Math.min(s.battery, Math.max(maxBattery, 100))} min={small ? 100 : 500} max={Math.max(maxBattery, small ? 100 : 500)} step={small ? 10 : 50} format={(v) => batteryLabel(type, v)} onChange={(v) => setSpecs({ battery: v })} /></Spec>
           <div className="text-[10px] text-faint">
             This {type === 'earbuds' ? 'case' : type === 'headset' ? 'headset' : 'body'} holds up to {batteryLabel(type, maxBattery)}. A thicker or larger {type === 'earbuds' ? 'case' : type === 'headset' ? 'visor' : 'body'} holds more.{type === 'earbuds' ? ' The case recharges the buds; each bud has a small cell of its own.' : type === 'headset' ? ' So does a band with the battery at the back.' : ''}
           </div>
-          <Choice label="Charging" value={s.charging} options={CHARGE_W.map((_, i) => ({ value: i, label: `${chargeWatts(type, i)} W`, locked: i > lv.charging }))} onChange={(v) => setSpecs({ charging: v })} />
+          <Spec k="charging"><Choice label="Charging" value={s.charging} options={CHARGE_W.map((_, i) => ({ value: i, label: `${chargeWatts(type, i)} W`, locked: i > lv.charging }))} onChange={(v) => setSpecs({ charging: v })} /></Spec>
         </Group>
       )}
       {heat && (
         <Group title="Cooling">
-          <Choice label="System" value={s.cooling ?? 0} options={COOLERS.map((x, i) => ({ value: i, label: `${x.name} (${money(x.cost)})`, locked: x.level > lv.materials }))} onChange={(v) => setSpecs({ cooling: v })} />
+          <Spec k="cooling"><Choice label="System" value={s.cooling ?? 0} options={COOLERS.map((x, i) => ({ value: i, label: `${x.name} (${money(x.cost)})`, locked: x.level > lv.materials }))} onChange={(v) => setSpecs({ cooling: v })} /></Spec>
           <div className="mt-1 grid grid-cols-2 gap-1">
             <Mini label="Heat to shed" value={`${Math.round(heat.heat)} W`} />
             <Mini label="Headroom" value={`${Math.round(heat.headroom * 100)}%`} tone={heat.headroom < 0.5 ? 'text-neg' : heat.headroom < 0.8 ? 'text-warn' : 'text-pos'} />
@@ -487,22 +530,22 @@ function InternalsPanel({ maxBattery }: { maxBattery: number }) {
       )}
       {!!T.mains?.sound && (
         <Group title="Sound">
-          <Choice label="Speakers" value={s.speakers ?? 0} options={SPEAKERS.map((x, i) => ({ value: i, label: `${x.name} (${money(x.cost)})`, locked: x.level > lv.design }))} onChange={(v) => setSpecs({ speakers: v })} />
+          <Spec k="speakers"><Choice label="Speakers" value={s.speakers ?? 0} options={SPEAKERS.map((x, i) => ({ value: i, label: `${x.name} (${money(x.cost)})`, locked: x.level > lv.design }))} onChange={(v) => setSpecs({ speakers: v })} /></Spec>
           {speakers.thick > 0 && <div className={`text-[10px] leading-snug ${d.body.thickness < speakers.thick ? 'text-neg' : 'text-faint'}`}>These need a body at least {speakers.thick} mm thick.</div>}
         </Group>
       )}
       {(T.input || ioOptions(type).length > 0) && (
         <Group title={T.input === 'keyboard' ? `Keyboard and ${(T.ioLabel ?? 'ports').toLowerCase()}` : T.input === 'controller' ? 'Controller, drive and ports' : T.input === 'wands' ? 'Controllers and sensing' : T.input === 'controls' ? 'Controls, ports and features' : (T.ioLabel ?? 'Features')}>
-          {T.input && <Choice label={INPUT_NAMES[T.input]} value={s.keyboard ?? 0} options={inputOptions(type).map((k, i) => ({ value: i, label: `${k.name} (${money(k.cost)})`, locked: k.level > lv.design }))} onChange={(v) => setSpecs({ keyboard: v })} />}
-          <Checks items={ioOptions(type).map((p) => ({ id: p.id, name: p.name, cost: p.cost, locked: p.level > lv.chipset, why: p.level > lv.chipset ? `Needs Chipset level ${p.level}` : undefined }))} selected={io} onToggle={(id) => setSpecs({ io: flip(io, id) })} />
+          <Spec k="input">{T.input && <Choice label={INPUT_NAMES[T.input]} value={s.keyboard ?? 0} options={inputOptions(type).map((k, i) => ({ value: i, label: `${k.name} (${money(k.cost)})`, locked: k.level > lv.design }))} onChange={(v) => setSpecs({ keyboard: v })} />}</Spec>
+          <Checks items={ioOptions(type).map((p) => ({ id: p.id, name: p.name, cost: p.cost, locked: p.level > lv.chipset, why: p.level > lv.chipset ? `Needs Chipset level ${p.level}` : undefined }))} selected={io} onToggle={(id) => setSpecs({ io: flip(io, id) })} spec="io" />
         </Group>
       )}
       {T.extras.length > 0 && (
         <Group title="Extras">
-          <Checks items={EXTRAS.filter((e) => T.extras.includes(e.id)).map((e) => ({ id: e.id, name: e.name, cost: e.cost, locked: !g.features.includes(e.id), why: g.features.includes(e.id) ? undefined : 'Research it in the technology tree' }))} selected={s.extras} onToggle={(id) => setSpecs({ extras: flip(s.extras, id) })} />
+          <Checks items={EXTRAS.filter((e) => T.extras.includes(e.id)).map((e) => ({ id: e.id, name: e.name, cost: e.cost, locked: !g.features.includes(e.id), why: g.features.includes(e.id) ? undefined : 'Research it in the technology tree' }))} selected={s.extras} onToggle={(id) => setSpecs({ extras: flip(s.extras, id) })} spec="extra" />
         </Group>
       )}
-    </>
+    </div>
   )
 }
 
@@ -691,7 +734,13 @@ function StudioCaption() {
 type LeftPanel = 'body' | 'parts' | 'internals' | 'colours' | null
 type RightPanel = 'score' | 'market' | null
 
+/** The designer, while there is a design to work on. The store can drop the draft a moment before this is unmounted (quitting, rewinding), so that is checked here and nothing below has to. */
 export function Designer() {
+  const ready = useStore((s) => !!s.draft && !!s.game)
+  return ready ? <Workbench /> : null
+}
+
+function Workbench() {
   const g = useGame()
   const draft = useStore((s) => s.draft!)
   const meta = useStore((s) => s.meta)
@@ -705,6 +754,8 @@ export function Designer() {
   const simple = editorMode === 'simple'
   const heat = thermal(draft, g.chips)
   const folded = useStudio((s) => s.folded)
+  const keepClosed = useStudio((s) => s.keepClosed)
+  const explode = useStudio((s) => s.explode)
 
   const [left, setLeft] = useState<LeftPanel>('body')
   const [right, setRight] = useState<RightPanel>(null)
@@ -743,6 +794,13 @@ export function Designer() {
   const dueNow = plan.cost + marketing + (venue?.cost ?? 0)
   const margin = price * (1 - RETAIL_CUT) - buildEach
   const n = normalised(ev.raw, g.day)
+  // what the studio needs to open the device up, and to say what share of it each component is
+  const tear = useMemo(() => ({ levels: g.levels, chips: g.chips, shares: specShares(draft, ev, g.chips), unitCost: ev.unitCost, weight: ev.report.weight, costScale: ev.costScale }), [draft, ev, g.levels, g.chips])
+  // the device opens while the Internals panel is, and shuts again when it is left
+  useEffect(() => {
+    useStudio.setState({ internals: left === 'internals', hover: null, pick: null })
+  }, [left])
+  useEffect(() => () => useStudio.setState({ internals: false, hover: null, pick: null }), [])
 
   // keep the battery inside what the body can hold
   useEffect(() => {
@@ -797,7 +855,7 @@ export function Designer() {
   return (
     <div className="relative h-full min-h-0 overflow-hidden">
       <div className="absolute inset-0 isolate">
-        <DeviceView design={draft} selectedId={simple ? null : selected} view={view} viewNonce={nonce} onPick={simple ? undefined : selectPart} logo={me.logo} colorIndex={preview} studio={{ editable: !simple, hints: { maxBattery: ev.report.maxBattery } }} />
+        <DeviceView design={draft} selectedId={simple ? null : selected} view={view} viewNonce={nonce} onPick={simple ? undefined : selectPart} logo={me.logo} colorIndex={preview} studio={{ editable: !simple, hints: { maxBattery: ev.report.maxBattery }, tear }} />
       </div>
       <StudioCaption />
 
@@ -828,7 +886,21 @@ export function Designer() {
           </div>
         </div>
         <div className="pointer-events-auto flex items-center gap-2">
-          {type === 'foldable' && (
+          {left === 'internals' && (
+            <div className="flex items-center border border-line2 bg-panel/95" title="Under Internals the device opens up. Keep it shut, take the cover off, or pull the layers apart.">
+              <Btn small tone="ghost" icon="lock" active={keepClosed} onClick={() => useStudio.setState({ keepClosed: true })}>
+                Shut
+              </Btn>
+              <Btn small tone="ghost" icon="layers" active={!keepClosed && explode < 0.5} onClick={() => useStudio.setState({ keepClosed: false, explode: 0 })}>
+                Lid off
+              </Btn>
+              <Btn small tone="ghost" icon="layers" active={!keepClosed && explode >= 0.5} onClick={() => useStudio.setState({ keepClosed: false, explode: 1 })}>
+                Exploded
+              </Btn>
+              <input type="range" min={0} max={1} step={0.02} value={keepClosed ? 0 : explode} disabled={keepClosed} onChange={(e) => useStudio.setState({ explode: Number(e.target.value) })} className="mx-2 w-20 accent-accent" title="How far the layers are pulled apart" />
+            </div>
+          )}
+          {type === 'foldable' && left !== 'internals' && (
             <div className="flex border border-line2 bg-panel/95" title="Show it open, or folded shut with the cover screen outermost">
               {(['open', 'shut'] as const).map((v) => (
                 <Btn key={v} small tone="ghost" active={folded === (v === 'shut')} onClick={() => useStudio.setState({ folded: v === 'shut' })}>
@@ -858,8 +930,8 @@ export function Designer() {
                   const game = useStore.getState().game
                   const closed = !!game && !hasType(game, t)
                   return (
-                    <Btn key={t} small active={type === t} onClick={() => setType(t)} className={closed ? 'opacity-40' : ''} title={closed ? 'Your company does not make these yet. Open the line under Research.' : t === type ? '' : 'Switching starts a fresh design'}>
-                      {TYPES[t].name}
+                    <Btn key={t} small icon={closed ? 'lock' : typeIcon(t)} active={type === t} onClick={() => setType(t)} className={`justify-start px-[6px] ${closed ? 'opacity-40' : ''}`} title={closed ? 'Your company does not make these yet. Open the line under Research.' : t === type ? '' : 'Switching starts a fresh design'}>
+                      <span className="truncate">{TYPES[t].name}</span>
                     </Btn>
                   )
                 })}

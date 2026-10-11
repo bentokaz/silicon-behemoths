@@ -1,8 +1,9 @@
 // Procedural device generation, used for AI rivals, for the player's starting
 // templates, for the simple editor and for Pro/Lite style variants.
 import { CHARGE_W, MATERIALS, RAM_OPTIONS, REFRESH, STORAGE_OPTIONS, idealRam, idealStorage, sensorInfo } from '../data/catalog'
-import { ANC, COOLERS, DRIVERS, HINGES, type IoInfo, MIC_ARRAYS, OPTICS, SPEAKERS, SPEAKER_DRIVERS, STRAPS, TIERS, TYPES, headStrap, inputOptions, ioInfo, ioOptions, segmentInfo } from '../data/devices'
-import { GRIP, SHOULDER, caseShape, clampPart, faceSize, facesFor, lightRing, screenRect, speakerShape } from './geometry'
+import { ANC, COOLERS, DRIVERS, HINGES, type IoInfo, MIC_ARRAYS, OPTICS, SPEAKERS, SPEAKER_DRIVERS, STRAPS, TIERS, TYPES, headStrap, inputOptions, ioInfo, ioOptions, segmentInfo, sizeLimits } from '../data/devices'
+import { GRIP, SHOULDER, caseShape, clampPart, coverScreen, faceSize, facesFor, isFlip, lightRing, screenRect, speakerShape, speakerSockets } from './geometry'
+export { speakerSockets }
 import { type RngHolder, clamp, int, pick, range } from './rng'
 import { maxBattery, minBezel, minThickness, selfieMinDia, thermal } from './scoring'
 import type { Body, DeviceDesign, DeviceType, Lens, Levels, PlacedPart, SegmentId } from './types'
@@ -391,12 +392,33 @@ function layoutEarbuds(body: Body, o: LayoutOptions, add: Add) {
  */
 function layoutFoldable(body: Body, o: LayoutOptions, add: Add) {
   const { width, height } = body
+  if (isFlip(body)) {
+    // a flip: one or two cameras in a column at the top of the upper half, the cover screen beside them or right across
+    rearCameras(width, height, { ...o, cams: Math.min(o.cams, 2), layout: (body.cover ?? 1) >= 2 ? 2 : 0 }, add)
+    addLogo(o, add, -height / 4)
+    frontCamera(body, o, add)
+    const scr = screenRect(body)
+    if (o.fingerprint === 'display') add({ kind: 'fingerprint', face: 'front', x: 0, y: scr.cy - scr.h * 0.3, rot: 0, w: 8, h: 8 })
+    else if (o.fingerprint === 'back') add({ kind: 'fingerprint', face: 'back', x: 0, y: -height * 0.12, rot: 0, w: 9, h: 9 })
+    else if (o.fingerprint === 'side') add({ kind: 'fingerprint', face: 'right', x: 16, y: 0, rot: 0, w: 11, h: 2.2 })
+    // the keys sit on the upper half, clear of the hinge
+    add({ kind: 'button', face: 'right', x: 34, y: 0, rot: 0, w: 11, h: 2.2 })
+    add({ kind: 'button', face: 'right', x: 56, y: 0, rot: 0, w: 19, h: 2.2 })
+    add({ kind: 'port', face: 'bottom', x: 0, y: 0, rot: 0, w: 8.6, h: 2.8 })
+    add({ kind: 'grille', face: 'bottom', x: 18, y: 0, rot: 0, w: 12, h: 1.4 })
+    if (o.stereo) add({ kind: 'grille', face: 'top', x: -16, y: 0, rot: 0, w: 8, h: 1.2 })
+    return
+  }
   const mid = -width / 4
   const onBack: Add = (p) => add({ ...p, x: p.x + mid })
   rearCameras(width / 2, height, o, onBack)
   addLogo(o, onBack, -4)
   // the camera for the inner screen sits over the right-hand half, clear of the fold
   frontCamera(body, o, add, width / 4)
+  // and the cover screen has one of its own, near its top
+  const cov = coverScreen(body)
+  const level = Math.max(0, o.sensor - 1)
+  add({ kind: 'camera', face: 'back', x: cov.x, y: cov.y + cov.h / 2 - 5, rot: 0, w: selfieMinDia(level) + 0.4, h: selfieMinDia(level) + 0.4, sensor: level, lens: 'wide' })
   const scr = screenRect(body)
   if (o.fingerprint === 'display') add({ kind: 'fingerprint', face: 'front', x: width / 4, y: scr.cy - scr.h * 0.3, rot: 0, w: 8, h: 8 })
   else if (o.fingerprint === 'back') onBack({ kind: 'fingerprint', face: 'back', x: 0, y: 22, rot: 0, w: 9, h: 9 })
@@ -443,37 +465,6 @@ function layoutSpeaker(body: Body, o: LayoutOptions, add: Add) {
   const room = back.h / 2 - 2 - placed.top
   if (o.logoImage && room >= 14) add({ kind: 'logo', face: 'back', x: 0, y: placed.top + room / 2, rot: 0, w: 12, h: 12, text: o.logo, useImage: true })
   else if (!o.logoImage && o.logo && room >= 8) add({ kind: 'logo', face: 'back', x: 0, y: placed.top + Math.min(room / 2, 8), rot: 0, w: Math.min(back.w - 4, 4.2 * o.logo.length + 4), h: Math.min(6, room - 2), text: o.logo })
-}
-
-/**
- * Where the sockets go on a speaker's back panel: the power inlet and whatever
- * else was chosen, in centred rows from the bottom up. `fits` is false if the
- * panel has no room for them all, and `top` is where the last row ends.
- */
-export function speakerSockets(body: Body, io: string[] | undefined): { sockets: { id: string; x: number; y: number; w: number; h: number }[]; top: number; fits: boolean } {
-  const back = faceSize(body, 'back', 'speaker')
-  const list = [{ id: 'power', size: [9, 9] }, ...sockets('speaker', io, 'back').map((x) => ({ id: x.id, size: x.info.size! as number[] }))]
-  const gap = 5
-  const wide = back.w - 4
-  const rows: (typeof list)[] = [[]]
-  for (const p of list) {
-    const row = rows[rows.length - 1]
-    const used = row.reduce((a, q) => a + q.size[0] + gap, 0)
-    if (row.length && used + p.size[0] > wide) rows.push([p])
-    else row.push(p)
-  }
-  const out: { id: string; x: number; y: number; w: number; h: number }[] = []
-  let y = -back.h / 2 + 2.5
-  for (const row of rows) {
-    const rowH = Math.max(...row.map((p) => p.size[1]))
-    let x = -(row.reduce((a, p) => a + p.size[0], 0) + gap * (row.length - 1)) / 2
-    for (const p of row) {
-      out.push({ id: p.id, x: x + p.size[0] / 2, y: y + rowH / 2, w: p.size[0], h: p.size[1] })
-      x += p.size[0] + gap
-    }
-    y += rowH + 3
-  }
-  return { sockets: out, top: y, fits: y - 3 <= back.h / 2 - 2 && list.every((p) => p.size[0] <= wide) }
 }
 
 /**
@@ -538,6 +529,8 @@ export interface GenOptions {
   palette: string[]
   logo: string
   logoImage?: boolean
+  /** Foldables: make it a flip, or a book. Left out, some makers' everyday foldables are flips. */
+  flip?: boolean
 }
 
 const largestAtMost = (opts: number[], v: number) => opts.filter((o) => o <= v).pop() ?? opts[0]
@@ -582,8 +575,11 @@ export function generateDesign(r: RngHolder, o: GenOptions): DeviceDesign {
   // a display on a stand keeps its shape, so both of its sides vary together
   const together = type === 'desktop' || type === 'tv' ? range(r, -0.05, 0.05) : null
   const dim = (range3: [number, number, number], f: number) => half(clamp(range3[0] + (range3[1] - range3[0]) * (f + (together ?? range(r, -0.08, 0.08))), range3[0], range3[1]))
-  const width = type === 'phone' ? half(range(r, 70.5, 77.5)) : dim(T.width, frac[0])
-  const height = type === 'phone' ? half(range(r, 150, 166)) : dim(T.height, frac[1])
+  // the everyday foldable is a flip for the makers whose house style says so; the dearer ones are books
+  const flip = type === 'foldable' && (o.flip ?? (o.segment === 'f-value' && ((o.layout % 3) + 3) % 3 === 1))
+  const lim = sizeLimits(type, flip ? 'flip' : undefined)
+  const width = type === 'phone' ? half(range(r, 70.5, 77.5)) : dim(lim.width, frac[0])
+  const height = type === 'phone' ? half(range(r, 150, 166)) : dim(lim.height, frac[1])
   const matLevel = L('materials')
   const frames = MATERIALS.filter((m) => m.use !== 'back' && m.level <= matLevel)
   // an earbud case is moulded or machined, never glass
@@ -643,6 +639,10 @@ export function generateDesign(r: RngHolder, o: GenOptions): DeviceDesign {
     body.backFinish = 'matte'
   }
   if (type === 'handheld') body.backFinish = 'matte'
+  if (flip) {
+    body.fold = 'flip'
+    body.cover = dLevel >= 4 ? 2 : t.matRank >= 1 ? 1 : 0
+  }
 
   const memory = T.memory || 1
   const design: DeviceDesign = {
@@ -683,7 +683,8 @@ export function generateDesign(r: RngHolder, o: GenOptions): DeviceDesign {
     s.mics = bestOwned(MIC_ARRAYS, t.mics ?? 0, L('chipset'))
     if (!body.screen) s.panel = 0
   }
-  body.thickness = Math.round((minThickness(type, dLevel, s) + t.thick + range(r, 0, 0.5)) * 10) / 10
+  // each half of a flip is a little thicker than a book's, as it has half the area for the same parts
+  body.thickness = Math.round((minThickness(type, dLevel, s) + t.thick + range(r, 0, 0.5) + (flip ? 1.2 : 0)) * 10) / 10
   if (type === 'speaker') {
     // as deep as it is wide, or a little shallower if it is a block
     body.thickness = clamp(half(body.form === 'block' ? width * 0.74 : width), minThickness(type, dLevel, s), T.maxThickness)
@@ -741,8 +742,9 @@ export function deriveVariant(base: DeviceDesign, variant: VariantId, levels: Le
   const bestRefresh = () => REFRESH.filter((x) => x.level <= s.panel && (!x.feat || feats.includes(x.feat))).pop()!.hz
   const scale = (f: number) => {
     const b = d.body
-    b.width = half(clamp(b.width * f, T.width[0], T.width[1]))
-    b.height = half(clamp(b.height * f, T.height[0], T.height[1]))
+    const lim = sizeLimits(d.type, b.fold)
+    b.width = half(clamp(b.width * f, lim.width[0], lim.width[1]))
+    b.height = half(clamp(b.height * f, lim.height[0], lim.height[1]))
     // a speaker grows in every direction
     if (d.type === 'speaker') b.thickness = half(clamp(b.thickness * f, minThickness(d.type, levels.design, s), T.maxThickness))
     for (const p of d.parts) {

@@ -6,7 +6,7 @@
 import * as THREE from 'three'
 import { EXTRAS, RAM_OPTIONS, STORAGE_OPTIONS, chipInfo } from '../data/catalog'
 import { ANC, COOLERS, GPUS, HINGES, MIC_ARRAYS, OPTICS, SPEAKERS, TYPES, driverOptions, inputOptions, ioInfo } from '../data/devices'
-import { type Carrier, carrierBody, handheldControls, laptopDeck, mountOf, screenRect, speakerShape, standLift } from '../sim/geometry'
+import { type Carrier, carrierBody, handheldControls, isFlip, laptopDeck, mountOf, screenRect, speakerShape, standLift } from '../sim/geometry'
 import { batteryLabel, chargeWatts, panelName } from '../sim/scoring'
 import type { Body, DeviceDesign, Face, PlacedPart } from '../sim/types'
 import { themeColor } from '../store/theme'
@@ -223,7 +223,7 @@ export interface Pose {
 
 const mainCarrier = (d: DeviceDesign): Carrier => (d.type === 'laptop' ? 'base' : 'body')
 /** Where things held up to the back of a device should aim, across its width: a foldable's back is half cover screen. */
-const backCentre = (d: DeviceDesign) => (d.type === 'foldable' ? d.body.width / 4 : 0)
+const backCentre = (d: DeviceDesign) => (d.type === 'foldable' && !isFlip(d.body) ? d.body.width / 4 : 0)
 const screenCarrier = (d: DeviceDesign): Carrier => (d.type === 'laptop' ? 'lid' : 'body')
 
 /**
@@ -955,8 +955,10 @@ function fold(k: Kit, x: Ctx): Built {
   const s = x.solid('body')
   const level = x.spec.to ?? 0
   // a line of light along the hinge while it turns
-  const line = mesh(new THREE.BoxGeometry(0.9 * x.u, s.height * 0.96, 0.9 * x.u), k.glow(accent(), 0.9), 0, 0, s.thickness / 2 + x.gap * 2)
-  const behind = mesh(new THREE.BoxGeometry(0.9 * x.u, s.height * 0.96, 0.9 * x.u), k.glow(accent(), 0.9), 0, 0, -s.thickness / 2 - x.gap * 2)
+  // a book's hinge runs up it, a flip's across
+  const bar = () => (isFlip(x.d.body) ? new THREE.BoxGeometry(s.width * 0.96, 0.9 * x.u, 0.9 * x.u) : new THREE.BoxGeometry(0.9 * x.u, s.height * 0.96, 0.9 * x.u))
+  const line = mesh(bar(), k.glow(accent(), 0.9), 0, 0, s.thickness / 2 + x.gap * 2)
+  const behind = mesh(bar(), k.glow(accent(), 0.9), 0, 0, -s.thickness / 2 - x.gap * 2)
   k.on('body').add(line, behind)
   const shut = 1.25 - 0.1 * level
   const D = 3
@@ -1003,30 +1005,47 @@ function lens(k: Kit, x: Ctx): Built {
   }
 }
 
-/** A headset looks out: each tracking camera sweeps the room in front of it, and finds the controllers if there are any. */
+/**
+ * A headset looks out. Only the outermost pair of cameras draw the space they see, as two cones that sweep the room
+ * together; the others blink where they are, so that four or six cameras do not fill the view with lines. Any
+ * controllers on the desk are ringed once they are found.
+ */
 function rays(k: Kit, x: Ctx): Built {
   const d = x.d
   const s = x.solid('body')
   const g = k.on('body')
   const cams = d.parts.filter((p) => p.kind === 'camera')
   const reach = 46 * x.u
-  const cones = cams.map((p) => {
+  // the widest-set camera on each side, highest first
+  const outer = [-1, 1].map((side) => cams.filter((p) => p.x * side > 0).sort((a, b) => Math.abs(b.x) - Math.abs(a.x) || b.y - a.y)[0]).filter((p): p is PlacedPart => !!p)
+  const lead = outer.length ? outer : cams.slice(0, 1)
+  const cones = lead.map((p) => {
     const at = new THREE.Group()
     placeOnFace(at, s, d.type, 'front', p.x, p.y, 0)
     at.translateZ(x.gap * 2)
     g.add(at)
-    // each camera looks a little away from the middle
-    at.rotateY(Math.atan2(p.x, s.width * 1.6))
-    at.rotateX(-Math.atan2(p.y, s.height * 1.8))
-    const w = reach * 0.3
-    const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => new THREE.Vector3(a * w, b * w, reach))
+    // each looks a little away from the middle
+    at.rotateY(Math.atan2(p.x, s.width * 1.3))
+    at.rotateX(-Math.atan2(p.y, s.height * 2.4))
+    const w = reach * 0.34
+    const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => new THREE.Vector3(a * w, b * w * 0.7, reach))
     const pts: THREE.Vector3[] = []
     for (const c of corners) pts.push(new THREE.Vector3(), c)
-    const edges = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), k.line(accent(), 0.32))
+    const edges = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), k.line(accent(), 0.2))
     edges.raycast = () => {}
-    const frame = outline(2 * w, 2 * w, k.line(accent(), 1))
+    const frame = outline(2 * w, 2 * w * 0.7, k.line(accent(), 0.9))
     at.add(edges, frame)
-    return { at, frame, w }
+    return { at, frame }
+  })
+  const blinks = cams.map((p) => {
+    const at = new THREE.Group()
+    placeOnFace(at, s, d.type, 'front', p.x, p.y, 0)
+    at.translateZ(x.gap * 3)
+    g.add(at)
+    const ring = mesh(new THREE.RingGeometry(0.8, 1, 32), k.glow(lead.includes(p) ? accent() : WHITE, 0.9))
+    ring.scale.setScalar(Math.max(p.w, 6) * 0.75)
+    at.add(ring)
+    return ring
   })
   // the controllers lie on the desk in front: a ring lights round each once it is found
   const wands = (d.specs.keyboard ?? 0) > 0
@@ -1043,14 +1062,15 @@ function rays(k: Kit, x: Ctx): Built {
     duration: 2.6,
     face: 'front',
     play: (t) => {
-      cones.forEach((cone, i) => {
-        // a frame sweeps out along each cone, one camera after another
-        const ph = (((t * 0.9 - i * 0.13) % 1) + 1) % 1
+      // one frame sweeps out along both cones at once
+      const ph = (((t * 0.8) % 1) + 1) % 1
+      for (const cone of cones) {
         cone.frame.position.z = reach * ph
         cone.frame.scale.setScalar(Math.max(0.02, ph))
         show(cone.frame.material as THREE.Material, Math.sin(ph * Math.PI))
         cone.at.scale.setScalar(settle(t / 0.45))
-      })
+      }
+      blinks.forEach((ring, i) => show(ring.material as THREE.Material, 0.25 + 0.75 * Math.max(0, Math.sin(t * 5 - i * 0.7))))
       found.forEach((w) => w(t - 0.9, ramp(t, 0.9, 1.1)))
     },
   }
@@ -1115,18 +1135,10 @@ function rumble(k: Kit, x: Ctx): Built {
   }
 }
 
-/** A dock rises to meet a handheld, and the picture moves to the television behind. */
+/** A handheld stands in its dock, which is part of the model, and the picture moves to the television behind. */
 function dock(k: Kit, x: Ctx): Built {
   const s = x.solid('body')
   const g = k.on('body')
-  const w = s.width * 0.62
-  const prop = new THREE.Group()
-  const shell = k.solid('#202327', 0.55)
-  const deep = s.thickness + 50
-  // a tray, a wall behind and a low lip in front: the handheld stands between them
-  prop.add(mesh(new THREE.BoxGeometry(w, 9, deep), shell, 0, -4.5, 0), mesh(new THREE.BoxGeometry(w, s.height * 0.52, 7), shell, 0, s.height * 0.26, -s.thickness / 2 - 21), mesh(new THREE.BoxGeometry(w, 6, 5), shell, 0, 3, s.thickness / 2 + 5.5))
-  prop.add(mesh(new THREE.BoxGeometry(w * 0.2, 1.2, 1.2), k.glow(GREEN, 1), 0, 3.4, s.thickness / 2 + 8.2))
-  g.add(prop)
   // the television it now plays on, sketched behind
   const tw = s.width * 1.5
   const th = tw * 0.5625
@@ -1146,7 +1158,6 @@ function dock(k: Kit, x: Ctx): Built {
     duration: D,
     face: 'front',
     play: (t) => {
-      prop.position.y = -s.height / 2 - 0.6 - 70 * x.u * (1 - settle(t / 0.55)) - 60 * x.u * ramp(t, D - 0.4, D)
       const on = ramp(t, 0.9, 1.2)
       tv.scale.setScalar(Math.max(0.01, settle((t - 0.7) / 0.5)))
       show(wash, on * (0.7 + 0.3 * Math.sin(t * 7)))

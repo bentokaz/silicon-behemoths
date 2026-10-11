@@ -3,9 +3,10 @@
 // stands upright in its own space: X = width, Y = height, Z = thickness, with
 // its front at +Z. A phone is one such solid; a laptop is a lid and a base.
 import * as THREE from 'three'
-import { toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
+import { mergeGeometries, toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { HINGES, MIC_ARRAYS, headStrap, standInfo } from '../data/devices'
-import { type Carrier, GRIP, carrierBody, caseShape, coverScreen, designFace, edgeBevel, faceBasis, faceSink, handheldControls, isEdge, isRing, laptopDeck, mountOf, screenRect, speakerShape, standLift, standMount, visorShape } from '../sim/geometry'
+import { type Carrier, GRIP, carrierBody, caseShape, consoleFans, consoleShape, coverScreen, designFace, edgeBevel, faceBasis, faceSink, handheldControls, headsetEyes, isCoverCam, isEdge, isFlip, isRing, laptopDeck, mountOf, screenRect, speakerShape, standLift, standMount, visorShape } from '../sim/geometry'
+import { clamp } from '../sim/rng'
 import { panelName } from '../sim/scoring'
 import type { Body, DeviceDesign, DeviceType, Face, PlacedPart, Specs } from '../sim/types'
 import { themeColor } from '../store/theme'
@@ -203,6 +204,7 @@ interface Mats {
 /** What the builders need to know besides the design itself. */
 interface Ctx {
   type: DeviceType
+  body: Body
   m: Mats
   specs: Specs
   selectedId?: string | null
@@ -294,6 +296,17 @@ const luminance = (mat: THREE.Material) => {
   return col ? 0.2126 * col.r + 0.7152 * col.g + 0.0722 * col.b : 0
 }
 
+/**
+ * How lettering is finished, by how light the surface under it is (0 to 1, linear). The same rule for every device:
+ * a dark steel inlay on a pale surface, a bright one on a mid-tone, and on a dark surface a pale matt print, because
+ * polished metal there only mirrors the dark around it and cannot be read.
+ */
+export function logoFinish(light: number): { color: string; metalness: number; roughness: number; finish: 'dark inlay' | 'bright inlay' | 'print' } {
+  if (light > 0.5) return { color: '#3a3d43', metalness: 0.6, roughness: 0.45, finish: 'dark inlay' }
+  if (light > 0.2) return { color: '#e9edf2', metalness: 1, roughness: 0.3, finish: 'bright inlay' }
+  return { color: '#aeb3ba', metalness: 0, roughness: 0.55, finish: 'print' }
+}
+
 /** `solid` is the carrier the part sits on and `face` the face of that carrier. */
 function buildPart(p: PlacedPart, solid: Body, face: Face, c: Ctx): THREE.Group {
   const g = new THREE.Group()
@@ -302,7 +315,8 @@ function buildPart(p: PlacedPart, solid: Body, face: Face, c: Ctx): THREE.Group 
   const r = Math.min(p.w, p.h) / 2
   switch (p.kind) {
     case 'camera': {
-      if (p.face === 'front') {
+      // a camera in the screen, or in a foldable's cover screen, is a hole in glass rather than a lens standing proud
+      if (p.face === 'front' || isCoverCam(c, p)) {
         if (p.underDisplay) {
           const ring = mesh(new THREE.RingGeometry(r * 0.8, r, 32), new THREE.MeshBasicMaterial({ color: '#000', transparent: true, opacity: 0.18 }), false)
           ring.position.z = lift(0.07)
@@ -524,12 +538,8 @@ function buildPart(p: PlacedPart, solid: Body, face: Face, c: Ctx): THREE.Group 
         g.add(l)
         break
       }
-      // bright metal lettering on a dark surface, dark lettering on a pale one
-      const under = surfaceUnder(p, c)
-      const pale = luminance(under) > 0.5
-      // on a moulded panel, a visor's plate or a handheld's shell the lettering is printed, not inlaid metal, and has to show without a highlight on it
-      const printed = !pale && (under === REAR_PANEL || c.type === 'headset' || c.type === 'handheld')
-      const mat = new THREE.MeshPhysicalMaterial({ color: pale ? '#3a3d43' : printed ? '#aeb3ba' : '#e9edf2', metalness: pale ? 0.6 : printed ? 0 : 1, roughness: pale ? 0.45 : printed ? 0.55 : 0.3, alphaMap: logoTexture(p.text || ' '), transparent: true, depthWrite: false })
+      const look = logoFinish(luminance(surfaceUnder(p, c)))
+      const mat = new THREE.MeshPhysicalMaterial({ ...look, alphaMap: logoTexture(p.text || ' '), transparent: true, depthWrite: false })
       const l = mesh(new THREE.PlaneGeometry(p.w, p.h), mat, false)
       l.position.z = lift(0.05)
       g.add(l)
@@ -621,11 +631,13 @@ function buildSlab(b: Body, c: Ctx, o: SlabOptions): THREE.Group {
   const backPlate = mesh(plate(capW, capH, capR), m.back, false)
   backPlate.rotation.y = Math.PI
   backPlate.position.z = -b.thickness / 2 - lift(0.02)
+  backPlate.userData.tear = 'cover'
   root.add(backPlate)
   if (o.wallpaper === undefined) return root
 
   const frontPlate = mesh(plate(capW, capH, capR), m.glass, false)
   frontPlate.position.z = b.thickness / 2 + lift(0.02)
+  frontPlate.userData.tear = 'screen'
   root.add(frontPlate)
 
   // the lit area: the screen rectangle, kept inside the flat glass and its rounded corners
@@ -642,6 +654,7 @@ function buildSlab(b: Body, c: Ctx, o: SlabOptions): THREE.Group {
   const panel = c.specs.panel
   const screen = mesh(plate(sw, sh, sr), litScreen(screenTexture(c.type, o.wallpaper, sw, sh, c.detail, panelInfoOf(c)), panel), false)
   screen.position.set((x0 + x1) / 2, (y0 + y1) / 2, b.thickness / 2 + lift(0.04))
+  screen.userData.tear = 'screen'
   root.add(screen)
 
   if (o.chin && b.bezelBottom >= CHIN_MIN) {
@@ -649,6 +662,7 @@ function buildSlab(b: Body, c: Ctx, o: SlabOptions): THREE.Group {
     const bottom = -capH / 2
     const chin = mesh(plate(capW, top - bottom, [0.8, 0.8, capR, capR]), m.back, false)
     chin.position.set(0, (top + bottom) / 2, b.thickness / 2 + lift(0.03))
+    chin.userData.tear = 'screen'
     root.add(chin)
   }
   return root
@@ -787,7 +801,6 @@ function buildLaptop(d: DeviceDesign, c: Ctx): THREE.Group {
   addParts(base, d, 'base', c)
   base.rotation.x = -Math.PI / 2
   base.position.y = baseT / 2
-  root.add(base)
 
   // ---- lid: hinged along the back edge of the base
   const hinge = new THREE.Group()
@@ -797,16 +810,38 @@ function buildLaptop(d: DeviceDesign, c: Ctx): THREE.Group {
   addParts(lid, d, 'lid', c)
   lid.position.y = b.height / 2
   hinge.add(lid)
-  root.add(hinge)
   const barrel = mesh(new THREE.CylinderGeometry(baseT * 0.42, baseT * 0.42, b.width * 0.62, 20), m.dark)
   barrel.rotation.z = Math.PI / 2
   barrel.position.set(0, baseT * 0.62, -b.height / 2 + lidBody.thickness / 2)
-  root.add(barrel)
+  // everything hangs from a group at the middle of the shut laptop, so that it can be turned over about that point
+  const lidT = lidBody.thickness
+  const whole = baseT + lidT
+  const over = new THREE.Group()
+  over.position.y = whole / 2
+  for (const o of [base, hinge, barrel]) {
+    o.position.y -= whole / 2
+    over.add(o)
+  }
+  root.add(over)
 
   // centre the open laptop on the origin so it orbits nicely
   root.position.y = -b.height * 0.36
   const wrap = new THREE.Group()
   wrap.add(root)
+  const ease = (x: number) => {
+    const k = Math.min(1, Math.max(0, x))
+    return k * k * (3 - 2 * k)
+  }
+  // shut the lid, then turn the whole thing over onto it, lifting it clear of the desk as it goes
+  wrap.userData.shut = (amount: number) => {
+    const a = ease(amount / 0.5)
+    const f = ease((amount - 0.45) / 0.55)
+    hinge.rotation.x = -LID_TILT + (Math.PI / 2 + LID_TILT) * a
+    hinge.position.set(0, baseT - whole / 2 + (lidT / 2) * a, -b.height / 2 + (lidT / 2) * (1 - a))
+    barrel.visible = a < 0.98
+    over.rotation.x = Math.PI * f
+    over.position.y = whole / 2 + (b.height / 2) * Math.sin(Math.PI * f)
+  }
   return wrap
 }
 
@@ -897,6 +932,7 @@ function buildPanel(d: DeviceDesign, c: Ctx): THREE.Group {
   if (sound === 2 || sound === 3) {
     const woofer = roundGrille(Math.min(64, b.height * 0.09))
     placeOnFace(woofer, b, d.type, 'back', -b.width * 0.3, d.type === 'tv' ? -b.height * 0.12 : b.height * 0.16, 0)
+    woofer.userData.tear = 'cover'
     root.add(woofer)
   }
   if (sound === 3 && b.thickness >= 12) {
@@ -930,8 +966,7 @@ function buildConsole(d: DeviceDesign, c: Ctx): THREE.Group {
   const b = d.body
   const m = c.m
   const root = new THREE.Group()
-  const small = Math.min(b.width, b.height)
-  const bevel = b.edge === 'round' ? Math.min(6, Math.max(1.5, small * 0.07)) : 0.9
+  const { bevel, rim, pw, ph } = consoleShape(b)
   const geo = slab(b.width, b.height, b.corner, b.thickness, bevel, b.edge === 'round' ? 8 : 3)
   geo.translate(0, 0, -b.thickness / 2)
   const shell = mesh(geo, m.frame)
@@ -940,9 +975,6 @@ function buildConsole(d: DeviceDesign, c: Ctx): THREE.Group {
   root.add(shell)
 
   // front and rear panels, leaving a rim of shell around them
-  const rim = small < 60 ? 1.6 : 3
-  const pw = b.width - 2 * bevel - 2 * rim
-  const ph = b.height - 2 * bevel - 2 * rim
   const pr = Math.max(b.corner - bevel - rim, 0.6)
   const front = mesh(plate(pw, ph, pr), m.back, false)
   front.position.z = b.thickness / 2 + lift(0.02)
@@ -952,11 +984,9 @@ function buildConsole(d: DeviceDesign, c: Ctx): THREE.Group {
   root.add(front, rear)
 
   // the cooling system shows at the back: one exhaust fan, or more of them
-  const fans = [1, 2, 2, 3][d.specs.cooling ?? 0] ?? 1
-  const fr = Math.min(ph * 0.3, pw * 0.085, 30)
-  for (let i = 0; i < fans; i++) {
-    const fan = roundGrille(fr, 7)
-    placeOnFace(fan, b, 'console', 'back', -pw * 0.2 + (i - (fans - 1) / 2) * fr * 2.5, ph * 0.5 - fr * 1.25, 0)
+  for (const at of consoleFans(b, d.specs.cooling ?? 0)) {
+    const fan = roundGrille(at.r, 7)
+    placeOnFace(fan, b, 'console', 'back', at.x, at.y, 0)
     fan.translateZ(lift(0.02))
     root.add(fan)
   }
@@ -1072,7 +1102,9 @@ function buildEarbuds(d: DeviceDesign, c: Ctx): THREE.Group {
     o.position.y = y
     return o
   }
-  root.add(insert(seam + lift(0.03), false))
+  const deck = insert(seam + lift(0.03), false)
+  deck.userData.tear = 'guts'
+  root.add(deck)
 
   // ---- the two wells: one bud seated, one empty
   const headR = style === 'stem' ? BUD_HEAD : BUD_BEAN
@@ -1083,6 +1115,7 @@ function buildEarbuds(d: DeviceDesign, c: Ctx): THREE.Group {
   const wellRing = mesh(new THREE.RingGeometry(headR * 0.86, headR * 0.98, 40), m.frame, false)
   wellRing.rotation.x = -Math.PI / 2
   wellRing.position.set(wx, seam + lift(0.06), 0)
+  well.userData.tear = wellRing.userData.tear = 'guts'
   root.add(well, wellRing)
   const seated = buildBud(style, m, false, d.specs.anc ?? 0)
   if (style === 'stem') {
@@ -1094,6 +1127,7 @@ function buildEarbuds(d: DeviceDesign, c: Ctx): THREE.Group {
     seated.position.set(-wx, seam + 1.6, 0)
     seated.rotation.x = Math.PI / 2
   }
+  seated.userData.tear = 'guts'
   root.add(seated)
 
   // ---- lid, swung open on a hinge along the back of the seam
@@ -1129,6 +1163,7 @@ function buildEarbuds(d: DeviceDesign, c: Ctx): THREE.Group {
     loose.rotation.z = 0.5
     loose.position.set(b.width * 0.16, floor + BUD_BEAN * 0.7 + 0.3, lz)
   }
+  loose.userData.tear = 'bud'
   root.add(loose)
   addParts(root, d, 'body', c)
 
@@ -1173,13 +1208,19 @@ function halfSlab(b: Body, side: number, bevel: number): THREE.BufferGeometry {
 }
 
 /**
- * A foldable, built open and flat. The half to the left of the hinge swings
- * round to lie on the other, its cover screen outermost, and a spine turns with
- * it at half the speed to cover the gap; fold(0..1) on the returned group poses it.
+ * A foldable, built open and flat. A book's left-hand half swings round to lie
+ * on the other, its cover screen outermost; a flip's upper half folds down over
+ * its lower one. A spine turns with it at half the speed to cover the gap;
+ * fold(0..1) on the returned group poses it.
  */
 function buildFoldable(d: DeviceDesign, c: Ctx): THREE.Group {
-  const b = d.body
   const m = c.m
+  const D = d.body
+  const flip = isFlip(D)
+  // a flip is built as a book lying on its side: the halves, the screen and the spine are made in the book's own axes
+  // and turned a quarter turn, while the solids that parts sit on, and their outer plates, keep the axes of the design
+  const b: Body = flip ? { ...D, width: D.height, height: D.width, bezelSide: (D.bezelTop + D.bezelBottom) / 2, bezelTop: D.bezelSide, bezelBottom: D.bezelSide } : D
+  const quarter = flip ? -Math.PI / 2 : 0
   const hinge = HINGES[d.specs.hinge ?? 0] ?? HINGES[0]
   const t = b.thickness
   const hw = b.width / 2
@@ -1187,6 +1228,8 @@ function buildFoldable(d: DeviceDesign, c: Ctx): THREE.Group {
   // the hinge line: just in front of the glass, by half the gap the hinge leaves when shut
   const axis = t / 2 + hinge.gap / 2
   const wrap = new THREE.Group()
+  const spin = new THREE.Group()
+  spin.rotation.z = quarter
   const root = new THREE.Group()
   const right = new THREE.Group()
   const left = new THREE.Group()
@@ -1197,13 +1240,18 @@ function buildFoldable(d: DeviceDesign, c: Ctx): THREE.Group {
   leftPivot.add(left)
   // the fixed half goes in last: it is the one handles and demonstrations attach to
   root.add(leftPivot, spinePivot, right)
-  wrap.add(root)
+  spin.add(root)
+  wrap.add(spin)
+  const leftD = new THREE.Group()
+  const rightD = new THREE.Group()
+  leftD.rotation.z = rightD.rotation.z = -quarter
+  left.add(leftD)
+  right.add(rightD)
 
   const capW = hw - bevel
   const capH = b.height - 2 * bevel
   const capR = Math.max(b.corner - bevel, 0.05)
-  // corner radii of a plate on one half; `turned` for a plate that faces backwards, which swaps its left and right
-  const corners = (side: number, turned = false): [number, number, number, number] => (side < 0 !== turned ? [capR, 0.05, 0.05, capR] : [0.05, capR, capR, 0.05])
+  const corners = (side: number): [number, number, number, number] => (side < 0 ? [capR, 0.05, 0.05, capR] : [0.05, capR, capR, 0.05])
   // the lit area, kept inside the flat glass as on any slab
   const scr = screenRect(b)
   const x1 = Math.min(scr.w / 2, capW - 0.05)
@@ -1213,45 +1261,67 @@ function buildFoldable(d: DeviceDesign, c: Ctx): THREE.Group {
   const inset = Math.min(capW - x1, y0 + capH / 2, capH / 2 - y1)
   const sr = Math.min(Math.max(scr.r, capR - inset), x1, sh / 2)
   const panel = c.specs.panel
-  const inner = litScreen(screenTexture('foldable', d.wallpaper, 2 * x1, sh, c.detail, panelInfoOf(c)), panel)
+  // the picture is drawn upright for the design, whichever way the halves lie
+  const inner = litScreen(screenTexture('foldable', d.wallpaper, flip ? sh : 2 * x1, flip ? 2 * x1 : sh, c.detail, panelInfoOf(c)), panel)
   for (const side of [-1, 1]) {
     const half = side < 0 ? left : right
-    const body = mesh(halfSlab(b, side, bevel), m.frame)
+    const solid = halfSlab(b, side, bevel)
+    if (flip) solid.rotateZ(quarter)
+    const body = mesh(solid, m.frame)
     body.userData.body = true
     body.userData.carrier = 'body'
+    body.userData.half = side
+    ;(side < 0 ? leftD : rightD).add(body)
     const glass = mesh(plate(capW, capH, corners(side)), m.glass, false)
     glass.position.set((side * capW) / 2, 0, t / 2 + lift(0.02))
     // each half shows its half of the one picture
     const geo = plate(x1, sh, side < 0 ? [sr, 0.02, 0.02, sr] : [0.02, sr, sr, 0.02])
     const uv = geo.attributes.uv
-    for (let i = 0; i < uv.count; i++) uv.setX(i, (side < 0 ? 0 : 0.5) + uv.getX(i) / 2)
+    const pos = geo.attributes.position
+    for (let i = 0; i < uv.count; i++) {
+      const across = (pos.getX(i) + (side * x1) / 2 + x1) / (2 * x1)
+      const up = pos.getY(i) / sh + 0.5
+      if (flip) uv.setXY(i, up, 1 - across)
+      else uv.setXY(i, across, up)
+    }
     const screen = mesh(geo, inner, false)
     screen.position.set((side * x1) / 2, (y0 + y1) / 2, t / 2 + lift(0.04))
-    half.add(body, glass, screen)
+    glass.userData.tear = screen.userData.tear = 'screen'
+    half.add(glass, screen)
   }
 
-  // the outside of the fixed half is the back, where the cameras are
-  const backPlate = mesh(plate(capW, capH, corners(1, true)), m.back, false)
-  backPlate.rotation.y = Math.PI
-  backPlate.position.set(capW / 2, 0, -t / 2 - lift(0.02))
-  right.add(backPlate)
-  // the outside of the half that folds over is glass, with the cover screen in it
-  const cov = coverScreen(b)
-  const coverGlass = mesh(plate(capW, capH, corners(-1, true)), m.glass, false)
-  coverGlass.rotation.y = Math.PI
-  coverGlass.position.set(-capW / 2, 0, -t / 2 - lift(0.02))
-  const cover = mesh(plate(cov.w, cov.h, cov.r), litScreen(screenTexture('phone', d.wallpaper, cov.w, cov.h, c.detail, panelInfoOf(c)), panel), false)
-  cover.rotation.y = Math.PI
-  cover.position.set(-cov.x, cov.y, -t / 2 - lift(0.04))
-  left.add(coverGlass, cover)
-  // the cover screen has a camera of its own behind a hole near its top
-  for (const [r, mat, z] of [[1.7, m.dark, 0.07], [0.8, m.core, 0.09]] as const) {
-    const o = mesh(new THREE.CircleGeometry(r, 32), mat, false)
+  // ---- the outsides, in the axes of the design: `folding` is the half that swings over
+  const outer = (folding: boolean, mat: THREE.Material) => {
+    const pw = flip ? D.width - 2 * bevel : D.width / 2 - bevel
+    const ph = flip ? D.height / 2 - bevel : D.height - 2 * bevel
+    // seen from behind, so left and right are the other way round
+    const r: [number, number, number, number] = flip ? (folding ? [capR, capR, 0.05, 0.05] : [0.05, 0.05, capR, capR]) : folding ? [0.05, capR, capR, 0.05] : [capR, 0.05, 0.05, capR]
+    const o = mesh(plate(pw, ph, r), mat, false)
     o.rotation.y = Math.PI
-    o.position.set(-cov.x, cov.y + cov.h / 2 - 5, -t / 2 - lift(z))
-    o.raycast = () => {}
-    left.add(o)
+    o.position.set(flip ? 0 : ((folding ? -1 : 1) * pw) / 2, flip ? ((folding ? 1 : -1) * ph) / 2 : 0, -t / 2 - lift(0.02))
+    o.userData.tear = 'cover'
+    return o
   }
+  // the fixed half has a plain back: a book's cameras are there
+  rightD.add(outer(false, m.back))
+  // the half that folds over carries the cover screen: all glass on a book, a window in the back of a flip unless it fills it
+  const cov = coverScreen(D)
+  const glazed = !flip || (D.cover ?? 1) >= 2
+  leftD.add(outer(true, glazed ? m.glass : m.back))
+  if (!glazed) {
+    const win = mesh(plate(cov.w + 3, cov.h + 3, cov.r + 1.5), m.glass, false)
+    win.rotation.y = Math.PI
+    win.position.set(-cov.x, cov.y, -t / 2 - lift(0.03))
+    win.userData.tear = 'cover'
+    leftD.add(win)
+  }
+  const cover = mesh(plate(cov.w, cov.h, cov.r), litScreen(screenTexture('phone', d.wallpaper, cov.w, cov.h, c.detail, panelInfoOf(c)), panel), false)
+  // a flip's cover screen is read with the phone shut and its hinge uppermost, so it is drawn the other way up
+  if (flip) cover.rotation.x = Math.PI
+  else cover.rotation.y = Math.PI
+  cover.position.set(-cov.x, cov.y, -t / 2 - lift(0.04))
+  cover.userData.tear = 'cover'
+  leftD.add(cover)
 
   // the crease down the middle of the inner screen: deeper with a simpler hinge, gone with the best
   const crease = new THREE.Group()
@@ -1264,6 +1334,7 @@ function buildFoldable(d: DeviceDesign, c: Ctx): THREE.Group {
       crease.add(o)
     })
   }
+  crease.userData.tear = 'screen'
   right.add(crease)
 
   // the spine: a rounded cover that lies hidden inside the two halves while they are open
@@ -1280,12 +1351,14 @@ function buildFoldable(d: DeviceDesign, c: Ctx): THREE.Group {
   spineGeo.translate(0, -length / 2, 0)
   const spine = mesh(smoothBevels(spineGeo, 1), m.frame)
   spine.raycast = () => {}
+  spine.userData.tear = 'hide'
   spinePivot.add(spine)
 
   // each part goes with the half it sits on
-  const sideOf = (p: PlacedPart) => (p.face === 'left' ? -1 : p.face === 'right' ? 1 : p.face === 'back' ? -p.x : p.x)
-  addParts(left, d, 'body', c, (p) => sideOf(p) < 0)
-  addParts(right, d, 'body', c, (p) => sideOf(p) >= 0)
+  const folding = (p: PlacedPart) =>
+    flip ? (p.face === 'top' ? true : p.face === 'bottom' ? false : p.face === 'left' || p.face === 'right' ? p.x > 0 : p.y > 0) : p.face === 'left' ? true : p.face === 'right' ? false : p.face === 'back' ? p.x > 0 : p.x < 0
+  addParts(leftD, d, 'body', c, folding)
+  addParts(rightD, d, 'body', c, (p) => !folding(p))
 
   wrap.userData.fold = (amount: number) => {
     const k = Math.min(1, Math.max(0, amount))
@@ -1350,6 +1423,41 @@ function sweep(path: THREE.Vector3[], side: THREE.Vector3, width: number, thick:
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
   g.setIndex(idx)
   return g
+}
+
+/** Press everything beyond a plane across Z flat onto it, so that an extrusion ends there in a flat face. */
+function pressFlat(g: THREE.BufferGeometry, z: number, above: boolean) {
+  const pos = g.attributes.position
+  const nor = g.attributes.normal
+  for (let i = 0; i < pos.count; i++) {
+    if (above ? pos.getZ(i) <= z : pos.getZ(i) >= z) continue
+    pos.setZ(i, z)
+    nor?.setXYZ(i, 0, 0, above ? 1 : -1)
+  }
+}
+
+/** The outline of a headset seen from behind: a rounded rectangle with an arch cut up into the middle of its lower edge, for the nose. */
+function visorProfile(w: number, h: number, r: number, nose: { w: number; h: number; f: number }): THREE.Shape {
+  const rr = Math.max(0.01, Math.min(r, w / 2 - 0.001, h / 2 - 0.001))
+  const x = -w / 2
+  const y = -h / 2
+  const nw = Math.min(nose.w / 2, w / 2 - rr - nose.f - 1)
+  const s = new THREE.Shape()
+  s.moveTo(x + rr, y)
+  if (nw > 2 && nose.h > 1) {
+    s.lineTo(-nw - nose.f, y)
+    s.bezierCurveTo(-nw, y, -nw, y + nose.h, 0, y + nose.h)
+    s.bezierCurveTo(nw, y + nose.h, nw, y, nw + nose.f, y)
+  }
+  s.lineTo(x + w - rr, y)
+  s.absarc(x + w - rr, y + rr, rr, -Math.PI / 2, 0, false)
+  s.lineTo(x + w, y + h - rr)
+  s.absarc(x + w - rr, y + h - rr, rr, 0, Math.PI / 2, false)
+  s.lineTo(x + rr, y + h)
+  s.absarc(x + rr, y + h - rr, rr, Math.PI / 2, Math.PI, false)
+  s.lineTo(x, y + rr)
+  s.absarc(x + rr, y + rr, rr, Math.PI, 1.5 * Math.PI, false)
+  return s
 }
 
 /** The measurements of a headset that both its model and its framing need. */
@@ -1442,84 +1550,136 @@ function buildHeadset(d: DeviceDesign, c: Ctx): THREE.Group {
   const root = new THREE.Group()
   const scenery = new THREE.Group()
 
-  // ---- visor
-  const geo = slab(w, h, b.corner, depth, v.bevel, b.edge === 'round' ? 8 : 3)
-  geo.translate(0, 0, -depth / 2)
-  const shell = mesh(geo, m.frame)
+  // ---- visor: a front section that carries the front plate, and a rear one cut away for the nose and bored for the lenses
+  const round = b.edge === 'round'
+  const kind = d.specs.optics ?? 0
+  const waveguide = kind >= 4
+  const { gw, gh, wall, lr, apart } = headsetEyes(b, kind)
+  const nose = { w: clamp(w * 0.2, 30, 40), h: Math.min(clamp(h * 0.26, 18, 28), h / 2 - lr * 0.86), f: 6 }
+  const rearD = clamp(depth * 0.38, 16, 34)
+  const split = -depth / 2 + rearD
+  const frontGeo = slab(w, h, b.corner, depth - rearD + v.bevel, v.bevel, round ? 8 : 3)
+  pressFlat(frontGeo, v.bevel, false)
+  frontGeo.translate(0, 0, split - v.bevel)
+  const bv = Math.min(v.bevel, rearD / 2)
+  const rearShape = visorProfile(w - 2 * bv, h - 2 * bv, Math.max(b.corner - bv, 0.05), { w: nose.w + 2 * bv, h: nose.h + bv, f: nose.f })
+  for (const sx of [-1, 1]) {
+    const bore = waveguide ? new THREE.Path(roundedRectShape(lr * 2.1, lr * 1.7, lr * 0.3).getPoints(6).map((p) => new THREE.Vector2(p.x + sx * apart, p.y))) : new THREE.Path().absarc(sx * apart, 0, lr, 0, Math.PI * 2, true)
+    rearShape.holes.push(bore)
+  }
+  const rearRaw = new THREE.ExtrudeGeometry(rearShape, { depth: rearD - bv, bevelEnabled: true, bevelThickness: bv, bevelSize: bv, bevelSegments: round ? 8 : 3, curveSegments: 20 })
+  rearRaw.translate(0, 0, bv)
+  const rearGeo = smoothBevels(rearRaw, 2)
+  pressFlat(rearGeo, rearD, true)
+  rearGeo.translate(0, 0, -depth / 2)
+  const shell = mesh(mergeGeometries([frontGeo, rearGeo]) ?? frontGeo, m.frame)
   shell.userData.body = true
   shell.userData.carrier = 'body'
+  // the teardown view opens the shell: this is where its two sections meet, the patch of that wall that closes the
+  // nose relief, and the bores, which it clears away to show the lenses
+  shell.userData.inner = { z: split, x: nose.w / 2 + nose.f + 2, y: -h / 2 + nose.h + 3, bores: [-1, 1].map((sx) => ({ x: sx * apart, y: 0, r: lr * (waveguide ? 1.5 : 1.25) })) }
   root.add(shell)
   const front = mesh(plate(w - 2 * v.bevel - 2 * v.rim, h - 2 * v.bevel - 2 * v.rim, Math.max(b.corner - v.bevel - v.rim, 1)), m.back, false)
   front.position.z = depth / 2 + lift(0.02)
+  front.userData.tear = 'cover'
   root.add(front)
 
-  // ---- the face side: a cushion that curves round the face, and the two lenses inside it
-  const gw = w - 8
-  const gh = h - 6
-  const wall = Math.min(13, h * 0.14)
+  // ---- the face side: a rigid frame, a cushion that curves round the face and arches over the nose, and a soft flap that keeps the light out there
   const deep = 15
-  const outline = roundedRectShape(gw, gh, Math.max(b.corner - 3, 4))
-  outline.holes.push(roundedRectShape(gw - 2 * wall, gh - 2 * wall, Math.max(b.corner - 3 - wall, 2)))
-  const cushionGeo = new THREE.ExtrudeGeometry(outline, { depth: deep - 3, bevelEnabled: true, bevelThickness: 1.5, bevelSize: 1.5, bevelSegments: 3, curveSegments: 16 })
-  cushionGeo.translate(0, 0, -depth / 2 - deep + 2.5)
+  const arch = { w: nose.w + 4, h: nose.h, f: nose.f }
+  const gr = Math.max(b.corner - 3, 4)
+  const ring = (grow: number, cut: number) => {
+    const o = visorProfile(gw + 2 * grow, gh + 2 * grow, gr + grow, arch)
+    o.holes.push(visorProfile(gw - 2 * cut, gh - 2 * cut, Math.max(gr - cut, 2), { w: arch.w + 1.6 * cut, h: arch.h, f: arch.f }))
+    return o
+  }
+  const rimGeo = new THREE.ExtrudeGeometry(ring(1, wall * 0.5), { depth: 3.2, bevelEnabled: false, curveSegments: 16 })
+  rimGeo.translate(0, 0, -depth / 2 - 3)
+  scenery.add(mesh(rimGeo, darkPlastic()))
+  const cushionGeo = new THREE.ExtrudeGeometry(ring(0, wall), { depth: deep - 3, bevelEnabled: true, bevelThickness: 1.5, bevelSize: 1.5, bevelSegments: 3, curveSegments: 16 })
+  cushionGeo.translate(0, 0, -depth / 2 - deep - 0.5)
   // its far edge reaches further back at the temples than at the nose
   const cp = cushionGeo.attributes.position
   for (let i = 0; i < cp.count; i++) {
-    const far = (-depth / 2 - 2 - cp.getZ(i)) / (deep - 2)
+    const far = (-depth / 2 - 5 - cp.getZ(i)) / (deep - 2)
     if (far > 0) cp.setZ(i, cp.getZ(i) - Math.min(1, far) * 11 * Math.pow((2 * cp.getX(i)) / gw, 2))
   }
   cushionGeo.computeVertexNormals()
   scenery.add(mesh(cushionGeo, rubber('#1b1c20')))
-  const wallPlate = mesh(plate(gw - 2 * wall + 2, gh - 2 * wall + 2, Math.max(b.corner - 3 - wall, 2)), darkPlastic(), false)
+  const flapW = arch.w / 2 + wall * 0.8 - 1
+  const flapH = arch.h + wall - 1
+  const fy = -gh / 2
+  const flap = new THREE.Shape()
+  flap.moveTo(-flapW - arch.f, fy)
+  flap.bezierCurveTo(-flapW, fy, -flapW, fy + flapH, 0, fy + flapH)
+  flap.bezierCurveTo(flapW, fy + flapH, flapW, fy, flapW + arch.f, fy)
+  flap.lineTo(flapW + arch.f - 1.4, fy)
+  flap.bezierCurveTo(flapW - 1.4, fy, flapW - 1.4, fy + flapH - 1.4, 0, fy + flapH - 1.4)
+  flap.bezierCurveTo(-flapW + 1.4, fy + flapH - 1.4, -flapW + 1.4, fy, -flapW - arch.f + 1.4, fy)
+  const flapGeo = new THREE.ExtrudeGeometry(flap, { depth: deep - 1, bevelEnabled: false, curveSegments: 14 })
+  flapGeo.translate(0, 0, -depth / 2 - deep - 1)
+  scenery.add(mesh(flapGeo, rubber('#101114')))
+  // the wall inside the cushion, open where the lenses look through
+  const wallShape = visorProfile(gw - wall + 2, gh - wall + 2, Math.max(gr - wall * 0.5, 2), { w: arch.w + 0.8 * wall - 2, h: arch.h - 1, f: arch.f })
+  for (const sx of [-1, 1]) {
+    wallShape.holes.push(waveguide ? new THREE.Path(roundedRectShape(lr * 2.1, lr * 1.7, lr * 0.3).getPoints(6).map((p) => new THREE.Vector2(p.x + sx * apart, p.y))) : new THREE.Path().absarc(sx * apart, 0, lr, 0, Math.PI * 2, true))
+  }
+  const wallPlate = mesh(new THREE.ShapeGeometry(wallShape, 20), darkPlastic(), false)
   wallPlate.rotation.y = Math.PI
   wallPlate.position.z = -depth / 2 - lift(0.02)
   scenery.add(wallPlate)
-  const kind = d.specs.optics ?? 0
-  const lr = Math.min((gh - 2 * wall) * 0.44, (gw - 2 * wall) * 0.2) * (kind >= 2 ? 0.9 : 1)
-  const apart = Math.min(Math.max(32, lr + 2.5), (gw - 2 * wall) / 2 - lr - 2)
   const picture = screenTexture('headset', d.wallpaper, 1, 1, c.detail)
   const glassMat = lensGlass()
   glassMat.transparent = true
   glassMat.opacity = 0.42
   glassMat.depthWrite = false
+  // each lens sits a little way down its bore, with the display at the far end
+  const recess = Math.min(5, rearD * 0.3)
+  const far = -(rearD - recess - 0.3)
   for (const sx of [-1, 1]) {
+    if (!waveguide) {
+      const sleeveGeo = new THREE.CylinderGeometry(lr * 0.985, lr * 0.985, rearD - 0.6, 40, 1, true)
+      sleeveGeo.rotateX(Math.PI / 2)
+      const sleeve = mesh(sleeveGeo, new THREE.MeshPhysicalMaterial({ color: '#0b0c0e', roughness: 0.7, metalness: 0, side: THREE.BackSide }), false)
+      sleeve.position.set(sx * apart, 0, -depth / 2 + rearD / 2)
+      sleeve.userData.tear = 'hide'
+      scenery.add(sleeve)
+    }
     const eye = new THREE.Group()
     eye.rotation.y = Math.PI
-    eye.position.set(sx * apart, 0, -depth / 2)
+    eye.position.set(sx * apart, 0, -depth / 2 + recess)
+    eye.userData.tear = 'hide'
     // the display, seen through the lens
-    const lit = mesh(new THREE.CircleGeometry(lr * 0.9, 48), new THREE.MeshBasicMaterial({ map: picture, color: '#8a8a8a', toneMapped: false }), false)
-    lit.position.z = lift(0.03)
+    const lit = mesh(waveguide ? plate(lr * 2, lr * 1.6, lr * 0.25) : new THREE.CircleGeometry(lr * 0.96, 48), new THREE.MeshBasicMaterial({ map: picture, color: '#8a8a8a', toneMapped: false }), false)
+    lit.position.z = far
     eye.add(lit)
-    if (kind >= 4) {
+    if (waveguide) {
       // waveguides are flat plates, not lenses
-      const slabGlass = mesh(plate(lr * 2.1, lr * 1.7, lr * 0.3), glassMat, false)
+      const slabGlass = mesh(plate(lr * 2.06, lr * 1.66, lr * 0.3), glassMat, false)
       slabGlass.position.z = lift(0.06)
-      const frame = mesh(new THREE.RingGeometry(lr * 0.9, lr * 1.2, 4, 1, Math.PI / 4), m.dark, false)
-      frame.scale.set(1.24, 1, 1)
-      frame.position.z = lift(0.05)
-      eye.add(frame, slabGlass)
+      eye.add(slabGlass)
     } else {
-      const rim = mesh(new THREE.RingGeometry(lr * 0.9, lr * 1.08, 56), kind >= 2 ? satin() : m.dark, false)
+      const rim = mesh(new THREE.RingGeometry(lr * 0.88, lr * 0.985, 56), kind >= 2 ? satin() : m.dark, false)
       rim.position.z = lift(0.05)
       eye.add(rim)
       if (kind === 1) {
         // a thick moulded lens bulges towards the eye
-        const dome = new THREE.SphereGeometry(lr * 0.92, 40, 14, 0, Math.PI * 2, 0, Math.PI / 2)
+        const dome = new THREE.SphereGeometry(lr * 0.9, 40, 14, 0, Math.PI * 2, 0, Math.PI / 2)
         dome.rotateX(Math.PI / 2)
         const lens = mesh(dome, glassMat, false)
         lens.scale.z = 0.3
         lens.position.z = lift(0.04)
         eye.add(lens)
       } else {
-        const lens = mesh(new THREE.CircleGeometry(lr * 0.92, 56), glassMat, false)
+        const lens = mesh(new THREE.CircleGeometry(lr * 0.9, 56), glassMat, false)
         lens.position.z = lift(0.06)
         eye.add(lens)
         // a Fresnel lens is cut in rings; a pancake lens is a smooth stack with a dark iris
         const marks = kind === 0 ? [0.3, 0.44, 0.58, 0.72, 0.84] : [0.62]
         for (const k of marks) {
-          const ring = mesh(new THREE.RingGeometry(lr * k, lr * (k + (kind === 0 ? 0.012 : 0.03)), 56), new THREE.MeshBasicMaterial({ color: kind === 0 ? '#ffffff' : '#000000', transparent: true, opacity: kind === 0 ? 0.16 : 0.3, depthWrite: false }), false)
-          ring.position.z = lift(0.07)
-          eye.add(ring)
+          const mark = mesh(new THREE.RingGeometry(lr * k, lr * (k + (kind === 0 ? 0.012 : 0.03)), 56), new THREE.MeshBasicMaterial({ color: kind === 0 ? '#ffffff' : '#000000', transparent: true, opacity: kind === 0 ? 0.16 : 0.3, depthWrite: false }), false)
+          mark.position.z = lift(0.07)
+          eye.add(mark)
         }
       }
     }
@@ -1553,7 +1713,7 @@ function buildHeadset(d: DeviceDesign, c: Ctx): THREE.Group {
   } else {
     // a cradle for the back of the head, with a cushion inside it
     behind(slab(82, 46, 18, 9, 2.5, 3), padMat, -1.5)
-    if (f.pack) behind(slab(92, 52, 15, 24, 5, 4), m.frame, -24.5)
+    if (f.pack) behind(slab(92, 52, 15, 24, 5, 4), m.frame, -24.5).userData.tear = 'pack'
     else {
       behind(slab(74, 40, 16, 7.5, 2.4, 3), m.frame, -8)
       const dial = new THREE.CylinderGeometry(10.5, 10.5, 6, 36)
@@ -1735,6 +1895,7 @@ function buildSpeaker(d: DeviceDesign, c: Ctx): THREE.Group {
   const base = mesh(fanCap(outlineAt(0), -hy, false), darkPlastic())
   lid.userData.body = true
   lid.userData.carrier = 'body'
+  body.userData.tear = lid.userData.tear = 'cover'
   base.raycast = () => {}
   root.add(lid, base)
 
@@ -1742,6 +1903,7 @@ function buildSpeaker(d: DeviceDesign, c: Ctx): THREE.Group {
   const panel = mesh(plate(s.backW + 3, s.backH + 2, round ? Math.min(s.backW, s.backH) * (s.form === 'orb' ? 0.3 : 0.08) + 1 : 3), darkPlastic(), false)
   panel.rotation.y = Math.PI
   panel.position.z = backZ - lift(0.02)
+  panel.userData.tear = 'cover'
   root.add(panel)
   if (s.screen) {
     const glassR = s.form === 'orb' ? (s.screen.w + 5) / 2 : s.screen.r + 2.5
@@ -1749,6 +1911,7 @@ function buildSpeaker(d: DeviceDesign, c: Ctx): THREE.Group {
     glass.position.set(0, s.screen.y, frontZ + lift(0.02))
     const screen = mesh(plate(s.screen.w, s.screen.h, s.screen.r), litScreen(screenTexture('speaker', d.wallpaper, s.screen.w, s.screen.h, c.detail, panelInfoOf(c)), c.specs.panel), false)
     screen.position.set(0, s.screen.y, frontZ + lift(0.04))
+    glass.userData.tear = screen.userData.tear = 'cover'
     root.add(glass, screen)
   }
 
@@ -1765,6 +1928,7 @@ function buildSpeaker(d: DeviceDesign, c: Ctx): THREE.Group {
     holes.setMatrixAt(i, mat4)
   }
   holes.raycast = () => {}
+  holes.userData.tear = 'cover'
   root.add(holes)
   addParts(root, d, 'body', c)
   return root
@@ -1808,13 +1972,18 @@ function buildHandheld(d: DeviceDesign, c: Ctx): THREE.Group {
     o.position.set(x, y, z + dz)
     controls.add(o)
   }
+  // the top tier of controls is plain to see: a lit ring under each stick, metal caps and keys, and stops and paddles behind
+  const pro = level >= 3
   const stick = (x: number, y: number) => {
     put(mesh(new THREE.CircleGeometry(k.r * 1.12, 40), m.dark, false), x, y, lift(0.02))
     // better sticks get a metal collar
     put(mesh(new THREE.RingGeometry(k.r * 1.12, k.r * 1.27, 40), level >= 1 ? satin() : dark, false), x, y, lift(0.025))
-    put(mesh(disc(k.r * 0.42, 3.4), dark), x, y)
+    if (pro) put(mesh(new THREE.RingGeometry(k.r * 1.3, k.r * 1.4, 48), new THREE.MeshStandardMaterial({ color: '#7fc4ff', emissive: '#7fc4ff', emissiveIntensity: 0.7, roughness: 0.4 }), false), x, y, lift(0.03))
+    put(mesh(disc(k.r * 0.42, 3.4), pro ? satin() : dark), x, y)
     put(mesh(disc(k.r * 0.86, 2.2), rubber('#1b1d21')), x, y, 3.2)
     put(mesh(new THREE.RingGeometry(k.r * 0.5, k.r * 0.66, 40), m.dark, false), x, y, 5.4 + lift(0.02))
+    // a knurled metal rim round the cap from the analogue tier up
+    if (level >= 2) put(mesh(new THREE.RingGeometry(k.r * 0.78, k.r * 0.86, 40), satin(), false), x, y, 5.4 + lift(0.03))
   }
   const cross = (x: number, y: number) => {
     put(mesh(new THREE.CircleGeometry(k.r * 1.12, 40), m.dark, false), x, y, lift(0.02))
@@ -1826,7 +1995,7 @@ function buildHandheld(d: DeviceDesign, c: Ctx): THREE.Group {
   }
   const keys = (x: number, y: number) => {
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      put(mesh(disc(k.r * 0.36, 1.4), dark), x + dx * k.r * 0.74, y + dy * k.r * 0.74)
+      put(mesh(disc(k.r * 0.36, 1.4), pro ? satin() : dark), x + dx * k.r * 0.74, y + dy * k.r * 0.74)
       put(mesh(new THREE.RingGeometry(k.r * 0.14, k.r * 0.2, 24), satin(), false), x + dx * k.r * 0.74, y + dy * k.r * 0.74, 1.4 + lift(0.02))
     }
   }
@@ -1855,20 +2024,73 @@ function buildHandheld(d: DeviceDesign, c: Ctx): THREE.Group {
     const reach = GRIP / 2 - 6
     grip.scale.set(reach, b.height * 0.42, Math.min(10, Math.max(5, t * 0.4)))
     grip.position.set(side * (b.width / 2 - 4 - reach), -b.height * 0.07, -t / 2 + 0.5)
+    grip.userData.tear = 'cover'
     controls.add(shoulder, trigger, grip)
-    if ((d.specs.io ?? []).includes('paddles')) {
+    // paddles behind the grips: an option on any tier, and built in, in metal, on the top one
+    if ((d.specs.io ?? []).includes('paddles') || pro) {
       for (const dy of [9, -13]) {
-        const paddle = mesh(slab(6.5, 17, 3, 2.6, 0.8, 2), dark)
+        const paddle = mesh(slab(6.5, 17, 3, 2.6, 0.8, 2), pro ? satin() : dark)
         paddle.rotation.y = Math.PI
         paddle.position.set(side * (b.width / 2 - GRIP + 4), -b.height * 0.07 + dy, -t / 2 + 0.4)
+        paddle.userData.tear = 'cover'
         controls.add(paddle)
       }
+    }
+    if (pro) {
+      // a trigger stop: a small switch beside each trigger that shortens its throw
+      const stop = mesh(slab(9, 4.2, 1.6, 2.2, 0.6, 2), satin())
+      stop.rotation.y = Math.PI
+      stop.position.set(side * (outer - 37), b.height / 2 - 12, -t / 2 + 0.3)
+      stop.userData.tear = 'cover'
+      const nib = mesh(slab(3.4, 3, 1, 1.4, 0.4, 2), lightMaterial('#7fc4ff'))
+      nib.rotation.y = Math.PI
+      nib.position.set(side * (outer - 38.6), b.height / 2 - 12, -t / 2 - 1.6)
+      nib.userData.tear = 'cover'
+      controls.add(stop, nib)
     }
   }
   controls.traverse((o) => (o.raycast = () => {}))
   root.add(controls)
   addParts(root, d, 'body', c)
+  if ((d.specs.io ?? []).includes('dock')) root.add(buildDock(b))
   return root
+}
+
+/** Height of the tray of a handheld's dock, under the handheld. */
+export const DOCK_BASE = 9
+
+/**
+ * The TV dock a handheld is sold with, when it is: a tray it stands in, a wall behind with the sockets for the
+ * television, and a low lip in front. It is an accessory, so nothing can be fitted to it or picked on it.
+ */
+function buildDock(b: Body): THREE.Group {
+  const g = new THREE.Group()
+  const t = b.thickness
+  const shell = new THREE.MeshPhysicalMaterial({ color: '#1d1f23', metalness: 0, roughness: 0.6 })
+  const w = b.width * 0.62
+  const deep = t + 46
+  const tray = mesh(flatSlab(w, deep, 9, DOCK_BASE, 2.2), shell)
+  tray.position.set(0, -b.height / 2 - DOCK_BASE - 0.5, -9)
+  const wallH = b.height * 0.5
+  const wall = mesh(slab(w, wallH, 7, 7.5, 2), shell)
+  wall.position.set(0, -b.height / 2 + wallH / 2 - 3, -t / 2 - 9.4)
+  const lipGeo = flatSlab(w, 7, 2.2, 4.4, 1.4)
+  const lip = mesh(lipGeo, shell)
+  lip.position.set(0, -b.height / 2 - 0.5, t / 2 + 4.6)
+  const light = mesh(new THREE.BoxGeometry(w * 0.16, 1, 0.6), lightMaterial('#8dffa8'), false)
+  light.position.set(0, -b.height / 2 + 1.8, t / 2 + 8.1)
+  g.add(tray, wall, lip, light)
+  // the sockets on the back of the wall: power, video out and two for controllers or a network adapter
+  const hole = darkMatte()
+  ;[[-0.3, 12, 8], [-0.1, 15, 5.2], [0.1, 13, 5], [0.28, 13, 5]].forEach(([x, sw, sh]) => {
+    const o = mesh(plate(sw, sh, 1), hole, false)
+    o.rotation.y = Math.PI
+    o.position.set(x * w, -b.height / 2 + wallH * 0.3, -t / 2 - 16.95)
+    g.add(o)
+  })
+  g.userData.prop = 'dock'
+  g.traverse((o) => (o.raycast = () => {}))
+  return g
 }
 
 // ------------------------------------------------------------ device
@@ -1909,7 +2131,7 @@ export function deviceFrame(d: DeviceDesign): { radius: number; bottom: number }
  * 1 is for thumbnails.
  */
 export function buildDevice(d: DeviceDesign, selectedId?: string | null, logoUrl?: string, colorIndex = -1, detail = 1): THREE.Group {
-  const c: Ctx = { type: d.type, m: materials(d, colorIndex), specs: d.specs, selectedId, logoUrl, detail, chin: d.type === 'desktop' && d.body.bezelBottom >= CHIN_MIN }
+  const c: Ctx = { type: d.type, body: d.body, m: materials(d, colorIndex), specs: d.specs, selectedId, logoUrl, detail, chin: d.type === 'desktop' && d.body.bezelBottom >= CHIN_MIN }
   layerScale = Math.min(12, Math.max(1, deviceFrame(d).radius / 87))
   switch (d.type) {
     case 'laptop':
@@ -1942,9 +2164,12 @@ export function buildDevice(d: DeviceDesign, selectedId?: string | null, logoUrl
 export function disposeDevice(root: THREE.Object3D) {
   root.traverse((o) => {
     const mesh = o as THREE.Mesh
-    mesh.geometry?.dispose()
+    // what the teardown view shares between models is marked, and is not thrown away with any one of them
+    if (mesh.geometry && !mesh.geometry.userData.shared) mesh.geometry.dispose()
+    if ((o as THREE.InstancedMesh).isInstancedMesh) (o as THREE.InstancedMesh).dispose()
     const mat = mesh.material as THREE.Material | THREE.Material[] | undefined
-    if (Array.isArray(mat)) mat.forEach((x) => x.dispose())
-    else mat?.dispose()
+    const drop = (x: THREE.Material) => !x.userData.shared && x.dispose()
+    if (Array.isArray(mat)) mat.forEach(drop)
+    else if (mat) drop(mat)
   })
 }
