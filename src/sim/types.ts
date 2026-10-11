@@ -5,11 +5,11 @@ export type Track = 'display' | 'chipset' | 'camera' | 'battery' | 'charging' | 
 export const TRACKS: Track[] = ['display', 'chipset', 'camera', 'battery', 'charging', 'materials', 'design']
 export type Levels = Record<Track, number>
 
-export type DeviceType = 'phone' | 'tablet' | 'watch' | 'laptop'
-export const DEVICE_TYPES: DeviceType[] = ['phone', 'tablet', 'watch', 'laptop']
+export type DeviceType = 'phone' | 'tablet' | 'watch' | 'laptop' | 'desktop' | 'console' | 'earbuds' | 'tv'
+export const DEVICE_TYPES: DeviceType[] = ['phone', 'tablet', 'watch', 'laptop', 'desktop', 'console', 'earbuds', 'tv']
 
 export type Face = 'front' | 'back' | 'left' | 'right' | 'top' | 'bottom'
-export type PartKind = 'camera' | 'island' | 'flash' | 'notch' | 'button' | 'port' | 'grille' | 'fingerprint' | 'logo'
+export type PartKind = 'camera' | 'island' | 'flash' | 'notch' | 'button' | 'port' | 'grille' | 'fingerprint' | 'logo' | 'vent' | 'slot' | 'light'
 export type Lens = 'wide' | 'ultrawide' | 'tele' | 'periscope' | 'macro'
 
 /** A part placed on a device face. x/y are mm from the face centre. */
@@ -32,6 +32,8 @@ export interface PlacedPart {
   finish?: 'frame' | 'back' | 'black'
   /** Buttons only: a round rotating crown (watches). */
   crown?: boolean
+  /** Lights only: the colour they glow. */
+  color?: string
 }
 
 export interface Body {
@@ -51,6 +53,10 @@ export interface Body {
   /** Watches: strap material and colour. */
   strap?: string
   strapColor?: string
+  /** Desktops and TVs: stand style, an id from STANDS. */
+  stand?: string
+  /** Earbuds: the shape of the buds. */
+  buds?: 'stem' | 'bean'
 }
 
 export interface Specs {
@@ -65,12 +71,19 @@ export interface Specs {
   battery: number
   charging: number
   extras: string[]
-  /** Laptops: discrete graphics tier, 0 = integrated. */
+  /** Laptops, desktops, consoles: discrete graphics tier, 0 = integrated. */
   gpu?: number
-  /** Laptops: keyboard quality, index into KEYBOARDS. */
+  /** Laptops, desktops: keyboard quality, index into KEYBOARDS. Consoles: controller, index into CONTROLLERS. */
   keyboard?: number
-  /** Laptops: ports fitted. Watches: health sensors fitted. */
+  /** Ports, sensors or features fitted. The list depends on the device type (see ioOptions). */
   io?: string[]
+  /** Desktops, consoles: cooling system, index into COOLERS. */
+  cooling?: number
+  /** Desktops, TVs: speaker system, index into SPEAKERS. */
+  speakers?: number
+  /** Earbuds: driver, index into DRIVERS, and noise cancelling, index into ANC. */
+  driver?: number
+  anc?: number
 }
 
 /** An extra colour a device is sold in. */
@@ -98,7 +111,7 @@ export interface DeviceDesign {
 export interface SubScores {
   perf: number
   display: number
-  /** The type's special score: camera (phone, tablet), sensors (watch), keyboard and ports (laptop). */
+  /** The type's special score: camera (phone, tablet), sensors (watch), keyboard and ports (laptop). Each type names its scores in TYPES[type].labels. */
   camera: number
   battery: number
   design: number

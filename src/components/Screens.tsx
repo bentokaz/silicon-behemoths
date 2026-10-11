@@ -253,6 +253,7 @@ export function Products() {
   const g = useGame()
   const { openDesigner } = useStore.getState()
   const [filter, setFilter] = useState<'active' | 'all' | DeviceType>('active')
+  const [picking, setPicking] = useState(false)
   const all = mine(g)
   const rows = all.filter((p) => (filter === 'active' ? p.status !== 'ended' : filter === 'all' ? true : p.type === filter))
   // group variants under their family
@@ -263,20 +264,35 @@ export function Products() {
         <Tabs
           value={filter}
           onChange={setFilter}
-          options={[{ value: 'active', label: 'Current', badge: all.filter((p) => p.status !== 'ended').length }, ...DEVICE_TYPES.map((t) => ({ value: t, label: TYPES[t].plural, badge: all.filter((p) => p.type === t).length })), { value: 'all', label: 'All', badge: all.length }]}
-          className="flex-1"
+          // with eight device types, only the ones the company has made get a tab of their own
+          options={[{ value: 'active', label: 'Current', badge: all.filter((p) => p.status !== 'ended').length }, { value: 'all', label: 'All', badge: all.length }, ...DEVICE_TYPES.filter((t) => t === filter || all.some((p) => p.type === t)).map((t) => ({ value: t, label: TYPES[t].plural, badge: all.filter((p) => p.type === t).length }))]}
+          className="min-w-0 flex-1 overflow-x-auto"
         />
-        <div className="flex gap-1">
-          {DEVICE_TYPES.map((t) => (
-            <Btn key={t} tone={t === 'phone' ? 'primary' : 'default'} onClick={() => openDesigner({ type: t })}>
-              New {TYPES[t].name.toLowerCase()}
-            </Btn>
-          ))}
+        <div className="relative shrink-0">
+          <Btn tone="primary" className="px-5" onClick={() => setPicking(!picking)}>
+            New device
+          </Btn>
+          {picking && (
+            <>
+              <div className="fixed inset-0 z-20" onClick={() => setPicking(false)} />
+              <div className="absolute right-0 top-full z-30 mt-1 w-64 border border-line2 bg-panel">
+                <div className="label border-b border-line px-2 py-1 text-faint">What will it be?</div>
+                {DEVICE_TYPES.map((t) => (
+                  <button key={t} onClick={() => (setPicking(false), openDesigner({ type: t }))} className="flex w-full items-center justify-between border-b border-line px-2 py-[6px] text-left last:border-0 hover:bg-hover">
+                    <span className="text-[11px] uppercase tracking-wider text-fg">{TYPES[t].name}</span>
+                    <span className="num text-[10px] text-faint">
+                      {segmentsOf(t).length} markets / {num(segmentsOf(t).reduce((a, s) => a + segmentDemand(s, g.day) * 360, 0))} a year
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
       <Panel className="flex-1" bodyClass="overflow-auto">
         {rows.length === 0 ? (
-          <Empty text="No devices here yet. Pick a device type above to open the designer." />
+          <Empty text="No devices here yet. Press New device to choose a type and open the designer." />
         ) : (
           families.map((family) => {
             const group = rows.filter((p) => p.family === family)

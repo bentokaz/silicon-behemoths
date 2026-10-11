@@ -47,3 +47,15 @@ export const lensCore = () => new THREE.MeshPhysicalMaterial({ color: '#0b1630',
 export const darkMatte = () => new THREE.MeshPhysicalMaterial({ color: '#050505', metalness: 0.1, roughness: 0.8 })
 
 export const flashMaterial = () => new THREE.MeshPhysicalMaterial({ color: '#f4ecd0', emissive: '#ffe9b0', emissiveIntensity: 0.25, roughness: 0.25, clearcoat: 1 })
+
+/** Moulded dark plastic: rear panels, the inside of an earbud case. */
+export const darkPlastic = () => new THREE.MeshPhysicalMaterial({ color: '#15161a', metalness: 0, roughness: 0.62 })
+
+/** Rubber feet and soft ear tips. */
+export const rubber = (color = '#0c0c0d') => new THREE.MeshPhysicalMaterial({ color, metalness: 0, roughness: 0.9, sheen: 0.3, sheenRoughness: 0.7 })
+
+/** Contacts and pins inside sockets. */
+export const contactMetal = () => new THREE.MeshPhysicalMaterial({ color: '#c8b27a', metalness: 1, roughness: 0.35 })
+
+/** A lit indicator or light bar. */
+export const lightMaterial = (color: string) => new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.5, roughness: 0.35 })

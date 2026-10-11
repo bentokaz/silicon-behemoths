@@ -2,8 +2,8 @@
 // show 3D thumbnails without opening a WebGL context per row.
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
-import type { DeviceDesign } from '../sim/types'
-import { buildDevice, deviceRadius, disposeDevice } from './buildDevice'
+import type { DeviceDesign, DeviceType } from '../sim/types'
+import { buildDevice, deviceFrame, disposeDevice } from './buildDevice'
 
 const W = 180
 const H = 220
@@ -11,6 +11,20 @@ let renderer: THREE.WebGLRenderer | null = null
 let scene: THREE.Scene
 let camera: THREE.PerspectiveCamera
 const cache = new Map<string, string>()
+
+/**
+ * Where the camera stands for each type, as a direction. Phones, tablets and
+ * watches show their back; anything with a stand, a lid or a front panel shows
+ * its front from slightly above.
+ */
+const ANGLES: Partial<Record<DeviceType, [number, number, number]>> = {
+  laptop: [0.38, 0.5, 0.78],
+  desktop: [0.34, 0.16, 0.93],
+  tv: [0.34, 0.14, 0.93],
+  console: [0.42, 0.4, 0.82],
+  earbuds: [0.4, 0.42, 0.82],
+}
+const BACK: [number, number, number] = [-0.36, 0.12, -0.92]
 
 function setup() {
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true })
@@ -29,18 +43,20 @@ function setup() {
   camera = new THREE.PerspectiveCamera(24, W / H, 10, 3000)
 }
 
-/** Data URL of a device seen from the back at three-quarter angle. */
+/** Data URL of a device at three-quarter angle. */
 export function deviceThumbnail(key: string, design: DeviceDesign, logo?: string): string {
   const hit = cache.get(key)
   if (hit) return hit
   try {
     if (!renderer) setup()
-    const device = buildDevice(design, null, logo)
+    // small screen artwork is plenty at this size
+    const device = buildDevice(design, null, logo, -1, 0.4)
     scene.add(device)
-    const dist = deviceRadius(design) * 5.4
-    // phones, tablets and watches show their back; a laptop shows its screen and keyboard
-    if (design.type === 'laptop') camera.position.set(dist * 0.38, dist * 0.5, dist * 0.78)
-    else camera.position.set(-dist * 0.36, dist * 0.12, -dist * 0.92)
+    const dir = ANGLES[design.type] ?? BACK
+    // the frame is portrait, so a wide device has to stand further back to fit across it
+    const wide = design.body.width > design.body.height * 1.2 ? 1.18 : 1
+    const dist = deviceFrame(design).radius * 5.4 * wide
+    camera.position.set(dir[0] * dist, dir[1] * dist, dir[2] * dist)
     camera.near = dist * 0.05
     camera.far = dist * 4
     camera.updateProjectionMatrix()

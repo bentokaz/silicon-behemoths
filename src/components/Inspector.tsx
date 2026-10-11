@@ -5,44 +5,55 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { DeviceView, type ViewName } from '../3d/DeviceView'
 import { deviceThumbnail } from '../3d/thumbnail'
 import { sfx } from '../audio/sfx'
-import { CHARGE_W, EXTRAS, LENSES, SUPPLY_LABELS, materialInfo, panelInfo, sensorInfo } from '../data/catalog'
-import { GPUS, KEYBOARDS, PORTS, SENSORS, STRAPS, TYPES, segmentInfo, subLabel } from '../data/devices'
+import { EXTRAS, LENSES, SUPPLY_LABELS, materialInfo, panelInfo, sensorInfo } from '../data/catalog'
+import { ANC, COOLERS, DRIVERS, GPUS, SPEAKERS, STRAPS, TYPES, inputOptions, ioInfo, segmentInfo, standInfo, subLabel } from '../data/devices'
 import { RECALL_DEADLINE, RETAIL_CUT, companyOf, discontinue, fmtDate, orderProduction, player, recallProduct, setPrice } from '../sim/game'
 import { normalised, tierAverages } from '../sim/market'
 import { CONTRACT, buildCost, factoryLine, pendingUnits, supplyPrice } from '../sim/ops'
 import { VARIANTS } from '../sim/rivals'
-import { batteryLabel, chipFor } from '../sim/scoring'
-import { type DeviceDesign, type GameState, type Product, type ProductionOrder, SUBS, SUPPLY_CATS } from '../sim/types'
+import { batteryLabel, chargeWatts, chipFor, panelName } from '../sim/scoring'
+import { type DeviceDesign, type DeviceType, type GameState, type Product, type ProductionOrder, SUBS, SUPPLY_CATS } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { Btn, Drawer, Meter, Mini, NumInput, Row, Tabs, Tag, chart, money, num, pct } from './ui'
 
+/** Weight the way people quote it: grams for things you carry, kilograms for things you do not. */
+export const weightLabel = (g: number) => (g >= 2000 ? `${(g / 1000).toFixed(1)} kg` : `${Math.round(g)} g`)
+/** What the battery-life figure means for a type, or null where there is no battery. */
+export const lifeLabel = (type: DeviceType) => (TYPES[type].mains ? null : type === 'earbuds' ? 'Listening, with case' : 'Battery life')
+
 export function specLines(d: DeviceDesign, diag: number, g?: GameState): [string, string][] {
   const s = d.specs
+  const type = d.type
+  const T = TYPES[type]
   const rear = d.parts.filter((p) => p.kind === 'camera' && p.face === 'back')
   const selfie = d.parts.filter((p) => p.kind === 'camera' && p.face === 'front')
   const extras = s.extras.map((id) => EXTRAS.find((e) => e.id === id)?.name).filter(Boolean)
   const size = `${d.body.width} x ${d.body.height} x ${d.body.thickness} mm`
-  const lines: [string, string][] = [
-    ['Display', `${diag.toFixed(d.type === 'watch' ? 2 : 1)}" ${panelInfo(s.panel).name}${d.type === 'watch' ? '' : ` ${s.refresh} Hz`}`],
-    ['Chipset', chipFor(s, g?.chips).name + (d.type === 'laptop' && s.gpu ? ` + ${GPUS[s.gpu].name}` : '')],
-  ]
-  if (TYPES[d.type].memory) lines.push(['Memory', `${s.ram} GB / ${s.storage >= 1024 ? s.storage / 1024 + ' TB' : s.storage + ' GB'}`])
-  lines.push(['Battery', `${batteryLabel(d.type, s.battery)}, ${CHARGE_W[s.charging]} W`])
-  if (d.type === 'phone' || d.type === 'tablet') {
+  const fitted = (s.io ?? []).map((id) => ioInfo(type, id)?.name).filter(Boolean).join(', ') || 'none'
+  const lines: [string, string][] = []
+  if (type === 'console') lines.push(['Video output', `${panelName(type, s.panel)}, ${s.refresh} Hz`])
+  else if (!T.noScreen) lines.push(['Display', `${diag.toFixed(type === 'watch' ? 2 : 1)}" ${panelInfo(s.panel).name}${type === 'watch' ? '' : ` ${s.refresh} Hz`}`])
+  if (type === 'earbuds') {
+    lines.push(['Driver', DRIVERS[s.driver ?? 0].name])
+    lines.push(['Noise cancelling', ANC[s.anc ?? 0].name])
+    lines.push(['Buds', d.body.buds === 'bean' ? 'Bean shape' : 'With stems'])
+  }
+  lines.push(['Chipset', chipFor(s, g?.chips).name + (T.gpu && s.gpu ? ` + ${GPUS[s.gpu].name}` : '')])
+  if (T.memory) lines.push(['Memory', `${s.ram} GB / ${s.storage >= 1024 ? s.storage / 1024 + ' TB' : s.storage + ' GB'}`])
+  if (!T.mains) lines.push([type === 'earbuds' ? 'Case battery' : 'Battery', `${batteryLabel(type, s.battery)}, ${chargeWatts(type, s.charging)} W`])
+  if (type === 'phone' || type === 'tablet') {
     lines.push(['Rear cameras', rear.length ? rear.map((p) => `${sensorInfo(p.sensor ?? 0).name} ${LENSES[p.lens ?? 'wide'].name.split(' ')[0].toLowerCase()}`).join(' + ') : 'none'])
     lines.push(['Front camera', selfie.length ? selfie.map((p) => sensorInfo(p.sensor ?? 0).name + (p.underDisplay ? ' under-display' : '')).join(' + ') : 'none'])
   }
-  if (d.type === 'watch') {
-    lines.push(['Sensors', (s.io ?? []).map((id) => SENSORS.find((x) => x.id === id)?.name).filter(Boolean).join(', ') || 'none'])
-    lines.push(['Strap', STRAPS.find((x) => x.id === d.body.strap)?.name ?? 'Silicone'])
-  }
-  if (d.type === 'laptop') {
-    lines.push(['Keyboard', KEYBOARDS[s.keyboard ?? 0].name])
-    lines.push(['Ports', (s.io ?? []).map((id) => PORTS.find((x) => x.id === id)?.name).filter(Boolean).join(', ') || 'none'])
-    lines.push(['Webcam', selfie.length ? sensorInfo(selfie[0].sensor ?? 0).name : 'none'])
-  }
-  lines.push(['Body', size])
-  lines.push(['Materials', d.type === 'laptop' ? materialInfo(d.body.frameMat).name : `${materialInfo(d.body.frameMat).name} frame, ${materialInfo(d.body.backMat).name.toLowerCase()} back`])
+  if (type === 'watch') lines.push(['Strap', STRAPS.find((x) => x.id === d.body.strap)?.name ?? 'Silicone'])
+  if (T.input) lines.push([T.input === 'controller' ? 'Controller' : 'Keyboard', inputOptions(type)[s.keyboard ?? 0].name])
+  if (T.ioLabel) lines.push([T.ioLabel, fitted])
+  if (type === 'laptop' || type === 'desktop') lines.push(['Webcam', selfie.length ? sensorInfo(selfie[0].sensor ?? 0).name : 'none'])
+  if (T.mains?.cool) lines.push(['Cooling', COOLERS[s.cooling ?? 0].name])
+  if (T.mains?.sound) lines.push(['Speakers', SPEAKERS[s.speakers ?? 0].name])
+  if (type === 'desktop' || type === 'tv') lines.push(['Stand', standInfo(type, d.body.stand).name])
+  lines.push([type === 'earbuds' ? 'Case' : 'Body', size])
+  lines.push(['Materials', T.oneShell ? materialInfo(d.body.frameMat).name : type === 'earbuds' ? `${materialInfo(d.body.backMat).name} case, ${materialInfo(d.body.frameMat).name.toLowerCase()} trim` : `${materialInfo(d.body.frameMat).name} frame, ${materialInfo(d.body.backMat).name.toLowerCase()} back`])
   if (extras.length) lines.push(['Extras', extras.join(', ')])
   if (d.colors?.length) lines.push(['Colours', [`Standard`, ...d.colors.map((c) => c.name)].join(', ')])
   return lines
@@ -318,8 +329,8 @@ export function ProductDrawer() {
             <Mini label={product.status === 'dev' ? 'Release in' : 'Released'} value={product.status === 'dev' ? `${product.devDaysLeft} days` : fmtDate(product.launchDay)} />
             <Mini label="Revenue" value={money(product.revenue)} />
             {mine && <Mini label="Owner mood" value={pct(product.satisfaction, 0)} tone={product.satisfaction > 0.7 ? 'text-pos' : product.satisfaction < 0.5 ? 'text-neg' : 'text-fg'} />}
-            {mine && <Mini label="Weight" value={`${Math.round(product.weight)} g`} />}
-            {mine && <Mini label="Battery life" value={`${product.lifeHours.toFixed(0)} h`} />}
+            {mine && <Mini label="Weight" value={weightLabel(product.weight)} />}
+            {mine && lifeLabel(product.type) && <Mini label={lifeLabel(product.type) ?? ''} value={`${product.lifeHours.toFixed(0)} h`} />}
           </div>
           <div className="border border-line p-2">
             <div className="label mb-1 text-faint">Scores against the market today</div>
@@ -368,8 +379,8 @@ export function ProductDrawer() {
           {specLines(product.design, product.diag, mine ? g : undefined).map(([k, v]) => (
             <Row key={k} k={k} v={<span className="whitespace-normal text-right">{v}</span>} />
           ))}
-          <Row k="Weight" v={`${Math.round(product.weight)} g`} />
-          <Row k="Battery life" v={`${product.lifeHours.toFixed(1)} h`} />
+          <Row k="Weight" v={weightLabel(product.weight)} />
+          {lifeLabel(product.type) && <Row k={lifeLabel(product.type)} v={`${product.lifeHours.toFixed(1)} h`} />}
           {product.tiers.map((t) => (
             <Row key={t.storage} k={`${t.storage >= 1024 ? t.storage / 1024 + ' TB' : t.storage + ' GB'} option`} v={money(t.price)} />
           ))}

@@ -65,7 +65,7 @@ export function rivalReach(c: Pick<Company, 'id' | 'name' | 'home'>, region: str
   let out = reachCache.get(key)
   if (out === undefined) {
     const v = hashStr(c.name + region)
-    out = homeOf(c) === region ? 1 : v < 0.12 ? 0.15 : 0.5 + 0.45 * v
+    out = homeOf(c) === region ? 1 : v < 0.08 ? 0.25 : 0.7 + 0.3 * v
     reachCache.set(key, out)
   }
   return out

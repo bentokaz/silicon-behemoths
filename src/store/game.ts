@@ -3,10 +3,11 @@
 import { create } from 'zustand'
 import { sfx } from '../audio/sfx'
 import { DAYS_PER_MONTH } from '../data/catalog'
+import { TYPES } from '../data/devices'
 import { clampPart, newPart, nextPartId } from '../sim/geometry'
 import { migrate, newGame, player, starterDesign, tick } from '../sim/game'
 import { monthCosts } from '../sim/types'
-import { type FingerprintStyle, type FrontStyle, type VariantId, deriveVariant, layoutParts } from '../sim/rivals'
+import { type FingerprintStyle, type FrontStyle, type VariantId, deriveVariant, layoutParts, syncSockets } from '../sim/rivals'
 import type { Body, DeviceDesign, DeviceType, GameConfig, GameState, PartKind, PlacedPart, Product, Specs } from '../sim/types'
 import { AUTOSAVE, BEFORE_DEBT, saveGame, saveSnapshot } from './saves'
 
@@ -56,6 +57,9 @@ function remember(key: string, value: string) {
   }
 }
 
+/** Name offered for a new product line, e.g. "Acme Tab 2". */
+const defaultName = (company: string, type: DeviceType, count: number) => `${company} ${TYPES[type].series ? TYPES[type].series + ' ' : ''}${count}`
+
 function relayout(d: DeviceDesign, o: SimpleLayout, g: GameState): PlacedPart[] {
   return layoutParts(d.body, { ...o, type: d.type, periscope: g.features.includes('periscope') && o.sensor >= 3, stereo: d.specs.extras.includes('stereo'), logoImage: !!player(g).logo, io: d.specs.io })
 }
@@ -72,7 +76,7 @@ function readLayout(d: DeviceDesign, g: GameState): SimpleLayout {
     sensor: d.parts.filter((p) => p.kind === 'camera').reduce((m, p) => Math.max(m, p.sensor ?? 0), 0),
     front: selfie?.underDisplay ? 'under' : d.parts.some((p) => p.kind === 'notch') ? 'notch' : g.features.includes('punch') ? 'punch' : 'notch',
     fingerprint: !fp ? 'none' : fp.face === 'front' ? 'display' : fp.face === 'back' ? 'back' : 'side',
-    flash: d.parts.some((p) => p.kind === 'flash'),
+    flash: d.parts.some((p) => p.kind === 'flash' || p.kind === 'light'),
     logo: logo?.text ?? player(g).name.split(' ')[0].slice(0, 10).toUpperCase(),
   }
 }
@@ -275,7 +279,7 @@ export const useStore = create<Store>((set, get) => {
         draft = starterDesign(g, type)
         const base = player(g).name.split(' ')[0]
         const count = own.filter((p) => p.type === type && !p.variant).length + 1
-        meta = { family: `${base} ${{ phone: '', tablet: 'Tab ', watch: 'Watch ', laptop: 'Book ' }[type]}${count}`, variant: '' }
+        meta = { family: defaultName(base, type, count), variant: '' }
       }
       lastEdit = 0
       set({ designing: true, draft, meta, simple: readLayout(draft, g), selectedPart: null, speed: 0, past: [], future: [], inspect: null })
@@ -288,7 +292,7 @@ export const useStore = create<Store>((set, get) => {
       const draft = starterDesign(g, type)
       const base = player(g).name.split(' ')[0]
       const count = g.products.filter((p) => p.companyId === 'player' && p.type === type && !p.variant).length + 1
-      set({ draft, simple: readLayout(draft, g), selectedPart: null, past: [], future: [], meta: { family: `${base} ${{ phone: '', tablet: 'Tab ', watch: 'Watch ', laptop: 'Book ' }[type]}${count}`, variant: '' } })
+      set({ draft, simple: readLayout(draft, g), selectedPart: null, past: [], future: [], meta: { family: defaultName(base, type, count), variant: '' } })
     },
     setMeta: (patch) => set({ meta: { ...get().meta, ...patch } }),
 
@@ -310,7 +314,7 @@ export const useStore = create<Store>((set, get) => {
       if (!d) return
       const body = { ...d.body, ...patch }
       // the simple editor owns the layout, so it follows the body as it changes shape
-      if ((get().editorMode === 'simple' || d.type === 'laptop') && g) edit({ ...d, body, parts: relayout({ ...d, body }, get().simple, g) })
+      if (get().editorMode === 'simple' && g) edit({ ...d, body, parts: relayout({ ...d, body }, get().simple, g) })
       else edit({ ...d, body, parts: d.parts.map((p) => clampPart(body, p, d.type)) })
     },
     setSpecs(patch) {
@@ -318,8 +322,8 @@ export const useStore = create<Store>((set, get) => {
       const g = get().game
       if (!d) return
       const next = { ...d, specs: { ...d.specs, ...patch } }
-      // a laptop's ports are parts on its sides, so they follow the port list
-      if (patch.io && d.type === 'laptop' && g) next.parts = relayout(next, get().simple, g)
+      // ports are parts on the body, so they follow the port list
+      if (patch.io && g) next.parts = get().editorMode === 'simple' ? relayout(next, get().simple, g) : syncSockets(next, d.specs.io ?? [])
       edit(next)
     },
     setDraft(patch) {
