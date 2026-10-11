@@ -62,6 +62,7 @@ const PATHS = {
   alert: 'M12 3l10 18H2zM12 10v5M12 18v0',
   keys: 'M2 6h20v12H2zM6 10h1M10 10h1M14 10h1M18 10h0M6 14h12',
   camera: 'M3 7h4l2-3h6l2 3h4v13H3zM12 10a4 4 0 100 8 4 4 0 000-8z',
+  clock: 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 7v5l3.500 2',
 } as const
 
 export type IconName = keyof typeof PATHS

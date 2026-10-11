@@ -5,7 +5,6 @@ import { useFrame } from '@react-three/fiber'
 import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
 type V3 = [number, number, number]
 
@@ -96,7 +95,9 @@ function bakeMaterial(m: THREE.MeshStandardMaterial): { key: string; material: T
 
 /**
  * Renders its children, then merges every plain mesh among them into one mesh
- * per material and hides the originals. Anything animated or textured must
+ * per material and hides the originals. The merge is done by hand, straight
+ * into typed arrays, because it runs every time something in a block of
+ * furniture changes and has to be quick. Anything animated or textured must
  * set userData.live (or use a material with a map) to be left alone.
  * `sig` says when the contents have changed and need merging again.
  */
@@ -108,39 +109,76 @@ export function Baked({ sig, children }: { sig: string | number; children: React
     if (!root) return
     root.updateWorldMatrix(true, true)
     const inv = new THREE.Matrix4().copy(root.matrixWorld).invert()
-    const groups = new Map<string, { material: THREE.Material; geos: THREE.BufferGeometry[]; cast: boolean }>()
-    const m = new THREE.Matrix4()
+    interface Part {
+      geo: THREE.BufferGeometry
+      at: THREE.Matrix4
+      color: THREE.Color
+    }
+    const groups = new Map<string, { material: THREE.Material; parts: Part[]; cast: boolean; tint: boolean; count: number }>()
     root.traverse((o) => {
       const mesh = o as THREE.Mesh
       if (!mesh.isMesh || mesh.userData.live || Array.isArray(mesh.material)) return
       const source = mesh.material as THREE.MeshStandardMaterial
       if (source.map || !('roughness' in source)) return
+      const pos = mesh.geometry.attributes.position
+      const nor = mesh.geometry.attributes.normal
+      // only plain, tightly packed geometry can be copied straight across
+      if (!pos || !nor || !(pos as THREE.BufferAttribute).isBufferAttribute || !(nor as THREE.BufferAttribute).isBufferAttribute || pos.itemSize !== 3) return
       const b = bakeMaterial(source)
       const key = b.key + (mesh.castShadow ? 'c' : 'n')
       let g = groups.get(key)
-      if (!g) groups.set(key, (g = { material: b.material, geos: [], cast: mesh.castShadow }))
-      const geo = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone()
-      for (const name of Object.keys(geo.attributes)) if (name !== 'position' && name !== 'normal') geo.deleteAttribute(name)
-      geo.applyMatrix4(m.multiplyMatrices(inv, mesh.matrixWorld))
-      if (b.tint) {
-        const n = geo.attributes.position.count
-        const colors = new Float32Array(n * 3)
-        const { r, g: gg, b: bb } = source.color
-        for (let i = 0; i < n; i++) {
-          colors[i * 3] = r
-          colors[i * 3 + 1] = gg
-          colors[i * 3 + 2] = bb
-        }
-        geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-      }
-      g.geos.push(geo)
+      if (!g) groups.set(key, (g = { material: b.material, parts: [], cast: mesh.castShadow, tint: b.tint, count: 0 }))
+      g.parts.push({ geo: mesh.geometry, at: new THREE.Matrix4().multiplyMatrices(inv, mesh.matrixWorld), color: source.color })
+      g.count += mesh.geometry.index ? mesh.geometry.index.count : pos.count
       mesh.visible = false
     })
+    // every part is written straight into one set of arrays per material: no copies of the geometry in between
     const meshes: THREE.Mesh[] = []
+    const normalMatrix = new THREE.Matrix3()
     for (const g of groups.values()) {
-      const merged = mergeGeometries(g.geos)
-      for (const geo of g.geos) geo.dispose()
-      if (!merged) continue
+      if (!g.count) continue
+      const P = new Float32Array(g.count * 3)
+      const N = new Float32Array(g.count * 3)
+      const C = g.tint ? new Float32Array(g.count * 3) : null
+      let o = 0
+      for (const part of g.parts) {
+        const p = part.geo.attributes.position.array
+        const n = part.geo.attributes.normal.array
+        const index = part.geo.index?.array
+        const e = part.at.elements
+        const ne = normalMatrix.getNormalMatrix(part.at).elements
+        const { r, g: cg, b: cb } = part.color
+        const total = index ? index.length : part.geo.attributes.position.count
+        for (let i = 0; i < total; i++) {
+          const v = (index ? index[i] : i) * 3
+          const x = p[v]
+          const y = p[v + 1]
+          const z = p[v + 2]
+          P[o] = e[0] * x + e[4] * y + e[8] * z + e[12]
+          P[o + 1] = e[1] * x + e[5] * y + e[9] * z + e[13]
+          P[o + 2] = e[2] * x + e[6] * y + e[10] * z + e[14]
+          const nx = n[v]
+          const ny = n[v + 1]
+          const nz = n[v + 2]
+          const ax = ne[0] * nx + ne[3] * ny + ne[6] * nz
+          const ay = ne[1] * nx + ne[4] * ny + ne[7] * nz
+          const az = ne[2] * nx + ne[5] * ny + ne[8] * nz
+          const len = Math.hypot(ax, ay, az) || 1
+          N[o] = ax / len
+          N[o + 1] = ay / len
+          N[o + 2] = az / len
+          if (C) {
+            C[o] = r
+            C[o + 1] = cg
+            C[o + 2] = cb
+          }
+          o += 3
+        }
+      }
+      const merged = new THREE.BufferGeometry()
+      merged.setAttribute('position', new THREE.BufferAttribute(P, 3))
+      merged.setAttribute('normal', new THREE.BufferAttribute(N, 3))
+      if (C) merged.setAttribute('color', new THREE.BufferAttribute(C, 3))
       const mesh = new THREE.Mesh(merged, g.material)
       mesh.castShadow = g.cast
       mesh.receiveShadow = true
@@ -176,9 +214,9 @@ export const CAR_PAINT = ['#d8dadd', '#1d2023', '#7a1f24', '#2c4a6e', '#8c9094',
 
 // ---------------------------------------------------------------- people
 
-const SKIN = ['#f1c9a5', '#e0ac69', '#c68642', '#8d5524', '#ffdbac', '#6b4423']
-const HAIR = ['#1c1612', '#3b2a1e', '#6b4a2e', '#c9a46a', '#101010', '#7a2f1e']
-const TROUSERS = ['#2b3140', '#3a3f47', '#4b4237', '#252a33']
+export const SKIN = ['#f1c9a5', '#e0ac69', '#c68642', '#8d5524', '#ffdbac', '#6b4423']
+export const HAIR = ['#1c1612', '#3b2a1e', '#6b4a2e', '#c9a46a', '#101010', '#7a2f1e']
+export const TROUSERS = ['#2b3140', '#3a3f47', '#4b4237', '#252a33']
 
 export interface PersonLook {
   look: number

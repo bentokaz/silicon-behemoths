@@ -14,9 +14,17 @@ export interface OfficeCtx {
   logo?: string
   /** Company colour, for flags and accents. */
   color: string
-  /** The company's devices, newest first: prototypes on the benches, the latest in the showcase. */
+  /** The devices to show on this item: prototypes on the benches, the latest in the showcase. */
   devices?: Product[]
   seed: number
+  /** Someone works here but is drawn by the view, walking about: light the screen, leave the chair empty. */
+  on?: boolean
+  /** The view draws this item's lights, screen or turning device itself. */
+  live?: boolean
+  /** How far along the device shown here is, 0-1, while it is in development. */
+  progress?: number
+  /** Work is going on here right now. */
+  busy?: boolean
 }
 
 type V3 = [number, number, number]
@@ -59,7 +67,7 @@ function Desk({ c, top = WOOD, height = 0.74, chair = true, wide = false }: { c:
         </group>
       ))}
       <B p={[0, height - 0.16, -0.41]} s={[0.795, 0.24, 0.018]} c={CHARCOAL} r={0.004} cast={false} />
-      <Monitor y={height} glow={c.glow} on={!!c.who} />
+      <Monitor y={height} glow={c.glow} on={!!c.who || !!c.on} />
       <B p={[-0.02, height + 0.009, -0.09]} s={[0.32, 0.018, 0.11]} c="#26282c" r={0.006} cast={false} />
       <B p={[0.25, height + 0.012, -0.08]} s={[0.055, 0.024, 0.09]} c="#26282c" r={0.01} cast={false} />
       <C p={[-0.34, height + 0.045, -0.04]} r={[0.035, 0.03]} h={0.09} c={hash(c.seed) > 0.5 ? '#e9e4da' : '#c9553d'} seg={12} cast={false} />
@@ -83,6 +91,18 @@ function Sofa({ w = 1.84, color = FABRIC }: { w?: number; color?: string }) {
         <B key={i} p={[-inner / 2 + ((i + 0.5) * inner) / seats, 0.36, -0.06]} s={[inner / seats - 0.02, 0.13, 0.56]} c={color} r={0.05} rough={1} cast={false} />
       ))}
     </>
+  )
+}
+
+/** A small lit gauge: how far along the thing beside it is. Stands upright, or lies flat on a table. */
+function Progress({ p, w, value, glow, flat = false }: { p: V3; w: number; value: number; glow: number; flat?: boolean }) {
+  const v = Math.min(1, Math.max(0.04, value))
+  const h = 0.05
+  return (
+    <group position={p} rotation={[flat ? -Math.PI / 2 : 0, 0, 0]}>
+      <B p={[0, 0, 0]} s={[w, h, 0.012]} c="#14171b" r={0} cast={false} />
+      <B p={[-(w * (1 - v)) / 2, 0, 0.008]} s={[w * v, h * 0.62, 0.006]} c="#2a1608" r={0} glow="#ff8a3c" glowPower={0.9 + 0.3 * glow} cast={false} />
+    </group>
   )
 }
 
@@ -111,9 +131,9 @@ export function OfficeItem({ kind, c }: { kind: string; c: OfficeCtx }) {
       return (
         <>
           <Desk c={c} top="#e9e6e0" wide />
-          <Monitor x={0.3} z={-0.33} y={0.74} w={0.3} glow={c.glow} on={!!c.who} />
+          <Monitor x={0.3} z={-0.33} y={0.74} w={0.3} glow={c.glow} on={!!c.who || !!c.on} />
           <B p={[-0.33, 0.8, -0.3]} s={[0.1, 0.12, 0.1]} c={DARK} r={0.02} cast={false} />
-          <C p={[-0.33, 0.9, -0.3]} r={[0.02, 0.02]} h={0.08} c="#3fe08a" glow="#3fe08a" glowPower={0.8 * c.glow} seg={8} cast={false} />
+          {!c.live && <C p={[-0.33, 0.9, -0.3]} r={[0.02, 0.02]} h={0.08} c="#3fe08a" glow="#3fe08a" glowPower={0.8 * c.glow} seg={8} cast={false} />}
           {c.who && <Person who={c.who} p={[0, 0, 0.24]} />}
         </>
       )
@@ -127,7 +147,7 @@ export function OfficeItem({ kind, c }: { kind: string; c: OfficeCtx }) {
           {[0.2, 0.45].map((y) => (
             <B key={y} p={[0.62, y, 0.235]} s={[0.18, 0.02, 0.014]} c="#c9a25a" r={0.004} metal={0.9} rough={0.3} cast={false} />
           ))}
-          <Monitor x={-0.25} z={-0.3} y={0.765} w={0.7} glow={c.glow} on={!!c.who} />
+          <Monitor x={-0.25} z={-0.3} y={0.765} w={0.7} glow={c.glow} on={!!c.who || !!c.on} />
           <Laptop p={[0.5, 0.765, -0.14]} glow={c.glow} />
           <C p={[-0.78, 0.775, -0.34]} r={[0.07, 0.08]} h={0.02} c={STEEL} metal={0.9} rough={0.3} seg={12} cast={false} />
           <C p={[-0.78, 0.94, -0.34]} r={[0.012, 0.012]} h={0.31} c={STEEL} metal={0.9} rough={0.3} seg={8} cast={false} />
@@ -154,7 +174,8 @@ export function OfficeItem({ kind, c }: { kind: string; c: OfficeCtx }) {
           ))}
           {/* analyser, sample tray and a microscope */}
           <B p={[-0.5, 1.06, -0.12]} s={[0.46, 0.3, 0.38]} c="#eceff2" r={0.02} rough={0.4} />
-          <B p={[-0.5, 1.08, 0.073]} s={[0.26, 0.17, 0.008]} c="#06140c" r={0} glow="#55e39f" glowPower={0.9 * c.glow} cast={false} />
+          <B p={[-0.5, 1.08, 0.073]} s={[0.26, 0.17, 0.008]} c="#06140c" r={0} glow="#55e39f" glowPower={(c.busy === false ? 0.2 : c.busy ? 1.4 : 0.9) * c.glow} cast={false} />
+          {c.busy && <B p={[0.08, 0.975, 0.06]} s={[0.3, 0.03, 0.24]} c="#0d2a1c" r={0.004} glow="#55e39f" glowPower={0.7 * c.glow} cast={false} />}
           <B p={[0.08, 0.935, 0.06]} s={[0.36, 0.05, 0.3]} c="#2f6b4c" r={0.006} rough={0.5} cast={false} />
           <C p={[0.55, 0.945, 0.08]} r={[0.08, 0.1]} h={0.07} c={DARK} seg={16} cast={false} />
           <B p={[0.55, 1.1, 0.03]} s={[0.05, 0.26, 0.05]} c={STEEL} r={0.01} metal={0.9} rough={0.3} cast={false} />
@@ -178,7 +199,8 @@ export function OfficeItem({ kind, c }: { kind: string; c: OfficeCtx }) {
             </group>
           ))}
           <Laptop p={[-0.15, 0.93, 0.02]} glow={c.glow} />
-          {c.devices?.[0] && <DeviceProp product={c.devices[c.seed % c.devices.length]} p={[0.05, 0.93, 0.2]} rotY={0.3} />}
+          {c.devices?.[0] && <DeviceProp product={c.devices[0]} p={[0.05, 0.93, 0.2]} rotY={0.3} />}
+          {c.progress !== undefined && <Progress p={[0, 0.985, -0.345]} w={0.8} value={c.progress} glow={c.glow} />}
           <B p={[0.3, 0.965, 0.0]} s={[0.2, 0.07, 0.26]} c="#3a3d42" r={0.01} metal={0.5} rough={0.4} cast={false} />
           <B p={[0.3, 1.003, 0.05]} s={[0.12, 0.006, 0.1]} c="#081410" r={0} glow="#ffb347" glowPower={0.9 * c.glow} cast={false} />
         </>
@@ -202,9 +224,10 @@ export function OfficeItem({ kind, c }: { kind: string; c: OfficeCtx }) {
         <>
           <B p={[0, 1.0, 0]} s={[0.62, 2.0, 0.86]} c="#15171a" r={0.012} rough={0.45} metal={0.5} />
           <B p={[0, 1.0, 0.433]} s={[0.54, 1.9, 0.008]} c="#0a0c0e" r={0} rough={0.15} metal={0.3} cast={false} />
-          {Array.from({ length: 12 }, (_, i) => (
-            <B key={i} p={[-0.1 + (i % 2) * 0.2, 0.22 + i * 0.145, 0.44]} s={[0.16, 0.016, 0.008]} c="#06140a" r={0} glow={hash(c.seed + i) > 0.82 ? '#ffb347' : '#3fe08a'} glowPower={1.3 * c.glow} cast={false} />
-          ))}
+          {!c.live &&
+            Array.from({ length: 12 }, (_, i) => (
+              <B key={i} p={[-0.1 + (i % 2) * 0.2, 0.22 + i * 0.145, 0.44]} s={[0.16, 0.016, 0.008]} c="#06140a" r={0} glow={hash(c.seed + i) > 0.82 ? '#ffb347' : '#3fe08a'} glowPower={1.3 * c.glow} cast={false} />
+            ))}
           <B p={[0, 2.03, 0]} s={[0.5, 0.06, 0.7]} c={STEEL} r={0.008} metal={0.8} rough={0.4} cast={false} />
         </>
       )
@@ -216,11 +239,12 @@ export function OfficeItem({ kind, c }: { kind: string; c: OfficeCtx }) {
           <B p={[0, 0.915, 0]} s={[1.92, 0.05, 0.86]} c={OAK_PALE} r={0.014} rough={0.55} />
           {/* device mock-ups, a drawing and colour chips on the table */}
           {c.devices?.length
-            ? [-0.6, -0.3].map((x, i) => <DeviceProp key={x} product={c.devices![(c.seed + i) % c.devices!.length]} p={[x, 0.94, 0.05]} rotY={i ? 0.2 : -0.2} />)
+            ? [-0.6, -0.3].map((x, i) => <DeviceProp key={x} product={c.devices![i % c.devices!.length]} p={[x, 0.94, 0.05]} rotY={i ? 0.2 : -0.2} />)
             : [['#e8e4dc', -0.6, 0.1, 0.07], ['#3b3d42', -0.42, 0.14, 0.075], ['#c8b89a', -0.24, 0.08, 0.07], ['#2e4a3c', 0.5, -0.15, 0.16]].map(([col, x, z, w], i) => (
                 <B key={i} p={[x as number, 0.948, z as number]} s={[w as number, 0.016, (w as number) * 2.1]} c={col as string} r={0.006} rough={0.3} metal={0.3} cast={false} />
               ))}
           <B p={[0.1, 0.944, 0.18]} s={[0.42, 0.008, 0.3]} c="#f4f1ea" r={0} cast={false} />
+          {c.progress !== undefined && <Progress p={[-0.45, 0.955, 0.33]} w={0.6} value={c.progress} glow={c.glow} flat />}
           {['#d65f7c', '#d6a24f', '#4f8fd6', '#58b98a', '#e9e9e9'].map((col, i) => (
             <B key={col} p={[0.6 + i * 0.07, 0.95, 0.26]} s={[0.055, 0.02, 0.1]} c={col} r={0.004} cast={false} />
           ))}
@@ -292,9 +316,10 @@ export function OfficeItem({ kind, c }: { kind: string; c: OfficeCtx }) {
           ))}
           <B p={[0, 1.45, -0.34]} s={[1.8, 1.04, 0.05]} c="#0c0d0f" r={0.01} rough={0.35} />
           <B p={[0, 1.45, -0.311]} s={[1.74, 0.98, 0.008]} c="#0f1b2a" r={0} glow="#6fa3d8" glowPower={0.8 * c.glow} rough={0.2} cast={false} />
-          {[[-0.5, 1.6, 0.5, 0.3, '#9ec3ea'], [0.35, 1.55, 0.7, 0.4, '#f2b631'], [-0.3, 1.2, 0.9, 0.22, '#58b98a']].map(([x, y, w, h, col], i) => (
-            <B key={i} p={[x as number, y as number, -0.305]} s={[w as number, h as number, 0.006]} c="#101820" r={0} glow={col as string} glowPower={0.5 * c.glow} cast={false} />
-          ))}
+          {!c.live &&
+            [[-0.5, 1.6, 0.5, 0.3, '#9ec3ea'], [0.35, 1.55, 0.7, 0.4, '#f2b631'], [-0.3, 1.2, 0.9, 0.22, '#58b98a']].map(([x, y, w, h, col], i) => (
+              <B key={i} p={[x as number, y as number, -0.305]} s={[w as number, h as number, 0.006]} c="#101820" r={0} glow={col as string} glowPower={0.5 * c.glow} cast={false} />
+            ))}
         </>
       )
     case 'booth':
@@ -357,7 +382,7 @@ export function OfficeItem({ kind, c }: { kind: string; c: OfficeCtx }) {
         <>
           <B p={[0, 0.5, 0]} s={[0.6, 1.0, 0.6]} c="#e9e6e0" r={0.012} rough={0.35} />
           <B p={[0, 1.02, 0]} s={[0.52, 0.04, 0.52]} c={DARK} r={0.008} cast={false} />
-          {c.devices?.[0] ? <DeviceProp product={c.devices[0]} p={[0, 1.04, 0]} rotY={0.4} /> : <B p={[0, 1.13, 0]} s={[0.08, 0.18, 0.012]} c="#b9bcc0" r={0.01} metal={0.8} rough={0.3} rot={[-0.2, 0.4, 0]} cast={false} />}
+          {c.live ? null : c.devices?.[0] ? <DeviceProp product={c.devices[0]} p={[0, 1.04, 0]} rotY={0.4} /> : <B p={[0, 1.13, 0]} s={[0.08, 0.18, 0.012]} c="#b9bcc0" r={0.01} metal={0.8} rough={0.3} rot={[-0.2, 0.4, 0]} cast={false} />}
           <B p={[0, 1.33, 0]} s={[0.54, 0.58, 0.54]} c="#bfe0f2" glass={0.18} r={0.006} cast={false} />
           <B p={[0, 1.63, 0]} s={[0.56, 0.02, 0.56]} c={DARK} r={0.004} cast={false} />
           <B p={[0, 1.615, 0]} s={[0.3, 0.012, 0.3]} c="#ffffff" r={0} glow="#fff1d6" glowPower={1.2 * c.glow} cast={false} />
@@ -394,7 +419,7 @@ export function OfficeItem({ kind, c }: { kind: string; c: OfficeCtx }) {
           <C p={[0, 0.725, 0]} r={[0.3, 0.3]} h={0.03} c={OAK_PALE} seg={24} rough={0.5} />
           <C p={[0.08, 0.775, 0.05]} r={[0.03, 0.025]} h={0.07} c="#f4f4f4" seg={12} cast={false} />
           {[-1, 1].map((sx) => (
-            <group key={sx} position={[sx * 0.36, 0, 0]} rotation={[0, sx * -Math.PI / 2, 0]}>
+            <group key={sx} position={[sx * 0.36, 0, 0]} rotation={[0, (sx * Math.PI) / 2, 0]}>
               {[-0.1, 0.1].map((x) => [-0.1, 0.1].map((z) => <C key={`${x}${z}`} p={[x, 0.22, z]} r={[0.012, 0.012]} h={0.44} c={DARK} seg={6} cast={false} />))}
               <B p={[0, 0.455, 0]} s={[0.26, 0.03, 0.26]} c={['#c9553d', '#31506b', '#3f7d4d'][c.seed % 3]} r={0.01} />
               <B p={[0, 0.62, 0.115]} s={[0.26, 0.3, 0.03]} c={['#c9553d', '#31506b', '#3f7d4d'][c.seed % 3]} r={0.01} cast={false} />
