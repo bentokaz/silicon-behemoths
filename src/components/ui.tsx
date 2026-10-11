@@ -137,13 +137,18 @@ export const chart = {
 
 // ---------------------------------------------------------------- layout helpers
 
-/** Underlined tab bar. */
-export function Tabs<T extends string>({ value, options, onChange, className = '' }: { value: T; options: { value: T; label: ReactNode; badge?: ReactNode }[]; onChange: (v: T) => void; className?: string }) {
+/** Underlined tab bar. With `fit`, the tabs share the width and shorten their labels instead of running off the side. */
+export function Tabs<T extends string>({ value, options, onChange, className = '', fit }: { value: T; options: { value: T; label: ReactNode; badge?: ReactNode }[]; onChange: (v: T) => void; className?: string; fit?: boolean }) {
   return (
     <div className={`flex shrink-0 border-b border-line ${className}`}>
       {options.map((o) => (
-        <button key={o.value} onClick={() => onChange(o.value)} className={`flex h-8 items-center gap-2 border-b-2 px-3 text-[11px] uppercase tracking-[0.14em] transition-colors ${value === o.value ? 'border-accent text-accent' : 'border-transparent text-dim hover:text-fg'}`}>
-          {o.label}
+        <button
+          key={o.value}
+          onClick={() => onChange(o.value)}
+          title={fit && typeof o.label === 'string' ? o.label : undefined}
+          className={`flex h-8 items-center border-b-2 text-[11px] uppercase transition-colors ${fit ? 'min-w-0 shrink gap-1 px-2 tracking-[0.08em] [&>*]:shrink-0' : 'gap-2 px-3 tracking-[0.14em]'} ${value === o.value ? 'border-accent text-accent' : 'border-transparent text-dim hover:text-fg'}`}
+        >
+          {fit ? <span className="!shrink truncate">{o.label}</span> : o.label}
           {o.badge !== undefined && <span className="num text-[10px] text-faint">{o.badge}</span>}
         </button>
       ))}

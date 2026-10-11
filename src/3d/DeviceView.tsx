@@ -1,14 +1,15 @@
 // The 3D studio: an isolated canvas that shows one device under a three-point
 // lighting rig. Used read-only in the dashboard and interactively in the designer.
 import { Environment, Lightformer, OrbitControls } from '@react-three/drei'
-import { Canvas, type ThreeEvent, useThree } from '@react-three/fiber'
+import { Canvas, useThree } from '@react-three/fiber'
 import { EffectComposer, N8AO } from '@react-three/postprocessing'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { TYPES } from '../data/devices'
-import type { Carrier } from '../sim/geometry'
-import type { DeviceDesign, DeviceType, Face } from '../sim/types'
-import { buildDevice, deviceFrame, disposeDevice, pointToFace } from './buildDevice'
+import type { DeviceDesign, DeviceType } from '../sim/types'
+import { LiveDevice } from './LiveDevice'
+import { buildDevice, deviceFrame, disposeDevice } from './buildDevice'
+import type { DemoHints } from './demos'
 
 export type ViewName = 'back' | 'front' | 'side' | 'bottom'
 type Views = Record<ViewName, [number, number, number]>
@@ -38,10 +39,14 @@ interface Props {
   selectedId?: string | null
   view?: ViewName
   viewNonce?: number
-  /** Called when a part (or nothing) is pressed. Enables dragging. */
+  /** Called when a part (or nothing) is pressed. */
   onPick?: (partId: string | null) => void
-  /** Called while a part is dragged across the body surface. */
-  onDrag?: (face: Face, x: number, y: number) => void
+  /**
+   * Set in the designer: the body eases as it changes and changes that cannot
+   * be seen are acted out. With `editable`, parts and the body can also be
+   * dragged, resized and turned on the model itself.
+   */
+  studio?: { editable: boolean; hints?: DemoHints }
   autoRotate?: boolean
   /** Uploaded company logo, shown on logo parts that ask for it. */
   logo?: string
@@ -61,46 +66,11 @@ function Rig({ dir, dist, nonce }: { dir: [number, number, number]; dist: number
   return null
 }
 
-function Device({ design, selectedId, onPick, onDrag, logo, colorIndex = -1, scale }: Props & { scale: number }) {
+/** The model as a still object, for the dashboard. The designer uses LiveDevice instead. */
+function Device({ design, selectedId, logo, colorIndex = -1 }: Props) {
   const group = useMemo(() => buildDevice(design, selectedId, logo, colorIndex), [design, selectedId, logo, colorIndex])
   useEffect(() => () => disposeDevice(group), [group])
-  const dragging = useRef(false)
-  const controls = useThree((s) => s.controls) as unknown as { enabled: boolean } | null
-
-  useEffect(() => {
-    const up = () => {
-      dragging.current = false
-      if (controls) controls.enabled = true
-    }
-    window.addEventListener('pointerup', up)
-    return () => window.removeEventListener('pointerup', up)
-  }, [controls])
-
-  if (!onPick) return <primitive object={group} />
-
-  const down = (e: ThreeEvent<PointerEvent>) => {
-    e.stopPropagation()
-    const hit = e.intersections.find((i) => i.object.userData.partId)
-    const front = e.intersections[0]
-    // a part only counts if nothing but its own island / the body is in front of it
-    const id = (front?.object.userData.partId as string | undefined) ?? (hit && hit.distance - front.distance < 3 * scale ? (hit.object.userData.partId as string) : null)
-    onPick(id)
-    if (id) {
-      dragging.current = true
-      if (controls) controls.enabled = false
-    }
-  }
-  const move = (e: ThreeEvent<PointerEvent>) => {
-    if (!dragging.current || !onDrag) return
-    e.stopPropagation()
-    // the nearest solid under the pointer; the hit is converted into that solid's own space
-    const hit = e.intersections.find((i) => i.object.userData.body && i.face)
-    if (!hit?.face) return
-    const local = hit.object.worldToLocal(hit.point.clone())
-    const f = pointToFace(design.type, hit.object.userData.carrier as Carrier, local, hit.face.normal)
-    if (f) onDrag(f.face, f.x, f.y)
-  }
-  return <primitive object={group} onPointerDown={down} onPointerMove={move} />
+  return <primitive object={group} />
 }
 
 export function DeviceView(props: Props) {
@@ -115,6 +85,8 @@ export function DeviceView(props: Props) {
   // a laptop's deck and a console's lid face straight up into the key light, so they need less of it
   const sun = design.type === 'laptop' || design.type === 'console' ? 0.5 : design.type === 'earbuds' ? 0.75 : 1
   const floorY = -bottom - (desk ? 0.3 * Math.min(k, 1) : 8 * k)
+  // the wide, flat back of a screen or a lid faces away from every lamp, so it gets a fill of its own
+  const backFill = design.type === 'tv' || design.type === 'desktop' ? 1.1 : design.type === 'laptop' ? 0.7 : 0
   return (
     <Canvas
       shadows
@@ -144,6 +116,7 @@ export function DeviceView(props: Props) {
       />
       <directionalLight color="#b9d2ff" intensity={0.9} position={[-320 * k, 80 * k, 260 * k]} />
       <directionalLight color="#ffffff" intensity={1.5 * sun} position={[-160 * k, 260 * k, -380 * k]} />
+      {backFill > 0 && <directionalLight color="#d5deea" intensity={backFill} position={[-240 * k, 150 * k, -420 * k]} />}
       <ambientLight intensity={0.12} />
 
       <Environment resolution={256} frames={1} environmentIntensity={0.5}>
@@ -155,7 +128,7 @@ export function DeviceView(props: Props) {
         <Lightformer form="ring" intensity={1.2} color="#9fb4c8" position={[0, -7, 0]} scale={6} target={[0, 0, 0]} />
       </Environment>
 
-      <Device {...props} scale={k} />
+      {props.studio ? <LiveDevice design={design} selectedId={props.selectedId} onPick={props.onPick} logo={props.logo} colorIndex={props.colorIndex} scale={k} editable={props.studio.editable} hints={props.studio.hints} /> : <Device {...props} />}
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, floorY, 0]} receiveShadow>
         <planeGeometry args={[3000 * k, 3000 * k]} />

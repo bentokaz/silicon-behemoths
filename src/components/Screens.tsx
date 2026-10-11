@@ -266,7 +266,8 @@ export function Products() {
           onChange={setFilter}
           // with eight device types, only the ones the company has made get a tab of their own
           options={[{ value: 'active', label: 'Current', badge: all.filter((p) => p.status !== 'ended').length }, { value: 'all', label: 'All', badge: all.length }, ...DEVICE_TYPES.filter((t) => t === filter || all.some((p) => p.type === t)).map((t) => ({ value: t, label: TYPES[t].plural, badge: all.filter((p) => p.type === t).length }))]}
-          className="min-w-0 flex-1 overflow-x-auto"
+          className="min-w-0 flex-1"
+          fit
         />
         <div className="relative shrink-0">
           <Btn tone="primary" className="px-5" onClick={() => setPicking(!picking)}>
@@ -338,7 +339,7 @@ export function Market() {
   const rows = [...onSale].sort((a, b) => (info ? (weights.get(b.id) ?? 0) - (weights.get(a.id) ?? 0) : (b.history.at(-1) ?? b.monthUnits) - (a.history.at(-1) ?? a.monthUnits)))
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-2">
-      <Tabs value={type} onChange={(t) => (setType(t), setSeg('all'))} options={DEVICE_TYPES.map((t) => ({ value: t, label: TYPES[t].plural, badge: g.products.filter((p) => p.status === 'sale' && p.type === t).length }))} />
+      <Tabs fit value={type} onChange={(t) => (setType(t), setSeg('all'))} options={DEVICE_TYPES.map((t) => ({ value: t, label: TYPES[t].plural, badge: g.products.filter((p) => p.status === 'sale' && p.type === t).length }))} />
       <div className="grid shrink-0 gap-1" style={{ gridTemplateColumns: `repeat(${segs.length + 1}, minmax(0, 1fr))` }}>
         <button onClick={() => setSeg('all')} className={`border px-2 py-1 text-left ${seg === 'all' ? 'border-accent bg-accent/10' : 'border-line hover:border-line2'}`}>
           <div className="text-[11px] uppercase tracking-wider text-fg">All {TYPES[type].plural.toLowerCase()}</div>

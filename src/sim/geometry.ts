@@ -125,6 +125,19 @@ export function caseShape(b: Body): { shell: number; lid: number; foot: number; 
   }
 }
 
+/**
+ * The keyboard on a laptop's deck, in deck (top face) coordinates: the block of
+ * keys and the grid they are laid out on. Parts cannot sit on the keys.
+ */
+export function laptopDeck(b: Body): { x: number; y: number; w: number; h: number; cols: number; rows: number; pitch: number } {
+  const w = b.width - 34
+  const cols = Math.max(10, Math.floor(w / 19))
+  const pitch = w / cols
+  const rows = 5
+  const h = rows * pitch * 0.94 + pitch * 0.5
+  return { x: 0, y: b.height / 2 - 16 - h / 2, w, h, cols, rows, pitch }
+}
+
 /** Dimensions of the solid that carries a design face. */
 export function carrierBody(b: Body, type: DeviceType, carrier: Carrier): Body {
   if (type === 'laptop') {
@@ -248,7 +261,21 @@ export function clampPart(b: Body, p: PlacedPart, type: DeviceType = 'phone'): P
   const maxY = Math.max(0, fs.h / 2 - inset.y - e.h / 2)
   q.x = clamp(q.x, -maxX, maxX)
   q.y = clamp(q.y, -maxY, maxY)
+  if (type === 'laptop' && face === 'top' && onKeyboard(b, q)) {
+    // nothing fits between the keys: a part pushed onto the keyboard slides to the nearer strip of open deck
+    const k = laptopDeck(b)
+    const above = k.y + k.h / 2 + e.h / 2
+    const below = k.y - k.h / 2 - e.h / 2
+    q.y = above <= maxY && (above - q.y <= q.y - below || below < -maxY) ? above : Math.max(below, -maxY)
+  }
   return q
+}
+
+/** True if a part at this spot on a laptop's deck would overlap the keys. */
+export function onKeyboard(b: Body, p: PlacedPart): boolean {
+  const k = laptopDeck(b)
+  const e = partExtent(p)
+  return Math.abs(p.x - k.x) < (k.w + e.w) / 2 && Math.abs(p.y - k.y) < (k.h + e.h) / 2
 }
 
 export function nextPartId(d: DeviceDesign): string {

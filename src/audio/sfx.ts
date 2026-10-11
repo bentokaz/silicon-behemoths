@@ -79,6 +79,7 @@ const chord = (freqs: number[], duration: number, gain: number, delay = 0, type:
 
 let lastHover = 0
 let lastBuild = 0
+let lastSnap = 0
 export const sfx = {
   hover() {
     const now = performance.now()
@@ -166,6 +167,59 @@ export const sfx = {
     tone(120, 0.5, 'sine', 0.4, 0, 45)
     noise(0.12, 0.1, 200, 0.8)
   },
+  // ---- the device studio: parts handled on the model, and the short demonstrations
+  /** A part lifted off the surface. */
+  pick: () => tone(520, 0.05, 'triangle', 0.08, 0, 760),
+  /** A part set down: a small, dry knock. */
+  drop() {
+    tone(210, 0.07, 'sine', 0.2, 0, 120)
+    noise(0.04, 0.07, 1800, 1.1)
+  },
+  /** A part clicking onto a guide line. */
+  snap() {
+    const now = performance.now()
+    if (now - lastSnap < 70) return
+    lastSnap = now
+    tone(1900, 0.022, 'square', 0.05)
+    tone(2850, 0.03, 'sine', 0.04, 0.012)
+  },
+  /** The body stretched or squeezed by a handle. */
+  stretch() {
+    const now = performance.now()
+    if (now - lastSnap < 55) return
+    lastSnap = now
+    tone(300, 0.03, 'triangle', 0.05, 0, 340)
+  },
+  /** A charger or cable making contact, then power flowing. */
+  charge() {
+    noise(0.03, 0.09, 2600, 1.4)
+    tone(180, 0.05, 'sine', 0.18, 0, 110)
+    tone(440, 0.5, 'sine', 0.07, 0.12, 880)
+  },
+  /** A radio link: contactless, satellite, a sensor reading. */
+  ping() {
+    tone(1480, 0.1, 'sine', 0.09)
+    tone(1976, 0.22, 'sine', 0.08, 0.1)
+  },
+  /** Water beading and running off. */
+  water() {
+    noise(0.5, 0.05, 3200, 0.6, 0, 'bandpass', 900)
+    for (let i = 0; i < 4; i++) tone(900 + i * 260, 0.05, 'sine', 0.04, 0.08 + i * 0.09, 1500 + i * 200)
+  },
+  /** The shell turning see-through to show what is inside. */
+  scan() {
+    noise(0.35, 0.04, 700, 0.9, 0, 'bandpass', 4200)
+    tone(240, 0.3, 'sine', 0.06, 0, 520)
+  },
+  /** Speakers and drivers: a short low note with a ring. */
+  thump() {
+    tone(96, 0.22, 'sine', 0.26, 0, 62)
+    tone(660, 0.16, 'triangle', 0.05, 0.03)
+  },
+  /** Air moving: fans, vents. */
+  air: () => noise(0.7, 0.05, 500, 0.5, 0, 'bandpass', 1700),
+  /** A feature taken off the device. */
+  remove: () => tone(520, 0.12, 'triangle', 0.07, 0, 300),
 }
 
 /** Tick on hover and click for every interactive control on the page. */

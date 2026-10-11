@@ -8,7 +8,7 @@ import { clampPart, newPart, nextPartId } from '../sim/geometry'
 import { migrate, newGame, player, starterDesign, tick } from '../sim/game'
 import { monthCosts } from '../sim/types'
 import { type FingerprintStyle, type FrontStyle, type VariantId, deriveVariant, layoutParts, syncSockets } from '../sim/rivals'
-import type { Body, DeviceDesign, DeviceType, GameConfig, GameState, PartKind, PlacedPart, Product, Specs } from '../sim/types'
+import type { Body, DeviceDesign, DeviceType, Face, GameConfig, GameState, PartKind, PlacedPart, Product, Specs } from '../sim/types'
 import { AUTOSAVE, BEFORE_DEBT, saveGame, saveSnapshot } from './saves'
 import { useSettings } from './settings'
 
@@ -139,7 +139,8 @@ interface Store {
   setBody(patch: Partial<Body>): void
   setSpecs(patch: Partial<Specs>): void
   setDraft(patch: Partial<DeviceDesign>): void
-  addPart(kind: PartKind): void
+  /** Add a part with sensible defaults, or at a given spot on a face. */
+  addPart(kind: PartKind, at?: { face: Face; x: number; y: number }): void
   patchPart(id: string, patch: Partial<PlacedPart>): void
   removePart(id: string): void
   duplicatePart(id: string): void
@@ -344,11 +345,12 @@ export const useStore = create<Store>((set, get) => {
       const d = get().draft
       if (d) edit({ ...d, ...patch })
     },
-    addPart(kind) {
+    addPart(kind, at) {
       const d = get().draft
       const g = get().game
       if (!d || !g) return
-      const p = newPart(kind, d, kind === 'camera' ? g.levels.camera : 0)
+      const made = newPart(kind, d, kind === 'camera' ? g.levels.camera : 0)
+      const p = at ? clampPart(d.body, { ...made, face: at.face, x: at.x, y: at.y }, d.type) : made
       edit({ ...d, parts: [...d.parts, p] }, { selectedPart: p.id })
     },
     patchPart(id, patch) {

@@ -2,6 +2,7 @@
 // floating toolbar or a drawer that opens over it when asked for.
 import { useEffect, useMemo, useState } from 'react'
 import { DeviceView, type ViewName, fourthView } from '../3d/DeviceView'
+import { useStudio } from '../3d/studio'
 import { sfx } from '../audio/sfx'
 import { CHARGE_W, CHIP_TIERS, EXTRAS, LENSES, MATERIALS, PANEL_NAMES, RAM_OPTIONS, REFRESH, SENSOR_NAMES, STORAGE_OPTIONS, chipInfo, marketLevel, sensorInfo } from '../data/catalog'
 import { ANC, COOLERS, DRIVERS, GPUS, SPEAKERS, STRAPS, TYPES, inputOptions, ioOptions, segmentsOf, standInfo, standsFor, subLabel } from '../data/devices'
@@ -296,7 +297,9 @@ function PartsPanel() {
             </Btn>
           ))}
         </div>
-        <div className="mt-2 text-[10px] leading-snug text-faint">Drag parts across any surface they fit on. Arrow keys nudge, Delete removes, Ctrl+Z undoes.</div>
+        <div className="mt-2 text-[10px] leading-snug text-faint">
+          Or work on the model itself: double-click a surface to add a part there, drag a part to move it, and pull the square handles to resize it or the round one to turn it. With nothing selected, the handles around the body resize the body. Arrow keys nudge, Delete removes, Ctrl+Z undoes.
+        </div>
       </Group>
       <Group title={`Placed parts (${d.parts.length})`}>
         {d.parts.map((p) => (
@@ -594,6 +597,27 @@ function PartInspector({ part }: { part: PlacedPart }) {
 
 // ---------------------------------------------------------------- designer
 
+/** Names what the studio is acting out, and explains anything that moved by itself. */
+function StudioCaption() {
+  const caption = useStudio((s) => s.caption)
+  const hint = useStudio((s) => s.hint)
+  if (!caption && !hint) return null
+  return (
+    <div className="pointer-events-none absolute inset-x-0 bottom-16 flex flex-col items-center gap-1">
+      {caption && (
+        <div className="flex items-stretch border border-line2 bg-panel/95">
+          <span className="w-[3px] bg-accent" />
+          <span className="px-3 py-[5px]">
+            <span className="num block text-[9px] uppercase tracking-[0.16em] text-faint">{caption.note}</span>
+            <span className="block text-xs font-semibold uppercase tracking-[0.12em] text-fg">{caption.title}</span>
+          </span>
+        </div>
+      )}
+      {hint && <div className="border border-warn/60 bg-panel/95 px-3 py-1 text-[11px] text-warn">{hint}</div>}
+    </div>
+  )
+}
+
 type LeftPanel = 'body' | 'parts' | 'internals' | 'colours' | null
 type RightPanel = 'score' | 'market' | null
 
@@ -681,14 +705,6 @@ export function Designer() {
     return () => window.removeEventListener('keydown', key)
   }, [patchPart, removePart, selectPart])
 
-  const drag = (face: Face, x: number, y: number) => {
-    const st = useStore.getState()
-    const p = st.draft?.parts.find((q) => q.id === st.selectedPart)
-    if (!p || !st.draft || !facesFor(p.kind, st.draft.type).includes(face)) return
-    const snap = (v: number) => Math.round(v * 2) / 2
-    const edge = isEdge(face, st.draft.type)
-    patchPart(p.id, { face, x: !edge && Math.abs(x) < 1 ? 0 : snap(x), y: edge ? 0 : snap(y) })
-  }
 
   const launch = () => {
     const err = act((game) => startProduct(game, { design: draft, family: meta.family, variant: meta.variant, price, tiers, quantity, mode, marketing, keynote: keynote >= 0 ? keynote : undefined }))
@@ -709,9 +725,10 @@ export function Designer() {
 
   return (
     <div className="relative h-full min-h-0 overflow-hidden">
-      <div className="absolute inset-0">
-        <DeviceView design={draft} selectedId={simple ? null : selected} view={view} viewNonce={nonce} onPick={simple ? undefined : selectPart} onDrag={simple ? undefined : drag} logo={me.logo} colorIndex={preview} />
+      <div className="absolute inset-0 isolate">
+        <DeviceView design={draft} selectedId={simple ? null : selected} view={view} viewNonce={nonce} onPick={simple ? undefined : selectPart} logo={me.logo} colorIndex={preview} studio={{ editable: !simple, hints: { maxBattery: ev.report.maxBattery } }} />
       </div>
+      <StudioCaption />
 
       {/* ---- top toolbar */}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-2">

@@ -29,15 +29,22 @@ const RESOLUTION: Partial<Record<DeviceType, number>> = { phone: 1280, tablet: 1
 
 const cache = new Map<string, THREE.CanvasTexture>()
 
+/** What the panel is, so the interface can say so: its name and refresh rate, and whether it is a backlit LCD. */
+export interface ScreenInfo {
+  name: string
+  hz: number
+  lcd: boolean
+}
+
 /**
  * Texture for a screen of the given size (any unit; only the ratio matters).
  * `detail` below 1 gives a smaller canvas for thumbnails.
  */
-export function screenTexture(type: DeviceType, wallpaper: number, width: number, height: number, detail = 1): THREE.CanvasTexture {
+export function screenTexture(type: DeviceType, wallpaper: number, width: number, height: number, detail = 1, panel?: ScreenInfo): THREE.CanvasTexture {
   const index = ((wallpaper % WALLPAPERS.length) + WALLPAPERS.length) % WALLPAPERS.length
   // aspect in 3% steps: close enough that nothing looks stretched, coarse enough to cache
   const step = Math.round(Math.log(width / height) / 0.03)
-  const key = `${type}|${index}|${step}|${detail < 1 ? 's' : 'l'}`
+  const key = `${type}|${index}|${step}|${detail < 1 ? 's' : 'l'}|${panel ? `${panel.name}@${panel.hz}` : ''}`
   const hit = cache.get(key)
   if (hit) {
     // keep the most recently used at the end
@@ -52,16 +59,26 @@ export function screenTexture(type: DeviceType, wallpaper: number, width: number
   c.height = Math.round(aspect >= 1 ? long / aspect : long)
   const g = c.getContext('2d')!
   const pal = WALLPAPERS[index]
-  if (type === 'watch') drawWatch(g, c.width, c.height, pal)
-  else if (type === 'tv') drawTv(g, c.width, c.height, pal, index)
-  else if (type === 'laptop' || type === 'desktop') drawDesktop(g, c.width, c.height, pal, index, type === 'laptop')
-  else if (type === 'tablet') drawTablet(g, c.width, c.height, pal, index)
-  else drawPhone(g, c.width, c.height, pal, index)
+  // what the interface says about its own panel, e.g. "OLED 120 Hz"
+  const tag = panel ? (type === 'watch' ? panel.name : `${panel.name}  ${panel.hz} Hz`) : ''
+  if (type === 'watch') drawWatch(g, c.width, c.height, pal, tag)
+  else if (type === 'tv') drawTv(g, c.width, c.height, pal, index, tag)
+  else if (type === 'laptop' || type === 'desktop') drawDesktop(g, c.width, c.height, pal, index, type === 'laptop', tag)
+  else if (type === 'tablet') drawTablet(g, c.width, c.height, pal, index, tag)
+  else drawPhone(g, c.width, c.height, pal, index, tag)
+  if (panel?.lcd) {
+    // a backlit panel cannot switch its pixels off: blacks are lifted and the edges glow a little
+    g.fillStyle = 'rgba(132,140,156,0.13)'
+    g.fillRect(0, 0, c.width, c.height)
+    g.strokeStyle = 'rgba(190,200,220,0.10)'
+    g.lineWidth = Math.max(c.width, c.height) * 0.02
+    g.strokeRect(0, 0, c.width, c.height)
+  }
   const t = new THREE.CanvasTexture(c)
   t.colorSpace = THREE.SRGBColorSpace
   t.anisotropy = 8
   cache.set(key, t)
-  if (cache.size > 40) {
+  if (cache.size > 64) {
     const oldest = cache.keys().next().value!
     cache.get(oldest)?.dispose()
     cache.delete(oldest)
@@ -194,7 +211,7 @@ function statusIcons(g: Ctx, x: number, cy: number, u: number, battery = true) {
 
 // ---------------------------------------------------------------- phone and tablet
 
-function drawPhone(g: Ctx, w: number, h: number, pal: Palette, seed: number) {
+function drawPhone(g: Ctx, w: number, h: number, pal: Palette, seed: number, tag: string) {
   wallpaper(g, w, h, pal, seed)
   // one unit is a hundredth of the width, or less on a screen too squat to fit a phone layout
   const u = Math.min(w, h * 0.6) / 100
@@ -205,6 +222,12 @@ function drawPhone(g: Ctx, w: number, h: number, pal: Palette, seed: number) {
   // clock widget
   text(g, '09:41', w / 2, 24 * u, 21 * u, { weight: 300, align: 'center' })
   text(g, 'Saturday 10 October', w / 2, 38 * u, 4.4 * u, { align: 'center', alpha: 0.85 })
+  if (tag) {
+    g.font = `600 ${3 * u}px ${FONT}`
+    const tw = g.measureText(tag).width + 6 * u
+    box(g, w / 2 - tw / 2, 42.4 * u, tw, 5 * u, 2.5 * u, '#000000', 0.32)
+    text(g, tag, w / 2, 45 * u, 3 * u, { weight: 600, align: 'center', alpha: 0.92 })
+  }
   // dock
   const dockH = 21 * u
   const dockY = h - dockH - 6 * u
@@ -213,7 +236,7 @@ function drawPhone(g: Ctx, w: number, h: number, pal: Palette, seed: number) {
   for (let i = 0; i < cols; i++) icon(g, pitch * (i + 0.5), dockY + dockH / 2, 14.5 * u, i + 20, pal)
   box(g, w / 2 - 16 * u, h - 3 * u, 32 * u, 1.1 * u, u, '#ffffff', 0.85)
   // as many rows of apps as fit between the clock and the dock
-  const top = 48 * u
+  const top = (tag ? 52 : 48) * u
   const rowH = 22.5 * u
   const rows = Math.max(0, Math.min(5, Math.floor((dockY - 3 * u - top) / rowH)))
   const y0 = dockY - 3 * u - rows * rowH
@@ -230,11 +253,12 @@ function drawPhone(g: Ctx, w: number, h: number, pal: Palette, seed: number) {
   }
 }
 
-function drawTablet(g: Ctx, w: number, h: number, pal: Palette, seed: number) {
+function drawTablet(g: Ctx, w: number, h: number, pal: Palette, seed: number, tag: string) {
   wallpaper(g, w, h, pal, seed)
   const u = Math.min(w, h) / 100
   text(g, '09:41', 3.4 * u, 3.2 * u, 2.3 * u, { weight: 600 })
   text(g, 'Sat 10 Oct', 11 * u, 3.2 * u, 2.3 * u, { alpha: 0.85 })
+  if (tag) text(g, tag, w / 2, 3.2 * u, 2.1 * u, { weight: 600, align: 'center', alpha: 0.8 })
   statusIcons(g, w - 3.4 * u, 3.2 * u, 1.6 * u)
   // dock: a centred tray sized to its icons
   const size = 8.4 * u
@@ -283,7 +307,7 @@ function drawTablet(g: Ctx, w: number, h: number, pal: Palette, seed: number) {
 
 // ---------------------------------------------------------------- watch
 
-function drawWatch(g: Ctx, w: number, h: number, pal: Palette) {
+function drawWatch(g: Ctx, w: number, h: number, pal: Palette, tag: string) {
   g.fillStyle = '#000000'
   g.fillRect(0, 0, w, h)
   const cx = w / 2
@@ -317,11 +341,12 @@ function drawWatch(g: Ctx, w: number, h: number, pal: Palette) {
   const right = cx + r * 0.44
   ring(right, cr, 0.84, pal[2])
   text(g, '84', right, y, cr * 0.8, { weight: 600, align: 'center' })
+  if (tag) text(g, tag.toUpperCase(), cx, cy + r * 0.8, r * 0.085, { weight: 600, align: 'center', alpha: 0.55 })
 }
 
 // ---------------------------------------------------------------- laptop and desktop
 
-function drawDesktop(g: Ctx, w: number, h: number, pal: Palette, seed: number, portable: boolean) {
+function drawDesktop(g: Ctx, w: number, h: number, pal: Palette, seed: number, portable: boolean, tag: string) {
   wallpaper(g, w, h, pal, seed)
   const u = h / 100
   // menu bar
@@ -338,6 +363,7 @@ function drawDesktop(g: Ctx, w: number, h: number, pal: Palette, seed: number, p
   })
   text(g, 'Sat 10 Oct   09:41', w - 2.4 * u, bar / 2 + 0.1 * u, 1.75 * u, { align: 'right', alpha: 0.95 })
   statusIcons(g, w - 21 * u, bar / 2, 1.25 * u, portable)
+  if (tag) text(g, tag, w - (portable ? 31 : 27) * u, bar / 2 + 0.1 * u, 1.6 * u, { weight: 600, align: 'right', alpha: 0.8 })
 
   // dock
   const size = 5.6 * u
@@ -428,7 +454,7 @@ function wallpaperTile(g: Ctx, x: number, y: number, w: number, h: number, pal: 
 
 // ---------------------------------------------------------------- TV
 
-function drawTv(g: Ctx, w: number, h: number, pal: Palette, seed: number) {
+function drawTv(g: Ctx, w: number, h: number, pal: Palette, seed: number, tag: string) {
   const u = h / 100
   g.fillStyle = '#07080b'
   g.fillRect(0, 0, w, h)
@@ -467,7 +493,7 @@ function drawTv(g: Ctx, w: number, h: number, pal: Palette, seed: number) {
   // the featured title
   text(g, 'NEW SERIES', left, 25 * u, 1.9 * u, { weight: 700, color: pal[2] })
   text(g, SHOWS[seed % SHOWS.length], left, 32.5 * u, 8.6 * u, { weight: 700 })
-  text(g, '2026   Drama   8 episodes   4K', left, 40 * u, 2.1 * u, { alpha: 0.75 })
+  text(g, `2026   Drama   8 episodes   4K${tag ? `   ${tag.replace('  ', ' at ')}` : ''}`, left, 40 * u, 2.1 * u, { alpha: 0.75 })
   box(g, left, 44 * u, 17 * u, 5.4 * u, 0.9 * u, '#ffffff', 1)
   g.fillStyle = '#0b0c0f'
   g.beginPath()
