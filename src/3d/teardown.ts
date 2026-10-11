@@ -497,7 +497,7 @@ function draw(c: Comp, g: THREE.Group, a: number, b: number, h: number, toLocal:
         for (const sx of [-1, 1]) for (const sy of [-1, 1]) cy(g, Math.min(a, b) * 0.1, 1.6, M.steel, sx * a * 0.36, sy * b * 0.3, top + 0.8, true)
       } else if (v === 5) {
         // an LED backlight: a white reflector with a grid of lamps
-        bx(g, a, b, h, M.white, 0, 0, 0, false)
+        bx(g, a, b, h, M.pale, 0, 0, 0, false)
         const cols = 14
         const rows = 8
         const leds = new THREE.InstancedMesh(BOX, M.led, cols * rows)
@@ -957,6 +957,8 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
   const linerMat = new THREE.MeshStandardMaterial({ color: frameCol.clone().multiplyScalar(0.5).lerp(new THREE.Color('#1c1e22'), 0.45), roughness: 0.72, metalness: 0.35, side: THREE.DoubleSide })
   const coverOf = new Map<string, THREE.Group>()
   const size = Math.max(b.width, b.height)
+  const pos0 = new THREE.Vector3()
+  const quat0 = new THREE.Quaternion()
   const yaw = new THREE.Vector3(0, 1, 0)
   const pitch = new THREE.Vector3(1, 0, 0)
 
@@ -1051,9 +1053,17 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
       // each half's back swings outwards, away from the hinge
       const flip = isFlip(b)
       const out = z.id === 'left' ? 1 : -1
-      move = flip ? hinged(new THREE.Vector3(0, out * (b.height / 2 + g), seam.z), pitch, out * Math.PI, up, 2.4) : hinged(new THREE.Vector3(-out * (b.width / 2 + g), 0, seam.z), yaw, out * Math.PI, up, 2.4)
+      // (a flip's two backs go one to each side as well: above and below there is no room for them in the view)
+      void flip
+      move = hinged(new THREE.Vector3(-out * (b.width / 2 + g), 0, seam.z), yaw, out * Math.PI, up, 2.4)
     } else if (b.width > b.height * 1.15) move = hinged(new THREE.Vector3(0, b.height / 2 + g, seam.z), pitch, Math.PI, up, 2.4)
     else move = hinged(new THREE.Vector3(-(b.width / 2 + g), 0, seam.z), yaw, Math.PI, up, Math.max(1.2, size * 0.012))
+    // pulled apart, the cover hangs out along the opening and half its own width to one side, so that it does not hide the rest
+    if (stack) {
+      move(1, pos0, quat0)
+      const aside = pos0.clone().addScaledVector(up, -pos0.dot(up))
+      if (aside.lengthSq() > 1 && d.type !== 'console' && d.type !== 'headset' && d.type !== 'laptop') stack.addScaledVector(aside.normalize(), Math.min(b.width, b.height) * 0.9)
+    }
     covers.push({ zone: z.id, group: coverG, move, stack })
   }
 
@@ -1164,7 +1174,7 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
   for (const o of shown) o.visible = false
 
   const accent = new THREE.LineBasicMaterial({ color: themeColor('accent', '#ff6b1a'), depthTest: false, transparent: true, toneMapped: false })
-  const fill = new THREE.MeshBasicMaterial({ color: themeColor('accent', '#ff6b1a'), transparent: true, opacity: 0.16, depthWrite: false, depthTest: false, toneMapped: false })
+  const fill = new THREE.MeshBasicMaterial({ color: themeColor('accent', '#ff6b1a'), transparent: true, opacity: 0.09, depthWrite: false, depthTest: false, toneMapped: false })
   const pos = new THREE.Vector3()
   const quat = new THREE.Quaternion()
   const ident = new THREE.Quaternion()
@@ -1196,7 +1206,8 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
       screenG.position.copy(screenDir).multiplyScalar(screenGap * e)
       // keep the pair of them in the middle of the view while the cover lies beside the tray
       const aside = k * (1 - e)
-      if (tall) model.position.set((b.width / 2 + Math.max(2, size * 0.03)) * 0.84 * aside, 0, 0)
+      // only a little: the tray stays near the middle, clear of the panel on the left of the designer, and the cover lies to its right
+      if (tall) model.position.set((b.width / 2 + Math.max(2, size * 0.03)) * 0.25 * aside, 0, 0)
       else if (d.type === 'speaker') model.position.set(-b.width * 0.6 * smooth((open - 0.34) / 0.4), 0, 0)
       else model.position.set(0, 0, 0)
       const ease = 1 - Math.exp(-dt * 9)

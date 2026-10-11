@@ -6,6 +6,13 @@ import { contains, coverScreen, isCoverCam, isEdge, isFlip, isRing, rectsOverlap
 import { clamp } from './rng'
 import type { Body, CostParts, CustomChip, DeviceDesign, DeviceType, Evaluation, Issue, Levels, PlacedPart, Specs } from './types'
 
+/**
+ * What it costs to make any given part falls as the industry matures: 6% for each level the market has moved on
+ * since the game began at level 3. Without it the best parts of each new level cost so much more than the last
+ * that a top device outran the prices buyers expect (which rise 3.5% a year) and could not be sold at a profit.
+ */
+export const costMaturity = (mLevel: number) => Math.pow(0.94, Math.max(0, mLevel - 3))
+
 /** Front cameras use smaller modules than rear ones. */
 export const selfieMinDia = (sensor: number) => Math.round((3 + 0.15 * sensor) * 10) / 10
 
@@ -603,6 +610,8 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
     if (onStand) cost.materials += stand.cost * areaScale(d)
   }
   cost.other += (d.colors?.length ?? 0) * 1.5
+  const costScale = costMaturity(mLevel)
+  for (const k of ['semis', 'displays', 'memory', 'batteries', 'materials', 'other'] as const) cost[k] *= costScale
   const unitCost = cost.semis + cost.displays + cost.memory + cost.batteries + cost.materials + cost.other
 
   return {
@@ -610,6 +619,7 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
     report: { pct, breakdown, issues, weight, sbr, diag, maxBattery: maxBat, lifeHours },
     unitCost: Math.round(unitCost * 100) / 100,
     costParts: cost,
+    costScale,
     // extras, plus a little for offering a choice of colours
     featureBonus: Math.min(0.08, s.extras.length * 0.015) + Math.min(0.03, (d.colors?.length ?? 0) * 0.01),
   }

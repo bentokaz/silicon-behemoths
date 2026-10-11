@@ -159,6 +159,8 @@ export interface Evaluation {
   unitCost: number
   costParts: CostParts
   featureBonus: number
+  /** How far making things has cheapened since the game began: every cost above has been multiplied by it (see costMaturity). */
+  costScale: number
 }
 
 export type SegmentId = string

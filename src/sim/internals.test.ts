@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { marketLevel } from '../data/catalog'
-import { COOLERS, FLIP, RIVALS, SEGMENTS, segmentsOf } from '../data/devices'
+import { COOLERS, FLIP, RIVALS, segmentsOf } from '../data/devices'
 import { defaultConfig, newGame, starterDesign } from './game'
 import { HINGE_CLEAR, coverScreen, isCoverCam, isFlip, partExtent } from './geometry'
 import { type Box, type Comp, type Internals, layoutInternals, specShares } from './internals'
 import { generateDesign, layoutParts } from './rivals'
-import { evaluate, foldedThickness, maxBattery } from './scoring'
+import { costMaturity, evaluate, foldedThickness, maxBattery } from './scoring'
+import { priceIndex } from './world'
 import { DEVICE_TYPES, type DeviceDesign, type Levels } from './types'
 
 const TOL = 0.06
@@ -237,7 +238,21 @@ describe('rough edges', () => {
     expect(roomy.some((t) => t.startsWith('The back panel is too small'))).toBe(false)
   })
 
-  it('keeps every segment of the market reachable by a rival', () => {
-    expect(SEGMENTS.length).toBeGreaterThan(30)
+  it('lets the cost of making things fall as the market matures, so that a top device can still be sold at a profit', () => {
+    expect(costMaturity(3)).toBe(1)
+    expect(costMaturity(8)).toBeCloseTo(Math.pow(0.94, 5), 6)
+    const lv = flat(8)
+    for (const type of DEVICE_TYPES) {
+      const seg = [...segmentsOf(type)].sort((a, b) => b.priceRef - a.priceRef)[0]
+      const d = generateDesign({ rng: 9 }, { segment: seg.id, levels: lv, mLevel: 8, layout: 0, palette: ['#20242b'], logo: 'X' })
+      const late = evaluate(d, lv, 8)
+      const early = evaluate(d, lv, 3)
+      // the same design costs less to make late in the game than it would have at the start, part for part
+      expect(late.unitCost, type).toBeCloseTo(early.unitCost * costMaturity(8), 0)
+      expect(late.costScale).toBeCloseTo(costMaturity(8), 6)
+      // and what is left of the price the top segment expects by then, after the shops' cut and a contract maker's premium, is a profit
+      const price = seg.priceRef * priceIndex(12.5 * 360)
+      if (type !== 'console') expect(price * 0.85 - late.unitCost * 1.1, type).toBeGreaterThan(0.15 * price)
+    }
   })
 })

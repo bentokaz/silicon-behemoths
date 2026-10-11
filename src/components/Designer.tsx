@@ -794,7 +794,7 @@ function Workbench() {
   const margin = price * (1 - RETAIL_CUT) - buildEach
   const n = normalised(ev.raw, g.day)
   // what the studio needs to open the device up, and to say what share of it each component is
-  const tear = useMemo(() => ({ levels: g.levels, chips: g.chips, shares: specShares(draft, ev, g.chips), unitCost: ev.unitCost, weight: ev.report.weight }), [draft, ev, g.levels, g.chips])
+  const tear = useMemo(() => ({ levels: g.levels, chips: g.chips, shares: specShares(draft, ev, g.chips), unitCost: ev.unitCost, weight: ev.report.weight, costScale: ev.costScale }), [draft, ev, g.levels, g.chips])
   // the device opens while the Internals panel is, and shuts again when it is left
   useEffect(() => {
     useStudio.setState({ internals: left === 'internals', hover: null, pick: null })

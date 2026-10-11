@@ -2074,11 +2074,11 @@ function buildDock(b: Body): THREE.Group {
   const wallH = b.height * 0.5
   const wall = mesh(slab(w, wallH, 7, 7.5, 2), shell)
   wall.position.set(0, -b.height / 2 + wallH / 2 - 3, -t / 2 - 9.4)
-  const lipGeo = flatSlab(w, 7, 2.6, 6.4, 1.6)
+  const lipGeo = flatSlab(w, 7, 2.2, 4.4, 1.4)
   const lip = mesh(lipGeo, shell)
   lip.position.set(0, -b.height / 2 - 0.5, t / 2 + 4.6)
   const light = mesh(new THREE.BoxGeometry(w * 0.16, 1, 0.6), lightMaterial('#8dffa8'), false)
-  light.position.set(0, -b.height / 2 + 3, t / 2 + 8.1)
+  light.position.set(0, -b.height / 2 + 1.8, t / 2 + 8.1)
   g.add(tray, wall, lip, light)
   // the sockets on the back of the wall: power, video out and two for controllers or a network adapter
   const hole = darkMatte()

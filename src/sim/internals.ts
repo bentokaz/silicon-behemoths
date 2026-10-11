@@ -832,7 +832,8 @@ function layoutPanel(g: Gen) {
   const plateT = Math.min(1.2, z0 * 0.5)
   const lit = s.panel === 0 ? 0 : s.panel >= 5 ? 2 : 1
   L.add('backlight', 'plate', grow(A, -2), 0.05, Math.max(0.1, z0 - plateT - 0.2), { label: ['LED backlight', 'Self-lit panel, from behind', 'MicroLED tiles, from behind'][lit], figure: panelName(d.type, s.panel), specs: ['panel'], v: 5 + lit, layer: 0 }, false)
-  L.add('chassis', 'plate', grow(A, -1), z0 - plateT, plateT, { label: 'Steel chassis', v: 2, layer: 1 }, false)
+  // an all-in-one hides its panel behind a steel chassis; a TV's boards stand on the back of the panel itself, which shows what lights it
+  if (!tv) L.add('chassis', 'plate', grow(A, -1), z0 - plateT, plateT, { label: 'Steel chassis', v: 2, layer: 1 }, false)
   const tall = Math.max(1, De - 0.6)
   // ---- fixed by the outside: where the stand bolts on, and where the sockets are
   const mount = standMount(b, d.type)
@@ -1027,12 +1028,14 @@ function layoutConsole(g: Gen) {
     void q
   }
   // ---- the power supply in a rear corner
-  const psu = L.fit(P(-hw, 0, hw, hq - fanDeep - 2), 2 * hw * 0.3, 2 * hq * 0.4, tower ? [1, 0] : [0, 1])
+  // sizes are given across and front to back; a tower's plan has those the other way round
+  const sz = (across: number, deep: number): [number, number] => (tower ? [deep, across] : [across, deep])
+  const psu = L.fit(P(-hw, 0, hw, hq - fanDeep - 2), ...sz(2 * hw * 0.3, 2 * hq * 0.4), tower ? [1, 0] : [0, 1])
   const gpu = T.gpu ? (s.gpu ?? 0) : 0
   if (psu) L.add('psu', 'psu', psu, base, Math.min(D - base - 1, 58), { label: 'Power supply', figure: `${Math.round((g.chip.watts * (T.heat ?? 1) + GPUS[gpu].drain) * 1.3 + 40)} W`, v: 0 })
   // ---- the board runs under the drive; the chip, its heat sink and the memory stand clear of it
   const under = drive && driveLow > top + 4
-  const board = L.fit(A, 2 * hw * 0.64, 2 * hq * 0.66, tower ? [0.7, 0.4] : [0.8, 0.62], L.taken.filter((r) => !(under && r === drive)))
+  const board = L.fit(A, ...sz(2 * hw * 0.64, 2 * hq * 0.66), tower ? [0.7, 0.4] : [0.8, 0.62], L.taken.filter((r) => !(under && r === drive)))
   if (board) {
     L.add('board', 'board', board, base, bt, { v: 2, label: 'Main board' }, false)
     const obs = L.taken.filter((r) => hit(r, board))
@@ -1389,16 +1392,22 @@ export function specShares(d: DeviceDesign, ev: Evaluation, chips?: CustomChip[]
   const chip = chipFor(s, chips)
   const out: Record<string, { cost: number; grams?: number }> = {}
   out.chip = { cost: chip.cost * T.chipCost }
+  // the same sums as evaluate(), before the allowance it makes for how far making things has cheapened: that comes last
+  const raw = new Set<string>()
   const gpu = T.gpu ? (GPUS[s.gpu ?? 0] ?? GPUS[0]) : GPUS[0]
   if (T.gpu) out.gpu = { cost: gpu.cost * (T.gpuCost ?? 1) * Math.pow(1.1, chip.gen), grams: gpu.weight }
   if (T.memory > 0) {
     out.ram = { cost: s.ram * 2.5 }
     out.storage = { cost: s.storage * 0.08 }
   }
-  if (!T.mains) out.battery = { cost: ev.costParts.batteries, grams: s.battery * 0.011 }
+  if (!T.mains) {
+    out.battery = { cost: ev.costParts.batteries, grams: s.battery * 0.011 }
+    raw.add('battery')
+  }
   out.charging = { cost: 0.04 * chargeWatts(d.type, s.charging) }
   out.panel = { cost: ev.costParts.displays, grams: T.noScreen ? undefined : ((d.body.width * d.body.height * 0.7) / 1000) * 2.5 }
   out.refresh = out.panel
+  raw.add('panel')
   if (T.mains?.cool) out.cooling = { cost: (COOLERS[s.cooling ?? 0] ?? COOLERS[0]).cost }
   if (T.mains?.sound) out.speakers = { cost: (SPEAKERS[s.speakers ?? 0] ?? SPEAKERS[0]).cost }
   if (d.type === 'earbuds') {
@@ -1425,8 +1434,9 @@ export function specShares(d: DeviceDesign, ev: Evaluation, chips?: CustomChip[]
   let cams = 0
   for (const p of d.parts) if (p.kind === 'camera') cams += sensorInfo(p.sensor ?? 0).cost * (p.face === 'back' && !isCoverCam(d, p) ? LENSES[p.lens ?? 'wide'].cost : 0.6 * (p.underDisplay ? 1.5 : 1))
   out.camera = { cost: cams }
+  for (const key of Object.keys(out)) if (!raw.has(key) && key !== 'refresh') out[key] = { ...out[key], cost: out[key].cost * ev.costScale }
   return out
 }
 
 /** What one camera part costs, by the sum evaluate() uses. */
-export const cameraCost = (d: DeviceDesign, p: PlacedPart) => sensorInfo(p.sensor ?? 0).cost * (p.face === 'back' && !isCoverCam(d, p) ? LENSES[p.lens ?? 'wide'].cost : 0.6 * (p.underDisplay ? 1.5 : 1))
+export const cameraCost = (d: DeviceDesign, p: PlacedPart, scale = 1) => scale * sensorInfo(p.sensor ?? 0).cost * (p.face === 'back' && !isCoverCam(d, p) ? LENSES[p.lens ?? 'wide'].cost : 0.6 * (p.underDisplay ? 1.5 : 1))

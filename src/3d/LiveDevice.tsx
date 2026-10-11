@@ -26,6 +26,8 @@ export interface TearInfo {
   shares: Record<string, { cost: number; grams?: number }>
   unitCost: number
   weight: number
+  /** Evaluation.costScale: what evaluate() multiplied every cost by. */
+  costScale: number
 }
 /** True if a component stands for a row of the Internals panel. */
 const standsFor = (c: Comp, key: string) => c.specs.includes(key) || (key === 'camera' && c.kind === 'camera')
@@ -502,7 +504,7 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
       }
     }
     // pulled apart, the layers are seen better from a little to one side
-    if (!cur && openFace(d)) want += 0.5 * exploded.current
+    if (!cur && openFace(d)) want += 0.8 * exploded.current
     yaw.current += (want - yaw.current) * (1 - Math.exp(-dt * 8))
     if (Math.abs(yaw.current) < 0.0005 && !want) yaw.current = 0
     if (turn.current) turn.current.rotation.y = yaw.current
@@ -538,7 +540,7 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
   // what the picked component is, and what share of the device it is
   const camPart = pick?.partId ? design.parts.find((p) => p.id === pick.partId && p.kind === 'camera') : undefined
   const rows = pick && tear ? [...new Set(pick.specs.map((k) => (k === 'refresh' ? 'panel' : k)))].map((k) => tear.shares[k]).filter((x) => !!x) : []
-  const cost = camPart ? cameraCost(design, camPart) : rows.reduce((a, x) => a + x.cost, 0)
+  const cost = camPart ? cameraCost(design, camPart, tear?.costScale ?? 1) : rows.reduce((a, x) => a + x.cost, 0)
   const grams = rows.reduce((a, x) => a + (x.grams ?? 0), 0)
   const label = pick && tear && (
     <group ref={tip}>
