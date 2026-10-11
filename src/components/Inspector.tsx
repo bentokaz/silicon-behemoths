@@ -14,7 +14,35 @@ import { VARIANTS } from '../sim/rivals'
 import { batteryLabel, chargeWatts, chipFor, panelName } from '../sim/scoring'
 import { type DeviceDesign, type DeviceType, type GameState, type Product, type ProductionOrder, SUBS, SUPPLY_CATS } from '../sim/types'
 import { useGame, useStore } from '../store/game'
-import { Btn, Drawer, Meter, Mini, NumInput, Row, Tabs, Tag, chart, money, num, pct } from './ui'
+import { Icon, type IconName, supplyIcon, typeIcon } from './icons'
+import { Btn, Drawer, Head, Lead, Meter, Mini, NumInput, Row, Tabs, Tag, chart, money, num, pct } from './ui'
+
+/** The icon beside each line of a spec sheet. Lines not listed here get the plain list mark. */
+const SPEC_ICON: Record<string, IconName> = {
+  'Video output': 'display',
+  Display: 'display',
+  Driver: 'speaker',
+  'Noise cancelling': 'sound',
+  Buds: 'earbuds',
+  Chipset: 'chip',
+  Memory: 'memory',
+  'Case battery': 'battery',
+  Battery: 'battery',
+  'Rear cameras': 'camera',
+  'Front camera': 'camera',
+  Webcam: 'camera',
+  Strap: 'watch',
+  Controller: 'gamepad',
+  Keyboard: 'keys',
+  Cooling: 'refresh',
+  Speakers: 'speaker',
+  Stand: 'desktop',
+  Case: 'plot',
+  Body: 'plot',
+  Materials: 'layers',
+  Extras: 'plus',
+  Colours: 'theme',
+}
 
 /** Weight the way people quote it: grams for things you carry, kilograms for things you do not. */
 export const weightLabel = (g: number) => (g >= 2000 ? `${(g / 1000).toFixed(1)} kg` : `${Math.round(g)} g`)
@@ -70,6 +98,7 @@ export function Thumb({ product, className = '' }: { product: Product; className
 }
 
 export const statusTone = (p: Product) => (p.status === 'sale' ? (p.stock <= 0 && p.companyId === 'player' ? 'neg' : 'pos') : p.status === 'dev' ? 'warn' : 'dim') as 'neg' | 'pos' | 'warn' | 'dim'
+export const statusIcon = (p: Product): IconName => (p.status === 'sale' ? (p.stock <= 0 && p.companyId === 'player' ? 'alert' : 'check') : p.status === 'dev' ? 'hourglass' : 'ban')
 export const statusText = (p: Product) => (p.status === 'sale' ? (p.stock <= 0 && p.companyId === 'player' ? 'Sold out' : 'On sale') : p.status === 'dev' ? `Dev ${p.devDaysLeft}d` : 'Ended')
 
 function ScoreBars({ product }: { product: Product }) {
@@ -93,7 +122,9 @@ function Voices({ product }: { product: Product }) {
   const stars = product.feedback.length ? product.feedback.reduce((a, f) => a + f.stars, 0) / product.feedback.length : 0
   return (
     <div className="p-2">
-      <div className="label mb-1 text-faint">Press reviews</div>
+      <Head icon="press" className="mb-1 text-faint">
+        Press reviews
+      </Head>
       {!product.reviews.length && <div className="py-2 text-[11px] text-faint">Reviews are published on release day.</div>}
       {product.reviews.map((r) => (
         <div key={r.outlet} className="mb-1 flex gap-3 border border-line p-2">
@@ -102,13 +133,13 @@ function Voices({ product }: { product: Product }) {
             <div className="label">{r.outlet}</div>
             {r.pros.map((t) => (
               <div key={t} className="text-[11px] text-fg">
-                <span className="num text-pos">+ </span>
+                <Icon name="plus" size={9} className="mr-[5px] inline-block text-pos" />
                 {t}
               </div>
             ))}
             {r.cons.map((t) => (
               <div key={t} className="text-[11px] text-dim">
-                <span className="num text-neg">- </span>
+                <Icon name="minus" size={9} className="mr-[5px] inline-block text-neg" />
                 {t}
               </div>
             ))}
@@ -117,14 +148,27 @@ function Voices({ product }: { product: Product }) {
       ))}
       {product.companyId === 'player' && (
         <>
-          <div className="label mb-1 mt-3 flex items-center justify-between text-faint">
-            <span>What owners say</span>
-            {stars > 0 && <span className="num text-fg">{stars.toFixed(1)} / 5</span>}
-          </div>
+          <Head
+            icon="review"
+            className="mb-1 mt-3 text-faint"
+            right={
+              stars > 0 && (
+                <span className="num flex items-center gap-[3px] text-fg" title="Average out of 5">
+                  <Icon name="star" size={10} className="text-accent" />
+                  {stars.toFixed(1)}
+                </span>
+              )
+            }
+          >
+            What owners say
+          </Head>
           {!product.feedback.length && <div className="py-2 text-[11px] text-faint">Owner comments arrive weekly once the device is selling.</div>}
           {product.feedback.map((f, i) => (
             <div key={i} className="flex items-start gap-2 border-b border-line py-[5px] last:border-0">
-              <span className={`num w-8 shrink-0 text-[11px] ${f.stars >= 4 ? 'text-pos' : f.stars <= 2 ? 'text-neg' : 'text-dim'}`}>{f.stars}/5</span>
+              <span className={`num flex w-8 shrink-0 items-center gap-[3px] text-[11px] ${f.stars >= 4 ? 'text-pos' : f.stars <= 2 ? 'text-neg' : 'text-dim'}`} title={`${f.stars} out of 5`}>
+                <Icon name="star" size={11} />
+                {f.stars}
+              </span>
               <span className="flex-1 text-[11px] text-fg">{f.text}</span>
               <span className="num shrink-0 text-[9px] text-faint">{fmtDate(f.day)}</span>
             </div>
@@ -152,17 +196,19 @@ function Manage({ p }: { p: Product }) {
   return (
     <div className="space-y-3 p-2">
       <div className="grid grid-cols-3 gap-1">
-        <Mini label="In stock" value={num(p.stock)} tone={p.stock <= 0 && p.status === 'sale' ? 'text-neg' : 'text-fg'} />
-        <Mini label="On order" value={num(pending)} />
-        <Mini label="Margin / unit" value={money(margin)} tone={margin > 0 ? 'text-pos' : 'text-neg'} />
+        <Mini label="In stock" icon="warehouse" value={num(p.stock)} tone={p.stock <= 0 && p.status === 'sale' ? 'text-neg' : 'text-fg'} />
+        <Mini label="On order" icon="truck" value={num(pending)} />
+        <Mini label="Margin / unit" icon="percent" value={money(margin)} tone={margin > 0 ? 'text-pos' : 'text-neg'} />
       </div>
 
       {!ended && (
         <div className="border border-line p-2">
-          <div className="label mb-1 text-faint">Order a production run</div>
+          <Head icon="factory" className="mb-1 text-faint">
+            Order a production run
+          </Head>
           <div className="flex gap-1">
             {(['contract', 'factory'] as const).map((m) => (
-              <Btn key={m} small className="flex-1" active={mode === m} disabled={m === 'factory' && !line?.running} onClick={() => setMode(m)} title={m === 'factory' && !line?.running ? 'Needs a working line in your factory' : ''}>
+              <Btn key={m} small icon={m === 'contract' ? 'doc' : 'factory'} className="flex-1" active={mode === m} disabled={m === 'factory' && !line?.running} onClick={() => setMode(m)} title={m === 'factory' && !line?.running ? 'Needs a working line in your factory' : ''}>
                 {m === 'contract' ? 'Contract maker' : 'Own factory'}
               </Btn>
             ))}
@@ -173,6 +219,7 @@ function Manage({ p }: { p: Product }) {
             <Btn
               small
               tone="primary"
+              icon="package"
               onClick={() => {
                 const err = act((s) => orderProduction(s, p.id, qty, mode))
                 if (err) say(err, 'bad')
@@ -188,7 +235,10 @@ function Manage({ p }: { p: Product }) {
           {orders.map((o) => (
             <div key={o.id} className="mt-2">
               <div className="num flex justify-between text-[10px] text-dim">
-                <span>{o.mode === 'contract' ? 'CONTRACT' : 'FACTORY'}</span>
+                <span>
+                  <Lead icon={o.mode === 'contract' ? 'doc' : 'factory'} size={10} />
+                  {o.mode === 'contract' ? 'CONTRACT' : 'FACTORY'}
+                </span>
                 <span>
                   {num(o.done)} / {num(o.quantity)}
                 </span>
@@ -201,11 +251,13 @@ function Manage({ p }: { p: Product }) {
 
       {!ended && (
         <div className="border border-line p-2">
-          <div className="label mb-1 text-faint">Retail price</div>
+          <Head icon="tag" className="mb-1 text-faint">
+            Retail price
+          </Head>
           <div className="flex items-center gap-2">
             <NumInput value={price} onChange={setP} step={10} className="h-7 w-28 text-right" />
             <span className="flex-1 text-[10px] text-faint">{p.tiers.length ? `Storage options move with it (avg paid ${money(avg.price)})` : 'Retailers keep 15%'}</span>
-            <Btn small disabled={price === p.price || price <= 0} onClick={() => (act((s) => setPrice(s, p.id, price)), say(`${p.name} now costs ${money(price)}.`))}>
+            <Btn small icon="check" disabled={price === p.price || price <= 0} onClick={() => (act((s) => setPrice(s, p.id, price)), say(`${p.name} now costs ${money(price)}.`))}>
               Apply
             </Btn>
           </div>
@@ -213,14 +265,16 @@ function Manage({ p }: { p: Product }) {
       )}
 
       <div className="border border-line p-2">
-        <div className="label mb-1 text-faint">Build on this device</div>
+        <Head icon="branch" className="mb-1 text-faint">
+          Build on this device
+        </Head>
         <div className="grid grid-cols-3 gap-1">
           {VARIANTS.map((v) => (
             <Btn key={v.id} small title={v.note} onClick={() => openDesigner({ from: p, variant: v.id })}>
               {v.id}
             </Btn>
           ))}
-          <Btn small title="Start the next generation from this design" onClick={() => openDesigner({ from: p, variant: 'next' })}>
+          <Btn small icon="arrowRight" title="Start the next generation from this design" onClick={() => openDesigner({ from: p, variant: 'next' })}>
             Successor
           </Btn>
         </div>
@@ -228,16 +282,18 @@ function Manage({ p }: { p: Product }) {
       </div>
 
       <div className="border border-line p-2">
-        <div className="label mb-1 text-faint">Cost to build one, today</div>
+        <Head icon="receipt" className="mb-1 text-faint">
+          Cost to build one, today
+        </Head>
         {SUPPLY_CATS.map((c) => (
-          <Row key={c} k={SUPPLY_LABELS[c]} v={`${money(p.costParts[c] * supplyPrice(g, c))}${supplyPrice(g, c) > 1.08 ? '  (prices up)' : ''}`} tone={supplyPrice(g, c) > 1.08 ? 'text-warn' : undefined} />
+          <Row key={c} icon={supplyIcon(c)} k={SUPPLY_LABELS[c]} v={`${money(p.costParts[c] * supplyPrice(g, c))}${supplyPrice(g, c) > 1.08 ? '  (prices up)' : ''}`} tone={supplyPrice(g, c) > 1.08 ? 'text-warn' : undefined} />
         ))}
-        <Row k="Assembly and extras" v={money(p.costParts.other)} />
-        <Row k="Fault rate" v={pct(p.defectRate)} tone={p.defectRate > 0.03 ? 'text-warn' : undefined} />
+        <Row icon="build" k="Assembly and extras" v={money(p.costParts.other)} />
+        <Row icon="alert" k="Fault rate" v={pct(p.defectRate)} tone={p.defectRate > 0.03 ? 'text-warn' : undefined} />
       </div>
 
       {!ended && (
-        <Btn small tone="danger" className="w-full" onClick={() => act((s) => discontinue(s, p.id))}>
+        <Btn small tone="danger" icon="ban" className="w-full" onClick={() => act((s) => discontinue(s, p.id))}>
           Discontinue {p.name}
         </Btn>
       )}
@@ -275,7 +331,7 @@ export function ProductDrawer() {
   const mine = company.isPlayer
   const seg = product.segment ? segmentInfo(product.segment) : undefined
   const history = product.history.map((u, i) => ({ m: i + 1, Units: u }))
-  const tabs: { value: InspectTab; label: string }[] = [{ value: 'overview', label: 'Overview' }, ...(mine ? [{ value: 'manage' as const, label: 'Manage' }] : []), { value: 'specs', label: 'Specs' }, { value: 'voices', label: 'Reviews' }]
+  const tabs: { value: InspectTab; label: string; icon: IconName }[] = [{ value: 'overview', label: 'Overview', icon: 'overview' }, ...(mine ? [{ value: 'manage' as const, label: 'Manage', icon: 'system' as const }] : []), { value: 'specs', label: 'Specs', icon: 'feed' }, { value: 'voices', label: 'Reviews', icon: 'review' }]
   return (
     <Drawer
       open
@@ -304,41 +360,52 @@ export function ProductDrawer() {
           </div>
         )}
         <div className="absolute right-2 top-2 flex gap-1">
-          <Tag tone={statusTone(product)}>{statusText(product)}</Tag>
-          <Tag>{TYPES[product.type].name}</Tag>
+          <Tag tone={statusTone(product)} icon={statusIcon(product)}>
+            {statusText(product)}
+          </Tag>
+          <Tag icon={typeIcon(product.type)}>{TYPES[product.type].name}</Tag>
         </div>
       </div>
       <div className="grid grid-cols-4 gap-px border-b border-line bg-line">
-        {[
-          ['Price', money(product.price)],
-          ['Review', product.reviewAvg ? product.reviewAvg.toFixed(1) : '--'],
-          ['Sold', num(product.unitsSold)],
-          ['Design', Math.round(product.designPct)],
-        ].map(([k, v]) => (
+        {(
+          [
+            ['Price', money(product.price), 'tag'],
+            ['Review', product.reviewAvg ? product.reviewAvg.toFixed(1) : '--', 'star'],
+            ['Sold', num(product.unitsSold), 'package'],
+            ['Design', Math.round(product.designPct), 'design'],
+          ] as const
+        ).map(([k, v, icon]) => (
           <div key={k} className="bg-panel px-2 py-[6px]">
-            <div className="text-[9px] uppercase tracking-[0.12em] text-faint">{k}</div>
+            <div className="flex items-center gap-1 text-[9px] uppercase tracking-[0.12em] text-faint">
+              <Icon name={icon} size={10} />
+              {k}
+            </div>
             <div className="num text-sm font-semibold text-fg">{v}</div>
           </div>
         ))}
       </div>
-      <Tabs value={tab} options={tabs} onChange={setTab} className="bg-panel" />
+      <Tabs fit value={tab} options={tabs} onChange={setTab} className="bg-panel" />
       {tab === 'overview' && (
         <div className="space-y-3 p-2">
           <div className="grid grid-cols-3 gap-1">
-            <Mini label="Segment" value={seg?.name ?? '--'} />
-            <Mini label={product.status === 'dev' ? 'Release in' : 'Released'} value={product.status === 'dev' ? `${product.devDaysLeft} days` : fmtDate(product.launchDay)} />
-            <Mini label="Revenue" value={money(product.revenue)} />
-            {mine && <Mini label="Owner mood" value={pct(product.satisfaction, 0)} tone={product.satisfaction > 0.7 ? 'text-pos' : product.satisfaction < 0.5 ? 'text-neg' : 'text-fg'} />}
-            {mine && <Mini label="Weight" value={weightLabel(product.weight)} />}
-            {mine && lifeLabel(product.type) && <Mini label={lifeLabel(product.type) ?? ''} value={`${product.lifeHours.toFixed(0)} h`} />}
+            <Mini label="Segment" icon="target" value={seg?.name ?? '--'} />
+            <Mini label={product.status === 'dev' ? 'Release in' : 'Released'} icon={product.status === 'dev' ? 'hourglass' : 'calendar'} value={product.status === 'dev' ? `${product.devDaysLeft} days` : fmtDate(product.launchDay)} />
+            <Mini label="Revenue" icon="coins" value={money(product.revenue)} />
+            {mine && <Mini label="Owner mood" icon="morale" value={pct(product.satisfaction, 0)} tone={product.satisfaction > 0.7 ? 'text-pos' : product.satisfaction < 0.5 ? 'text-neg' : 'text-fg'} />}
+            {mine && <Mini label="Weight" icon="weight" value={weightLabel(product.weight)} />}
+            {mine && lifeLabel(product.type) && <Mini label={lifeLabel(product.type) ?? ''} icon="battery" value={`${product.lifeHours.toFixed(0)} h`} />}
           </div>
           <div className="border border-line p-2">
-            <div className="label mb-1 text-faint">Scores against the market today</div>
+            <Head icon="chart" className="mb-1 text-faint">
+              Scores against the market today
+            </Head>
             <ScoreBars product={product} />
           </div>
           {history.length > 1 && (
             <div className="border border-line p-2">
-              <div className="label mb-1 text-faint">Units per month</div>
+              <Head icon="market" className="mb-1 text-faint">
+                Units per month
+              </Head>
               <div className="h-28">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={history} margin={{ top: 4, right: 4, bottom: 0, left: -10 }}>
@@ -356,13 +423,17 @@ export function ProductDrawer() {
       )}
       {mine && product.recall?.state === 'open' && (
         <div className="m-2 border border-neg p-2">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-neg">Recall decision</div>
+          <div className="flex items-center gap-[6px] text-[11px] font-semibold uppercase tracking-wider text-neg">
+            <Icon name="alert" size={13} />
+            Recall decision
+          </div>
           <div className="mt-1 text-[11px] leading-snug text-dim">
             {pct(product.defectRate)} of units are faulty and owners are talking. Recall and repair every unit sold, or leave it: in {Math.max(0, RECALL_DEADLINE - (g.day - product.recall.day))} days it becomes a scandal that costs brand reputation and fans.
           </div>
           <Btn
             small
             tone="primary"
+            icon="recall"
             className="mt-2 w-full"
             onClick={() => {
               const err = useStore.getState().act((s) => recallProduct(s, product.id))
@@ -377,12 +448,12 @@ export function ProductDrawer() {
       {tab === 'specs' && (
         <div className="p-2">
           {specLines(product.design, product.diag, mine ? g : undefined).map(([k, v]) => (
-            <Row key={k} k={k} v={<span className="whitespace-normal text-right">{v}</span>} />
+            <Row key={k} icon={SPEC_ICON[k] ?? 'feed'} k={<span className="whitespace-nowrap">{k}</span>} v={<span className="whitespace-normal text-right">{v}</span>} />
           ))}
-          <Row k="Weight" v={weightLabel(product.weight)} />
-          {lifeLabel(product.type) && <Row k={lifeLabel(product.type)} v={`${product.lifeHours.toFixed(1)} h`} />}
+          <Row icon="weight" k="Weight" v={weightLabel(product.weight)} />
+          {lifeLabel(product.type) && <Row icon="battery" k={lifeLabel(product.type)} v={`${product.lifeHours.toFixed(1)} h`} />}
           {product.tiers.map((t) => (
-            <Row key={t.storage} k={`${t.storage >= 1024 ? t.storage / 1024 + ' TB' : t.storage + ' GB'} option`} v={money(t.price)} />
+            <Row key={t.storage} icon="tag" k={`${t.storage >= 1024 ? t.storage / 1024 + ' TB' : t.storage + ' GB'} option`} v={money(t.price)} />
           ))}
         </div>
       )}

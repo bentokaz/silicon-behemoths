@@ -13,7 +13,8 @@ import { normalised } from '../sim/market'
 import { hiredVenue, sumOf } from '../sim/sites'
 import { type Product, SUBS } from '../sim/types'
 import { useGame, useStore } from '../store/game'
-import { Btn, Meter, money } from './ui'
+import type { IconName } from './icons'
+import { Btn, Head, IconBtn, Lead, Meter, money } from './ui'
 
 type Phase = 'doors' | 'welcome' | 'reveal' | 'specs' | 'price' | 'verdict'
 const TIMELINE: [Phase, number][] = [
@@ -148,11 +149,11 @@ export function LaunchShow({ eventId }: { eventId: string }) {
     price: [`$${p.price.toLocaleString()}`, cheering ? 'The room is on its feet.' : score >= 30 ? 'Polite applause.' : 'An awkward silence.'],
     verdict: [`Score ${score}`, e.summary ?? ''],
   }
-  const parts: [string, number, string][] = [
-    ['The device itself', b.wow, 'How strong it is in its best segment. Nearly half the score.'],
-    ['The venue', Math.min(1, b.reach), 'How far a show from this stage carries.'],
-    ['Your marketers', b.crew, 'The team that staged it.'],
-    ['On the night', b.luck, 'Demos work, or they do not.'],
+  const parts: [string, number, string, IconName][] = [
+    ['The device itself', b.wow, 'How strong it is in its best segment. Nearly half the score.', 'devices'],
+    ['The venue', Math.min(1, b.reach), 'How far a show from this stage carries.', 'venue'],
+    ['Your marketers', b.crew, 'The team that staged it.', 'marketing'],
+    ['On the night', b.luck, 'Demos work, or they do not.', 'dice'],
   ]
   return (
     <div className="absolute inset-0 z-40 bg-carbon">
@@ -169,13 +170,11 @@ export function LaunchShow({ eventId }: { eventId: string }) {
         </div>
         <div className="pointer-events-auto flex gap-1">
           {phase !== 'verdict' && (
-            <Btn small onClick={() => setPhase('verdict')}>
+            <Btn small icon="fast" onClick={() => setPhase('verdict')}>
               Skip to the result
             </Btn>
           )}
-          <Btn small onClick={() => watch(null)}>
-            Close
-          </Btn>
+          <IconBtn icon="close" title="Close the keynote" onClick={() => watch(null)} />
         </div>
       </div>
       {phase !== 'verdict' && (
@@ -188,17 +187,22 @@ export function LaunchShow({ eventId }: { eventId: string }) {
         <div className="absolute bottom-6 left-6 w-[400px] border border-line2 bg-panel/95 p-4">
           <div className="flex items-end justify-between">
             <div>
-              <div className="label text-faint">Launch keynote</div>
+              <Head icon="mic" className="text-faint">
+                Launch keynote
+              </Head>
               <div className="text-lg text-fg">{p.name}</div>
             </div>
             <div className={`num text-5xl leading-none ${score >= 70 ? 'text-pos' : score >= 45 ? 'text-fg' : 'text-neg'}`}>{score}</div>
           </div>
           <div className="mt-1 text-[12px] text-dim">{e.summary}</div>
           <div className="mt-3 space-y-2">
-            {parts.map(([label, v, note]) => (
+            {parts.map(([label, v, note, icon]) => (
               <div key={label}>
                 <div className="flex items-baseline justify-between">
-                  <span className="text-[11px] text-fg">{label}</span>
+                  <span className="text-[11px] text-fg">
+                    <Lead icon={icon} />
+                    {label}
+                  </span>
                   <span className="num text-[10px] text-dim">{Math.round(v * 100)}</span>
                 </div>
                 <Meter value={v} tone={v > 0.7 ? 'pos' : v > 0.4 ? 'accent' : 'warn'} />
@@ -208,11 +212,15 @@ export function LaunchShow({ eventId }: { eventId: string }) {
           </div>
           <div className="mt-3 grid grid-cols-2 gap-1 border-t border-line pt-2">
             <div>
-              <div className="label text-faint">Launch hype</div>
+              <Head icon="trendUp" className="text-faint">
+                Launch hype
+              </Head>
               <div className="num text-sm text-accent">+{Math.round(p.hype * 100)}%</div>
             </div>
             <div>
-              <div className="label text-faint">Priced at</div>
+              <Head icon="tag" className="text-faint">
+                Priced at
+              </Head>
               <div className="num text-sm text-fg">{money(p.price, 0)}</div>
             </div>
           </div>

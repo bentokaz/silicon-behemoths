@@ -10,7 +10,8 @@ import { ITEMS, SITE_TIERS, starterLine, tierOf, upkeep } from '../sim/sites'
 import { SUPPLY_CATS } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { SiteBuilder } from './SiteBuilder'
-import { Btn, Empty, Fold, Kpi, Meter, Mini, Panel, Tabs, Tag, money, num, pct } from './ui'
+import { Icon, type IconName, supplyIcon, typeIcon } from './icons'
+import { Btn, Empty, Fold, IconBtn, Kpi, Lead, Meter, Mini, Panel, Tabs, Tag, Th, money, num, pct } from './ui'
 
 type View = 'floor' | 'orders' | 'supply'
 
@@ -18,18 +19,26 @@ function Orders() {
   const g = useGame()
   const { act, focus } = useStore.getState()
   const line = factoryLine(g)
-  if (!g.orders.length) return <Empty text="No production runs are in progress. Open a device and order a run from its Manage tab, or set one up when you launch." />
+  if (!g.orders.length) return <Empty icon="package" text="No production runs are in progress. Open a device and order a run from its Manage tab, or set one up when you launch." />
   return (
     <table className="grid-table">
       <thead>
         <tr>
-          <th>Device</th>
-          <th>Route</th>
-          <th className="w-64">Progress</th>
-          <th className="r">Built</th>
-          <th className="r">Cost each</th>
-          <th className="r">Left to pay</th>
-          <th>Status</th>
+          <Th icon="devices">Device</Th>
+          <Th icon="truck">Route</Th>
+          <Th icon="gauge" className="w-64">
+            Progress
+          </Th>
+          <Th icon="package" r>
+            Built
+          </Th>
+          <Th icon="tag" r>
+            Cost each
+          </Th>
+          <Th icon="cash" r>
+            Left to pay
+          </Th>
+          <Th icon="info">Status</Th>
           <th />
         </tr>
       </thead>
@@ -42,8 +51,14 @@ function Orders() {
           const stalled = o.mode === 'factory' && !line?.running
           return (
             <tr key={o.id} className="row cursor-pointer" onClick={() => focus(p.id)}>
-              <td className="text-fg">{p.name}</td>
-              <td className="text-dim">{o.mode === 'contract' ? 'Contract maker' : 'Own factory'}</td>
+              <td className="text-fg">
+                <Lead icon={typeIcon(p.type)} size={12} />
+                {p.name}
+              </td>
+              <td className="text-dim">
+                <Lead icon={o.mode === 'contract' ? 'doc' : 'factory'} />
+                {o.mode === 'contract' ? 'Contract maker' : 'Own factory'}
+              </td>
               <td>
                 <Meter value={o.done} max={o.quantity} tone={stalled ? 'neg' : 'accent'} />
               </td>
@@ -52,11 +67,9 @@ function Orders() {
               </td>
               <td className="num r text-dim">{money(each)}</td>
               <td className="num r text-dim">{money(orderLeft(o) * each, 1)}</td>
-              <td>{stalled ? <Tag tone="neg">line down</Tag> : waiting ? <Tag tone="warn">starts in {waiting}d</Tag> : <Tag tone="pos">building</Tag>}</td>
+              <td>{stalled ? <Tag tone="neg" icon="alert">line down</Tag> : waiting ? <Tag tone="warn" icon="hourglass">starts in {waiting}d</Tag> : <Tag tone="pos" icon="build">building</Tag>}</td>
               <td className="r">
-                <Btn small tone="ghost" onClick={(e) => (e.stopPropagation(), act((s) => cancelOrder(s, o.id)))}>
-                  Cancel rest
-                </Btn>
+                <IconBtn icon="close" tone="ghost" title="Cancel the units not yet built" onClick={(e) => (e.stopPropagation(), act((s) => cancelOrder(s, o.id)))} />
               </td>
             </tr>
           )
@@ -80,8 +93,11 @@ function Supply() {
         return (
           <div key={c} className="border border-line bg-panel p-2">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-fg">{SUPPLY_LABELS[c]}</span>
-              {short ? <Tag tone="neg">shortage</Tag> : price > 1.08 ? <Tag tone="warn">dear</Tag> : price < 0.94 ? <Tag tone="pos">cheap</Tag> : <Tag>normal</Tag>}
+              <span className="flex min-w-0 items-center gap-[6px] text-[11px] font-semibold uppercase tracking-[0.12em] text-fg">
+                <Icon name={supplyIcon(c)} size={13} className="text-dim" />
+                <span className="truncate">{SUPPLY_LABELS[c]}</span>
+              </span>
+              {short ? <Tag tone="neg" icon="alert">shortage</Tag> : price > 1.08 ? <Tag tone="warn" icon="trendUp">dear</Tag> : price < 0.94 ? <Tag tone="pos" icon="trendDown">cheap</Tag> : <Tag>normal</Tag>}
             </div>
             <div className={`num mt-2 text-2xl font-semibold leading-none ${price > 1.15 ? 'text-neg' : price > 1.05 ? 'text-warn' : 'text-fg'}`}>x{price.toFixed(2)}</div>
             <div className="num mt-1 text-[10px] text-faint">market price against normal</div>
@@ -96,11 +112,13 @@ function Supply() {
             </div>
             {locked ? (
               <div className="mt-2 border border-accent px-2 py-1 text-[11px] text-accent">
+                <Lead icon="lock" />
                 Fixed at x{lock.value.toFixed(2)} until {fmtDate(lock.until)}
               </div>
             ) : (
               <Btn
                 small
+                icon="lock"
                 className="mt-2 w-full"
                 onClick={() => {
                   const err = act((s) => lockSupply(s, c))
@@ -137,12 +155,13 @@ export function FactoryScreen() {
   const plan = g.factory ? starterLine(g.factory) : null
   const starterCost = plan && g.factory ? plan.items.reduce((a, p) => a + ITEMS.factory[p.kind].cost, 0) + roomCost(g.factory, 'hall', zoneable(g.factory, ...plan.hall, 'rect').length) : 0
   const stages: [string, number][] = line ? [['Board assembly', line.caps.smt], ['Device assembly', line.caps.assembly], ['Packaging', line.caps.pack], ['Testing', line.caps.test]] : []
+  const stageIcon: Record<string, IconName> = { 'Board assembly': 'chip', 'Device assembly': 'build', Packaging: 'package', Testing: 'check' }
   const peak = Math.max(1, ...stages.map((s) => s[1]))
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center justify-between border-b border-line bg-panel pr-2">
-        <Tabs value={view} onChange={setView} options={[{ value: 'floor', label: 'Factory floor' }, { value: 'orders', label: 'Production orders', badge: g.orders.length }, { value: 'supply', label: 'Component supply', badge: SUPPLY_CATS.filter((c) => g.supply.shockDays[c] > 0).length || undefined }]} className="border-b-0" />
+        <Tabs value={view} onChange={setView} options={[{ value: 'floor', label: 'Factory floor', icon: 'factory' }, { value: 'orders', label: 'Production orders', icon: 'package', badge: g.orders.length }, { value: 'supply', label: 'Component supply', icon: 'truck', badge: SUPPLY_CATS.filter((c) => g.supply.shockDays[c] > 0).length || undefined }]} className="border-b-0" />
         <span className="num text-[10px] text-faint">
           contract maker +{pct(CONTRACT.premium - 1, 0)} / own factory -{pct(1 - FACTORY_SAVING, 0)} on unit cost
         </span>
@@ -164,29 +183,32 @@ export function FactoryScreen() {
           (!g.factory ? (
             <div className="flex h-full items-center justify-center p-6">
               <div className="w-[560px] border border-line bg-panel p-5">
-                <div className="text-lg font-semibold uppercase tracking-[0.14em] text-fg">You do not own a factory</div>
+                <div className="flex items-center gap-3 text-lg font-semibold uppercase tracking-[0.14em] text-fg">
+                  <Icon name="factory" size={20} className="text-accent" />
+                  You do not own a factory
+                </div>
                 <div className="mt-2 text-[12px] leading-relaxed text-dim">
                   A contract manufacturer builds your devices for a {pct(CONTRACT.premium - 1, 0)} margin, after a {CONTRACT.leadDays}-day wait, with {pct(CONTRACT.defectRate)} arriving faulty. Your own factory builds at cost less {pct(1 - FACTORY_SAVING, 0)}, starts the same day, and ships fewer faults if you add test stations. You lay out the line yourself: docks, conveyors and machines.
                 </div>
                 <div className="mt-3 grid grid-cols-3 gap-1">
-                  <Mini label={next.name} value={money(next.cost, 1)} tone="text-fg" />
-                  <Mini label="Floor" value={`${next.w} x ${next.h} m`} />
-                  <Mini label="Upkeep / month" value={money(next.rent, 1)} />
+                  <Mini label={next.name} icon="cash" value={money(next.cost, 1)} tone="text-fg" />
+                  <Mini label="Floor" icon="plot" value={`${next.w} x ${next.h} m`} />
+                  <Mini label="Upkeep / month" icon="receipt" value={money(next.rent, 1)} />
                 </div>
-                <Btn tone="primary" className="mt-4 h-10 w-full" onClick={build}>
+                <Btn tone="primary" icon="build" className="mt-4 h-10 w-full" onClick={build}>
                   Build a {next.name.toLowerCase()} for {money(next.cost, 1)}
                 </Btn>
               </div>
             </div>
           ) : (
             <SiteBuilder siteRef="factory" site={g.factory} busy={Math.min(1, g.products.filter((p) => p.companyId === 'player').reduce((a, p) => a + p.stock, 0) / 150e3)} line={line} producing={factoryOrders.length > 0}>
-              <Fold title="Line" right={line?.running ? <Tag tone="pos">ready</Tag> : <Tag tone="neg">down</Tag>} bodyClass="p-2">
+              <Fold title="Line" icon="factory" right={line?.running ? <Tag tone="pos" icon="check">ready</Tag> : <Tag tone="neg" icon="alert">down</Tag>} bodyClass="p-2">
                 {line?.running ? (
                   <div className="grid grid-cols-2 gap-1">
-                    <Mini label="Output / day" value={num(line.throughput)} tone="text-fg" />
-                    <Mini label="Faults" value={pct(line.defectRate)} tone={line.defectRate > 0.03 ? 'text-warn' : 'text-pos'} />
-                    <Mini label="Running cost / day" value={money(line.runCost)} />
-                    <Mini label="Work queued" value={queued ? `${Math.ceil(queued / line.throughput)} days` : 'none'} />
+                    <Mini label="Output / day" icon="gauge" value={num(line.throughput)} tone="text-fg" />
+                    <Mini label="Faults" icon="alert" value={pct(line.defectRate)} tone={line.defectRate > 0.03 ? 'text-warn' : 'text-pos'} />
+                    <Mini label="Running cost / day" icon="receipt" value={money(line.runCost)} />
+                    <Mini label="Work queued" icon="hourglass" value={queued ? `${Math.ceil(queued / line.throughput)} days` : 'none'} />
                   </div>
                 ) : (
                   <div className="text-[11px] leading-snug text-warn">{line?.problem}</div>
@@ -195,7 +217,10 @@ export function FactoryScreen() {
                   <div className="mt-2">
                     {stages.map(([name, cap]) => (
                       <div key={name} className="flex items-center gap-2 py-[2px]">
-                        <span className="w-28 text-[11px] text-dim">{name}</span>
+                        <span className="w-28 whitespace-nowrap text-[11px] text-dim">
+                          <Lead icon={stageIcon[name]} />
+                          {name}
+                        </span>
                         <Meter value={cap} max={peak} tone={line?.running && cap === line.throughput && name !== 'Testing' ? 'warn' : 'accent'} />
                         <span className="num w-10 text-right text-[10px] text-fg">{cap}</span>
                       </div>
@@ -207,6 +232,7 @@ export function FactoryScreen() {
                   <Btn
                     small
                     tone="primary"
+                    icon="build"
                     className="mt-2 w-full"
                     onClick={() => {
                       const err = act((s) => autoLine(s))
@@ -218,20 +244,20 @@ export function FactoryScreen() {
                   </Btn>
                 )}
               </Fold>
-              <Fold title="Factory" open={false} bodyClass="p-2">
+              <Fold title="Factory" icon="campus" open={false} bodyClass="p-2">
                 <div className="grid grid-cols-2 gap-1">
-                  <Mini label="Size" value={tierOf(g.factory).name} tone="text-fg" />
-                  <Mini label="Upkeep / month" value={money(upkeep(g.factory), 1)} />
+                  <Mini label="Size" icon="plot" value={tierOf(g.factory).name} tone="text-fg" />
+                  <Mini label="Upkeep / month" icon="receipt" value={money(upkeep(g.factory), 1)} />
                 </div>
                 {next ? (
-                  <Btn small className="mt-2 w-full" onClick={build}>
+                  <Btn small icon="plot" className="mt-2 w-full" onClick={build}>
                     Expand to {next.name.toLowerCase()} ({money(next.cost, 1)})
                   </Btn>
                 ) : (
                   <div className="mt-2 text-[11px] text-dim">This is the largest factory.</div>
                 )}
               </Fold>
-              <Fold title="How lines work" open={false} bodyClass="p-2 text-[11px] leading-snug text-dim">
+              <Fold title="How lines work" icon="info" open={false} bodyClass="p-2 text-[11px] leading-snug text-dim">
                 A line runs from a receiving dock to a shipping dock. Everything touching it, directly or through conveyors, is part of it. It needs board assembly, device assembly and packaging. Add more of the slowest stage to raise output, and test stations to cut faults.
               </Fold>
             </SiteBuilder>

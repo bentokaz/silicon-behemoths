@@ -4,29 +4,38 @@ import { getVolume, setAmbienceLevel, setVolume, sfx } from '../audio/sfx'
 import { chooseFolder, cloudBuiltIn, cloudConfig, cloudUser, folderState, forgetFolder, setCloudConfig, signIn, signOut, signUp, unlockFolder } from '../store/cloud'
 import { ACTIONS, type Action, QUALITY, type Quality, keyName, keysFor, useSettings } from '../store/settings'
 import { ThemePicker } from './System'
-import { Btn, Panel, Slider, TextInput } from './ui'
+import { Icon, type IconName } from './icons'
+import { Btn, Head, Lead, Panel, Slider, TextInput } from './ui'
 
-function Toggle({ on, onChange, title, note }: { on: boolean; onChange: (v: boolean) => void; title: string; note: string }) {
+function Toggle({ on, onChange, title, note, icon }: { on: boolean; onChange: (v: boolean) => void; title: string; note: string; icon?: IconName }) {
   return (
-    <button onClick={() => (onChange(!on), sfx.toggle())} className="flex w-full items-start gap-3 border-b border-line px-2 py-2 text-left last:border-b-0 hover:bg-hover">
+    <button onClick={() => (onChange(!on), sfx.toggle())} aria-pressed={on} className="flex w-full items-start gap-3 border-b border-line px-2 py-2 text-left last:border-b-0 hover:bg-hover">
       <span className={`mt-[2px] flex h-4 w-8 shrink-0 items-center border ${on ? 'justify-end border-accent bg-accent/20' : 'justify-start border-line2'}`}>
         <span className={`h-full w-3 ${on ? 'bg-accent' : 'bg-dim'}`} />
       </span>
       <span>
-        <span className="block text-xs uppercase tracking-wider text-fg">{title}</span>
+        <span className="block text-xs uppercase tracking-wider text-fg">
+          <Lead icon={icon} size={12} />
+          {title}
+        </span>
         <span className="block text-[11px] leading-snug text-dim">{note}</span>
       </span>
     </button>
   )
 }
 
+const SOUND_ICON: Record<string, IconName> = { Build: 'build', Launch: 'play', Goal: 'goals', Alert: 'alert', Cash: 'cash', Applause: 'mic' }
+const GROUP_ICON: Record<string, IconName> = { Game: 'play', Screens: 'overview', Building: 'build', Designer: 'design' }
+
 export function SettingsPanel() {
   const { settings, set, resetSettings } = useSettings()
   const [vol, setVol] = useState(getVolume())
   return (
     <div className="grid h-full min-h-0 grid-cols-3 gap-2">
-      <Panel title="Graphics" bodyClass="overflow-y-auto p-2">
-        <div className="label mb-1 text-faint">Detail in the 3D views</div>
+      <Panel title="Graphics" icon="desktop" bodyClass="overflow-y-auto p-2">
+        <Head icon="layers" className="mb-1 text-faint">
+          Detail in the 3D views
+        </Head>
         {(Object.keys(QUALITY) as Quality[]).map((q) => (
           <button key={q} onClick={() => (set({ quality: q }), sfx.toggle())} className={`mb-1 block w-full border p-2 text-left ${settings.quality === q ? 'border-accent bg-accent/10' : 'border-line hover:border-line2'}`}>
             <div className={`text-xs uppercase tracking-wider ${settings.quality === q ? 'text-accent' : 'text-fg'}`}>{QUALITY[q].label}</div>
@@ -34,21 +43,23 @@ export function SettingsPanel() {
           </button>
         ))}
         <div className="mt-1 text-[10px] leading-snug text-faint">If moving the camera around a building feels heavy, drop this a step. Shadows are only redrawn when something on the site changes, so a big campus costs little once it is built.</div>
-        <div className="label mb-1 mt-3 text-faint">Interface colours</div>
+        <Head icon="theme" className="mb-1 mt-3 text-faint">
+          Interface colours
+        </Head>
         <ThemePicker />
       </Panel>
-      <Panel title="Camera and play" bodyClass="overflow-y-auto">
+      <Panel title="Camera and play" icon="camera" bodyClass="overflow-y-auto">
         <div className="px-2 pt-1">
-          <Slider label="Camera speed" value={settings.cameraSpeed} min={0.4} max={2.5} step={0.1} format={(v) => `${v.toFixed(1)}x`} onChange={(v) => set({ cameraSpeed: v })} hint="How fast the building camera pans, turns and zooms, by mouse and by keys." />
+          <Slider label="Camera speed" icon="gauge" value={settings.cameraSpeed} min={0.4} max={2.5} step={0.1} format={(v) => `${v.toFixed(1)}x`} onChange={(v) => set({ cameraSpeed: v })} hint="How fast the building camera pans, turns and zooms, by mouse and by keys." />
         </div>
-        <Toggle on={settings.zoomToPointer} onChange={(v) => set({ zoomToPointer: v })} title="Zoom toward the pointer" note="The scroll wheel zooms in on what is under the mouse, not the middle of the view." />
-        <Toggle on={settings.walkers} onChange={(v) => set({ walkers: v })} title="People on the move" note="Staff without a desk and visitors walk about the campus." />
-        <Toggle on={settings.autosave} onChange={(v) => set({ autosave: v })} title="Autosave" note="Saves at the end of each month and at big moments: a device going on sale, a new plot, a listing, a takeover." />
-        <Toggle on={settings.pauseOnAlert} onChange={(v) => set({ pauseOnAlert: v })} title="Pause on alerts" note="Stops the clock when something needs a decision, such as a sell-out or a recall." />
+        <Toggle icon="search" on={settings.zoomToPointer} onChange={(v) => set({ zoomToPointer: v })} title="Zoom toward the pointer" note="The scroll wheel zooms in on what is under the mouse, not the middle of the view." />
+        <Toggle icon="person" on={settings.walkers} onChange={(v) => set({ walkers: v })} title="People on the move" note="Staff without a desk and visitors walk about the campus." />
+        <Toggle icon="save" on={settings.autosave} onChange={(v) => set({ autosave: v })} title="Autosave" note="Saves at the end of each month and at big moments: a device going on sale, a new plot, a listing, a takeover." />
+        <Toggle icon="bell" on={settings.pauseOnAlert} onChange={(v) => set({ pauseOnAlert: v })} title="Pause on alerts" note="Stops the clock when something needs a decision, such as a sell-out or a recall." />
       </Panel>
-      <Panel title="Sound" bodyClass="p-2">
-        <Slider label="Volume" value={vol} min={0} max={1} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => (setVol(v), setVolume(v), sfx.click())} />
-        <Slider label="Background ambience" value={settings.ambience} min={0} max={1} step={0.05} format={(v) => (v ? `${Math.round(v * 100)}%` : 'off')} onChange={(v) => (set({ ambience: v }), setAmbienceLevel(v))} hint="The hum of the office, the factory floor, a busy store. There is no music." />
+      <Panel title="Sound" icon="sound" bodyClass="p-2">
+        <Slider label="Volume" icon="sound" value={vol} min={0} max={1} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => (setVol(v), setVolume(v), sfx.click())} />
+        <Slider label="Background ambience" icon="campus" value={settings.ambience} min={0} max={1} step={0.05} format={(v) => (v ? `${Math.round(v * 100)}%` : 'off')} onChange={(v) => (set({ ambience: v }), setAmbienceLevel(v))} hint="The hum of the office, the factory floor, a busy store. There is no music." />
         <div className="mt-2 grid grid-cols-3 gap-1">
           {(
             [
@@ -60,13 +71,13 @@ export function SettingsPanel() {
               ['Applause', () => sfx.applause(1.5, 1)],
             ] as [string, () => void][]
           ).map(([name, play]) => (
-            <Btn key={name} small onClick={play}>
+            <Btn key={name} small icon={SOUND_ICON[name]} onClick={play}>
               {name}
             </Btn>
           ))}
         </div>
         <div className="mt-2 text-[10px] leading-snug text-faint">Every sound is generated in the browser.</div>
-        <Btn small className="mt-4 w-full" onClick={() => (resetSettings(), sfx.confirm())}>
+        <Btn small icon="reset" className="mt-4 w-full" onClick={() => (resetSettings(), sfx.confirm())}>
           Reset all settings
         </Btn>
       </Panel>
@@ -93,41 +104,46 @@ export function SavesBeyond() {
   return (
     <div className="space-y-3 p-2">
       <div>
-        <div className="label mb-1 text-faint">Sync folder</div>
+        <Head icon="folder" className="mb-1 text-faint">
+          Sync folder
+        </Head>
         {folder.state === 'unsupported' ? (
           <div className="text-[11px] leading-snug text-dim">This browser cannot write to a folder. Chrome and Edge on a computer can. Use Export to file to keep copies instead.</div>
         ) : (
           <>
             <div className="text-[11px] leading-snug text-dim">Pick a folder and every save is also written there as a file. Choose one inside OneDrive, Google Drive or Dropbox and your games follow you to any PC, and survive clearing the browser.</div>
             <div className="mt-2 flex items-center gap-2">
-              <Btn small tone={folder.state === 'none' ? 'primary' : 'default'} onClick={() => run(chooseFolder, 'Folder set. Saves will be copied there from now on.')}>
+              <Btn small icon="folder" tone={folder.state === 'none' ? 'primary' : 'default'} onClick={() => run(chooseFolder, 'Folder set. Saves will be copied there from now on.')}>
                 {folder.state === 'none' ? 'Choose a folder' : 'Change folder'}
               </Btn>
               {folder.state === 'locked' && (
-                <Btn small tone="primary" onClick={() => run(unlockFolder, 'Folder reconnected.')}>
+                <Btn small tone="primary" icon="refresh" onClick={() => run(unlockFolder, 'Folder reconnected.')}>
                   Reconnect
                 </Btn>
               )}
               {folder.state !== 'none' && (
-                <Btn small tone="ghost" onClick={() => run(forgetFolder, 'Folder forgotten. Files already there are untouched.')}>
+                <Btn small tone="ghost" icon="close" onClick={() => run(forgetFolder, 'Folder forgotten. Files already there are untouched.')}>
                   Stop using it
                 </Btn>
               )}
             </div>
             <div className={`num mt-1 text-[10px] ${folder.state === 'ready' ? 'text-pos' : folder.state === 'locked' ? 'text-warn' : 'text-faint'}`}>
+              <Lead icon={folder.state === 'ready' ? 'check' : folder.state === 'locked' ? 'alert' : 'folder'} size={10} />
               {folder.state === 'ready' ? `Writing to "${folder.name}"` : folder.state === 'locked' ? `"${folder.name}" needs reconnecting: the browser asks again each visit` : 'No folder chosen'}
             </div>
           </>
         )}
       </div>
       <div className="border-t border-line pt-3">
-        <div className="label mb-1 text-faint">Online account</div>
+        <Head icon="cloud" className="mb-1 text-faint">
+          Online account
+        </Head>
         {!cfg ? (
           <>
             <div className="text-[11px] leading-snug text-dim">Not set up. Online saves need a free Supabase project; the steps are in CLOUD.md in the game's folder. Paste the project address and public key here once you have them.</div>
             <TextInput value={url} onChange={setUrl} placeholder="Project address (https://...supabase.co)" className="mt-2 w-full" />
             <TextInput value={key} onChange={setKey} placeholder="Public (anon) key" className="mt-1 w-full" />
-            <Btn small className="mt-1" disabled={!url.trim() || !key.trim()} onClick={() => (setCloudConfig(url, key), setCfg(cloudConfig()), setNote('Project saved. Now sign in or create an account.'))}>
+            <Btn small icon="check" className="mt-1" disabled={!url.trim() || !key.trim()} onClick={() => (setCloudConfig(url, key), setCfg(cloudConfig()), setNote('Project saved. Now sign in or create an account.'))}>
               Use this project
             </Btn>
           </>
@@ -136,7 +152,7 @@ export function SavesBeyond() {
             <div className="text-[11px] text-dim">
               Signed in as <span className="text-fg">{user}</span>. Every save is copied to your account and newer saves there are fetched when you open the load list.
             </div>
-            <Btn small className="mt-2" onClick={() => (signOut(), setUser(null), setNote('Signed out.'))}>
+            <Btn small icon="quit" className="mt-2" onClick={() => (signOut(), setUser(null), setNote('Signed out.'))}>
               Sign out
             </Btn>
           </>
@@ -146,14 +162,14 @@ export function SavesBeyond() {
             <TextInput value={email} onChange={setEmail} placeholder="Email" className="mt-2 w-full" />
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="mt-1 h-7 w-full rounded-none border border-line2 bg-raise px-2 text-xs text-fg outline-none focus:border-accent" />
             <div className="mt-1 flex gap-1">
-              <Btn small tone="primary" disabled={!email || password.length < 6} onClick={() => run(() => signIn(email, password), 'Signed in.')}>
+              <Btn small tone="primary" icon="key" disabled={!email || password.length < 6} onClick={() => run(() => signIn(email, password), 'Signed in.')}>
                 Sign in
               </Btn>
-              <Btn small disabled={!email || password.length < 6} onClick={() => run(() => signUp(email, password), 'Account created.')}>
+              <Btn small icon="hire" disabled={!email || password.length < 6} onClick={() => run(() => signUp(email, password), 'Account created.')}>
                 Create account
               </Btn>
               {!cloudBuiltIn() && (
-                <Btn small tone="ghost" onClick={() => (localStorage.removeItem('sb-cloud'), setCfg(null))}>
+                <Btn small tone="ghost" icon="edit" onClick={() => (localStorage.removeItem('sb-cloud'), setCfg(null))}>
                   Change project
                 </Btn>
               )}
@@ -198,14 +214,17 @@ export function KeysPanel() {
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
       <div className="flex shrink-0 items-center justify-between border border-line bg-panel px-2 py-[6px]">
-        <span className="text-[11px] text-dim">{waiting ? 'Press the key to use. Esc cancels.' : 'Click a key to change it. Each action can have two keys.'}</span>
-        <Btn small onClick={() => (resetKeys(), sfx.confirm())}>
+        <span className="flex items-center gap-2 text-[11px] text-dim">
+          <Icon name="keys" size={13} className={waiting ? 'text-accent' : 'text-faint'} />
+          {waiting ? 'Press the key to use. Esc cancels.' : 'Click a key to change it. Each action can have two keys.'}
+        </span>
+        <Btn small icon="reset" onClick={() => (resetKeys(), sfx.confirm())}>
           Reset to defaults
         </Btn>
       </div>
       <div className="grid min-h-0 flex-1 grid-cols-3 gap-2">
         {groups.map((group) => (
-          <Panel key={group} title={group} bodyClass="overflow-y-auto">
+          <Panel key={group} title={group} icon={GROUP_ICON[group]} bodyClass="overflow-y-auto">
             {ACTIONS.filter((a) => a.group === group).map((a) => {
               const keys = keysFor(a.id)
               return (

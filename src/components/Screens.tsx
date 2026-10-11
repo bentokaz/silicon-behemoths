@@ -14,8 +14,11 @@ import { staffEffects, unmanaged } from '../sim/staff'
 import { founderStake, marketCap } from '../sim/stock'
 import { COST_KEYS, DEVICE_TYPES, type DeviceType, type GameState, type Product, SUPPLY_CATS, TRACKS, monthCosts } from '../sim/types'
 import { type Tab, useGame, useStore } from '../store/game'
-import { Thumb, statusText, statusTone } from './Inspector'
-import { Btn, Empty, Fold, Kpi, Meter, Mini, Panel, Tabs, Tag, TextInput, chart, money, num, pct } from './ui'
+import { Thumb, statusIcon, statusText, statusTone } from './Inspector'
+import { COST_ICON, Icon, TAB_ICON, trackIcon, typeIcon } from './icons'
+// Table headings carry icons only where the table has room to spare at a
+// 1440 px window with the feed open; the dense ones keep plain words.
+import { Btn, Empty, Fold, Head, IconBtn, Kpi, Lead, Meter, Mini, Panel, Tabs, Tag, TextInput, Th, chart, money, num, pct } from './ui'
 
 const mine = (g: GameState) => g.products.filter((p) => p.companyId === 'player').sort((a, b) => b.launchDay - a.launchDay)
 
@@ -33,7 +36,7 @@ function shareSeries(g: GameState, months = 36) {
 
 function ShareChart({ g }: { g: GameState }) {
   const { data, ids } = shareSeries(g)
-  if (data.length < 2) return <Empty text="Market share appears after the first two months." />
+  if (data.length < 2) return <Empty icon="pie" text="Market share appears after the first two months." />
   return (
     <ResponsiveContainer width="100%" height="100%">
       <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
@@ -52,7 +55,7 @@ function ShareChart({ g }: { g: GameState }) {
 
 function FinanceChart({ g, months = 24 }: { g: GameState; months?: number }) {
   const data = g.reports.slice(-months).map((r) => ({ month: monthLabel(r.month), Income: Math.round(r.revenue + r.other), Costs: Math.round(monthCosts(r)), Cash: Math.round(r.cash) }))
-  if (data.length < 2) return <Empty text="Monthly figures appear after the first two months." />
+  if (data.length < 2) return <Empty icon="chart" text="Monthly figures appear after the first two months." />
   return (
     <ResponsiveContainer width="100%" height="100%">
       <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 4 }}>
@@ -123,44 +126,44 @@ export function Dashboard() {
   return (
     <div className="grid h-full min-h-0 grid-cols-12 grid-rows-[auto_auto_minmax(0,1fr)_minmax(0,1fr)] gap-2 p-2">
       <div className="col-span-12 grid grid-cols-5 gap-2">
-        <Kpi label="Cash" value={g.config.unlimitedMoney ? 'UNLIMITED' : money(g.cash)} tone={g.cash < 0 && !g.config.unlimitedMoney ? 'neg' : 'accent'} sub={g.debtDays > 0 ? `in debt ${g.debtDays} days` : `this month +${money(g.cur.revenue + g.cur.other, 1)}`} />
-        <Kpi label="Profit, last month" value={last ? money(profit) : '--'} tone={profit >= 0 ? 'pos' : 'neg'} sub={last ? `income ${money(last.revenue + last.other, 1)}` : 'first month in progress'} />
-        <Kpi label="Market share" value={pct(units / total, 2)} sub={`${num(units)} of ${num(total)} devices in 12 months`} />
-        <Kpi label="Fans" value={num(g.fans)} sub={`${num(g.owners)} people own your devices`} />
-        <Kpi label={g.stock.listed ? 'Market value' : 'Company value'} value={marketCap(g) >= 1e9 ? `${(marketCap(g) / 1e9).toFixed(2)}B` : money(marketCap(g), 1)} sub={`you own ${pct(founderStake(g), 0)}${g.stock.listed ? ` / ${g.stock.price.toFixed(2)} a share` : ''}`} />
+        <Kpi label="Cash" icon="cash" value={g.config.unlimitedMoney ? 'UNLIMITED' : money(g.cash)} tone={g.cash < 0 && !g.config.unlimitedMoney ? 'neg' : 'accent'} sub={g.debtDays > 0 ? `in debt ${g.debtDays} days` : `this month +${money(g.cur.revenue + g.cur.other, 1)}`} />
+        <Kpi label="Profit, last month" icon={profit >= 0 ? 'trendUp' : 'trendDown'} value={last ? money(profit) : '--'} tone={profit >= 0 ? 'pos' : 'neg'} sub={last ? `income ${money(last.revenue + last.other, 1)}` : 'first month in progress'} />
+        <Kpi label="Market share" icon="pie" value={pct(units / total, 2)} sub={`${num(units)} of ${num(total)} devices in 12 months`} />
+        <Kpi label="Fans" icon="heart" value={num(g.fans)} sub={`${num(g.owners)} people own your devices`} />
+        <Kpi label={g.stock.listed ? 'Market value' : 'Company value'} icon="chart" value={marketCap(g) >= 1e9 ? `${(marketCap(g) / 1e9).toFixed(2)}B` : money(marketCap(g), 1)} sub={`you own ${pct(founderStake(g), 0)}${g.stock.listed ? ` / ${g.stock.price.toFixed(2)} a share` : ''}`} />
       </div>
       <div className="col-span-12 grid grid-cols-8 gap-1">
-        <Mini label="Brand" value={Math.round(me.brand * 100)} />
-        <Mini label="Awareness" value={pct(me.awareness)} />
-        <Mini label="Devices on sale" value={products.filter((p) => p.status === 'sale').length} />
-        <Mini label="In development" value={products.filter((p) => p.status === 'dev').length} />
-        <Mini label="Staff" value={`${g.staff.length}${g.staff.length ? ` / morale ${Math.round(fx.morale)}` : ''}`} />
-        <Mini label="Stores / regions" value={`${g.stores.length} / ${REGIONS.filter((r) => g.regions[r.id].open).length}`} />
-        <Mini label="Industry level" value={marketLevel(g.day).toFixed(1)} />
-        <Mini label="R&D / month" value={money(g.rdBudget, 1)} />
+        <Mini label="Brand" icon="brand" value={Math.round(me.brand * 100)} />
+        <Mini label="Awareness" icon="eye" value={pct(me.awareness)} />
+        <Mini label="Devices on sale" icon="devices" value={products.filter((p) => p.status === 'sale').length} />
+        <Mini label="In development" icon="hourglass" value={products.filter((p) => p.status === 'dev').length} />
+        <Mini label="Staff" icon="staff" value={`${g.staff.length}${g.staff.length ? ` / morale ${Math.round(fx.morale)}` : ''}`} />
+        <Mini label="Stores / regions" icon="stores" value={`${g.stores.length} / ${REGIONS.filter((r) => g.regions[r.id].open).length}`} />
+        <Mini label="Industry level" icon="rivals" value={marketLevel(g.day).toFixed(1)} />
+        <Mini label="R&D / month" icon="research" value={money(g.rdBudget, 1)} />
       </div>
 
-      <Panel title="Needs attention" className="col-span-4" bodyClass="overflow-y-auto">
-        {list.length === 0 && <Empty text="Nothing needs a decision right now." />}
+      <Panel title="Needs attention" icon="alert" className="col-span-4" bodyClass="overflow-y-auto">
+        {list.length === 0 && <Empty icon="check" text="Nothing needs a decision right now." />}
         {list.map((t, i) => (
           <button key={i} onClick={() => (t.productId ? focus(t.productId) : setTab(t.tab))} className="flex w-full items-start gap-2 border-b border-line px-2 py-[7px] text-left hover:bg-hover">
-            <span className={`mt-[5px] h-[6px] w-[6px] shrink-0 ${t.tone === 'neg' ? 'bg-neg' : t.tone === 'warn' ? 'bg-warn' : 'bg-accent'}`} />
+            <Icon name={TAB_ICON[t.tab] ?? 'alert'} size={13} className={`mt-[2px] ${t.tone === 'neg' ? 'text-neg' : t.tone === 'warn' ? 'text-warn' : 'text-accent'}`} />
             <span className="flex-1 text-[12px] leading-snug text-fg">{t.text}</span>
-            <span className="num text-[9px] uppercase text-faint">{t.productId ? 'open' : t.tab}</span>
+            <Icon name="arrowRight" size={11} className="mt-[3px] text-faint" />
           </button>
         ))}
       </Panel>
-      <Panel title="Income, costs and cash" className="col-span-4">
+      <Panel title="Income, costs and cash" icon="chart" className="col-span-4">
         <FinanceChart g={g} />
       </Panel>
-      <Panel title="Market share by units" className="col-span-4">
+      <Panel title="Market share by units" icon="pie" className="col-span-4">
         <ShareChart g={g} />
       </Panel>
 
-      <Panel title="Your devices" right={<Btn small tone="primary" onClick={() => openDesigner()}>New device</Btn>} className="col-span-8" bodyClass="overflow-auto">
+      <Panel title="Your devices" icon="devices" right={<Btn small tone="primary" icon="plus" onClick={() => openDesigner()}>New device</Btn>} className="col-span-8" bodyClass="overflow-auto">
         {products.length === 0 ? (
-          <Empty text="Design your first device to enter the market. Fourteen rivals are already selling.">
-            <Btn tone="primary" className="h-11 px-8 text-sm" onClick={() => openDesigner()}>
+          <Empty icon="devices" text="Design your first device to enter the market. Fourteen rivals are already selling.">
+            <Btn tone="primary" icon="plus" className="h-11 px-8 text-sm" onClick={() => openDesigner()}>
               Design your first device
             </Btn>
           </Empty>
@@ -168,7 +171,7 @@ export function Dashboard() {
           <ProductTable g={g} rows={products} compact />
         )}
       </Panel>
-      <Panel title={`Goals / ${stage.name}`} right={<Btn small tone="ghost" onClick={() => setTab('goals')}>All {stage.done}/{stage.total}</Btn>} className="col-span-4" bodyClass="overflow-y-auto px-2 py-1">
+      <Panel title={`Goals / ${stage.name}`} icon="goals" right={<Btn small tone="ghost" onClick={() => setTab('goals')}>All {stage.done}/{stage.total}</Btn>} className="col-span-4" bodyClass="overflow-y-auto px-2 py-1">
         {goals.map(({ goal, progress }) => (
           <button key={goal.id} onClick={() => setTab('goals')} className="block w-full py-[3px] text-left">
             <div className="flex items-baseline justify-between gap-2">
@@ -179,14 +182,17 @@ export function Dashboard() {
           </button>
         ))}
         <div className="mb-1 mt-2 flex items-center justify-between border-t border-line pt-1">
-          <span className="label text-faint">Research</span>
-          <button className="num text-[10px] text-faint hover:text-fg" onClick={() => setTab('research')}>
-            OPEN
-          </button>
+          <Head icon="research" className="flex-1 text-faint">
+            Research
+          </Head>
+          <IconBtn icon="open" tone="ghost" title="Open research" className="!h-5 !w-5" onClick={() => setTab('research')} />
         </div>
         {TRACKS.map((t) => (
           <div key={t} className="flex items-center gap-2 py-[3px]">
-            <span className={`w-28 text-[11px] ${g.activeResearch.includes(t) ? 'text-accent' : 'text-dim'}`}>{TRACK_INFO[t].name}</span>
+            <span className={`w-32 shrink-0 whitespace-nowrap text-[11px] ${g.activeResearch.includes(t) ? 'text-accent' : 'text-dim'}`}>
+              <Lead icon={trackIcon(t)} />
+              {TRACK_INFO[t].name}
+            </span>
             <Meter value={g.levels[t] >= MAX_LEVEL ? 1 : (g.progress[t] ?? 0) / researchCost(g.levels[t] + 1)} tone={g.activeResearch.includes(t) ? 'accent' : 'dim'} />
             <span className="num w-8 text-right text-[11px] text-fg">L{g.levels[t]}</span>
           </div>
@@ -206,16 +212,34 @@ function ProductTable({ g, rows, compact = false, showMaker = false, winRate }: 
       <thead>
         <tr>
           <th />
-          <th>Device</th>
-          {showMaker && <th>Maker</th>}
-          <th>Status</th>
-          {!compact && <th>Segment</th>}
-          <th className="r">Price</th>
-          {!showMaker && <th className="r">Stock</th>}
-          <th className="r">{showMaker ? 'Last month' : 'Sold'}</th>
-          <th className="r">Review</th>
-          {!compact && <th className="r">Design</th>}
-          {winRate && <th className="r">Win rate</th>}
+          <Th iconClass="@max-[720px]:hidden" icon="devices">Device</Th>
+          {showMaker && <Th iconClass="@max-[720px]:hidden" icon="campus">Maker</Th>}
+          <Th iconClass="@max-[720px]:hidden" icon="info">Status</Th>
+          {!compact && <Th iconClass="@max-[720px]:hidden" icon="target">Segment</Th>}
+          <Th iconClass="@max-[720px]:hidden" icon="tag" r>
+            Price
+          </Th>
+          {!showMaker && (
+            <Th iconClass="@max-[720px]:hidden" icon="warehouse" r>
+              Stock
+            </Th>
+          )}
+          <Th iconClass="@max-[720px]:hidden" icon="package" r>
+            {showMaker ? 'Last month' : 'Sold'}
+          </Th>
+          <Th iconClass="@max-[720px]:hidden" icon="star" r>
+            Review
+          </Th>
+          {!compact && (
+            <Th iconClass="@max-[720px]:hidden" icon="design" r>
+              Design
+            </Th>
+          )}
+          {winRate && (
+            <Th iconClass="@max-[720px]:hidden" icon="percent" r>
+              Win rate
+            </Th>
+          )}
         </tr>
       </thead>
       <tbody>
@@ -228,11 +252,17 @@ function ProductTable({ g, rows, compact = false, showMaker = false, winRate }: 
               </td>
               <td className={inspect === p.id ? 'text-accent' : 'text-fg'}>
                 {p.name}
-                {!compact && <span className="ml-2 text-[10px] text-faint">{TYPES[p.type].name}</span>}
+                {!compact && (
+                  <span className="ml-2 text-faint" title={TYPES[p.type].name}>
+                    <Icon name={typeIcon(p.type)} size={12} className="inline-block" style={{ verticalAlign: -2 }} />
+                  </span>
+                )}
               </td>
               {showMaker && <td style={{ color: c.color }}>{c.name}</td>}
               <td>
-                <Tag tone={statusTone(p)}>{statusText(p)}</Tag>
+                <Tag tone={statusTone(p)} icon={statusIcon(p)}>
+                  {statusText(p)}
+                </Tag>
               </td>
               {!compact && <td className="text-dim">{p.segment ? segmentInfo(p.segment).name : '--'}</td>}
               <td className="num r text-fg">{money(p.price)}</td>
@@ -265,12 +295,12 @@ export function Products() {
           value={filter}
           onChange={setFilter}
           // with eight device types, only the ones the company has made get a tab of their own
-          options={[{ value: 'active', label: 'Current', badge: all.filter((p) => p.status !== 'ended').length }, { value: 'all', label: 'All', badge: all.length }, ...DEVICE_TYPES.filter((t) => t === filter || all.some((p) => p.type === t)).map((t) => ({ value: t, label: TYPES[t].plural, badge: all.filter((p) => p.type === t).length }))]}
+          options={[{ value: 'active', label: 'Current', icon: 'check' as const, badge: all.filter((p) => p.status !== 'ended').length }, { value: 'all', label: 'All', icon: 'layers' as const, badge: all.length }, ...DEVICE_TYPES.filter((t) => t === filter || all.some((p) => p.type === t)).map((t) => ({ value: t, label: TYPES[t].plural, icon: typeIcon(t), badge: all.filter((p) => p.type === t).length }))]}
           className="min-w-0 flex-1"
           fit
         />
         <div className="relative shrink-0">
-          <Btn tone="primary" className="px-5" onClick={() => setPicking(!picking)}>
+          <Btn tone="primary" icon="plus" className="px-5" onClick={() => setPicking(!picking)}>
             New device
           </Btn>
           {picking && (
@@ -293,7 +323,7 @@ export function Products() {
       </div>
       <Panel className="flex-1" bodyClass="overflow-auto">
         {rows.length === 0 ? (
-          <Empty text="No devices here yet. Press New device to choose a type and open the designer." />
+          <Empty icon="devices" text="No devices here yet. Press New device to choose a type and open the designer." />
         ) : (
           families.map((family) => {
             const group = rows.filter((p) => p.family === family)
@@ -339,7 +369,7 @@ export function Market() {
   const rows = [...onSale].sort((a, b) => (info ? (weights.get(b.id) ?? 0) - (weights.get(a.id) ?? 0) : (b.history.at(-1) ?? b.monthUnits) - (a.history.at(-1) ?? a.monthUnits)))
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-2">
-      <Tabs fit value={type} onChange={(t) => (setType(t), setSeg('all'))} options={DEVICE_TYPES.map((t) => ({ value: t, label: TYPES[t].plural, badge: g.products.filter((p) => p.status === 'sale' && p.type === t).length }))} />
+      <Tabs fit value={type} onChange={(t) => (setType(t), setSeg('all'))} options={DEVICE_TYPES.map((t) => ({ value: t, label: TYPES[t].plural, icon: typeIcon(t), badge: g.products.filter((p) => p.status === 'sale' && p.type === t).length }))} />
       <div className="grid shrink-0 gap-1" style={{ gridTemplateColumns: `repeat(${segs.length + 1}, minmax(0, 1fr))` }}>
         <button onClick={() => setSeg('all')} className={`border px-2 py-1 text-left ${seg === 'all' ? 'border-accent bg-accent/10' : 'border-line hover:border-line2'}`}>
           <div className="text-[11px] uppercase tracking-wider text-fg">All {TYPES[type].plural.toLowerCase()}</div>
@@ -354,10 +384,10 @@ export function Market() {
           </button>
         ))}
       </div>
-      <Panel title={info ? `${info.name}: who wins a buyer today` : `${TYPES[type].plural} on sale, by last month's sales`} className="flex-1" bodyClass="overflow-auto">
+      <Panel title={info ? `${info.name}: who wins a buyer today` : `${TYPES[type].plural} on sale, by last month's sales`} icon={typeIcon(type)} className="flex-1" bodyClass="overflow-auto">
         <ProductTable g={g} rows={rows} showMaker winRate={info ? weights : undefined} />
       </Panel>
-      <Fold title="Market share by units, all device types" open={false} bodyClass="h-52">
+      <Fold title="Market share by units, all device types" icon="pie" open={false} bodyClass="h-52">
         <ShareChart g={g} />
       </Fold>
     </div>
@@ -374,10 +404,10 @@ export function Rivals() {
   const total = trailing.reduce((a, t) => a + t.units, 0) || 1
   const company = g.companies.find((c) => c.id === companyId) ?? g.companies[1]
   const products = g.products.filter((p) => p.companyId === company.id).sort((a, b) => b.launchDay - a.launchDay)
-  const types = (ids: string[]) => [...new Set(ids.map((s) => TYPES[segmentInfo(s).type].plural))].join(', ')
+  const types = (ids: string[]) => [...new Set(ids.map((s) => segmentInfo(s).type))]
   return (
     <div className="grid h-full min-h-0 grid-cols-[minmax(0,5fr)_minmax(0,6fr)] gap-2 p-2">
-      <Panel title="Companies" bodyClass="overflow-auto">
+      <Panel title="Companies" icon="rivals" bodyClass="overflow-auto">
         <table className="grid-table">
           <thead>
             <tr>
@@ -394,9 +424,17 @@ export function Rivals() {
                 <td className={c.alive ? 'text-fg' : 'text-faint line-through'}>
                   <span className="mr-2 inline-block h-2 w-2" style={{ background: c.color }} />
                   {c.name}
-                  {c.isPlayer && <span className="ml-2"><Tag tone="accent">you</Tag></span>}
+                  {c.isPlayer && <span className="ml-2"><Tag tone="accent" icon="person">you</Tag></span>}
                 </td>
-                <td className="text-dim">{c.isPlayer ? '--' : types(c.segments)}</td>
+                <td className="text-dim">
+                  {c.isPlayer
+                    ? '--'
+                    : types(c.segments).map((t) => (
+                        <span key={t} title={TYPES[t].plural} className="mr-[6px] inline-block">
+                          <Icon name={typeIcon(t)} size={14} className="inline-block" style={{ verticalAlign: -3 }} />
+                        </span>
+                      ))}
+                </td>
                 <td className="num r text-dim">{Math.round(c.brand * 100)}</td>
                 <td className="num r text-dim">{num(units)}</td>
                 <td className="num r text-fg">{pct(units / total)}</td>
@@ -407,25 +445,26 @@ export function Rivals() {
       </Panel>
       <div className="flex min-h-0 flex-col gap-2">
         <div className="grid shrink-0 grid-cols-4 gap-1">
-          <Mini label="Awareness" value={pct(company.awareness, 0)} />
-          <Mini label="Lifetime revenue" value={money(company.revenueTotal, 1)} />
-          <Mini label="Software edge" value={`${company.software >= 0 ? '+' : ''}${pct(company.software)}`} />
-          <Mini label="Status" value={company.alive ? 'Active' : 'Bankrupt'} tone={company.alive ? 'text-pos' : 'text-neg'} />
+          <Mini label="Awareness" icon="eye" value={pct(company.awareness, 0)} />
+          <Mini label="Lifetime revenue" icon="coins" value={money(company.revenueTotal, 1)} />
+          <Mini label="Software edge" icon="code" value={`${company.software >= 0 ? '+' : ''}${pct(company.software)}`} />
+          <Mini label="Status" icon="info" value={company.alive ? 'Active' : 'Bankrupt'} tone={company.alive ? 'text-pos' : 'text-neg'} />
         </div>
         <Panel
           title={`${company.name}: devices`}
+          icon="devices"
           right={
             !company.isPlayer && (
-              <label className="flex items-center gap-2">
-                <span className="label text-faint">Rename</span>
+              <label className="flex shrink-0 items-center gap-2" title="Rename this company">
+                <Icon name="edit" size={12} className="text-faint" />
                 <TextInput value={company.name} maxLength={18} onChange={(v) => act(() => void (company.name = v))} className="h-6 w-32" />
               </label>
             )
           }
           className="flex-1"
-          bodyClass="overflow-auto"
+          bodyClass="@container overflow-auto"
         >
-          {products.length ? <ProductTable g={g} rows={products} /> : <Empty text="This company has no devices." />}
+          {products.length ? <ProductTable g={g} rows={products} /> : <Empty icon="devices" text="This company has no devices." />}
         </Panel>
       </div>
     </div>
@@ -446,21 +485,21 @@ export function Finance() {
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-2">
       <div className="grid shrink-0 grid-cols-4 gap-2">
-        <Kpi label="Cash" value={g.config.unlimitedMoney ? 'UNLIMITED' : money(g.cash)} tone="accent" />
-        <Kpi label="Income, 12 months" value={money(income)} sub={`of which licensing and services ${money(year.reduce((a, r) => a + r.other, 0), 1)}`} />
-        <Kpi label="Costs, 12 months" value={money(costs)} />
-        <Kpi label="Profit, 12 months" value={money(income - costs)} tone={income - costs >= 0 ? 'pos' : 'neg'} sub={`unsold stock at cost ${money(stockValue, 1)}`} />
+        <Kpi label="Cash" icon="cash" value={g.config.unlimitedMoney ? 'UNLIMITED' : money(g.cash)} tone="accent" />
+        <Kpi label="Income, 12 months" icon="coins" value={money(income)} sub={`of which licensing and services ${money(year.reduce((a, r) => a + r.other, 0), 1)}`} />
+        <Kpi label="Costs, 12 months" icon="receipt" value={money(costs)} />
+        <Kpi label="Profit, 12 months" icon={income - costs >= 0 ? 'trendUp' : 'trendDown'} value={money(income - costs)} tone={income - costs >= 0 ? 'pos' : 'neg'} sub={`unsold stock at cost ${money(stockValue, 1)}`} />
       </div>
       <div className="grid shrink-0 grid-cols-8 gap-1">
-        <Mini label="Shares and stakes, 12 mo" value={money(year.reduce((a, r) => a + (r.funding ?? 0), 0), 1)} />
+        <Mini label="Shares and stakes, 12 mo" icon="shares" value={money(year.reduce((a, r) => a + (r.funding ?? 0), 0), 1)} />
         {COST_KEYS.map((k) => (
-          <Mini key={k} label={`${COST_LABELS[k]}, 12 mo`} value={money(year.reduce((a, r) => a + r[k], 0), 1)} />
+          <Mini key={k} label={`${COST_LABELS[k]}, 12 mo`} icon={COST_ICON[k]} value={money(year.reduce((a, r) => a + r[k], 0), 1)} />
         ))}
       </div>
-      <Panel title="Income, costs and cash, last 36 months" className="h-56 shrink-0">
+      <Panel title="Income, costs and cash, last 36 months" icon="chart" className="h-56 shrink-0">
         <FinanceChart g={g} months={36} />
       </Panel>
-      <Panel title="Monthly statement" className="flex-1" bodyClass="overflow-auto">
+      <Panel title="Monthly statement" icon="doc" className="flex-1" bodyClass="overflow-auto">
         <table className="grid-table">
           <thead>
             <tr>
@@ -498,7 +537,7 @@ export function Finance() {
             })}
           </tbody>
         </table>
-        {rows.length === 0 && <Empty text="The first statement closes at the end of the month." />}
+        {rows.length === 0 && <Empty icon="doc" text="The first statement closes at the end of the month." />}
       </Panel>
     </div>
   )
