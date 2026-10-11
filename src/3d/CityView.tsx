@@ -162,6 +162,7 @@ const CARGO = ['#b5462f', '#2f5d8a', '#3f7d4d', '#c9a227', '#8a8f95']
 const MAX_TRUCKS = 24
 const MAX_SHIPS = 12
 const MAX_PEOPLE = 260
+const MAX_PINS = 256
 
 /** Lorries on the streets, ships in the bay and the queues outside the shops. Each kind is one instanced mesh or two. */
 function Movers({ traffic, speed, color, pins }: { traffic: Traffic; speed: number; color: string; pins: Place[] }) {
@@ -187,11 +188,11 @@ function Movers({ traffic, speed, color, pins }: { traffic: Traffic; speed: numb
       hull: make(mergeGeometries([box(10, 4.4, 40, 0.6, 0), box(8, 8, 5, 7.6, -15.5)])!, solid('#27313d', 0.7), MAX_SHIPS),
       cargo: make(box(6.4, 5.2, 27, 5.4, 3), solid('#ffffff', 0.8), MAX_SHIPS),
       people: make(person, solid('#ffffff', 0.9), MAX_PEOPLE, false),
-      pins: make(new THREE.OctahedronGeometry(1.5, 0), new THREE.MeshBasicMaterial({ toneMapped: false }), 64, false),
+      pins: make(new THREE.OctahedronGeometry(1.5, 0), new THREE.MeshBasicMaterial({ toneMapped: false }), MAX_PINS, false),
     }
     out.cargo.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_SHIPS * 3), 3)
     out.people.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_PEOPLE * 3), 3)
-    out.pins.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(64 * 3), 3)
+    out.pins.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_PINS * 3), 3)
     return out
   }, [color])
   useEffect(
@@ -258,14 +259,15 @@ function Movers({ traffic, speed, color, pins }: { traffic: Traffic; speed: numb
     if (parts.people.instanceColor) parts.people.instanceColor.needsUpdate = true
     // a marker turning over each of the company's own places: gold where something needs attention
     const spin = state.clock.elapsedTime
-    pins.slice(0, 64).forEach((pin, i) => {
+    pins.slice(0, MAX_PINS).forEach((pin, i) => {
       q.setFromAxisAngle(up, spin * 0.9 + i)
-      const k = pin.kind === 'store' ? 0.9 : 1.6
+      // a store drawn small on a shared plot carries a marker to match
+      const k = pin.kind === 'store' ? 0.9 * Math.max(0.45, pin.scale ?? 1) : 1.6
       m.compose(p.set(pin.x, pin.h + 5 + k + Math.sin(spin * 1.6 + i) * 0.5, pin.z), q, s.set(k, k * 1.3, k))
       parts.pins.setMatrixAt(i, m)
       parts.pins.setColorAt(i, c.set(pin.warn ? '#f2b631' : color))
     })
-    parts.pins.count = Math.min(64, pins.length)
+    parts.pins.count = Math.min(MAX_PINS, pins.length)
     parts.pins.instanceMatrix.needsUpdate = true
     if (parts.pins.instanceColor) parts.pins.instanceColor.needsUpdate = true
   })
@@ -328,7 +330,7 @@ function DevHandle() {
 }
 
 /** How far above the ground a place's name tag floats. */
-const tagHeight = (p: Place) => p.h + 6 + (OWN.includes(p.kind) && p.site ? 5 : 0)
+const tagHeight = (p: Place) => p.h + (6 + (OWN.includes(p.kind) && p.site ? 5 : 0)) * Math.max(0.45, p.scale ?? 1)
 
 /**
  * Keeps the name tags over their buildings. The tags are ordinary elements
@@ -378,7 +380,7 @@ export function CityView({ g, all, list, traffic, sky, speed, names, hover, onHo
   const hovered = list.find((p) => p.id === hover)
   const sites = list.filter((p) => p.site)
   const pins = useMemo(() => list.filter((p) => OWN.includes(p.kind) && p.site), [list])
-  const sig = `${sites.map((p) => `${p.id}${p.site!.rev}`).join('|')}|${list.length}|${all.map((d) => (d.open ? 1 : 0)).join('')}`
+  const sig = `${sites.map((p) => `${p.id}${p.site!.rev}${p.x}${p.z}`).join('|')}|${list.length}|${all.map((d) => (d.open ? 1 : 0)).join('')}`
   return (
     <div className="relative h-full w-full">
     <Canvas shadows={Q.shadows > 0} dpr={[1, Q.dpr]} camera={{ fov: 32, near: 5, far: 5200, position: HOME_CAMERA }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, powerPreference: 'high-performance' }} style={{ cursor: hovered ? 'pointer' : 'grab' }}>
@@ -391,7 +393,7 @@ export function CityView({ g, all, list, traffic, sky, speed, names, hover, onHo
       </Environment>
       <CityModel g={g} all={all} list={list} mats={mats} lights={lights} color={me.color} accent={accent} />
       {sites.map((p) => (
-        <SiteModel key={p.id} site={p.site!} x={p.x} z={p.z} lights={lights} />
+        <SiteModel key={p.id} site={p.site!} x={p.x} z={p.z} lights={lights} scale={p.scale} />
       ))}
       <Daylight sky={sky} speed={speed} startDay={g.day} mats={mats} shadows={Q.shadows} sig={`${sig}${lights}`} onLights={setLights} />
       <Movers traffic={traffic} speed={speed} color={me.color} pins={pins} />
@@ -434,7 +436,7 @@ export function CityView({ g, all, list, traffic, sky, speed, names, hover, onHo
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         {list.map((p) => {
           const full = p.id === hover
-          const shown = full || (names && p.kind !== 'rival' && p.kind !== 'board')
+          const shown = full || (names && p.kind !== 'rival' && p.kind !== 'board' && !p.crowded)
           return (
             <div
               key={p.id}

@@ -2,15 +2,15 @@
 // the space, with a floating palette for zoning rooms, furnishing them and
 // choosing how the building looks, plus whatever stats the screen passes in.
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
-import { type AreaShape, type Edge, type ShowState, type SiteLife, type SiteTool, SiteView, type Target, seatOwners } from '../3d/SiteView'
+import { type AreaShape, type EdgeRun, type RunInfo, type ShowState, type SiteLife, type SiteTool, SiteView, type Target, seatOwners } from '../3d/SiteView'
 import { campus, clockText, hourOf, moodAt } from '../3d/site/clock'
 import type { Mood } from '../3d/site/env'
 import type { ViewMode } from '../3d/site/structure'
 import { sfx } from '../audio/sfx'
 import { MIN_THICK } from '../sim/curves'
-import { clearZone, lookCost, paintArea, placeItem, player, removeItem, removeRoom, roomCost, rotateItem, setCurveEdge, setEdge, setLook, setRoomStyle, zoneRoom } from '../sim/game'
+import { clearZone, lookCost, paintArea, placeItems, player, removeItems, removeRoom, roomCost, rotateItem, setEdges, setLook, setRoomStyle, zoneRoom } from '../sim/game'
 import { factoryLife, officeLife, storeLife } from '../sim/life'
-import { FACADES, GROUNDS, ITEMS, type LineStats, MAX_FLOORS, OUT, ROOFS, ROOMS, builtTiles, gridAt, roomNames, roomOf, roomTiles, sealedRooms, tierOf } from '../sim/sites'
+import { FACADES, GROUNDS, ITEMS, type LineStats, MAX_FLOORS, OUT, ROOFS, ROOMS, builtTiles, gridAt, groundsFor, itemAllowed, roomNames, roomOf, roomTiles, sealedRooms, tierOf } from '../sim/sites'
 import type { Employee, Product, Site, SiteItem } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { actionFor, keyName, keysFor } from '../store/settings'
@@ -119,6 +119,9 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
   const room = selected ? roomOf(site, selected) : undefined
   const sealed = sealedRooms(site)
   const onPreview = useCallback((n: number) => setPending(n), [])
+  /** What the tool being dragged across the plot would do right now. */
+  const [run, setRun] = useState<RunInfo | null>(null)
+  const onRun = useCallback((info: RunInfo | null) => setRun(info), [])
   const [cutOff, setCutOff] = useState(0)
   const onCutOff = useCallback((n: number) => setCutOff(n), [])
 
@@ -155,37 +158,51 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
       setSelected(gridAt(site, x, y))
       return
     }
-    if (active.type === 'item') report(act((s) => placeItem(s, siteRef, active.kind, x, y, active.rot)), sfx.build)
-    else if (active.type === 'rotate' && item) report(act((s) => rotateItem(s, siteRef, item.id)), sfx.toggle)
-    else if (active.type === 'remove' && item) (act((s) => removeItem(s, siteRef, item.id)), sfx.cash())
+    if (active.type === 'rotate' && item) report(act((s) => rotateItem(s, siteRef, item.id)), sfx.toggle)
   }
-  const onArea = (x0: number, y0: number, x1: number, y1: number) => {
+  /** One sound for a whole run, and a word about it when something did not go as asked. */
+  const ran = (out: { done: number; error: string | null }, sound: () => void) => {
+    if (out.done) sound()
+    if (out.error) say(out.error, 'bad')
+  }
+  // a click places one; pressing and dragging lays a row, all in one action
+  const onRow = (x0: number, y0: number, x1: number, y1: number) => {
+    if (active?.type === 'item') ran(act((s) => placeItems(s, siteRef, active.kind, x0, y0, x1, y1, active.rot)), sfx.build)
+  }
+  const onEdges = (wall: EdgeRun) => {
+    if (active?.type === 'edge') ran(act((s) => setEdges(s, siteRef, wall, active.kind)), sfx.build)
+  }
+  const onSell = (ids: string[]) => {
+    if (active?.type === 'remove') ran(act((s) => removeItems(s, siteRef, ids)), sfx.cash)
+  }
+  const onArea = (x0: number, y0: number, x1: number, y1: number, apart: boolean) => {
     if (!active) return
     if (active.type === 'room') {
-      // starting inside a room of the same kind extends it
+      // starting inside a room of the same kind extends it; floor laid against one joins it, unless it is asked to stand apart
       const start = roomOf(site, gridAt(site, x0, y0))
-      report(act((s) => zoneRoom(s, siteRef, active.room, x0, y0, x1, y1, active.shape, start?.type === active.room ? start.n : undefined, active.opts)), sfx.zone)
+      report(act((s) => zoneRoom(s, siteRef, active.room, x0, y0, x1, y1, active.shape, !apart && start?.type === active.room ? start.n : undefined, active.opts, apart)), sfx.zone)
     } else if (active.type === 'clear') (act((s) => clearZone(s, siteRef, x0, y0, x1, y1, active.shape, active.opts)), sfx.demolish())
     else if (active.type === 'ground') (act((s) => paintArea(s, siteRef, x0, y0, x1, y1, active.shape, active.id, active.opts)), sfx.toggle())
-  }
-  const onEdge = (e: Edge) => {
-    if (active?.type !== 'edge') return
-    const { curve, bay } = e
-    if (curve !== undefined && bay !== undefined) report(act((s) => setCurveEdge(s, siteRef, curve, bay, active.kind)), sfx.build)
-    else report(act((s) => setEdge(s, siteRef, e.x, e.y, e.side, active.kind)), sfx.build)
   }
 
   const turnKey = keyName(keysFor('rotate')[0] ?? 'KeyR')
   const areaHint = `Click one corner, then the opposite corner. Esc cancels.${curvy && sweep < 360 ? ` The arc is open to the ${OPEN_SIDE[sweep][rot]} (${turnKey} turns it).` : ''}`
   const legend = site.kind === 'office' && (idle?.length || (seated ?? []).some((e) => e.ask || e.morale < 35)) ? ' Markers over people: red is unhappy or has no desk, gold wants a raise, blue over an empty chair is away on a course.' : ''
   const pointAt = site.kind === 'office' ? 'Point at a bench, a screen, the reception or a person and click to see what they are doing.' : site.kind === 'factory' ? 'Click a dock or a test station to see what the line is making.' : site.kind === 'store' ? 'Click a checkout or a table to see how the store is doing.' : ''
+  const keyOf = (id: Parameters<typeof keysFor>[0]) => keysFor(id).slice(0, 1).map(keyName).join('')
+  // with a tool that paints as it is dragged, the left button is the tool's
+  const camHint = `While this tool is in hand a left-drag is the tool's: right-drag or ${keyOf('camForward')}${keyOf('camLeft')}${keyOf('camBack')}${keyOf('camRight')} moves the view, ${keyOf('camTurnLeft')} and ${keyOf('camTurnRight')} (or a middle-drag) turn it, scroll zooms.`
+  const blocked = run?.blocked ? ` ${run.blocked} ${run.blocked === 1 ? 'spot is' : 'spots are'} in the way and will be skipped.` : ''
+  const edgeDef = tool?.type === 'edge' ? EDGES.find((e) => e.kind === tool.kind) : undefined
   const info =
     tool?.type === 'item'
-      ? `${defs[tool.kind].name}: ${defs[tool.kind].note} Goes in: ${roomNames(site.kind, defs[tool.kind])}. Facing ${FACING[rot]} (${turnKey} turns it).`
+      ? run
+        ? `${defs[tool.kind].name}: ${run.count} for ${money(run.cost, 0)}.${blocked} Let go to place ${run.count === 1 ? 'it' : 'them'}. Esc cancels.`
+        : `${defs[tool.kind].name}: ${defs[tool.kind].note} Goes in: ${roomNames(site.kind, defs[tool.kind])}. Facing ${FACING[rot]} (${turnKey} turns it). Click to place one, or press and drag to lay a row. ${camHint}`
       : tool?.type === 'room'
         ? pending
-          ? `${rooms[tool.room].name}: ${pending} m² for ${money(roomCost(site, tool.room, pending), 0)}. Click to build.`
-          : `${rooms[tool.room].name}: ${rooms[tool.room].note} ${areaHint} Start inside a room of the same kind to extend it.`
+          ? `${rooms[tool.room].name}: ${pending} m² for ${money(roomCost(site, tool.room, pending), 0)}. Click to build. Hold Alt as you click to keep it a room of its own.`
+          : `${rooms[tool.room].name}: ${rooms[tool.room].note} ${areaHint} Floor laid against a room of the same kind joins it into one room; hold Alt on the second click for a separate room.`
         : tool?.type === 'clear'
           ? pending
             ? `Demolish ${pending} m² of rooms. Anything inside is sold for half its price.`
@@ -193,11 +210,17 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
           : tool?.type === 'ground'
             ? `${GROUNDS.find((x) => x.id === tool.id)?.name}: lay it on open land. Free. ${areaHint}`
             : tool?.type === 'edge'
-              ? `${EDGES.find((e) => e.kind === tool.kind)?.name}: click a stretch of wall. ${EDGES.find((e) => e.kind === tool.kind)?.note}`
+              ? run
+                ? `${edgeDef?.name}: ${run.count} ${run.count === 1 ? 'stretch' : 'stretches'} of wall${run.cost ? ` for ${money(run.cost, 0)}` : ', free'}.${run.blocked ? ` ${run.blocked} of the line ${run.blocked === 1 ? 'is' : 'are'} not wall.` : ''} Let go to build. Esc cancels.`
+                : `${edgeDef?.name}: click a stretch of wall, or press and drag along a wall to do a run of it; on a curved wall the run follows the curve. ${edgeDef?.note} ${camHint}`
               : tool?.type === 'rotate'
                 ? 'Click an item to turn it a quarter turn.'
                 : tool?.type === 'remove'
-                  ? 'Click an item to sell it for half its price.'
+                  ? run
+                    ? run.count
+                      ? `Sell ${run.count} ${run.count === 1 ? 'item' : 'items'} for ${money(run.cost, 0)} back. Let go to sell. Esc cancels.`
+                      : 'Nothing on that line to sell.'
+                    : `Click an item to sell it for half its price, or press and drag across several to sell them all. ${camHint}`
                   : sealed.length
                     ? `${sealed.length === 1 ? `The ${rooms[sealed[0].type].name.toLowerCase()} has` : `${sealed.length} rooms have`} no door, so nothing inside counts. Add one from the Walls tab.`
                     : cutOff
@@ -207,7 +230,7 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
                       : 'An empty plot. Open Rooms and mark out your first room.'
 
   const tiles = builtTiles(site)
-  const items = Object.entries(defs).filter(([, d]) => d.group === group && (!room || d.rooms.includes(room.type)))
+  const items = Object.entries(defs).filter(([kind, d]) => d.group === group && itemAllowed(site, kind) && (!room || d.rooms.includes(room.type)))
 
   return (
     <div className="relative h-full min-h-0 overflow-hidden">
@@ -224,7 +247,10 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
           selectedRoom={selected}
           sealed={sealed.map((r) => r.n)}
           onTile={onTile}
-          onEdge={onEdge}
+          onRow={onRow}
+          onEdges={onEdges}
+          onSell={onSell}
+          onRun={onRun}
           onArea={onArea}
           onPreview={onPreview}
           seated={seated}
@@ -416,7 +442,7 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
               </>
             )}
             {tab === 'Grounds' &&
-              GROUNDS.map((f) => {
+              groundsFor(site).map((f) => {
                 const on = tool?.type === 'ground' && tool.id === f.id
                 return (
                   <button key={f.id} onClick={() => pick(on ? null : { type: 'ground', id: f.id, shape })} className={`${row(on)} !items-center !justify-start`}>
@@ -513,7 +539,7 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
       {children && <div className="pointer-events-none absolute bottom-12 right-2 top-12 flex w-[270px] flex-col gap-2 overflow-y-auto [&>*]:pointer-events-auto">{children}</div>}
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 p-2">
-        <div className={`pointer-events-auto inline-block max-w-full border bg-panel/95 px-3 py-[7px] text-[11px] ${(sealed.length || cutOff) && !tool ? 'border-warn text-warn' : pending ? 'border-accent text-fg' : 'border-line2 text-dim'}`}>{info}</div>
+        <div className={`pointer-events-auto inline-block max-w-full border bg-panel/95 px-3 py-[7px] text-[11px] ${(sealed.length || cutOff) && !tool ? 'border-warn text-warn' : pending || (run && tool) ? 'border-accent text-fg' : 'border-line2 text-dim'}`}>{info}</div>
       </div>
     </div>
   )

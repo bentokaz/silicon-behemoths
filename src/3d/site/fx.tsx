@@ -3,11 +3,11 @@
 // Each is one instanced mesh, and draws nothing while nothing is happening.
 import { type ReactNode, useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
-import { FACADES, edgeIds, styleOf } from '../../sim/sites'
+import { CLIP, bayBeyond, bayStands, curveTiles, geomOf } from '../../sim/curves'
+import { FACADES, edgeIds, edgeRuns, styleOf, wholeRun } from '../../sim/sites'
 import type { Site } from '../../sim/types'
 import type { Crowd } from './crowd'
 import { rnd } from './crowd'
-import type { Nav } from './nav'
 import { CUT_H, STOREY, WALL_T } from './structure'
 import { useTick } from './tick'
 
@@ -145,15 +145,18 @@ const DROP = 0.2
 const LAND = 0.34
 
 /** Whatever is inside drops onto the floor, squashes a little and settles, with a puff of dust. */
-export function Dropping({ x, z, size, sparks, onDone, children }: { x: number; z: number; size: number; sparks: Sparks; onDone: () => void; children: ReactNode }) {
+export function Dropping({ x, z, size, sparks, onDone, delay = 0, children }: { x: number; z: number; size: number; sparks: Sparks; onDone: () => void; /** Seconds to wait before it falls, so a row lands one after another. */ delay?: number; children: ReactNode }) {
   const ref = useRef<THREE.Group>(null)
-  const state = useRef({ t: 0, landed: false, done: false })
+  const state = useRef({ t: -delay, landed: false, done: false })
   useTick((dt) => {
     const g = ref.current
     const s = state.current
     if (!g || s.done) return
     s.t += dt
-    if (s.t < DROP) {
+    if (s.t < 0) {
+      // not its turn yet: out of sight
+      g.scale.setScalar(0.0001)
+    } else if (s.t < DROP) {
       const k = s.t / DROP
       g.position.y = 0.75 * (1 - k * k)
       g.scale.set(1, 1, 1)
@@ -174,7 +177,7 @@ export function Dropping({ x, z, size, sparks, onDone, children }: { x: number; 
     }
   }, 6)
   return (
-    <group ref={ref} position={[0, 0.75, 0]}>
+    <group ref={ref} position={[0, 0.75, 0]} scale={delay > 0 ? 0.0001 : 1}>
       {children}
     </group>
   )
@@ -184,34 +187,72 @@ export function Dropping({ x, z, size, sparks, onDone, children }: { x: number; 
 
 /** A copy of the parts of a site the walls are drawn from, so the view can hold on to how it stood a moment ago. */
 export function snapshot(site: Site): Site {
-  return { ...site, grid: site.grid.slice(), rooms: site.rooms.map((r) => ({ ...r })), walls: site.walls.map((w) => ({ ...w })), cuts: site.cuts ? { ...site.cuts } : undefined }
+  return {
+    ...site,
+    grid: site.grid.slice(),
+    rooms: site.rooms.map((r) => ({ ...r })),
+    walls: site.walls.map((w) => ({ ...w })),
+    cuts: site.cuts ? { ...site.cuts } : undefined,
+    // curves are changed in place as rooms come and go, so each needs a copy of its own
+    curves: site.curves?.map((c) => ({ ...c, ...(c.walls ? { walls: { ...c.walls } } : {}), ...(c.square ? { square: { ...c.square } } : {}) })),
+  }
 }
 
+/** One stretch of wall: a metre of straight wall on a grid edge, or one facet of a curved one. */
 export interface WallPiece {
+  /** Its middle, in world coordinates. */
   x: number
   z: number
-  /** True when the wall runs east-west. */
-  alongX: boolean
+  len: number
+  /** Which way it runs, as a turn about the vertical. */
+  rot: number
   color: string
   /** 0-1: how late in the wave this piece goes. */
   delay: number
 }
 
-/** Every stretch of solid wall on a site, by edge. */
-function solidWalls(site: Site): Map<string, string> {
-  const out = new Map<string, string>()
+/** Every stretch of solid wall on a site, straight and curved, keyed by where it stands. */
+function solidWalls(site: Site): Map<string, WallPiece> {
+  const out = new Map<string, WallPiece>()
   const gaps = new Set(site.walls.filter((w) => w.kind !== 'glass').map((w) => `${w.x},${w.y},${w.side}`))
   const rooms = new Map(site.rooms.map((r) => [r.n, r]))
   const facade = (FACADES[site.facade] ?? FACADES[0]).color
+  const curved = curveTiles(site)
+  const ox = -site.w / 2
+  const oz = -site.h / 2
   for (let y = 0; y <= site.h; y++) {
     for (let x = 0; x <= site.w; x++) {
       for (const side of ['n', 'w'] as const) {
         if ((side === 'n' && x >= site.w) || (side === 'w' && y >= site.h)) continue
-        const [a, b] = edgeIds(site, x, y, side)
-        if (a === b || gaps.has(`${x},${y},${side}`)) continue
-        const room = rooms.get(a) ?? rooms.get(b)
-        out.set(`${x},${y},${side}`, !a || !b ? facade : room ? styleOf(site, room).wall : facade)
+        for (const r of edgeRuns(site, x, y, side, curved)) {
+          const len = r.u1 - r.u0
+          if (len < CLIP || gaps.has(`${x},${y},${side}`)) continue
+          const room = rooms.get(r.a) ?? rooms.get(r.c)
+          const mid = (r.u0 + r.u1) / 2
+          out.set(`${x},${y},${side},${r.u0.toFixed(3)},${r.u1.toFixed(3)}`, { x: ox + x + (side === 'n' ? mid : 0), z: oz + y + (side === 'w' ? mid : 0), len, rot: side === 'n' ? 0 : Math.PI / 2, color: !r.a || !r.c || !room ? facade : styleOf(site, room).wall, delay: 0 })
+        }
       }
+    }
+  }
+  // curved walls, facet by facet as they are drawn, so they rise and fall in their true shape
+  const standing = new Map<string, boolean>()
+  for (const tile of curved.values()) {
+    const c = site.curves![tile.curve]
+    const geom = geomOf(c)
+    const id = `${c.cx},${c.cy},${c.rx},${c.ry},${c.t ?? 0},${c.from ?? 0},${c.sweep ?? 360}`
+    const room = rooms.get(c.room)
+    for (const piece of tile.shape.pieces) {
+      const f = geom.facets[piece.facet]
+      const kind = c.walls?.[f.bay]
+      if (kind && kind !== 'glass') {
+        let stands = standing.get(`${tile.curve}:${f.bay}`)
+        if (stands === undefined) standing.set(`${tile.curve}:${f.bay}`, (stands = bayStands(site, tile.curve, f.bay)))
+        if (stands) continue
+      }
+      const len = (piece.t1 - piece.t0) * f.len
+      if (len < 0.004) continue
+      const t = (piece.t0 + piece.t1) / 2
+      out.set(`c${id}:${piece.facet}:${piece.t0.toFixed(3)}`, { x: ox + f.x0 + (f.x1 - f.x0) * t, z: oz + f.y0 + (f.y1 - f.y0) * t, len: len + 0.01, rot: Math.atan2(-(f.y1 - f.y0), f.x1 - f.x0), color: tile.beyond || !room ? (room ? styleOf(site, room).wall : facade) : facade, delay: 0 })
     }
   }
   return out
@@ -224,14 +265,8 @@ export function wallChanges(prev: Site, next: Site): { rise: WallPiece[]; fall: 
   if (prev.w !== next.w || prev.h !== next.h) return { rise, fall }
   const a = solidWalls(prev)
   const b = solidWalls(next)
-  const piece = (key: string, color: string): WallPiece => {
-    const [xs, ys, side] = key.split(',')
-    const x = Number(xs)
-    const y = Number(ys)
-    return { x: x - next.w / 2 + (side === 'n' ? 0.5 : 0), z: y - next.h / 2 + (side === 'w' ? 0.5 : 0), alongX: side === 'n', color, delay: 0 }
-  }
-  for (const [key, color] of b) if (!a.has(key)) rise.push(piece(key, color))
-  for (const [key, color] of a) if (!b.has(key)) fall.push(piece(key, color))
+  for (const [key, piece] of b) if (!a.has(key)) rise.push(piece)
+  for (const [key, piece] of a) if (!b.has(key)) fall.push(piece)
   for (const list of [rise, fall]) {
     if (!list.length) continue
     // the change sweeps across from one corner
@@ -259,7 +294,7 @@ export function WallFx({ pieces, falling, height, sparks, onDone }: { pieces: Wa
     m.userData.live = true
     pieces.forEach((p, i) => {
       m.setColorAt(i, col.set(p.color))
-      m.setMatrixAt(i, falling ? M.makeScale(p.alongX ? 1 : WALL_T, height, p.alongX ? WALL_T : 1).setPosition(p.x, height / 2, p.z) : ZERO)
+      m.setMatrixAt(i, falling ? M.compose(V.set(p.x, height / 2, p.z), Q.setFromEuler(E.set(0, p.rot, 0)), S.set(p.len, height, WALL_T)) : ZERO)
     })
     return m
   }, [pieces, falling, height])
@@ -305,8 +340,9 @@ export function WallFx({ pieces, falling, height, sparks, onDone }: { pieces: Wa
         mesh.setMatrixAt(i, ZERO)
         continue
       }
-      Q.setFromEuler(E.set(p.alongX ? tilt : 0, 0, p.alongX ? 0 : tilt))
-      M.compose(V.set(p.x, h / 2 - drop, p.z), Q, S.set(p.alongX ? 1 : WALL_T, h, p.alongX ? WALL_T : 1))
+      // turned to run along its wall, then leaning over about its own length
+      Q.setFromEuler(E.set(tilt, p.rot, 0, 'YXZ'))
+      M.compose(V.set(p.x, h / 2 - drop, p.z), Q, S.set(p.len, h, WALL_T))
       mesh.setMatrixAt(i, M)
     }
     mesh.instanceMatrix.needsUpdate = true
@@ -323,20 +359,74 @@ export const wallHeight = (mode: 'cut' | 'walls' | 'full') => (mode === 'cut' ? 
 
 // ---------------------------------------------------------------- doors
 
-/** Door leaves that swing open as someone comes up to them and fall shut behind. */
-export function Doors({ site, nav, crowd, height }: { site: Site; nav: Nav; crowd: Crowd | null; height: number }) {
-  const doors = nav.doors
+/** One door leaf: where its hinge is, which way it lies when shut, and which way it swings. */
+export interface Leaf {
+  hx: number
+  hz: number
+  /** Turn about the vertical when shut. */
+  base: number
+  /** 1 or -1: the way it opens. */
+  swing: number
+  len: number
+  /** Middle of the doorway, for telling when someone is close. */
+  cx: number
+  cz: number
+  /** An outside door, which is darker. */
+  outside: boolean
+}
+
+/** Every door on a site, in straight walls and curved ones alike. */
+export function doorLeaves(site: Site): Leaf[] {
+  const out: Leaf[] = []
+  const ox = -site.w / 2
+  const oz = -site.h / 2
+  const curved = curveTiles(site)
+  for (const w of site.walls) {
+    if (w.kind !== 'door') continue
+    // a door needs its whole metre of wall; on a shorter stretch it is only a way through
+    const runs = edgeRuns(site, w.x, w.y, w.side, curved)
+    if (runs.length !== 1 || !wholeRun(runs[0])) continue
+    const [a, b] = edgeIds(site, w.x, w.y, w.side)
+    const cx = ox + w.x + (w.side === 'n' ? 0.5 : 0)
+    const cz = oz + w.y + (w.side === 'w' ? 0.5 : 0)
+    // hinged at the start of the edge, lying along it when shut
+    out.push({ hx: w.side === 'n' ? cx - 0.41 : cx, hz: w.side === 'w' ? cz - 0.41 : cz, base: w.side === 'n' ? 0 : -Math.PI / 2, swing: 1, len: 0.8, cx, cz, outside: !a || !b })
+  }
+  site.curves?.forEach((c, ci) => {
+    const geom = geomOf(c)
+    for (const [key, kind] of Object.entries(c.walls ?? {})) {
+      const bay = geom.bays.get(key)
+      if (kind !== 'door' || !bay || !bayStands(site, ci, key)) continue
+      const first = geom.facets[bay.facets[0]]
+      const last = geom.facets[bay.facets[bay.facets.length - 1]]
+      // the leaf spans the bay from end to end, a chord of the curve, and opens into the room
+      const dx = last.x1 - first.x0
+      const dz = last.y1 - first.y0
+      const chord = Math.hypot(dx, dz) || 1
+      const ux = dx / chord
+      const uz = dz / chord
+      out.push({ hx: ox + first.x0 + ux * 0.09, hz: oz + first.y0 + uz * 0.09, base: Math.atan2(-uz, ux), swing: -uz * bay.nx + ux * bay.ny >= 0 ? 1 : -1, len: Math.max(0.3, chord - 0.18), cx: ox + bay.x, cz: oz + bay.y, outside: !bayBeyond(site, ci, key).length })
+    }
+  })
+  return out
+}
+
+/** Door leaves that swing open as someone comes up to them and fall shut behind. `height` is how tall the walls stand. */
+export function Doors({ site, crowd, height }: { site: Site; crowd: Crowd | null; height: number }) {
+  const found = useMemo(() => doorLeaves(site), [site, site.rev]) // eslint-disable-line react-hooks/exhaustive-deps
+  // the same doors as before keep their leaves, and how far open each one stands, whatever else changed on the site
+  const sig = JSON.stringify(found)
+  const doors = useMemo(() => found, [sig]) // eslint-disable-line react-hooks/exhaustive-deps
   const mesh = useMemo(() => {
     const m = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ roughness: 0.6 }), Math.max(1, doors.length))
     m.frustumCulled = false
     m.userData.live = true
     m.count = doors.length
-    doors.forEach((d, i) => {
-      const [a, b] = edgeIds(site, d.x, d.y, d.side)
-      m.setColorAt(i, col.set(!a || !b ? '#33373d' : '#8a6a4f'))
-    })
+    m.castShadow = true
+    // nothing shows until the first tick has set each leaf in its doorway
+    for (let i = 0; i < Math.max(1, doors.length); i++) m.setMatrixAt(i, ZERO)
+    doors.forEach((d, i) => m.setColorAt(i, col.set(d.outside ? '#33373d' : '#8a6a4f')))
     return m
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doors])
   useEffect(
     () => () => {
@@ -350,11 +440,11 @@ export function Doors({ site, nav, crowd, height }: { site: Site; nav: Nav; crow
   const first = useRef(true)
   useEffect(() => {
     first.current = true
-  }, [mesh])
+  }, [mesh, height])
   useTick((dt) => {
     let moved = first.current
-    const leaf = 0.8
-    const h = height - 0.05
+    // a door is a door's height, however tall the wall around it is drawn
+    const h = Math.min(height, 2.1) - 0.05
     for (let i = 0; i < doors.length; i++) {
       const d = doors[i]
       const want = crowd && crowd.near(d.cx, d.cz, 1.05) ? 1.45 : 0
@@ -364,15 +454,11 @@ export function Doors({ site, nav, crowd, height }: { site: Site; nav: Nav; crow
         angles[i] = cur + (want - cur) * Math.min(1, dt * (want > cur ? 9 : 4.5))
         moved = true
       } else if (!first.current) continue
-      // hinged at the start of the edge, lying along it when shut
-      const base = d.side === 'n' ? 0 : -Math.PI / 2
-      const a = base + angles[i]
-      const hx = d.side === 'n' ? d.cx - 0.41 : d.cx
-      const hz = d.side === 'w' ? d.cz - 0.41 : d.cz
+      const a = d.base + d.swing * angles[i]
       const cos = Math.cos(a)
       const sin = Math.sin(a)
       Q.setFromEuler(E.set(0, a, 0))
-      M.compose(V.set(hx + (cos * leaf) / 2, h / 2 + 0.02, hz - (sin * leaf) / 2), Q, S.set(leaf, h, 0.045))
+      M.compose(V.set(d.hx + (cos * d.len) / 2, h / 2 + 0.02, d.hz - (sin * d.len) / 2), Q, S.set(d.len, h, 0.045))
       mesh.setMatrixAt(i, M)
     }
     first.current = false

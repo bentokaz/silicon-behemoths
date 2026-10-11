@@ -2,6 +2,7 @@
 // join, curved walls shared between rooms, ground finishes that suit the plot,
 // and copying a store's layout.
 import { describe, expect, it } from 'vitest'
+import { SHOP_LOT, SHOP_SLOTS, places, shopLots, shopScale } from '../3d/city/plan'
 import { buildNav } from '../3d/site/nav'
 import { bayBeyond, bayRun, bayStands, curveAt, curveTiles, geomOf } from './curves'
 import { DIFFICULTY, EDGE_COST, clearZone, copyLayout, defaultConfig, layoutQuote, layoutValue, newGame, newLayoutQuote, openStore, paintArea, paintFloor, placeItem, placeItems, removeItems, removeRoom, setEdge, setEdges, setLook, setRoomStyle, upgradeOffice, zoneRoom } from './game'
@@ -123,8 +124,17 @@ describe('rows of furniture and runs of wall', () => {
     const part = setEdges(s, 'office', { edges: north.slice(0, 3) }, 'door')
     expect(part).toMatchObject({ done: 2, short: 1, cost: 600, error: 'Changed 2 of 3: not enough cash for the rest' })
     expect(wallAt(s.office, 5, 2, 'n')?.kind).toBe('glass')
-    // back to plain wall, free
+    // glazing a run passes over the doors in it (the garage's own is on the south wall); one stretch alone is changed
     s.cash = 1e6
+    const south = [3, 4, 5, 6, 7, 8, 9, 10].map((x) => ({ x, y: 7, side: 'n' as const }))
+    const way = south.find((e) => wallAt(s.office, e.x, e.y, e.side)?.kind === 'door')!
+    expect(way).toBeDefined()
+    expect(setEdges(s, 'office', { edges: south }, 'glass')).toMatchObject({ done: 7, skipped: 1, cost: 7 * 120, error: null })
+    expect(wallAt(s.office, way.x, way.y, way.side)?.kind).toBe('door')
+    expect(setEdges(s, 'office', { edges: [way] }, 'glass')).toMatchObject({ done: 1, cost: 120 })
+    expect(wallAt(s.office, way.x, way.y, way.side)?.kind).toBe('glass')
+    expect(setEdges(s, 'office', { edges: [way] }, 'door').done).toBe(1)
+    // back to plain wall, free
     expect(setEdges(s, 'office', { edges: north }, 'wall')).toMatchObject({ done: 8, cost: 0, error: null })
     expect(s.office.walls.some((w) => w.y === 2 && w.side === 'n')).toBe(false)
 
@@ -677,5 +687,56 @@ describe('copying a store layout', () => {
     expect(openStore(s, 1)).toBeNull()
     expect(s.stores[3].site.items.map((i) => i.kind)).toEqual(['table', 'counter'])
     expect(s.cash).toBe(cash - SITE_TIERS.store[1].cost)
+  })
+})
+
+describe('the city map', () => {
+  it('finds a place for every store, sharing plots once each has one', () => {
+    const slots = SHOP_SLOTS
+    expect(slots).toHaveLength(13)
+    // up to one store a plot, each has the whole plot and stands where it always did
+    const few = shopLots(slots, 13)
+    expect(few.map((l) => [l!.x, l!.z])).toEqual(slots)
+    expect(few.every((l) => l!.size === SHOP_LOT.w && l!.shared === 1)).toBe(true)
+    expect(shopScale({ w: 22, h: 18 }, SHOP_LOT.w)).toBe(1)
+    // the fourteenth shares the first plot: both of those shrink to a quarter of it, the rest stay as they were
+    const more = shopLots(slots, 14)
+    expect(more[0]).toMatchObject({ size: 12, shared: 2, lot: more[13]!.lot })
+    expect(more[13]!.z).toBe(more[0]!.z)
+    expect(more[13]!.x - more[0]!.x).toBe(12)
+    expect(more[5]).toEqual(few[5])
+    expect(shopScale({ w: 10, h: 8 }, 12)).toBe(1)
+    expect(shopScale({ w: 22, h: 18 }, 12)).toBeCloseTo(10.8 / 22)
+    // every count up to the limit gives every store its own ground, inside its plot, overlapping nobody
+    for (const count of [1, 13, 14, 31, 52, 53, 117, 118, 208]) {
+      const lots = shopLots(slots, count)
+      expect(lots).toHaveLength(count)
+      const seen = new Set<string>()
+      for (const l of lots) {
+        expect(l, String(count)).not.toBeNull()
+        const [sx, sz] = l!.lot.split(',').map(Number)
+        expect(Math.abs(l!.x - sx) + l!.size / 2).toBeLessThanOrEqual(SHOP_LOT.w / 2 + 1e-9)
+        expect(Math.abs(l!.z - sz) + l!.size / 2).toBeLessThanOrEqual(SHOP_LOT.d / 2 + 1e-9)
+        const key = `${l!.x.toFixed(3)},${l!.z.toFixed(3)}`
+        expect(seen.has(key), `${count} ${key}`).toBe(false)
+        seen.add(key)
+      }
+    }
+    // past sixteen to a plot there is no more room: the extra ones are left off the map
+    const over = shopLots(slots, 210)
+    expect(over.filter((l) => !l)).toHaveLength(2)
+    // in a game: thirty-one stores at home are thirty-one places to click, none on top of another
+    const s = rich()
+    for (let i = 0; i < 31; i++) expect(openStore(s, i % 3)).toBeNull()
+    const shops = places(s).filter((p) => p.kind === 'store')
+    expect(shops).toHaveLength(31)
+    expect(new Set(shops.map((p) => `${p.x},${p.z}`)).size).toBe(31)
+    for (const p of shops) {
+      expect(p.w).toBeGreaterThanOrEqual(8)
+      expect(p.site!.w * p.scale!).toBeLessThanOrEqual(p.w)
+      expect(p.site!.h * p.scale!).toBeLessThanOrEqual(p.d)
+      expect(p.crowded).toBe(true)
+    }
+    for (const a of shops) for (const b of shops) if (a !== b) expect(Math.abs(a.x - b.x) >= (a.w + b.w) / 2 - 1e-9 || Math.abs(a.z - b.z) >= (a.d + b.d) / 2 - 1e-9, `${a.id} ${b.id}`).toBe(true)
   })
 })

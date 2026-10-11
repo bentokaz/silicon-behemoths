@@ -16,7 +16,11 @@ export const MOODS: Record<Mood, { sky: string; ground: number; sun: number; sun
 
 type Env = TierDef['env']
 
-const GROUND: Record<Env, string> = { suburb: '#587f45', estate: '#6d7075', park: '#5a8447', valley: '#638b4b', industrial: '#70736f', mall: '#c9c4b8', street: '#4a4d52', plaza: '#b3aea2' }
+const GROUND: Record<Env, string> = { suburb: '#587f45', estate: '#6d7075', park: '#5a8447', valley: '#638b4b', industrial: '#70736f', mall: '#2b2a28', street: '#4a4d52', plaza: '#b3aea2' }
+/** What shows above and beyond the walls of a mall, where the sky would be out of doors: the dim upper reaches of the building. */
+export const INDOOR_SKY: Record<Mood, string> = { day: '#8d887e', dusk: '#6b6259', night: '#17171a' }
+/** True for surroundings that are indoors, where there is no sky, weather or traffic. */
+export const isIndoor = (env: Env) => env === 'mall'
 const PAVE = '#a9a59b'
 const ROAD = '#34373b'
 
@@ -63,6 +67,169 @@ function containers(b: Batch, x: number, z: number, seed: number) {
   }
 }
 
+const SIGNS = ['#c9553d', '#2f5d8a', '#3f7d4d', '#2c3036', '#d6a24f', '#7a4f8a', '#2f7d7a']
+const UNIT_WALLS = ['#e4e1da', '#d6cdbb', '#cfd6da', '#dcd3c8']
+/** Height of a ground-floor unit, which is also the level of the gallery above it. */
+const DECK = 5.2
+
+/**
+ * The inside of a shopping mall round a unit: the unit stands in a well
+ * open to the roof, on the north side of a tiled concourse, with other
+ * shops beside it and across the way, a gallery of more shops above them
+ * and a glazed roof over the concourse. Everything near the camera's usual
+ * place (south and east) is kept low or set back, so the unit stays in view.
+ */
+function mall(b: Batch, w: number, h: number, dim: (hex: string) => string) {
+  const hw = w / 2
+  const hh = h / 2
+  const front = hh
+  const across = front + 12
+  const reach = hw + 36
+  const back = -hh - 11
+  const end = across + 10.4
+  const wall = '#dedad2'
+  const steel = '#3a3d42'
+  /** The roof's steelwork is painted pale, so that seen from above it is a light tracery rather than bars across the view. */
+  const frame = '#b9bdc2'
+
+  // ---- the concourse floor: large polished tiles in two tones, a pale band down the middle under the roof light,
+  // and a dark inlay along each row of shopfronts
+  const tone = ['#d9d3c6', '#cfc8ba']
+  for (let x = -reach; x < reach; x += 2) {
+    for (let z = front; z < across; z += 2) {
+      const mid = z >= front + 4 && z < front + 8
+      b.quad('floor3', x, z, Math.min(reach, x + 2), Math.min(across, z + 2), -0.02, dim(mid ? '#e6e1d6' : tone[(Math.round(x / 2) + Math.round(z / 2)) & 1]), 0.97 + hash(x * 13 + z * 7) * 0.05)
+    }
+  }
+  for (const z of [front + 0.5, across - 0.5]) b.quad('floor3', -reach, z - 0.12, reach, z + 0.12, -0.015, dim('#4a4640'))
+  for (const z of [front + 4, front + 8]) b.quad('floor3', -reach, z - 0.05, reach, z + 0.05, -0.015, dim('#8c857a'))
+
+  /** A ground-floor shop facing the concourse: a lit glass front under a coloured sign band. `face` is 1 to look south, -1 north. */
+  const unit = (x0: number, x1: number, z0: number, z1: number, face: 1 | -1, seed: number) => {
+    const cx = (x0 + x1) / 2
+    const cz = (z0 + z1) / 2
+    const bw = x1 - x0
+    b.box('wall', cx, DECK / 2, cz, bw, DECK, z1 - z0, UNIT_WALLS[seed % UNIT_WALLS.length], 0.96 + hash(seed) * 0.06)
+    const fz = face > 0 ? z1 + 0.03 : z0 - 0.03
+    b.box('lit', cx, 1.75, fz, bw - 1.1, 3.1, 0.06, '#27353f')
+    b.box('trim', cx, 3.85, fz + face * 0.05, bw - 0.5, 0.8, 0.16, SIGNS[seed % SIGNS.length])
+    b.box('trim', cx, 0.1, fz, bw - 1.1, 0.2, 0.1, steel)
+    // mullions and a door frame
+    for (const u of [0.25, 0.5, 0.75]) b.box('trim', x0 + bw * u, 1.75, fz + face * 0.02, 0.07, 3.1, 0.08, steel)
+    // the party wall shows between one shop and the next
+    b.box('wall', x0, DECK / 2, cz + face * 0.2, 0.35, DECK, z1 - z0 + 0.4, wall)
+  }
+  /** A shop on the gallery, set back behind its walkway: a taller box with a lit front. */
+  const upper = (x0: number, x1: number, z0: number, z1: number, face: 1 | -1, seed: number) => {
+    const cx = (x0 + x1) / 2
+    const top = 10.6
+    b.box('wall', cx, (DECK + top) / 2, (z0 + z1) / 2, x1 - x0, top - DECK, z1 - z0, UNIT_WALLS[(seed + 2) % UNIT_WALLS.length], 0.94 + hash(seed + 5) * 0.06)
+    const fz = face > 0 ? z1 + 0.03 : z0 - 0.03
+    b.box('lit', cx, DECK + 1.7, fz, x1 - x0 - 1.2, 2.8, 0.06, '#27353f')
+    b.box('trim', cx, DECK + 3.6, fz + face * 0.05, x1 - x0 - 0.6, 0.7, 0.14, SIGNS[(seed + 3) % SIGNS.length])
+  }
+  /** The edge of a gallery: the slab's rim, a glass balustrade and its rail, from one point to another along x or z. */
+  const rail = (x0: number, z0: number, x1: number, z1: number) => {
+    const cx = (x0 + x1) / 2
+    const cz = (z0 + z1) / 2
+    const lx = Math.abs(x1 - x0)
+    const lz = Math.abs(z1 - z0)
+    b.box('trim', cx, DECK - 0.15, cz, lx + 0.3, 0.5, lz + 0.3, '#c9c4b8')
+    b.box('glass', cx, DECK + 0.62, cz, Math.max(lx, 0.04), 1.0, Math.max(lz, 0.04), '#bfe0f2')
+    b.box('trim', cx, DECK + 1.16, cz, lx + 0.08, 0.07, lz + 0.08, steel)
+    const n = Math.max(1, Math.round(Math.max(lx, lz) / 2.4))
+    for (let i = 0; i <= n; i++) b.box('trim', x0 + ((x1 - x0) * i) / n, DECK + 0.6, z0 + ((z1 - z0) * i) / n, 0.06, 1.1, 0.06, steel)
+  }
+
+  // ---- this side of the concourse: shops either side of the unit, their roofs the gallery walkway
+  let seed = 3
+  for (const sx of [-1, 1]) {
+    for (let x = hw + 0.2; x < reach - 1; x += 9) {
+      const x1 = Math.min(reach, x + 9)
+      unit(sx > 0 ? x : -x1, sx > 0 ? x1 : -x, -hh - 1, front - 0.3, 1, seed++)
+    }
+    // the walkway on top, tiled, and its balustrade along the concourse and round the well the unit stands in
+    b.quad('floor3', sx > 0 ? hw + 0.2 : -reach, -hh - 1, sx > 0 ? reach : -hw - 0.2, front - 0.3, DECK + 0.01, dim('#cfc8ba'))
+    rail(sx * (hw + 0.25), front - 0.3, sx * reach, front - 0.3)
+    rail(sx * (hw + 0.25), -hh - 0.9, sx * (hw + 0.25), front - 0.3)
+  }
+  // behind the unit: the service wall, the walkway carried across above it, and the gallery's own shops along the back
+  b.box('wall', 0, DECK / 2, -hh - 0.6, w + 0.8, DECK, 0.8, wall)
+  b.box('trim', 0, 2.2, -hh - 0.18, 1.1, 2.2, 0.06, '#8a8f95')
+  rail(-hw - 0.25, -hh - 0.9, hw + 0.25, -hh - 0.9)
+  b.quad('floor3', -reach, -hh - 5, reach, -hh - 1, DECK + 0.01, dim('#cfc8ba'))
+  b.box('wall', 0, DECK / 2, (back + -hh - 1) / 2, reach * 2, DECK, -hh - 1 - back, '#cbc6bc')
+  for (let x = -reach; x < reach - 1; x += 12) upper(x + 0.3, Math.min(reach, x + 12) - 0.3, back, -hh - 5, 1, seed++)
+
+  // ---- across the concourse: another row of shops with the gallery above. This is the side the view is usually
+  // from, so the gallery's own shops are only fronts on a low wall at the back, not a storey that would hide the floor
+  for (let x = -reach; x < reach - 1; x += 10) unit(x, Math.min(reach, x + 10), across + 0.3, across + 10, -1, seed++)
+  b.quad('floor3', -reach, across + 0.3, reach, across + 10, DECK + 0.01, dim('#cfc8ba'))
+  rail(-reach, across + 0.3, reach, across + 0.3)
+  b.box('wall', 0, (DECK + 8.8) / 2, end, reach * 2, 8.8 - DECK, 0.8, '#cbc6bc')
+  for (let x = -reach; x < reach - 1; x += 12) {
+    const cx = Math.min(reach, x + 6)
+    b.box('lit', cx, DECK + 1.5, end - 0.43, 10.6, 2.4, 0.06, '#27353f')
+    b.box('trim', cx, DECK + 3.05, end - 0.46, 11.2, 0.5, 0.12, SIGNS[seed++ % SIGNS.length])
+  }
+
+  // ---- the hall itself: end walls, and a glazed roof over the concourse carried on columns
+  const top = 13.2
+  for (const sx of [-1, 1]) b.box('wall', sx * (reach + 0.4), top / 2, (back + end) / 2, 0.8, top, end - back + 0.8, '#c4bfb5')
+  b.box('wall', 0, top / 2, back - 0.4, reach * 2 + 1.6, top, 0.8, '#c4bfb5')
+  // columns stand along the far side of the concourse only, and clear of the unit: on the near side they would
+  // be between the camera and the shop
+  const cols: number[] = []
+  for (let x = hw + 4.7; x < reach - 2; x += 9) cols.push(x, -x)
+  for (const x of cols) {
+    b.box('wall', x, top / 2, front + 0.5, 0.5, top, 0.5, '#e9e6e0')
+    b.box('trim', x, 0.25, front + 0.5, 0.7, 0.5, 0.7, '#8c857a')
+    // a truss from each column across to the gallery opposite, with the glazing bars of the roof light between
+    b.box('trim', x, top + 0.15, (front + across) / 2, 0.14, 0.34, across - front - 0.4, frame)
+  }
+  for (const z of [front + 0.5, across - 0.5]) b.box('trim', 0, top + 0.4, z, reach * 2, 0.14, 0.14, frame)
+  for (let x = -reach + 1.5; x < reach; x += 4.5) b.box('trim', x, top + 0.5, (front + across) / 2, 0.04, 0.04, across - front - 1, frame)
+
+  // ---- what stands on the concourse: benches and planters down the middle, a kiosk, a way up, a directory
+  const planter = (x: number, z: number, s: number) => {
+    b.box('wall', x, 0.3, z, 2.6, 0.6, 1.1, '#3b3d40')
+    b.box('wall', x, 0.63, z, 2.4, 0.08, 0.9, '#3a2f26')
+    for (let i = 0; i < 4; i++) b.box('wall', x - 0.9 + i * 0.6, 0.95 + hash(s + i) * 0.25, z + (hash(s + i * 3) - 0.5) * 0.3, 0.55, 0.6 + hash(s + i * 5) * 0.4, 0.55, i % 2 ? '#4f8a52' : '#3f7d4d')
+  }
+  const bench = (x: number, z: number) => {
+    b.box('wall', x, 0.42, z, 2.2, 0.09, 0.55, '#9a7650')
+    for (const dx of [-0.9, 0.9]) b.box('trim', x + dx, 0.2, z, 0.08, 0.4, 0.5, steel)
+  }
+  const mid = front + 6
+  for (let i = -3; i <= 3; i++) {
+    const x = i * 9 + 4.5
+    if (Math.abs(x) > reach - 6) continue
+    planter(x, mid, i + 9)
+    bench(x, mid - 1.15)
+    bench(x, mid + 1.15)
+    // a bin beside every other one
+    if (i % 2 === 0) b.box('trim', x + 1.9, 0.45, mid, 0.42, 0.9, 0.42, '#5a5e63')
+  }
+  // a kiosk: a counter on three sides under a canopy with a lit band
+  const kx = -(hw + 9)
+  for (const [dx, dz, sx, sz] of [[0, -1.2, 3, 0.5], [-1.25, 0, 0.5, 2.9], [1.25, 0, 0.5, 2.9]]) b.box('wall', kx + dx, 0.55, mid + dz, sx, 1.1, sz, '#2c3036')
+  b.box('trim', kx, 1.12, mid, 3.1, 0.05, 3, '#c9c4b8')
+  for (const dx of [-1.4, 1.4]) for (const dz of [-1.4, 1.4]) b.box('trim', kx + dx, 1.4, mid + dz, 0.08, 2.8, 0.08, steel)
+  b.box('wall', kx, 2.9, mid, 3.4, 0.2, 3.4, '#2c3036')
+  b.box('lit', kx, 2.62, mid + 1.72, 3.2, 0.36, 0.05, '#27353f')
+  b.box('trim', kx, 2.62, mid - 1.72, 3.2, 0.36, 0.05, SIGNS[4])
+  // an escalator up to the gallery opposite, drawn as stepped flights between glass sides
+  const ex = hw + 14
+  for (let i = 0; i < 13; i++) b.box('trim', ex + i * 0.75, 0.2 + i * 0.4, across - 2, 0.8, 0.4, 1.6, i % 2 ? '#4a4d52' : '#5a5e63')
+  for (const dz of [-0.85, 0.85]) for (let i = 0; i < 13; i++) b.box('glass', ex + i * 0.75, 0.95 + i * 0.4, across - 2 + dz, 0.75, 0.9, 0.04, '#bfe0f2')
+  b.box('wall', ex + 10.4, DECK / 2 - 0.1, across - 2, 1.6, DECK - 0.2, 1.8, '#c9c4b8')
+  // a directory by the door, and one further along
+  for (const x of [hw + 2.2, -(hw + 20)]) {
+    b.box('wall', x, 1.05, front + 2.2, 0.9, 2.1, 0.22, '#2c3036')
+    b.box('lit', x, 1.25, front + 2.33, 0.74, 1.4, 0.03, '#27353f')
+  }
+}
+
 interface Layout {
   meshes: THREE.Mesh[]
   trees: [number, number, number][]
@@ -79,6 +246,8 @@ function build(env: Env, w: number, h: number, mood: Mood): Layout {
   const hw = w / 2
   const hh = h / 2
   const far = Math.max(w, h) * 4 + 160
+  /** How far south the view usually stands (see the camera's home in SiteView): tall buildings across the way keep behind it. */
+  const stand = Math.max(w, h) * 1.2 + 10
 
   /** A flat frame around the plot: the plot itself is left open so ponds can be sunk into it. */
   const frame = (key: string, out: number, inner: number, y: number, color: string) => {
@@ -174,39 +343,22 @@ function build(env: Env, w: number, h: number, mood: Mood): Layout {
       }
     }
     for (let i = -5; i <= 5; i++) {
-      block(b, i * 15, hh + 2.5 + 16 + 8, 14, 14, 4 + Math.floor(hash(i + 20) * 4), ['#c9b9a3', '#d9d2c4', '#b9c0c6', '#a89684'][(i + 10) % 4], i + 40, lit)
+      block(b, i * 15, Math.max(hh + 2.5 + 16 + 8, stand + 7), 14, 14, 4 + Math.floor(hash(i + 20) * 4), ['#c9b9a3', '#d9d2c4', '#b9c0c6', '#a89684'][(i + 10) % 4], i + 40, lit)
       block(b, i * 15, -hh - 12, 14, 16, 3 + Math.floor(hash(i + 60) * 5), ['#b5a08a', '#c9c2b2'][(i + 10) % 2], i + 80, lit)
       trees.push([i * 15 + 7, hh + 2.5 + 10.5, 1.6])
     }
   } else if (env === 'plaza') {
     b.quad('floor6', -hw - 14, -hh - 14, hw + 14, hh + 2.5, -0.025, dimHex('#c4bfb3'))
     for (let i = -4; i <= 4; i++) {
-      for (const [z, base] of [[hh + 2.5 + 16 + 12, 8], [-hh - 34, 12]] as const) block(b, i * 24, z, 20, 20, base + Math.floor(hash(i + z) * 14), ['#bfc6cc', '#9fb0bd', '#d9d6cf', '#8fa3b3'][(i + 8) % 4], i * 3 + z, lit)
+      for (const [z, base] of [[Math.max(hh + 2.5 + 16 + 12, stand + 10), 8], [-hh - 34, 12]] as const) block(b, i * 24, z, 20, 20, base + Math.floor(hash(i + z) * 14), ['#bfc6cc', '#9fb0bd', '#d9d6cf', '#8fa3b3'][(i + 8) % 4], i * 3 + z, lit)
     }
     for (const sx of [-1, 1]) for (let i = 0; i < 3; i++) block(b, sx * (hw + 34), -hh + i * 26, 20, 20, 10 + Math.floor(hash(i + sx * 9) * 12), ['#bfc6cc', '#d9d6cf', '#9fb0bd'][i], i + 30 + sx, lit)
     for (let i = 0; i < 10; i++) for (const sx of [-1, 1]) trees.push([sx * (hw + 6 + (i % 2) * 5), -hh - 10 + i * ((h + 12) / 10), 1.8])
   } else if (env === 'mall') {
-    // the concourse: a polished floor, pillars, and shopfronts opposite and to each side
-    b.quad('floor3', -hw - 30, hh, hw + 30, hh + 12, -0.02, dimHex('#d9d4c8'))
-    const front = (x: number, z: number, bw: number, depth: number, seed: number, rot: boolean) => {
-      const sx = rot ? depth : bw
-      const sz = rot ? bw : depth
-      b.box('wall', x, 3, z, sx, 6, sz, ['#e4e1da', '#d6cdbb', '#cfd6da'][seed % 3])
-      const fx = rot ? x + (x > 0 ? -depth / 2 - 0.03 : depth / 2 + 0.03) : x
-      const fz = rot ? z : z - depth / 2 - 0.03
-      b.box('lit', fx, 1.7, fz, rot ? 0.06 : bw - 1.2, 3, rot ? bw - 1.2 : 0.06, '#27353f')
-      b.box('trim', fx, 3.7, fz, rot ? 0.1 : bw - 0.6, 0.7, rot ? bw - 0.6 : 0.1, ['#c9553d', '#2f5d8a', '#3f7d4d', '#2c3036', '#d6a24f'][seed % 5])
-    }
-    for (let i = -3; i <= 3; i++) front(i * 11, hh + 12 + 5, 10, 10, i + 5, false)
-    for (const sx of [-1, 1]) {
-      front(sx * (hw + 5.2), 0, h, 10, sx + 3, true)
-      for (let i = 0; i < 3; i++) b.box('trim', sx * (hw * 0.5 + i * 10), 3.5, hh + 6, 0.7, 7, 0.7, '#e9e6e0')
-    }
-    b.box('wall', 0, 3, -hh - 5.2, w + 21, 6, 10, '#d9d6cf')
-    for (let i = -2; i <= 2; i++) b.box('wall', i * 9, 0.25, hh + 6, 2.4, 0.5, 1, '#8c8e90')
+    mall(b, w, h, dimHex)
   }
 
-  return { meshes: b.build((k) => surface(k, k === 'lit' ? (env === 'mall' ? 0.9 : Math.round(M.glow * 5) / 10) : 0)), trees, cars }
+  return { meshes: b.build((k) => surface(k, k === 'lit' ? (env === 'mall' ? (mood === 'day' ? 0.5 : 0.9) : Math.round(M.glow * 5) / 10) : 0)), trees, cars }
 }
 
 export function Environs({ env, w, h, mood }: { env: Env; w: number; h: number; mood: Mood }) {

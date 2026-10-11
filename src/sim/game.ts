@@ -746,10 +746,16 @@ export interface WallRun {
   bays?: string[]
 }
 
+/** True when a run of this many stretches of wall, changed to this kind, passes over the doors in it. */
+export const keepsDoors = (kind: 'wall' | 'glass' | 'door' | 'open', stretches: number) => kind === 'glass' && stretches > 1
+
 /**
  * Change a run of wall in one go: every stretch that is a wall and is not
  * already of that kind. Paid for one stretch at a time, so when the money
- * runs out part of the way the rest is left as it was.
+ * runs out part of the way the rest is left as it was. Glazing a run of
+ * several stretches leaves the doors in it standing, so that a shopfront can
+ * be glazed in one sweep without losing its way in; a single stretch is
+ * changed whatever it was.
  */
 export function setEdges(s: GameState, ref: string, run: WallRun, kind: 'wall' | 'glass' | 'door' | 'open'): RunResult {
   const out: RunResult = { done: 0, skipped: 0, short: 0, cost: 0, error: null }
@@ -757,8 +763,9 @@ export function setEdges(s: GameState, ref: string, run: WallRun, kind: 'wall' |
   if (!site) return { ...out, error: 'Nothing to build on' }
   const price = EDGE_COST[kind]
   let same = 0
+  const keepDoors = keepsDoors(kind, (run.edges?.length ?? 0) + (run.bays?.length ?? 0))
   const pay = (now: string): boolean => {
-    if (now === kind) {
+    if (now === kind || (keepDoors && now === 'door')) {
       same++
       out.skipped++
       return false

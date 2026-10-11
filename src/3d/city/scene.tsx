@@ -307,7 +307,7 @@ export function buildTowers(list: Place[], mats: CityMats): THREE.Mesh[] {
       b.box('wall', p.x, 4.4, p.z + d / 2 + 0.4, 13, 3.6, 0.5, '#16181b')
       for (const sx of [-5, 5]) b.box('trim', p.x + sx, 1.5, p.z + d / 2 + 0.3, 0.4, 3, 0.4, '#2f3338')
     }
-    if (p.building !== undefined && p.site) scaffold(b, p.x, p.z, p.site.w, p.site.h, Math.max(7, p.site.floors * STOREY + 2), p.id.length)
+    if (p.building !== undefined && p.site) scaffold(b, p.x, p.z, p.site.w * (p.scale ?? 1), p.site.h * (p.scale ?? 1), Math.max(7, p.site.floors * STOREY + 2) * (p.scale ?? 1), p.id.length)
   }
   return b.build(mats.of)
 }
@@ -417,8 +417,11 @@ function buildOutdoors(site: Site): { meshes: THREE.Mesh[]; trees: [number, numb
   return { meshes: b.build((k) => surface(k)), trees }
 }
 
-/** One of the company's own sites on its plot: its real footprint, cladding and height, and what stands in its grounds. */
-export function SiteModel({ site, x, z, lights }: { site: Site; x: number; z: number; lights: boolean }) {
+/**
+ * One of the company's own sites on its plot: its real footprint, cladding and height, and what stands in its grounds.
+ * `scale` draws it smaller than life, for a store that shares its plot with others.
+ */
+export function SiteModel({ site, x, z, lights, scale = 1 }: { site: Site; x: number; z: number; lights: boolean; scale?: number }) {
   const kerb = useBatch(() => {
     const b = new Batch()
     const w = site.w
@@ -430,7 +433,7 @@ export function SiteModel({ site, x, z, lights }: { site: Site; x: number; z: nu
   const outdoors = useMemo(() => buildOutdoors(site), [site, site.rev]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => outdoors.meshes.forEach((m) => m.geometry.dispose()), [outdoors])
   return (
-    <group position={[x, PLOT_Y, z]}>
+    <group position={[x, PLOT_Y, z]} scale={scale}>
       {kerb}
       <Ground site={site} dim={1} />
       <Structure site={site} mode="full" glow={lights ? 0.6 : 0} />
@@ -444,7 +447,7 @@ export function SiteModel({ site, x, z, lights }: { site: Site; x: number; z: nu
 
 /** Everything standing in the city, apart from the company's own sites and what moves. */
 export function CityModel({ g, all, list, mats, lights, color, accent }: { g: GameState; all: District[]; list: Place[]; mats: CityMats; lights: boolean; color: string; accent: string }) {
-  const taken = useMemo(() => new Set(list.filter((p) => p.kind === 'store' || p.kind === 'rival').map((p) => `${p.x},${p.z}`)), [list])
+  const taken = useMemo(() => new Set(list.filter((p) => p.kind === 'store' || p.kind === 'rival').map((p) => p.lot ?? `${p.x},${p.z}`)), [list])
   const takenKey = [...taken].join('|')
   const openKey = all.map((d) => (d.open ? 1 : 0)).join('')
   const base = useMemo(() => buildBase(all, taken, mats), [takenKey, openKey, mats]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -452,7 +455,7 @@ export function CityModel({ g, all, list, mats, lights, color, accent }: { g: Ga
   const civic = useBatch(() => buildCivic(g, mats), [g.activeResearch.length, g.stock.listed, g.stock.history.length, mats])
   const stock = g.products.filter((p) => p.companyId === 'player' && p.status === 'sale').reduce((a, p) => a + p.stock, 0)
   const port = useBatch(() => buildPort(stock, g.orders.length, color, mats), [containers(stock), g.orders.length > 0, color, mats])
-  const towersKey = list.map((p) => `${p.id}:${p.dim ? 0 : 1}:${p.building !== undefined ? 1 : 0}:${p.site ? `${p.site.w}.${p.site.floors}` : ''}:${p.company ? towerFloors(p.company) + p.company.color : ''}`).join('|')
+  const towersKey = list.map((p) => `${p.id}:${p.dim ? 0 : 1}:${p.building !== undefined ? 1 : 0}:${p.site ? `${p.site.w}.${p.site.floors}.${p.x}.${p.z}.${p.scale ?? 1}` : ''}:${p.company ? towerFloors(p.company) + p.company.color : ''}`).join('|')
   const towers = useBatch(() => buildTowers(list, mats), [towersKey, mats])
   const me = g.companies[0]
   return (

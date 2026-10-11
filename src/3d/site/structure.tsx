@@ -4,8 +4,8 @@
 import { useFrame } from '@react-three/fiber'
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import { type Facet, type Pt, type Side, bayStands, curveTiles, geomOf } from '../../sim/curves'
-import { FACADES, GROUNDS, ROOFS, cutAt, gridAt, styleOf } from '../../sim/sites'
+import { CLIP, type Facet, type Pt, bayStands, curveTiles, geomOf } from '../../sim/curves'
+import { FACADES, ROOFS, cutAt, defaultGround, edgeRuns, gridAt, groundAt, styleOf } from '../../sim/sites'
 import type { Corner, Room, Site } from '../../sim/types'
 import { hash } from './kit'
 
@@ -270,9 +270,9 @@ export function Ground({ site, dim }: { site: Site; dim: number }) {
     /** Open ground on a tile: the whole of it, or just the given pieces. */
     const lay = (x: number, y: number, pieces: Pt[][] | null) => {
       const jitter = (0.86 + hash(x * 31 + y * 17) * 0.1) * dim
-      const g = GROUNDS.find((d) => d.id === site.floor[`${x},${y}`]) ?? GROUNDS[0]
+      const g = groundAt(site, x, y)
       const key = `floor${Math.round(g.rough * 10)}`
-      if (pieces) for (const p of pieces) b.poly(key, p, 0, g.id === 'water' ? GROUNDS[0].color : g.color, jitter)
+      if (pieces) for (const p of pieces) b.poly(key, p, 0, g.id === 'water' ? defaultGround(site).color : g.color, jitter)
       else b.quad(key, ox + x, oz + y, ox + x + 1, oz + y + 1, 0, g.color, jitter)
     }
     const shift = (p: Pt[]): Pt[] => p.map(([px, pz]) => [px + ox, pz + oz])
@@ -290,9 +290,13 @@ export function Ground({ site, dim }: { site: Site; dim: number }) {
             b.tri(key, inside, 0, st.floor, jitter)
             lay(x, y, [outside])
           } else if (edge) {
-            // a curved wall runs through: floor up to it, ground beyond
+            // a curved wall runs through: floor up to it, and beyond it open ground or the floor of the room that shares the wall
             for (const p of edge.shape.inside) b.poly(key, shift(p), 0, st.floor, jitter)
-            lay(x, y, edge.shape.outside.map(shift))
+            const far = rooms.get(edge.beyond)
+            if (far) {
+              const fs = styleOf(site, far)
+              for (const p of edge.shape.outside) b.poly(`floor${Math.round(fs.rough * 10)}`, shift(p), 0, fs.floor, jitter)
+            } else lay(x, y, edge.shape.outside.map(shift))
           } else b.quad(key, ox + x, oz + y, ox + x + 1, oz + y + 1, 0, st.floor, jitter)
         } else if (wet(x, y)) {
           water.push([x, y])
@@ -325,8 +329,11 @@ export function Ground({ site, dim }: { site: Site; dim: number }) {
   )
 }
 
-/** Walls, doors, glazing, upper floors and roof. */
-export function Structure({ site, mode, glow }: { site: Site; mode: ViewMode; glow: number }) {
+/**
+ * Walls, doors, glazing, upper floors and roof. With `leaves` off the door
+ * leaves are left out, for a view that draws its own and swings them.
+ */
+export function Structure({ site, mode, glow, leaves = true }: { site: Site; mode: ViewMode; glow: number; leaves?: boolean }) {
   const meshes = useMeshes(() => {
     const b = new Batch()
     const rooms = new Map<number, Room>(site.rooms.map((r) => [r.n, r]))
@@ -408,14 +415,6 @@ export function Structure({ site, mode, glow }: { site: Site; mode: ViewMode; gl
       onEdge('trim', x, y, side, u0, 0.05, y0 + 0.08, y1 - 0.06, 0.08, POST)
     }
 
-    /** Which stretches of one side of a tile are room: all of it, none of it, or what a curve leaves. */
-    const spans = (x: number, y: number, side: Side): [number, number][] => {
-      if (!gridAt(site, x, y)) return []
-      const cut = cutAt(site, x, y)
-      if (cut) return cut.includes(side) ? [] : [[0, 1]]
-      return curved.get(`${x},${y}`)?.shape.sides[side] ?? [[0, 1]]
-    }
-
     /**
      * The wall along one grid edge, or along the stretch of it from u0 to u1:
      * `a` is the room on the edge's own tile, `c` the room across it.
@@ -456,7 +455,9 @@ export function Structure({ site, mode, glow }: { site: Site; mode: ViewMode; gl
           if (rc) slab('wall', x, y, side, -1, DOOR_H, H, styleOf(site, rc).wall, 1)
           else outer(x, y, side, -1, DOOR_H, H, seed)
           onEdge('trim', x, y, side, 0.5, 0.84, DOOR_H - 0.04, DOOR_H, WALL_T + 0.02, '#e9e6e0')
-          if (side === 'n') b.box('trim', ox + x + 0.1, DOOR_H / 2, oz + y + 0.42 + half, 0.045, DOOR_H - 0.06, 0.82, exterior ? '#2f3338' : '#8a6a4f')
+          if (!leaves) {
+            // the view swings its own leaf
+          } else if (side === 'n') b.box('trim', ox + x + 0.1, DOOR_H / 2, oz + y + 0.42 + half, 0.045, DOOR_H - 0.06, 0.82, exterior ? '#2f3338' : '#8a6a4f')
           else b.box('trim', ox + x + 0.42 + half, DOOR_H / 2, oz + y + 0.1, 0.82, DOOR_H - 0.06, 0.045, exterior ? '#2f3338' : '#8a6a4f')
         }
       } else if (glassWall) {
@@ -508,42 +509,10 @@ export function Structure({ site, mode, glow }: { site: Site; mode: ViewMode; gl
       for (let x = 0; x <= site.w; x++) {
         for (const side of ['n', 'w'] as const) {
           if ((side === 'n' && x >= site.w) || (side === 'w' && y >= site.h)) continue
-          const bx = side === 'n' ? x : x - 1
-          const by = side === 'n' ? y - 1 : y
-          const na = gridAt(site, x, y)
-          const nc = gridAt(site, bx, by)
-          if (!na && !nc) continue
-          const sa = spans(x, y, side)
-          const sc = spans(bx, by, side === 'n' ? 's' : 'e')
-          const wholeA = sa.length === 1 && sa[0][0] <= 0 && sa[0][1] >= 1
-          const wholeC = sc.length === 1 && sc[0][0] <= 0 && sc[0][1] >= 1
-          if ((wholeA || !sa.length) && (wholeC || !sc.length)) {
-            // the ordinary case: each side of the edge is all room or all open
-            const a = wholeA ? na : 0
-            const c = wholeC ? nc : 0
-            if (a !== c) run(x, y, side, a, c, 0, 1)
-            continue
-          }
-          // a curve crosses this edge: wall only the stretches where the two sides differ
-          const marks = [...new Set([0, 1, ...sa.flat(), ...sc.flat()])].sort((p, q) => p - q)
-          const within = (list: [number, number][], u: number) => list.some(([p, q]) => u > p && u < q)
-          let open: { a: number; c: number; u0: number; u1: number } | null = null
-          const flush = () => {
-            if (open && open.u1 - open.u0 > 0.004) run(x, y, side, open.a, open.c, open.u0, open.u1)
-            open = null
-          }
-          for (let i = 0; i + 1 < marks.length; i++) {
-            const u = (marks[i] + marks[i + 1]) / 2
-            const a = within(sa, u) ? na : 0
-            const c = within(sc, u) ? nc : 0
-            const cur = open as { a: number; c: number; u0: number; u1: number } | null
-            if (cur && cur.a === a && cur.c === c) cur.u1 = marks[i + 1]
-            else {
-              flush()
-              if (a !== c) open = { a, c, u0: marks[i], u1: marks[i + 1] }
-            }
-          }
-          flush()
+          if (!gridAt(site, x, y) && !gridAt(site, side === 'n' ? x : x - 1, side === 'n' ? y - 1 : y)) continue
+          // the whole edge in the ordinary case; where a curve crosses it, only the stretches whose two sides differ.
+          // A stretch of a centimetre or two just squares off a corner the curve clips: the curved wall closes it.
+          for (const r of edgeRuns(site, x, y, side, curved)) if (r.u1 - r.u0 >= CLIP) run(x, y, side, r.a, r.c, r.u0, r.u1)
         }
       }
     }
@@ -621,13 +590,17 @@ export function Structure({ site, mode, glow }: { site: Site; mode: ViewMode; gl
 
       for (const tile of curved.values()) {
         if (tile.curve !== ci) continue
+        // where another room stands against the curve the wall is a partition: that room's finish on the far face,
+        // no cladding, no windows, and nothing above the ceiling
+        const far = rooms.get(tile.beyond)
+        const farStyle = far ? styleOf(site, far) : null
         for (const piece of tile.shape.pieces) {
           const f = geom.facets[piece.facet]
           const { t0, t1 } = piece
           const whole = stands(f.bay)
           const kind = whole ? c.walls?.[f.bay] : undefined
           const seed = baySeed(ci, f.bay)
-          const glassWall = kind === 'glass' || (facade.kind === 'glass' && kind === undefined)
+          const glassWall = kind === 'glass' || (!farStyle && facade.kind === 'glass' && kind === undefined)
           if (kind !== 'open') drawn.push({ f: piece.facet, t0, t1 })
           if (kind === 'open') {
             strip('trim', f, t0, t1, -half, half, 0, 0.012, 't', CAP)
@@ -638,19 +611,27 @@ export function Structure({ site, mode, glow }: { site: Site; mode: ViewMode; gl
             if (mode !== 'cut') {
               // wall above the door
               strip('wall', f, t0, t1, -half, 0, DOOR_H, H, 'ib', style.wall)
-              clad(f, t0, t1, DOOR_H, H, seed)
-              strip('wall', f, t0, t1, 0, half, DOOR_H, DOOR_H + 0.001, 'b', facade.color)
+              if (farStyle) strip('wall', f, t0, t1, 0, half, DOOR_H, H, 'ob', farStyle.wall)
+              else {
+                clad(f, t0, t1, DOOR_H, H, seed)
+                strip('wall', f, t0, t1, 0, half, DOOR_H, DOOR_H + 0.001, 'b', facade.color)
+              }
             }
           } else if (glassWall) {
             glazedStrip(f, t0, t1, 0, H)
           } else {
             strip('wall', f, t0, t1, -half, 0, 0, H, 'i', style.wall, 0.99)
-            clad(f, t0, t1, 0, H, seed)
             strip('trim', f, t0, t1, -half - 0.012, -half, 0, 0.09, 'it', style.trim)
-            if (mode !== 'cut' && whole && hash(seed + 3) > 0.25) strip(hash(seed + 9) > 0.45 ? litKey : 'pane', f, t0, t1, half, half + 0.014, 0.95, 2.3, 'otb', '#27353f', 1, false)
+            if (farStyle) {
+              strip('wall', f, t0, t1, 0, half, 0, H, 'o', farStyle.wall, 0.99)
+              strip('trim', f, t0, t1, half, half + 0.012, 0, 0.09, 'ot', farStyle.trim)
+            } else {
+              clad(f, t0, t1, 0, H, seed)
+              if (mode !== 'cut' && whole && hash(seed + 3) > 0.25) strip(hash(seed + 9) > 0.45 ? litKey : 'pane', f, t0, t1, half, half + 0.014, 0.95, 2.3, 'otb', '#27353f', 1, false)
+            }
           }
           if (!(kind === 'door' && mode === 'cut') && !full) strip('trim', f, t0, t1, -half, half, H, H + 0.03, 'oit', CAP)
-          if (!full) continue
+          if (!full || farStyle) continue
           // ---- upper storeys and the parapet
           for (let fl = 1; fl < site.floors; fl++) {
             const y0 = fl * STOREY - 0.1
@@ -682,6 +663,7 @@ export function Structure({ site, mode, glow }: { site: Site; mode: ViewMode; gl
       for (const bay of geom.bays.values()) {
         if (!stands(bay.key)) continue
         const kind = c.walls?.[bay.key]
+        const inside = bay.tiles.some((key) => curved.get(key)?.beyond)
         const first = geom.facets[bay.facets[0]]
         const last = geom.facets[bay.facets[bay.facets.length - 1]]
         const rot = Math.atan2(-(last.y1 - first.y0), last.x1 - first.x0)
@@ -692,14 +674,16 @@ export function Structure({ site, mode, glow }: { site: Site; mode: ViewMode; gl
           stile(last, 1 - 0.04 / last.len, 0, jambTop, 0.08, WALL_T + 0.02, '#e9e6e0')
           if (mode !== 'cut') {
             b.boxRot('trim', ox + bay.x, DOOR_H - 0.02, oz + bay.y, bay.len - 0.12, 0.04, WALL_T + 0.02, rot, '#e9e6e0')
-            // the leaf stands open into the room, hinged at the start of the bay
-            const hx = first.x0 + (first.x1 - first.x0) * (0.1 / first.len)
-            const hz = first.y0 + (first.y1 - first.y0) * (0.1 / first.len)
-            b.boxRot('trim', ox + hx - first.nx0 * (0.42 + half), DOOR_H / 2, oz + hz - first.ny0 * (0.42 + half), 0.82, DOOR_H - 0.06, 0.045, Math.atan2(-first.ny0, first.nx0), '#2f3338')
+            if (leaves) {
+              // the leaf stands open into the room, hinged at the start of the bay
+              const hx = first.x0 + (first.x1 - first.x0) * (0.1 / first.len)
+              const hz = first.y0 + (first.y1 - first.y0) * (0.1 / first.len)
+              b.boxRot('trim', ox + hx - first.nx0 * (0.42 + half), DOOR_H / 2, oz + hz - first.ny0 * (0.42 + half), 0.82, DOOR_H - 0.06, 0.045, Math.atan2(-first.ny0, first.nx0), inside ? '#8a6a4f' : '#2f3338')
+            }
           }
-        } else if (kind !== 'open' && (kind === 'glass' || (facade.kind === 'glass' && kind === undefined))) {
+        } else if (kind !== 'open' && (kind === 'glass' || (!inside && facade.kind === 'glass' && kind === undefined))) {
           stile(first, 0, 0.08, H - 0.06, 0.05, 0.08, POST)
-          if (full && facade.kind === 'glass') for (let fl = 1; fl < site.floors; fl++) stile(first, 0, fl * STOREY + 0.28, (fl + 1) * STOREY - 0.16, 0.05, 0.08, POST)
+          if (full && !inside && facade.kind === 'glass') for (let fl = 1; fl < site.floors; fl++) stile(first, 0, fl * STOREY + 0.28, (fl + 1) * STOREY - 0.16, 0.05, 0.08, POST)
         }
       }
 
@@ -802,7 +786,8 @@ export function Structure({ site, mode, glow }: { site: Site; mode: ViewMode; gl
             continue
           }
           const edge = curved.get(`${x},${y}`)
-          if (edge) {
+          // (a curve between two rooms is under one roof, like any other tile)
+          if (edge && !edge.beyond) {
             // roof and floor plates follow the curve, each with an underside so no light gets in at the edge
             for (const p of edge.shape.inside) {
               const pts = p.map(([px, pz]): Pt => [px + ox, pz + oz])
@@ -838,7 +823,7 @@ export function Structure({ site, mode, glow }: { site: Site; mode: ViewMode; gl
     }
     // only the outside view lights its glass: indoors, glowing partitions would get in the way
     return b.build((k) => surface(k, k === 'lit' || k === 'plate' || (k === 'glass' && full) ? Math.round(glow * 10) / 10 : 0))
-  }, [site, site.rev, mode, glow])
+  }, [site, site.rev, mode, glow, leaves])
   return (
     <>
       {meshes.map((m) => (
