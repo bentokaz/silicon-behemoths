@@ -1,8 +1,8 @@
 // Procedural device generation, used for AI rivals, for the player's starting
 // templates, for the simple editor and for Pro/Lite style variants.
 import { CHARGE_W, MATERIALS, RAM_OPTIONS, REFRESH, STORAGE_OPTIONS, idealRam, idealStorage, sensorInfo } from '../data/catalog'
-import { ANC, COOLERS, DRIVERS, type IoInfo, SPEAKERS, STRAPS, TIERS, TYPES, inputOptions, ioInfo, ioOptions, segmentInfo } from '../data/devices'
-import { caseShape, clampPart, faceSize, facesFor, screenRect } from './geometry'
+import { ANC, COOLERS, DRIVERS, HINGES, type IoInfo, MIC_ARRAYS, OPTICS, SPEAKERS, SPEAKER_DRIVERS, STRAPS, TIERS, TYPES, headStrap, inputOptions, ioInfo, ioOptions, segmentInfo } from '../data/devices'
+import { GRIP, SHOULDER, caseShape, clampPart, faceSize, facesFor, lightRing, screenRect, speakerShape } from './geometry'
 import { type RngHolder, clamp, int, pick, range } from './rng'
 import { maxBattery, minBezel, minThickness, selfieMinDia, thermal } from './scoring'
 import type { Body, DeviceDesign, DeviceType, Lens, Levels, PlacedPart, SegmentId } from './types'
@@ -39,6 +39,10 @@ export function layoutParts(body: Body, o: LayoutOptions): PlacedPart[] {
   else if (o.type === 'tv') layoutTv(body, o, add)
   else if (o.type === 'console') layoutConsole(body, o, add)
   else if (o.type === 'earbuds') layoutEarbuds(body, o, add)
+  else if (o.type === 'foldable') layoutFoldable(body, o, add)
+  else if (o.type === 'headset') layoutHeadset(body, o, add)
+  else if (o.type === 'speaker') layoutSpeaker(body, o, add)
+  else if (o.type === 'handheld') layoutHandheld(body, o, add)
   else layoutSlab(body, o, add)
   return parts
 }
@@ -50,8 +54,8 @@ function addLogo(o: LayoutOptions, add: Add, y: number, scale = 1) {
   else if (o.logo) add({ kind: 'logo', face: 'back', x: 0, y, rot: 0, w: Math.min(34, 5.2 * o.logo.length + 4) * scale, h: 7 * scale, text: o.logo })
 }
 
-function layoutSlab(body: Body, o: LayoutOptions, add: Add) {
-  const { width, height } = body
+/** The rear cameras of a slab in one of the five arrangements, on a back `width` wide with its centre line at x = 0. */
+function rearCameras(width: number, height: number, o: LayoutOptions, add: Add) {
   const tablet = o.type === 'tablet'
   const count = clamp(Math.round(o.cams), tablet ? 0 : 1, 4)
   const lensSets: Lens[][] = [[], ['wide'], ['wide', 'ultrawide'], ['wide', 'ultrawide', 'tele'], ['wide', 'ultrawide', 'tele', 'macro']]
@@ -111,30 +115,43 @@ function layoutSlab(body: Body, o: LayoutOptions, add: Add) {
         add({ kind: 'island', face: 'back', x: 0, y: cy, rot: 0, w: width - (tablet ? 24 : 8), h, r: h / 2, finish: 'black' })
         const span = (count - 1) * (dia + gap)
         for (let i = 0; i < count; i++) cam(-span / 2 + i * (dia + gap) - (count < 4 ? 8 : 0), cy, i)
-        if (count < 4) flash(width / 2 - (tablet ? 26 : 14), cy)
+        // the flash goes at the far end of the bar, or just past the last lens where the bar is short
+        if (count < 4) flash(Math.max(width / 2 - (tablet ? 26 : 14), span / 2 - 8 + dia / 2 + 3), cy)
         else flash(0, cy - h / 2 - 5)
       }
     }
   }
-  addLogo(o, add, tablet ? 0 : -4, tablet ? 1.5 : 1)
+}
 
-  // ---- front
+/** The camera above or inside a slab's screen, on the vertical line at x. */
+function frontCamera(body: Body, o: LayoutOptions, add: Add, x = 0) {
   const scr = screenRect(body)
   const selfieLevel = Math.max(0, o.sensor - 1)
   const selfieDia = selfieMinDia(selfieLevel) + 0.4
-  const selfie = { kind: 'camera' as const, face: 'front' as const, x: 0, rot: 0, w: selfieDia, h: selfieDia, sensor: selfieLevel, lens: 'wide' as const }
+  const selfie = { kind: 'camera' as const, face: 'front' as const, x, rot: 0, w: selfieDia, h: selfieDia, sensor: selfieLevel, lens: 'wide' as const }
   if (body.bezelTop >= selfieDia + 1.6) {
     // enough bezel to hide the camera in it
-    add({ ...selfie, y: height / 2 - body.bezelTop / 2 })
+    add({ ...selfie, y: body.height / 2 - body.bezelTop / 2 })
   } else if (o.front === 'under') {
     add({ ...selfie, y: scr.cy + scr.h / 2 - 5, underDisplay: true })
   } else if (o.front === 'punch') {
     add({ ...selfie, y: scr.cy + scr.h / 2 - 4.5 })
   } else {
     const ny = scr.cy + scr.h / 2 - 3
-    add({ kind: 'notch', face: 'front', x: 0, y: ny, rot: 0, w: 26, h: 6.5, r: 3 })
+    add({ kind: 'notch', face: 'front', x, y: ny, rot: 0, w: 26, h: 6.5, r: 3 })
     add({ ...selfie, y: ny })
   }
+}
+
+function layoutSlab(body: Body, o: LayoutOptions, add: Add) {
+  const { width, height } = body
+  const tablet = o.type === 'tablet'
+  rearCameras(width, height, o, add)
+  addLogo(o, add, tablet ? 0 : -4, tablet ? 1.5 : 1)
+
+  // ---- front
+  const scr = screenRect(body)
+  frontCamera(body, o, add)
   if (o.fingerprint === 'display') add({ kind: 'fingerprint', face: 'front', x: 0, y: scr.cy - scr.h * 0.3, rot: 0, w: 8, h: 8 })
   else if (o.fingerprint === 'back') add({ kind: 'fingerprint', face: 'back', x: 0, y: 22, rot: 0, w: 9, h: 9 })
   else if (o.fingerprint === 'side') add({ kind: 'fingerprint', face: 'right', x: tablet ? height * 0.12 : 2, y: 0, rot: 0, w: 11, h: 2.2 })
@@ -368,6 +385,151 @@ function layoutEarbuds(body: Body, o: LayoutOptions, add: Add) {
   add({ kind: 'port', face: 'bottom', x: 0, y: 0, rot: 0, w: 8.6, h: 2.8, text: 'usbc' })
 }
 
+/**
+ * A foldable, laid out open. Its back is two halves: the one that folds over is
+ * the cover screen, so the cameras and the badge share the other, laid out about its own centre line.
+ */
+function layoutFoldable(body: Body, o: LayoutOptions, add: Add) {
+  const { width, height } = body
+  const mid = -width / 4
+  const onBack: Add = (p) => add({ ...p, x: p.x + mid })
+  rearCameras(width / 2, height, o, onBack)
+  addLogo(o, onBack, -4)
+  // the camera for the inner screen sits over the right-hand half, clear of the fold
+  frontCamera(body, o, add, width / 4)
+  const scr = screenRect(body)
+  if (o.fingerprint === 'display') add({ kind: 'fingerprint', face: 'front', x: width / 4, y: scr.cy - scr.h * 0.3, rot: 0, w: 8, h: 8 })
+  else if (o.fingerprint === 'back') onBack({ kind: 'fingerprint', face: 'back', x: 0, y: 22, rot: 0, w: 9, h: 9 })
+  else if (o.fingerprint === 'side') add({ kind: 'fingerprint', face: 'right', x: 2, y: 0, rot: 0, w: 11, h: 2.2 })
+  add({ kind: 'button', face: 'right', x: 22, y: 0, rot: 0, w: 11, h: 2.2 })
+  add({ kind: 'button', face: 'right', x: 44, y: 0, rot: 0, w: 19, h: 2.2 })
+  add({ kind: 'port', face: 'bottom', x: width / 4, y: 0, rot: 0, w: 8.6, h: 2.8 })
+  add({ kind: 'grille', face: 'bottom', x: width / 4 + 18, y: 0, rot: 0, w: 12, h: 1.4 })
+  if (o.stereo) add({ kind: 'grille', face: 'top', x: -width / 4, y: 0, rot: 0, w: 12, h: 1.4 })
+}
+
+/** A headset: tracking cameras in mirrored pairs on the front plate, a button and a vent on top, ports underneath. */
+function layoutHeadset(body: Body, o: LayoutOptions, add: Add) {
+  const { width, height, thickness: depth } = body
+  const pairs = clamp(Math.round(o.cams / 2), 1, 3)
+  const level = Math.max(0, o.sensor)
+  const dia = selfieMinDia(level) + 5.5
+  // lower corners first, then upper corners, then a pair near the middle looking down at the hands
+  const spots = [[0.36, -0.22], [0.36, 0.24], [0.14, -0.3]]
+  for (let i = 0; i < pairs; i++) {
+    for (const side of [-1, 1]) add({ kind: 'camera', face: 'front', x: side * width * spots[i][0], y: height * spots[i][1], rot: 0, w: dia, h: dia, sensor: level, lens: 'wide' })
+  }
+  if (o.flash) add({ kind: 'light', face: 'front', x: 0, y: height * 0.3, rot: 0, w: 14, h: 1.4, color: '#ffffff' })
+  if (o.logoImage) add({ kind: 'logo', face: 'front', x: 0, y: 0, rot: 0, w: 16, h: 16, text: o.logo, useImage: true })
+  else if (o.logo) add({ kind: 'logo', face: 'front', x: 0, y: 0, rot: 0, w: Math.min(64, 6.4 * o.logo.length + 6), h: 8, text: o.logo })
+  add({ kind: 'button', face: 'top', x: width * 0.28, y: 0, rot: 0, w: 12, h: 5 })
+  add({ kind: 'vent', face: 'top', x: 0, y: 0, rot: 0, w: width * 0.3, h: Math.min(12, depth * 0.2) })
+  add({ kind: 'port', face: 'bottom', x: width * 0.26, y: 0, rot: 0, w: 8.6, h: 2.8, text: 'usbc' })
+  sockets('headset', o.io, 'bottom').forEach(({ info, id }, i) => add({ kind: 'port', face: 'bottom', x: -width * 0.26 + i * 16, y: 0, rot: 0, w: info.size![0], h: info.size![1], text: id }))
+  // the volume rocker
+  add({ kind: 'button', face: 'bottom', x: 0, y: 0, rot: 0, w: 18, h: 4.5 })
+}
+
+/** A speaker: a light ring and three buttons on top; the power inlet, any sockets and the badge on the flat panel at the back. */
+function layoutSpeaker(body: Body, o: LayoutOptions, add: Add) {
+  const top = faceSize(body, 'top', 'speaker')
+  if (o.flash) add(lightRing(body, { kind: 'light' as const, face: 'top' as const, rot: 0 }))
+  const size = Math.round(clamp(top.w * 0.17, 5, 10) * 2) / 2
+  for (const k of [-1, 0, 1]) add({ kind: 'button', face: 'top', x: k * size * 1.9, y: 0, rot: 0, w: size, h: size })
+  const back = faceSize(body, 'back', 'speaker')
+  const placed = speakerSockets(body, o.io)
+  for (const p of placed.sockets) add({ kind: 'port', face: 'back', x: p.x, y: p.y, rot: 0, w: p.w, h: p.h, text: p.id })
+  // the badge goes above them, if the panel is tall enough
+  const room = back.h / 2 - 2 - placed.top
+  if (o.logoImage && room >= 14) add({ kind: 'logo', face: 'back', x: 0, y: placed.top + room / 2, rot: 0, w: 12, h: 12, text: o.logo, useImage: true })
+  else if (!o.logoImage && o.logo && room >= 8) add({ kind: 'logo', face: 'back', x: 0, y: placed.top + Math.min(room / 2, 8), rot: 0, w: Math.min(back.w - 4, 4.2 * o.logo.length + 4), h: Math.min(6, room - 2), text: o.logo })
+}
+
+/**
+ * Where the sockets go on a speaker's back panel: the power inlet and whatever
+ * else was chosen, in centred rows from the bottom up. `fits` is false if the
+ * panel has no room for them all, and `top` is where the last row ends.
+ */
+export function speakerSockets(body: Body, io: string[] | undefined): { sockets: { id: string; x: number; y: number; w: number; h: number }[]; top: number; fits: boolean } {
+  const back = faceSize(body, 'back', 'speaker')
+  const list = [{ id: 'power', size: [9, 9] }, ...sockets('speaker', io, 'back').map((x) => ({ id: x.id, size: x.info.size! as number[] }))]
+  const gap = 5
+  const wide = back.w - 4
+  const rows: (typeof list)[] = [[]]
+  for (const p of list) {
+    const row = rows[rows.length - 1]
+    const used = row.reduce((a, q) => a + q.size[0] + gap, 0)
+    if (row.length && used + p.size[0] > wide) rows.push([p])
+    else row.push(p)
+  }
+  const out: { id: string; x: number; y: number; w: number; h: number }[] = []
+  let y = -back.h / 2 + 2.5
+  for (const row of rows) {
+    const rowH = Math.max(...row.map((p) => p.size[1]))
+    let x = -(row.reduce((a, p) => a + p.size[0], 0) + gap * (row.length - 1)) / 2
+    for (const p of row) {
+      out.push({ id: p.id, x: x + p.size[0] / 2, y: y + rowH / 2, w: p.size[0], h: p.size[1] })
+      x += p.size[0] + gap
+    }
+    y += rowH + 3
+  }
+  return { sockets: out, top: y, fits: y - 3 <= back.h / 2 - 2 && list.every((p) => p.size[0] <= wide) }
+}
+
+/**
+ * A handheld. The sticks, buttons, triggers and grips are part of the model, so
+ * the parts are what goes between them: buttons, vents and sockets along the
+ * top, the charging port and speakers underneath, an intake and the badge on the back.
+ */
+function layoutHandheld(body: Body, o: LayoutOptions, add: Add) {
+  const { width, height, thickness } = body
+  if (o.flash && body.bezelBottom >= 3.2) {
+    const dot = Math.min(1.8, body.bezelBottom * 0.45)
+    add({ kind: 'light', face: 'front', x: 0, y: -height / 2 + body.bezelBottom / 2, rot: 0, w: dot, h: dot, color: '#8dffa8' })
+  }
+  if (o.logoImage) add({ kind: 'logo', face: 'back', x: 0, y: height * 0.16, rot: 0, w: 22, h: 22, text: o.logo, useImage: true })
+  else if (o.logo) add({ kind: 'logo', face: 'back', x: 0, y: height * 0.16, rot: 0, w: Math.min(width - 2 * GRIP - 16, 7 * o.logo.length + 6), h: 9, text: o.logo })
+  add({ kind: 'vent', face: 'back', x: 0, y: -height * 0.18, rot: 0, w: Math.min(width - 2 * GRIP - 24, width * 0.28), h: height * 0.14 })
+  // along the top, between the shoulder buttons: volume, sockets either side of the exhaust, power
+  const free = width - 2 * SHOULDER - 6
+  const ports = sockets('handheld', o.io, 'top')
+  const gap = 6
+  const fixed = 18 + 10 + ports.reduce((a, p) => a + p.info.size![0], 0) + gap * (ports.length + 2)
+  const vent = clamp(free - fixed, 14, width * 0.2)
+  const row: { w: number; h: number; kind: 'button' | 'port' | 'vent'; text?: string }[] = [
+    { w: 18, h: 2.6, kind: 'button' },
+    ...ports.slice(0, 1).map((p) => ({ w: p.info.size![0], h: p.info.size![1], kind: 'port' as const, text: p.id })),
+    { w: vent, h: Math.min(6, thickness * 0.34), kind: 'vent' },
+    ...ports.slice(1).map((p) => ({ w: p.info.size![0], h: p.info.size![1], kind: 'port' as const, text: p.id })),
+    { w: 10, h: 2.6, kind: 'button' },
+  ]
+  let x = -(row.reduce((a, p) => a + p.w, 0) + gap * (row.length - 1)) / 2
+  for (const p of row) {
+    add({ kind: p.kind, face: 'top', x: x + p.w / 2, y: 0, rot: 0, w: p.w, h: p.h, text: p.text })
+    x += p.w + gap
+  }
+  add({ kind: 'port', face: 'bottom', x: 0, y: 0, rot: 0, w: 8.6, h: 2.8, text: 'usbc' })
+  sockets('handheld', o.io, 'bottom').forEach(({ info, id }, i) => add({ kind: 'port', face: 'bottom', x: 22 + i * 20, y: 0, rot: 0, w: info.size![0], h: info.size![1], text: id }))
+  add({ kind: 'grille', face: 'bottom', x: width * 0.26, y: 0, rot: 0, w: 16, h: 1.4 })
+  add({ kind: 'grille', face: 'bottom', x: -width * 0.26, y: 0, rot: 0, w: 16, h: 1.4 })
+}
+
+/** Fit a speaker to its body: the best drivers its enclosure has room for, and no more sockets than its back panel holds. */
+export function fitSpeaker(d: DeviceDesign) {
+  if (d.type !== 'speaker') return
+  const litres = speakerShape(d.body).litres
+  let i = clamp(d.specs.driver ?? 0, 0, SPEAKER_DRIVERS.length - 1)
+  while (i > 0 && SPEAKER_DRIVERS[i].litres > litres) i--
+  d.specs.driver = i
+  // the largest socket goes first
+  const io = d.specs.io
+  while (io && !speakerSockets(d.body, io).fits) {
+    const big = io.filter((id) => ioInfo('speaker', id)?.size).sort((a, b) => ioInfo('speaker', b)!.size![0] - ioInfo('speaker', a)!.size![0])[0]
+    if (!big) break
+    io.splice(io.indexOf(big), 1)
+  }
+}
+
 export interface GenOptions {
   segment: SegmentId
   levels: Levels
@@ -441,7 +603,11 @@ export function generateDesign(r: RngHolder, o: GenOptions): DeviceDesign {
           ? Math.round(range(r, 3, 9))
           : type === 'console'
             ? Math.min(Math.round(range(r, 4, 18)), Math.floor(Math.min(width, height) / 2 - 2))
-            : Math.round(range(r, 7, 13))
+            : type === 'headset' || type === 'speaker'
+              ? Math.round(range(r, 18, 30))
+              : type === 'handheld'
+                ? Math.round(range(r, 10, 18))
+                : Math.round(range(r, 7, 13))
 
   const body: Body = {
     width,
@@ -451,7 +617,7 @@ export function generateDesign(r: RngHolder, o: GenOptions): DeviceDesign {
     edge: int(r, 0, 1) === 1 ? 'flat' : 'round',
     bezelTop: type === 'laptop' ? Math.max(bez, t.matRank >= 2 ? bez : 6) : bez,
     bezelBottom: type === 'laptop' ? Math.round(bez * 22) / 10 : type === 'desktop' ? Math.max(bez, t.chin ?? 0) : type === 'tv' ? Math.round(bez * 16) / 10 : o.segment === 'budget' ? Math.round(bez * 13) / 10 : bez,
-    bezelSide: bez,
+    bezelSide: bez + (T.flank ?? 0),
     frameMat: byRank(frames).id,
     backMat: T.oneShell ? byRank(frames).id : byRank(backs).id,
     frameColor: shade(color, 0.92),
@@ -465,11 +631,18 @@ export function generateDesign(r: RngHolder, o: GenOptions): DeviceDesign {
   if (type === 'laptop' || type === 'desktop' || type === 'tv') body.backFinish = 'matte'
   if (type === 'desktop' || type === 'tv') body.stand = t.stand
   if (type === 'earbuds') body.buds = t.buds ?? 'stem'
-  if (type === 'console') {
+  if (type === 'console' || type === 'headset') {
     // a dark glossy front panel set into the shell
     body.backColor = '#0d0e10'
     body.backFinish = 'gloss'
   }
+  if (type === 'headset') body.strap = headStrap(t.strap).level <= o.levels.materials ? headStrap(t.strap).id : 'rigid'
+  if (type === 'speaker') {
+    body.form = (['column', 'orb', 'block'] as const)[((o.layout % 3) + 3) % 3]
+    body.screen = !!t.screen
+    body.backFinish = 'matte'
+  }
+  if (type === 'handheld') body.backFinish = 'matte'
 
   const memory = T.memory || 1
   const design: DeviceDesign = {
@@ -486,7 +659,7 @@ export function generateDesign(r: RngHolder, o: GenOptions): DeviceDesign {
       storage: T.memory ? largestAtMost(STORAGE_OPTIONS, idealStorage(o.mLevel) * memory * [0.6, 1, 1.8][t.chipTier]) : 64,
       battery: 0,
       charging: T.mains ? 0 : clamp(L('charging'), 0, CHARGE_W.length - 1),
-      extras: type === 'phone' || type === 'watch' ? ['nfc'] : [],
+      extras: type === 'phone' || type === 'watch' || type === 'foldable' ? ['nfc'] : [],
     },
   }
   const s = design.specs
@@ -503,11 +676,23 @@ export function generateDesign(r: RngHolder, o: GenOptions): DeviceDesign {
     s.anc = bestOwned(ANC, t.anc ?? 0, L('chipset'))
     if (!s.anc) s.io = s.io?.filter((id) => id !== 'through')
   }
+  if (type === 'foldable') s.hinge = bestOwned(HINGES, t.hinge ?? 0, matLevel)
+  if (type === 'headset') s.optics = bestOwned(OPTICS, t.optics ?? 0, L('display'))
+  if (type === 'speaker') {
+    s.driver = bestOwned(SPEAKER_DRIVERS, t.driver ?? 0, o.levels.materials)
+    s.mics = bestOwned(MIC_ARRAYS, t.mics ?? 0, L('chipset'))
+    if (!body.screen) s.panel = 0
+  }
   body.thickness = Math.round((minThickness(type, dLevel, s) + t.thick + range(r, 0, 0.5)) * 10) / 10
+  if (type === 'speaker') {
+    // as deep as it is wide, or a little shallower if it is a block
+    body.thickness = clamp(half(body.form === 'block' ? width * 0.74 : width), minThickness(type, dLevel, s), T.maxThickness)
+    fitSpeaker(design)
+  }
   if (type === 'earbuds') body.corner = Math.min(body.corner, Math.floor(body.thickness / 2))
   if (type === 'console' && Math.max(width, height) < 132) s.io = s.io?.filter((id) => id !== 'disc')
   if (type === 'earbuds') s.panel = 0
-  if (type !== 'watch' && type !== 'earbuds') s.refresh = REFRESH.filter((x) => x.level <= s.panel).pop()!.hz
+  if (type !== 'watch' && type !== 'earbuds' && !(type === 'speaker' && !body.screen)) s.refresh = REFRESH.filter((x) => x.level <= s.panel).pop()!.hz
   fitInside(design, o.levels)
   const fill = o.segment === 'gamer' || o.segment === 'business' || type === 'watch' ? 0.98 : 0.9
   s.battery = Math.round((maxBattery(body, o.levels.battery, type) * fill) / 50) * 50
@@ -517,7 +702,7 @@ export function generateDesign(r: RngHolder, o: GenOptions): DeviceDesign {
   if (o.levels.charging >= 2 && (t.matRank >= 2 || type === 'watch') && fits('wireless')) s.extras.push('wireless')
   if (o.levels.chipset >= 4 && o.segment === 'flagship') s.extras.push('sat')
 
-  const camLevel = L('camera', o.segment === 'camera' ? 0 : o.segment === 'gamer' || type !== 'phone' ? 2 : t.drop)
+  const camLevel = L('camera', o.segment === 'camera' ? 0 : o.segment === 'gamer' || (type !== 'phone' && type !== 'foldable') ? 2 : t.drop)
   design.parts = layoutParts(body, {
     type,
     layout: type === 'tablet' ? [0, 1, 2][o.layout % 3] : o.layout,
@@ -525,7 +710,7 @@ export function generateDesign(r: RngHolder, o: GenOptions): DeviceDesign {
     sensor: camLevel,
     periscope: camLevel >= 3,
     front: dLevel >= 5 && o.segment === 'flagship' ? 'under' : dLevel >= 1 ? 'punch' : 'notch',
-    fingerprint: type === 'tablet' ? 'side' : dLevel >= 2 && t.matRank >= 1 ? 'display' : 'side',
+    fingerprint: type === 'tablet' || type === 'foldable' ? 'side' : dLevel >= 2 && t.matRank >= 1 ? 'display' : 'side',
     flash: true,
     stereo: s.extras.includes('stereo'),
     logo: o.logo,
@@ -558,6 +743,8 @@ export function deriveVariant(base: DeviceDesign, variant: VariantId, levels: Le
     const b = d.body
     b.width = half(clamp(b.width * f, T.width[0], T.width[1]))
     b.height = half(clamp(b.height * f, T.height[0], T.height[1]))
+    // a speaker grows in every direction
+    if (d.type === 'speaker') b.thickness = half(clamp(b.thickness * f, minThickness(d.type, levels.design, s), T.maxThickness))
     for (const p of d.parts) {
       p.x *= f
       p.y *= f
@@ -585,6 +772,13 @@ export function deriveVariant(base: DeviceDesign, variant: VariantId, levels: Le
       s.driver = bestOwned(DRIVERS, (s.driver ?? 0) + 1, levels.materials)
       s.anc = bestOwned(ANC, (s.anc ?? 0) + 1, levels.chipset)
     }
+    if (d.type === 'foldable') s.hinge = bestOwned(HINGES, (s.hinge ?? 0) + 1, levels.materials)
+    if (d.type === 'headset') s.optics = bestOwned(OPTICS, (s.optics ?? 0) + 1, levels.display)
+    if (d.type === 'speaker') {
+      s.driver = bestOwned(SPEAKER_DRIVERS, (s.driver ?? 0) + 1, levels.materials)
+      s.mics = bestOwned(MIC_ARRAYS, (s.mics ?? 0) + 1, levels.chipset)
+    }
+    if (T.input === 'wands' || T.input === 'controls') s.keyboard = bestOwned(inputOptions(d.type), (s.keyboard ?? 0) + 1, levels.design)
   }
   if (variant === 'Lite') {
     if (!s.customChip) s.chipTier = Math.max(0, s.chipTier - 1)
@@ -607,11 +801,23 @@ export function deriveVariant(base: DeviceDesign, variant: VariantId, levels: Le
       s.anc = Math.max(0, (s.anc ?? 0) - 1)
       if (!s.anc) s.io = s.io?.filter((id) => id !== 'through')
     }
+    if (d.type === 'foldable') s.hinge = Math.max(0, (s.hinge ?? 0) - 1)
+    if (d.type === 'headset') s.optics = Math.max(0, (s.optics ?? 0) - 1)
+    if (d.type === 'speaker') {
+      s.driver = Math.max(0, (s.driver ?? 0) - 1)
+      s.mics = Math.max(0, (s.mics ?? 0) - 1)
+    }
+    // a headset keeps its controllers, or it would need hand tracking instead
+    if (T.input === 'controls') s.keyboard = Math.max(0, (s.keyboard ?? 0) - 1)
   }
   if (variant === 'Max' || variant === 'Ultra') scale(1.07)
   if (variant === 'Mini') scale(0.92)
   d.body.thickness = Math.max(d.body.thickness, minThickness(d.type, levels.design, s))
   fitInside(d, levels)
+  const before = [...(s.io ?? [])]
+  fitSpeaker(d)
+  // a socket the smaller body no longer has room for goes, and so does its hole
+  if (before.length !== (s.io ?? []).length) d.parts = syncSockets(d, before)
   d.parts = d.parts.map((p) => clampPart(d.body, p, d.type))
   const cap = maxBattery(d.body, levels.battery, d.type)
   s.battery = variant === 'Max' || variant === 'Ultra' ? Math.round((cap * 0.92) / 50) * 50 : Math.min(s.battery, cap)

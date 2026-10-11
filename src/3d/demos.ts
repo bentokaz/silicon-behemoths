@@ -5,14 +5,14 @@
 // works the same for a slider, a list, undo and redo.
 import * as THREE from 'three'
 import { EXTRAS, RAM_OPTIONS, STORAGE_OPTIONS, chipInfo } from '../data/catalog'
-import { ANC, COOLERS, DRIVERS, GPUS, SPEAKERS, TYPES, inputOptions, ioInfo } from '../data/devices'
-import { type Carrier, carrierBody, laptopDeck, mountOf, screenRect, standLift } from '../sim/geometry'
+import { ANC, COOLERS, GPUS, HINGES, MIC_ARRAYS, OPTICS, SPEAKERS, TYPES, driverOptions, inputOptions, ioInfo } from '../data/devices'
+import { type Carrier, carrierBody, handheldControls, laptopDeck, mountOf, screenRect, speakerShape, standLift } from '../sim/geometry'
 import { batteryLabel, chargeWatts, panelName } from '../sim/scoring'
 import type { Body, DeviceDesign, Face, PlacedPart } from '../sim/types'
 import { themeColor } from '../store/theme'
 import { looseBudAt, placeOnFace } from './buildDevice'
 
-export type DemoKind = 'puck' | 'charge' | 'water' | 'nfc' | 'sat' | 'sound' | 'battery' | 'chip' | 'gpu' | 'cells' | 'cooling' | 'anc' | 'panel' | 'refresh' | 'input' | 'feature' | 'socket' | 'gone'
+export type DemoKind = 'puck' | 'charge' | 'water' | 'nfc' | 'sat' | 'sound' | 'battery' | 'chip' | 'gpu' | 'cells' | 'cooling' | 'anc' | 'panel' | 'refresh' | 'input' | 'feature' | 'socket' | 'gone' | 'fold' | 'lens' | 'rays' | 'voice' | 'rumble' | 'dock'
 
 /** One thing that changed, and how to show it. */
 export interface DemoSpec {
@@ -53,17 +53,26 @@ export function diffDesign(a: DeviceDesign, b: DeviceDesign): DemoSpec[] {
     const kind: DemoKind = !has ? 'gone' : e.id === 'wireless' ? 'puck' : e.id === 'ip68' ? 'water' : e.id === 'nfc' ? 'nfc' : e.id === 'sat' ? 'sat' : 'sound'
     add(kind, `extra-${e.id}`, e.name, has ? 'Added' : 'Removed', { id: e.id, to: 1 })
   }
-  if (p.panel !== s.panel) add(T.noScreen ? 'feature' : 'panel', 'panel', panelName(type, s.panel) ?? 'Panel', type === 'console' ? 'Video output' : 'Display panel', { from: p.panel, to: s.panel })
-  if (p.refresh !== s.refresh) add(T.noScreen ? 'feature' : 'refresh', 'refresh', `${s.refresh} Hz`, 'Refresh rate', { from: p.refresh, to: s.refresh })
+  // a headset's picture is only ever seen through its lenses
+  const hidden: DemoKind = type === 'headset' ? 'lens' : 'feature'
+  if (p.panel !== s.panel) add(T.noScreen ? hidden : 'panel', 'panel', panelName(type, s.panel) ?? 'Panel', type === 'console' ? 'Video output' : type === 'headset' ? 'Displays' : 'Display panel', { from: p.panel, to: s.panel })
+  if (p.refresh !== s.refresh) add(T.noScreen ? hidden : 'refresh', 'refresh', `${s.refresh} Hz`, 'Refresh rate', { from: p.refresh, to: s.refresh })
+  if ((p.hinge ?? 0) !== (s.hinge ?? 0)) add('fold', 'hinge', HINGES[s.hinge ?? 0].name, 'Hinge', { from: p.hinge ?? 0, to: s.hinge ?? 0 })
+  if ((p.optics ?? 0) !== (s.optics ?? 0)) add('lens', 'optics', OPTICS[s.optics ?? 0].name, 'Lenses', { from: p.optics ?? 0, to: s.optics ?? 0 })
+  if ((p.mics ?? 0) !== (s.mics ?? 0)) add('voice', 'mics', MIC_ARRAYS[s.mics ?? 0].name, 'Microphones', { from: p.mics ?? 0, to: s.mics ?? 0, id: 'mics' })
   if (p.chipGen !== s.chipGen || p.chipTier !== s.chipTier || p.customChip !== s.customChip) add('chip', 'chip', s.customChip ? 'Your own chip' : chipInfo(s.chipGen, s.chipTier).name, 'Processor', { from: p.chipTier, to: s.customChip ? 2 : s.chipTier })
   if ((p.gpu ?? 0) !== (s.gpu ?? 0)) add(s.gpu ? 'gpu' : 'chip', 'gpu', GPUS[s.gpu ?? 0].name, 'Graphics', { from: p.gpu ?? 0, to: s.gpu ?? 0 })
   if (T.memory > 0 && p.ram !== s.ram) add('cells', 'ram', `${s.ram} GB`, 'Memory', { from: RAM_OPTIONS.indexOf(p.ram), to: RAM_OPTIONS.indexOf(s.ram), id: 'ram' })
   if (T.memory > 0 && p.storage !== s.storage) add('cells', 'storage', storageLabel(s.storage), 'Storage', { from: STORAGE_OPTIONS.indexOf(p.storage), to: STORAGE_OPTIONS.indexOf(s.storage), id: 'storage' })
   if ((p.cooling ?? 0) !== (s.cooling ?? 0)) add('cooling', 'cooling', COOLERS[s.cooling ?? 0].name, 'Cooling', { from: p.cooling ?? 0, to: s.cooling ?? 0 })
   if ((p.speakers ?? 0) !== (s.speakers ?? 0)) add('sound', 'speakers', SPEAKERS[s.speakers ?? 0].name, 'Speakers', { from: p.speakers ?? 0, to: s.speakers ?? 0, id: 'speakers' })
-  if ((p.driver ?? 0) !== (s.driver ?? 0)) add('sound', 'driver', DRIVERS[s.driver ?? 0].name, 'Driver in each bud', { from: p.driver ?? 0, to: s.driver ?? 0, id: 'driver' })
+  if ((p.driver ?? 0) !== (s.driver ?? 0)) add('sound', 'driver', driverOptions(type)[s.driver ?? 0].name, type === 'speaker' ? 'Drivers' : 'Driver in each bud', { from: p.driver ?? 0, to: s.driver ?? 0, id: 'driver' })
   if ((p.anc ?? 0) !== (s.anc ?? 0)) add('anc', 'anc', s.anc ? ANC[s.anc].name : 'No noise cancelling', 'Noise cancelling', { from: p.anc ?? 0, to: s.anc ?? 0 })
-  if (T.input && (p.keyboard ?? 0) !== (s.keyboard ?? 0)) add('input', 'input', inputOptions(type)[s.keyboard ?? 0]?.name ?? '', T.input === 'controller' ? 'Controller in the box' : type === 'laptop' ? 'Keyboard' : 'Keyboard in the box', { from: p.keyboard ?? 0, to: s.keyboard ?? 0 })
+  if (T.input && (p.keyboard ?? 0) !== (s.keyboard ?? 0)) {
+    const kind: DemoKind = T.input === 'wands' ? 'rays' : T.input === 'controls' ? 'rumble' : 'input'
+    const note = T.input === 'controller' ? 'Controller in the box' : T.input === 'wands' ? 'Controllers in the box' : T.input === 'controls' ? 'Controls' : type === 'laptop' ? 'Keyboard' : 'Keyboard in the box'
+    add(kind, 'input', inputOptions(type)[s.keyboard ?? 0]?.name ?? '', note, { from: p.keyboard ?? 0, to: s.keyboard ?? 0, id: 'input' })
+  }
   const before = p.io ?? []
   const now = s.io ?? []
   for (const id of new Set([...before, ...now])) {
@@ -74,7 +83,9 @@ export function diffDesign(a: DeviceDesign, b: DeviceDesign): DemoSpec[] {
     if (!info) continue
     // a socket is a part on the body: when one goes, the gap it leaves is plain to see
     if (info.size && !has) continue
-    add(!has ? 'gone' : info.size ? 'socket' : 'feature', `io-${id}`, info.name, has ? 'Added' : 'Removed', { id, to: 1 })
+    // what a feature does decides how it is shown: a headset senses, a speaker listens, a handheld is held
+    const shown: DemoKind = type === 'headset' ? 'rays' : type === 'speaker' ? 'voice' : type === 'handheld' && id === 'dock' ? 'dock' : type === 'handheld' && (id === 'gyro' || id === 'paddles') ? 'rumble' : 'feature'
+    add(!has ? 'gone' : info.size ? 'socket' : shown, `io-${id}`, info.name, has ? 'Added' : 'Removed', { id, to: 1 })
   }
   return out
 }
@@ -198,9 +209,21 @@ interface Built {
   /** Design face that should be turned towards the camera. */
   face?: Face
   xray?: number
+  /** How the model itself moves: see Demo.pose. */
+  pose?: (t: number) => Pose
+}
+
+/** What a demonstration does to the model itself rather than draws on it. */
+export interface Pose {
+  /** A foldable: how far to swing from the way it is being shown (open or shut) towards the other, 0 to 1. */
+  fold?: number
+  /** Sideways shake of the whole device, mm. */
+  shake?: number
 }
 
 const mainCarrier = (d: DeviceDesign): Carrier => (d.type === 'laptop' ? 'base' : 'body')
+/** Where things held up to the back of a device should aim, across its width: a foldable's back is half cover screen. */
+const backCentre = (d: DeviceDesign) => (d.type === 'foldable' ? d.body.width / 4 : 0)
 const screenCarrier = (d: DeviceDesign): Carrier => (d.type === 'laptop' ? 'lid' : 'body')
 
 /**
@@ -264,7 +287,8 @@ function puck(k: Kit, x: Ctx): Built {
       },
     }
   }
-  const r = Math.min(s.width, s.height) * (x.d.type === 'watch' ? 0.36 : 0.3)
+  const offset = backCentre(x.d)
+  const r = Math.min(s.width - 2 * Math.abs(offset), s.height) * (x.d.type === 'watch' ? 0.36 : 0.3)
   const thick = 5 * u
   const p = new THREE.Group()
   const disc = new THREE.CylinderGeometry(r, r * 0.94, thick, 48)
@@ -275,7 +299,7 @@ function puck(k: Kit, x: Ctx): Built {
   g.add(p)
   const face = new THREE.Group()
   const y0 = -s.height * 0.04
-  face.position.set(0, y0, -s.thickness / 2 - x.gap)
+  face.position.set(offset, y0, -s.thickness / 2 - x.gap)
   g.add(face)
   const wave = pulses(k, face, 3, GREEN, r * 0.7, r * 1.9, 0.8)
   const touch = -s.thickness / 2 - thick / 2 - 0.5
@@ -286,7 +310,7 @@ function puck(k: Kit, x: Ctx): Built {
     play: (t) => {
       const arrive = settle(t / 0.55)
       const leave = ramp(t, D - 0.7, D - 0.1)
-      p.position.set(0, y0 - 40 * u * (1 - arrive) - 70 * u * leave * leave, touch - 80 * u * (1 - arrive) - 50 * u * leave)
+      p.position.set(offset, y0 - 40 * u * (1 - arrive) - 70 * u * leave * leave, touch - 80 * u * (1 - arrive) - 50 * u * leave)
       wave(t - 0.5, ramp(t, 0.5, 0.7) * (1 - ramp(t, D - 0.8, D - 0.6)))
     },
   }
@@ -401,7 +425,8 @@ function nfc(k: Kit, x: Ctx): Built {
   g.add(reader)
   const cy = -s.height * 0.08
   const air = new THREE.Group()
-  air.position.set(0, cy, -s.thickness / 2 - x.gap * 2)
+  const offset = backCentre(x.d)
+  air.position.set(offset, cy, -s.thickness / 2 - x.gap * 2)
   g.add(air)
   const wave = pulses(k, air, 3, accent(), 12 * u, 46 * u, 0.7)
   const D = 2.2
@@ -410,7 +435,7 @@ function nfc(k: Kit, x: Ctx): Built {
     face: 'back',
     play: (t) => {
       const near = settle(t / 0.5) - ramp(t, D - 0.6, D - 0.05)
-      reader.position.set(0, cy - 40 * u * (1 - near), -s.thickness / 2 - 20 * u - 90 * u * (1 - near))
+      reader.position.set(offset, cy - 40 * u * (1 - near), -s.thickness / 2 - 20 * u - 90 * u * (1 - near))
       wave(t - 0.45, ramp(t, 0.45, 0.6) * (1 - ramp(t, 1.25, 1.4)))
       // the reader's lamp turns green once the tap is read
       lamp.color.set(t > 1.25 ? GREEN : accent())
@@ -461,7 +486,7 @@ function sound(k: Kit, x: Ctx): Built {
   const carrier = mainCarrier(d)
   const s = x.solid(carrier)
   const g = k.on(carrier)
-  const lists = { speakers: SPEAKERS.length, driver: DRIVERS.length }
+  const lists = { speakers: SPEAKERS.length, driver: driverOptions(d.type).length }
   const power = x.spec.id === 'speakers' || x.spec.id === 'driver' ? (x.spec.to ?? 0) / (lists[x.spec.id] - 1) : 0.5
   // where the sound comes out, and which way it goes
   let sources: { at: THREE.Vector3; angle: number }[]
@@ -471,9 +496,13 @@ function sound(k: Kit, x: Ctx): Built {
     const at = looseBudAt(d.body)
     sources = [{ at, angle: 0 }, { at, angle: Math.PI }]
     reach = 14 + 16 * power
-  } else if (d.type === 'phone' || d.type === 'tablet') {
+  } else if (d.type === 'phone' || d.type === 'tablet' || d.type === 'foldable') {
     sources = [{ at: new THREE.Vector3(0, s.height / 2, 0), angle: Math.PI / 2 }, { at: new THREE.Vector3(0, -s.height / 2, 0), angle: -Math.PI / 2 }]
     reach = s.width * 0.5
+  } else if (d.type === 'speaker') {
+    // a speaker throws its sound out sideways, low down where the woofer is: further with bigger drivers
+    sources = [{ at: new THREE.Vector3(s.width / 2, -s.height * 0.12, 0), angle: 0 }, { at: new THREE.Vector3(-s.width / 2, -s.height * 0.12, 0), angle: Math.PI }]
+    reach = Math.max(s.width, s.height) * (0.35 + 0.45 * power)
   } else {
     sources = [{ at: new THREE.Vector3(s.width / 2, d.type === 'laptop' ? 0 : -s.height * 0.22, z), angle: 0 }, { at: new THREE.Vector3(-s.width / 2, d.type === 'laptop' ? 0 : -s.height * 0.22, z), angle: Math.PI }]
   }
@@ -921,11 +950,220 @@ function gone(k: Kit, x: Ctx): Built {
   return { duration: 1.2, play: (t) => planes.forEach((w) => w(t, 0.7, true)) }
 }
 
-const BUILDERS: Record<DemoKind, (k: Kit, x: Ctx) => Built | null> = { puck, charge, water, nfc, sat: satellite, sound, battery, chip, gpu, cells, cooling, anc, panel, refresh, input, feature, socket, gone }
+/** A foldable shuts and opens again, or opens and shuts if it is being shown shut. A better hinge moves faster and leaves less of a gap. */
+function fold(k: Kit, x: Ctx): Built {
+  const s = x.solid('body')
+  const level = x.spec.to ?? 0
+  // a line of light along the hinge while it turns
+  const line = mesh(new THREE.BoxGeometry(0.9 * x.u, s.height * 0.96, 0.9 * x.u), k.glow(accent(), 0.9), 0, 0, s.thickness / 2 + x.gap * 2)
+  const behind = mesh(new THREE.BoxGeometry(0.9 * x.u, s.height * 0.96, 0.9 * x.u), k.glow(accent(), 0.9), 0, 0, -s.thickness / 2 - x.gap * 2)
+  k.on('body').add(line, behind)
+  const shut = 1.25 - 0.1 * level
+  const D = 3
+  return {
+    duration: D,
+    pose: (t) => ({ fold: ramp(t, 0.3, 0.3 + shut) * (1 - ramp(t, D - 0.3 - shut, D - 0.3)) }),
+    play: (t) => {
+      show(line.material as THREE.Material, 0.5 + 0.5 * Math.sin(t * 8))
+      show(behind.material as THREE.Material, 0.5 + 0.5 * Math.sin(t * 8))
+    },
+  }
+}
+
+/** Where a headset's lenses are, behind the visor. */
+const lensSpots = (s: Body) => [-1, 1].map((sx) => new THREE.Vector3(sx * 32, 0, -s.thickness / 2 - 20))
+
+/** Light gathers through a headset's two lenses: tighter and brighter the better they are. */
+function lens(k: Kit, x: Ctx): Built {
+  const s = x.solid('body')
+  const g = k.on('body')
+  const sharp = x.spec.key === 'optics' ? (x.spec.to ?? 0) / (OPTICS.length - 1) : 0.5
+  const r = s.height * 0.26
+  const waves = lensSpots(s).map((at) => {
+    const o = new THREE.Group()
+    o.position.copy(at)
+    g.add(o)
+    // the eye's view: a disc that sharpens from a blur to a point
+    const blur = mesh(new THREE.CircleGeometry(r, 40), k.glow(WHITE, 0.3))
+    const point = mesh(new THREE.CircleGeometry(r * (0.34 - 0.2 * sharp), 32), k.glow(accent(), 0.95), 0, 0, -0.4)
+    o.add(blur, point)
+    return { wave: pulses(k, o, 3, accent(), r * 0.35, r * 1.25, 0.8), blur, point }
+  })
+  return {
+    duration: 2.2,
+    face: 'back',
+    play: (t) =>
+      waves.forEach((w) => {
+        w.wave(t, 0.9, true)
+        const f = ramp(t, 0.3, 1.2)
+        w.blur.scale.setScalar(lerp(1.15, 0.5 - 0.2 * sharp, f))
+        show(w.blur.material as THREE.Material, 1 - 0.6 * f)
+        show(w.point.material as THREE.Material, f)
+      }),
+  }
+}
+
+/** A headset looks out: each tracking camera sweeps the room in front of it, and finds the controllers if there are any. */
+function rays(k: Kit, x: Ctx): Built {
+  const d = x.d
+  const s = x.solid('body')
+  const g = k.on('body')
+  const cams = d.parts.filter((p) => p.kind === 'camera')
+  const reach = 46 * x.u
+  const cones = cams.map((p) => {
+    const at = new THREE.Group()
+    placeOnFace(at, s, d.type, 'front', p.x, p.y, 0)
+    at.translateZ(x.gap * 2)
+    g.add(at)
+    // each camera looks a little away from the middle
+    at.rotateY(Math.atan2(p.x, s.width * 1.6))
+    at.rotateX(-Math.atan2(p.y, s.height * 1.8))
+    const w = reach * 0.3
+    const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => new THREE.Vector3(a * w, b * w, reach))
+    const pts: THREE.Vector3[] = []
+    for (const c of corners) pts.push(new THREE.Vector3(), c)
+    const edges = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), k.line(accent(), 0.32))
+    edges.raycast = () => {}
+    const frame = outline(2 * w, 2 * w, k.line(accent(), 1))
+    at.add(edges, frame)
+    return { at, frame, w }
+  })
+  // the controllers lie on the desk in front: a ring lights round each once it is found
+  const wands = (d.specs.keyboard ?? 0) > 0
+  const found = wands
+    ? [-1, 1].map((sx) => {
+        const o = new THREE.Group()
+        o.position.set(sx * s.width * 0.3, -s.height / 2 + 16, s.thickness / 2 + 80)
+        o.rotation.x = -Math.PI / 2
+        g.add(o)
+        return pulses(k, o, 2, GREEN, 18, 52, 0.8)
+      })
+    : []
+  return {
+    duration: 2.6,
+    face: 'front',
+    play: (t) => {
+      cones.forEach((cone, i) => {
+        // a frame sweeps out along each cone, one camera after another
+        const ph = (((t * 0.9 - i * 0.13) % 1) + 1) % 1
+        cone.frame.position.z = reach * ph
+        cone.frame.scale.setScalar(Math.max(0.02, ph))
+        show(cone.frame.material as THREE.Material, Math.sin(ph * Math.PI))
+        cone.at.scale.setScalar(settle(t / 0.45))
+      })
+      found.forEach((w) => w(t - 0.9, ramp(t, 0.9, 1.1)))
+    },
+  }
+}
+
+/** A speaker listens and answers: sound comes in to its microphones, then a ring of light turns on its top. */
+function voice(k: Kit, x: Ctx): Built {
+  const d = x.d
+  const s = x.solid('body')
+  const shape = speakerShape(d.body)
+  const g = k.on('body')
+  const top = new THREE.Group()
+  top.rotation.x = -Math.PI / 2
+  top.position.y = s.height / 2 + x.gap * 3
+  g.add(top)
+  const r = Math.min(shape.capX, shape.capZ)
+  // a voice arrives from the room
+  const heard = pulses(k, top, 3, WHITE, r * 1.1, r * 3.2, 0.7)
+  // the ring answers: an arc that runs round the top, longer the more microphones are listening
+  const share = d.specs.mics === undefined ? 0.5 : (d.specs.mics + 1) / MIC_ARRAYS.length
+  const arc = mesh(new THREE.RingGeometry(0.8, 1, 64, 1, 0, Math.PI * (0.5 + 1.2 * share)), k.glow(accent(), 1), 0, 0, 0.3)
+  arc.scale.set(shape.capX * 0.98, shape.capZ * 0.98, 1)
+  top.add(arc)
+  const count = (MIC_ARRAYS[d.specs.mics ?? 0] ?? MIC_ARRAYS[0]).count
+  const dots = Array.from({ length: count }, (_, i) => {
+    const a = ((i + 0.5) / count) * Math.PI * 2
+    const o = mesh(new THREE.CircleGeometry(Math.max(1.4, r * 0.06), 16), k.glow(GREEN, 1), shape.form === 'block' ? (i - (count - 1) / 2) * Math.min(9, (2 * shape.capX - 16) / count) : shape.capX * 0.7 * Math.sin(a), shape.form === 'block' ? shape.capZ - 5 : -shape.capZ * 0.7 * Math.cos(a), 0.4)
+    top.add(o)
+    return o
+  })
+  return {
+    duration: 2.6,
+    play: (t) => {
+      heard(t, 1 - ramp(t, 1, 1.3), true)
+      dots.forEach((o, i) => show(o.material as THREE.Material, t < 1.3 ? 0.4 + 0.6 * Math.max(0, Math.sin(t * 9 - i * 0.9)) : 1 - ramp(t, 1.3, 1.6)))
+      arc.rotation.z = -t * 4.2
+      show(arc.material as THREE.Material, ramp(t, 1.1, 1.4))
+    },
+  }
+}
+
+/** A handheld shakes in the hands: harder with better haptics, with rings where the motors are, behind the two grips. */
+function rumble(k: Kit, x: Ctx): Built {
+  const d = x.d
+  const s = x.solid('body')
+  const g = k.on('body')
+  const level = x.spec.id === 'input' ? (x.spec.to ?? 0) : (d.specs.keyboard ?? 0)
+  const c = handheldControls(d.body)
+  const waves = [-1, 1].flatMap((sx) =>
+    [1, -1].map((face) => {
+      const o = new THREE.Group()
+      o.position.set(sx * c.x, 0, face * (s.thickness / 2 + (face > 0 ? 7 : 16)))
+      g.add(o)
+      return pulses(k, o, 2 + (level > 1 ? 1 : 0), accent(), c.r * 1.3, c.r * (2.4 + 0.5 * level), 0.5)
+    }),
+  )
+  const D = 2.2
+  return {
+    duration: D,
+    pose: (t) => ({ shake: t > 0.35 && t < D - 0.6 ? Math.sin(t * 88) * (0.5 + 0.45 * level) * Math.sin(((t - 0.35) / (D - 0.95)) * Math.PI) : 0 }),
+    play: (t) => waves.forEach((w) => w(t, ramp(t, 0.3, 0.5) * (1 - ramp(t, D - 0.7, D - 0.5)))),
+  }
+}
+
+/** A dock rises to meet a handheld, and the picture moves to the television behind. */
+function dock(k: Kit, x: Ctx): Built {
+  const s = x.solid('body')
+  const g = k.on('body')
+  const w = s.width * 0.62
+  const prop = new THREE.Group()
+  const shell = k.solid('#202327', 0.55)
+  const deep = s.thickness + 50
+  // a tray, a wall behind and a low lip in front: the handheld stands between them
+  prop.add(mesh(new THREE.BoxGeometry(w, 9, deep), shell, 0, -4.5, 0), mesh(new THREE.BoxGeometry(w, s.height * 0.52, 7), shell, 0, s.height * 0.26, -s.thickness / 2 - 21), mesh(new THREE.BoxGeometry(w, 6, 5), shell, 0, 3, s.thickness / 2 + 5.5))
+  prop.add(mesh(new THREE.BoxGeometry(w * 0.2, 1.2, 1.2), k.glow(GREEN, 1), 0, 3.4, s.thickness / 2 + 8.2))
+  g.add(prop)
+  // the television it now plays on, sketched behind
+  const tw = s.width * 1.5
+  const th = tw * 0.5625
+  const tv = new THREE.Group()
+  tv.position.set(0, s.height * 0.5 + th * 0.2, -s.thickness / 2 - 150 * x.u)
+  const wash = k.glow(WHITE, 0.22)
+  tv.add(mesh(new THREE.PlaneGeometry(tw, th), wash), outline(tw, th, k.line(accent(), 1)))
+  g.add(tv)
+  const hops = Array.from({ length: 5 }, () => {
+    const o = mesh(new THREE.BoxGeometry(3 * x.u, 3 * x.u, 3 * x.u), k.glow(accent(), 1))
+    g.add(o)
+    return o
+  })
+  const from = new THREE.Vector3(0, -s.height / 2, -s.thickness / 2 - 10)
+  const D = 2.8
+  return {
+    duration: D,
+    face: 'front',
+    play: (t) => {
+      prop.position.y = -s.height / 2 - 0.6 - 70 * x.u * (1 - settle(t / 0.55)) - 60 * x.u * ramp(t, D - 0.4, D)
+      const on = ramp(t, 0.9, 1.2)
+      tv.scale.setScalar(Math.max(0.01, settle((t - 0.7) / 0.5)))
+      show(wash, on * (0.7 + 0.3 * Math.sin(t * 7)))
+      hops.forEach((o, i) => {
+        const ph = (t * 1.1 + i / hops.length) % 1
+        o.position.copy(from).lerp(tv.position, ph)
+        show(o.material as THREE.Material, on * Math.sin(ph * Math.PI))
+      })
+    },
+  }
+}
+
+const BUILDERS: Record<DemoKind, (k: Kit, x: Ctx) => Built | null> = { puck, charge, water, nfc, sat: satellite, sound, battery, chip, gpu, cells, cooling, anc, panel, refresh, input, feature, socket, gone, fold, lens, rays, voice, rumble, dock }
 
 /** Which sound goes with each kind. */
 export const DEMO_SOUND: Record<DemoKind, 'charge' | 'water' | 'ping' | 'thump' | 'scan' | 'air' | 'hush' | 'toggle' | 'drop' | 'remove'> = {
-  puck: 'charge', charge: 'charge', water: 'water', nfc: 'ping', sat: 'ping', sound: 'thump', battery: 'scan', chip: 'scan', gpu: 'scan', cells: 'scan', cooling: 'air', anc: 'hush', panel: 'toggle', refresh: 'toggle', input: 'drop', feature: 'ping', socket: 'ping', gone: 'remove',
+  puck: 'charge', charge: 'charge', water: 'water', nfc: 'ping', sat: 'ping', sound: 'thump', battery: 'scan', chip: 'scan', gpu: 'scan', cells: 'scan', cooling: 'air', anc: 'hush', panel: 'toggle', refresh: 'toggle', input: 'drop', feature: 'ping', socket: 'ping', gone: 'remove', fold: 'toggle', lens: 'toggle', rays: 'scan', voice: 'ping', rumble: 'thump', dock: 'drop',
 }
 
 /** A demonstration ready to play. Its groups are added to the solids they belong to. */
@@ -937,6 +1175,8 @@ export interface Demo {
   face?: Face
   /** How see-through the device becomes at time t, 0 to 1. */
   xray(t: number): number
+  /** What the model itself should be doing at time t: folding, shaking. Empty for most. */
+  pose(t: number): Pose
   /** Move everything to where it is t seconds in. */
   update(t: number): void
 }
@@ -957,6 +1197,7 @@ export function buildDemo(spec: DemoSpec, d: DeviceDesign, radius: number, hints
     duration: D,
     face: built.face,
     xray: (t) => (built.xray ?? 0) * env(t),
+    pose: (t) => built.pose?.(t) ?? {},
     update(t) {
       built.play(t)
       k.fade(env(t))

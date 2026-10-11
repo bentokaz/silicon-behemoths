@@ -86,7 +86,8 @@ export function NewGame() {
       <div className="flex flex-col justify-between border-r border-line bg-panel p-8">
         <Wordmark />
         <div className="text-[12px] leading-relaxed text-dim">
-          You start as a small maker of one kind of device in {2026}. Established companies already sell phones, tablets, watches, laptops, consoles, earbuds, TVs and more. Design a device, get it built, launch it, read the reviews, and put the money back into research, people and places. </div>
+          You start as a small maker of one kind of device in {2026}. More than twenty established companies already sell phones, tablets, watches, laptops, desktops, consoles, earbuds and TVs, and a few are trying their hand at foldables, headsets, smart speakers and handhelds. Design a device, get it built, launch it, read the reviews, and put the money back into research, people and places.
+        </div>
         <Btn onClick={() => setScreen('menu')}>Back</Btn>
       </div>
       <div className="min-h-0 overflow-y-auto p-8">
@@ -121,7 +122,7 @@ export function NewGame() {
           </Panel>
 
           <Panel title="What your company makes" bodyClass="p-3" className="col-span-2">
-            <div className="grid grid-cols-5 gap-1">
+            <div className="grid grid-cols-6 gap-1">
               {START_TYPES.map((type) => (
                 <button key={type} onClick={() => (up({ startType: type }), sfx.toggle())} className={`border px-2 py-2 text-left transition-colors ${cfg.startType === type ? 'border-accent bg-accent/10' : 'border-line2 bg-raise hover:border-accent'}`}>
                   <div className={`text-xs uppercase tracking-wider ${cfg.startType === type ? 'text-accent' : 'text-fg'}`}>{TYPES[type].plural}</div>

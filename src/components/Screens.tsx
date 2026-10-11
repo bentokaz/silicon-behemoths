@@ -13,6 +13,7 @@ import { sealedRooms } from '../sim/sites'
 import { staffEffects, unmanaged } from '../sim/staff'
 import { founderStake, marketCap } from '../sim/stock'
 import { COST_KEYS, DEVICE_TYPES, type DeviceType, type GameState, type Product, SUPPLY_CATS, TRACKS, monthCosts } from '../sim/types'
+import { hasType, unlockBlocked, unlockCost } from '../sim/world'
 import { type Tab, useGame, useStore } from '../store/game'
 import { Thumb, statusText, statusTone } from './Inspector'
 import { Btn, Empty, Fold, Kpi, Meter, Mini, Panel, Tabs, Tag, TextInput, chart, money, num, pct } from './ui'
@@ -278,14 +279,18 @@ export function Products() {
               <div className="fixed inset-0 z-20" onClick={() => setPicking(false)} />
               <div className="absolute right-0 top-full z-30 mt-1 w-64 border border-line2 bg-panel">
                 <div className="label border-b border-line px-2 py-1 text-faint">What will it be?</div>
-                {DEVICE_TYPES.map((t) => (
-                  <button key={t} onClick={() => (setPicking(false), openDesigner({ type: t }))} className="flex w-full items-center justify-between border-b border-line px-2 py-[6px] text-left last:border-0 hover:bg-hover">
-                    <span className="text-[11px] uppercase tracking-wider text-fg">{TYPES[t].name}</span>
-                    <span className="num text-[10px] text-faint">
-                      {segmentsOf(t).length} markets / {num(segmentsOf(t).reduce((a, s) => a + segmentDemand(s, g.day) * 360, 0))} a year
-                    </span>
-                  </button>
-                ))}
+                {DEVICE_TYPES.map((t) => {
+                  const open = hasType(g, t)
+                  const blocked = open ? null : unlockBlocked(g, t)
+                  return (
+                    <button key={t} onClick={() => (setPicking(false), open ? openDesigner({ type: t }) : useStore.getState().setTab('research'))} className="flex w-full items-center justify-between border-b border-line px-2 py-[6px] text-left last:border-0 hover:bg-hover">
+                      <span className={`text-[11px] uppercase tracking-wider ${open ? 'text-fg' : 'text-faint'}`}>{TYPES[t].name}</span>
+                      <span className="num text-[10px] text-faint">
+                        {open ? `${segmentsOf(t).length} markets / ${num(segmentsOf(t).reduce((a, s) => a + segmentDemand(s, g.day) * 360, 0))} a year` : blocked ? 'needs research' : `open for ${money(unlockCost(g, t), 1)}`}
+                      </span>
+                    </button>
+                  )
+                })}
               </div>
             </>
           )}

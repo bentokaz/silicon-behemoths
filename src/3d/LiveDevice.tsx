@@ -12,8 +12,8 @@ import { type Carrier, carrierBody, clampPart, faceBasis, faceLabel, faceSize, f
 import type { Body, DeviceDesign, DeviceType, Face, PartKind, PlacedPart } from '../sim/types'
 import { useStore } from '../store/game'
 import { themeColor } from '../store/theme'
-import { buildDevice, deviceFrame, disposeDevice, layerScaleOf, placeOnFace, pointToFace } from './buildDevice'
-import { DEMO_SOUND, type Demo, type DemoHints, type DemoSpec, buildDemo, diffDesign, disposeDemo } from './demos'
+import { buildDevice, deviceFrame, disposeDevice, layerScaleOf, placeOnFace, pointToFace, setFold } from './buildDevice'
+import { DEMO_SOUND, type Demo, type DemoHints, type DemoSpec, type Pose, buildDemo, diffDesign, disposeDemo } from './demos'
 import { type Guide, studioDebug, studioHint, useStudio } from './studio'
 
 interface Props {
@@ -262,6 +262,11 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
   const playing = useRef<{ demo: Demo; t0: number; on: THREE.Object3D | null } | null>(null)
   const battery = useRef<{ spec: DemoSpec; timer: number } | null>(null)
   const yaw = useRef(0)
+  /** How far shut a foldable is drawn, 0 to 1, easing towards what the studio asks for. */
+  const fold = useRef(0)
+  useEffect(() => {
+    if (design.type !== 'foldable' && useStudio.getState().folded) useStudio.setState({ folded: false })
+  }, [design.type])
 
   const enqueue = (list: DemoSpec[]) => {
     queue.current = [...queue.current.filter((q) => !list.some((n) => n.key === q.key)), ...list].slice(-3)
@@ -310,7 +315,7 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
       window.clearTimeout(battery.current?.timer)
       if (playing.current) disposeDemo(playing.current.demo)
       playing.current = null
-      useStudio.setState({ caption: null, guides: [], hint: null })
+      useStudio.setState({ caption: null, guides: [], hint: null, folded: false })
     },
     [],
   )
@@ -364,6 +369,7 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
       }
     }
     let face: Face | undefined
+    let pose: Pose = {}
     if (cur) {
       if (cur.on !== g) {
         // the model was rebuilt under it: move the demonstration onto the new one
@@ -379,9 +385,19 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
       } else {
         cur.demo.update(t)
         xray(g, cur.demo.xray(t))
+        pose = cur.demo.pose(t)
         if (t < cur.demo.duration - 0.4) face = cur.demo.face
       }
     } else xray(g, 0)
+
+    // ---- what the model itself is doing: a foldable easing open or shut, a handheld shaking in the hands
+    const rest = d.type === 'foldable' && useStudio.getState().folded ? 1 : 0
+    fold.current += (rest - fold.current) * (1 - Math.exp(-dt * 6))
+    if (Math.abs(rest - fold.current) < 0.001) fold.current = rest
+    // a demonstration swings it towards the other state and back
+    const swung = fold.current + ((rest ? 0 : 1) - fold.current) * (pose.fold ?? 0)
+    setFold(g, swung * swung * (3 - 2 * swung))
+    if (turn.current) turn.current.position.x = pose.shake ?? 0
 
     // ---- turn the device so the face that matters can be seen, then turn it back
     let want = 0
@@ -497,6 +513,8 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
         if (data.axis !== 'y') patch.width = fit(at.x, T.width)
         if (data.axis !== 'x') patch.height = fit(at.y, T.height)
         if ((patch.width ?? d.body.width) === d.body.width && (patch.height ?? d.body.height) === d.body.height) return
+        // a speaker keeps its proportions seen from above: its depth follows its width
+        if (d.type === 'speaker' && patch.width !== undefined) patch.thickness = Math.min(T.maxThickness, Math.max(T.thickBase, d.body.thickness + patch.width - d.body.width))
         sfx.stretch()
         useStore.getState().setBody(patch)
         return

@@ -57,5 +57,38 @@ export const rubber = (color = '#0c0c0d') => new THREE.MeshPhysicalMaterial({ co
 /** Contacts and pins inside sockets. */
 export const contactMetal = () => new THREE.MeshPhysicalMaterial({ color: '#c8b27a', metalness: 1, roughness: 0.35 })
 
+let weave: THREE.CanvasTexture | null = null
+/** One repeat of a plain weave, as shades of grey: bright threads, dark gaps between them. */
+function weaveTexture(): THREE.CanvasTexture {
+  if (weave) return weave
+  const c = document.createElement('canvas')
+  c.width = c.height = 64
+  const g = c.getContext('2d')!
+  g.fillStyle = '#8c8c8c'
+  g.fillRect(0, 0, 64, 64)
+  for (let y = 0; y < 8; y++) {
+    for (let x = 0; x < 8; x++) {
+      // each thread passes over one and under the next
+      const over = (x + y) % 2 === 0
+      g.fillStyle = over ? '#f2f2f2' : '#b4b4b4'
+      g.fillRect(x * 8 + (over ? 0 : 1), y * 8 + (over ? 1 : 0), over ? 8 : 6, over ? 6 : 8)
+      g.fillStyle = '#4a4a4a'
+      g.fillRect(x * 8 + 7, y * 8 + 7, 2, 2)
+    }
+  }
+  weave = new THREE.CanvasTexture(c)
+  weave.wrapS = weave.wrapT = THREE.RepeatWrapping
+  weave.anisotropy = 8
+  return weave
+}
+/** Edge of one repeat of the weave, mm. Geometry wrapped in fabric gives its UVs in these. */
+export const WEAVE = 5.6
+
+/** Knitted acoustic fabric: matt, a little fuzzy at grazing angles, with a weave that shows up close. */
+export function fabric(color: string): THREE.MeshPhysicalMaterial {
+  const t = weaveTexture()
+  return new THREE.MeshPhysicalMaterial({ color, map: t, bumpMap: t, bumpScale: 0.6, metalness: 0, roughness: 0.96, sheen: 0.5, sheenRoughness: 0.7, sheenColor: '#ffffff' })
+}
+
 /** A lit indicator or light bar. */
 export const lightMaterial = (color: string) => new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.5, roughness: 0.35 })

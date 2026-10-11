@@ -73,17 +73,18 @@ const UNLOCKS: Record<string, Unlock> = {
   phone: { cost: 2.5e6, needs: {}, from: ['tablet', 'watch'] },
   tablet: { cost: 1.5e6, needs: {}, from: ['phone', 'laptop'] },
   watch: { cost: 1.2e6, needs: {}, from: ['phone', 'earbuds'] },
-  earbuds: { cost: 0.8e6, needs: {}, from: ['phone', 'watch'] },
+  earbuds: { cost: 0.8e6, needs: {}, from: ['phone', 'watch', 'speaker'] },
   laptop: { cost: 3e6, needs: { chipset: 3 }, from: ['tablet', 'desktop'] },
   desktop: { cost: 2.5e6, needs: { chipset: 3 }, from: ['laptop', 'tv'] },
   tv: { cost: 3e6, needs: { display: 3 }, from: ['desktop', 'console'] },
-  console: { cost: 4e6, needs: { chipset: 4 }, from: ['desktop', 'tv'] },
+  console: { cost: 4e6, needs: { chipset: 4 }, from: ['desktop', 'tv', 'handheld'] },
 }
 /** What it takes to start making a kind of device. Types added later carry their own terms in the type data. */
 export function unlockOf(type: DeviceType): Unlock {
-  const own = (TYPES[type] as unknown as { unlock?: Partial<Unlock> }).unlock
-  const base = UNLOCKS[type] ?? { cost: 4e6, needs: {}, from: [] }
-  return { cost: own?.cost ?? base.cost, needs: own?.needs ?? base.needs, from: own?.from ?? base.from }
+  // the first eight kinds were tuned together here; newer kinds bring their terms with them
+  if (UNLOCKS[type]) return UNLOCKS[type]
+  const own = TYPES[type].unlock
+  return { cost: own?.cost ?? 4e6, needs: own?.needs ?? {}, from: own?.from ?? [] }
 }
 export const hasType = (s: GameState, type: DeviceType) => !s.types || s.types.includes(type)
 export function unlockCost(s: GameState, type: DeviceType): number {
@@ -102,7 +103,8 @@ export function unlockBlocked(s: GameState, type: DeviceType): string | null {
   return null
 }
 /** The kinds a new company can choose to start with. */
-export const START_TYPES = DEVICE_TYPES.filter((t) => Object.keys(unlockOf(t).needs).length === 0 || ['laptop', 'console', 'tv', 'desktop'].includes(t))
+// a new company can begin with anything but the two kinds that need years of research behind them
+export const START_TYPES = DEVICE_TYPES.filter((t) => t !== 'foldable' && t !== 'headset')
 
 // ---------------------------------------------------------------- incidents
 

@@ -6,12 +6,13 @@ import { DeviceView, type ViewName } from '../3d/DeviceView'
 import { deviceThumbnail } from '../3d/thumbnail'
 import { sfx } from '../audio/sfx'
 import { EXTRAS, LENSES, SUPPLY_LABELS, materialInfo, panelInfo, sensorInfo } from '../data/catalog'
-import { ANC, COOLERS, DRIVERS, GPUS, SPEAKERS, STRAPS, TYPES, inputOptions, ioInfo, segmentInfo, standInfo, subLabel } from '../data/devices'
+import { ANC, COOLERS, DRIVERS, GPUS, HINGES, INPUT_NAMES, MIC_ARRAYS, OPTICS, SPEAKERS, SPEAKER_DRIVERS, STRAPS, TYPES, headStrap, inputOptions, ioInfo, segmentInfo, standInfo, subLabel } from '../data/devices'
 import { RECALL_DEADLINE, RETAIL_CUT, companyOf, discontinue, fmtDate, orderProduction, player, recallProduct, setPrice } from '../sim/game'
 import { normalised, tierAverages } from '../sim/market'
 import { CONTRACT, buildCost, factoryLine, pendingUnits, supplyPrice } from '../sim/ops'
 import { VARIANTS } from '../sim/rivals'
-import { batteryLabel, chargeWatts, chipFor, panelName } from '../sim/scoring'
+import { coverScreen } from '../sim/geometry'
+import { batteryLabel, chargeWatts, chipFor, foldedThickness, panelName } from '../sim/scoring'
 import { type DeviceDesign, type DeviceType, type GameState, type Product, type ProductionOrder, SUBS, SUPPLY_CATS } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { Btn, Drawer, Meter, Mini, NumInput, Row, Tabs, Tag, chart, money, num, pct } from './ui'
@@ -32,7 +33,23 @@ export function specLines(d: DeviceDesign, diag: number, g?: GameState): [string
   const fitted = (s.io ?? []).map((id) => ioInfo(type, id)?.name).filter(Boolean).join(', ') || 'none'
   const lines: [string, string][] = []
   if (type === 'console') lines.push(['Video output', `${panelName(type, s.panel)}, ${s.refresh} Hz`])
+  else if (type === 'headset') lines.push(['Displays', `${panelInfo(s.panel).name} ${s.refresh} Hz, ${OPTICS[s.optics ?? 0].name.toLowerCase()}`])
+  else if (type === 'speaker') lines.push(['Screen', d.body.screen ? `${diag.toFixed(1)}" ${panelInfo(s.panel).name}` : 'none'])
   else if (!T.noScreen) lines.push(['Display', `${diag.toFixed(type === 'watch' ? 2 : 1)}" ${panelInfo(s.panel).name}${type === 'watch' ? '' : ` ${s.refresh} Hz`}`])
+  if (type === 'foldable') {
+    const cover = coverScreen(d.body)
+    lines.push(['Cover screen', `${(Math.hypot(cover.w, cover.h) / 25.4).toFixed(1)}"`])
+    lines.push(['Hinge', `${HINGES[s.hinge ?? 0].name}, ${foldedThickness(d).toFixed(1)} mm thick when shut`])
+  }
+  if (type === 'speaker') {
+    lines.push(['Drivers', SPEAKER_DRIVERS[s.driver ?? 0].name])
+    lines.push(['Microphones', MIC_ARRAYS[s.mics ?? 0].name])
+    lines.push(['Shape', { column: 'Column', orb: 'Orb', block: 'Block' }[d.body.form ?? 'column']])
+  }
+  if (type === 'headset') {
+    lines.push(['Tracking cameras', selfie.length ? `${selfie.length} x ${sensorInfo(selfie[0].sensor ?? 0).name}` : 'none'])
+    lines.push(['Strap', headStrap(d.body.strap).name])
+  }
   if (type === 'earbuds') {
     lines.push(['Driver', DRIVERS[s.driver ?? 0].name])
     lines.push(['Noise cancelling', ANC[s.anc ?? 0].name])
@@ -41,12 +58,12 @@ export function specLines(d: DeviceDesign, diag: number, g?: GameState): [string
   lines.push(['Chipset', chipFor(s, g?.chips).name + (T.gpu && s.gpu ? ` + ${GPUS[s.gpu].name}` : '')])
   if (T.memory) lines.push(['Memory', `${s.ram} GB / ${s.storage >= 1024 ? s.storage / 1024 + ' TB' : s.storage + ' GB'}`])
   if (!T.mains) lines.push([type === 'earbuds' ? 'Case battery' : 'Battery', `${batteryLabel(type, s.battery)}, ${chargeWatts(type, s.charging)} W`])
-  if (type === 'phone' || type === 'tablet') {
+  if (type === 'phone' || type === 'tablet' || type === 'foldable') {
     lines.push(['Rear cameras', rear.length ? rear.map((p) => `${sensorInfo(p.sensor ?? 0).name} ${LENSES[p.lens ?? 'wide'].name.split(' ')[0].toLowerCase()}`).join(' + ') : 'none'])
     lines.push(['Front camera', selfie.length ? selfie.map((p) => sensorInfo(p.sensor ?? 0).name + (p.underDisplay ? ' under-display' : '')).join(' + ') : 'none'])
   }
   if (type === 'watch') lines.push(['Strap', STRAPS.find((x) => x.id === d.body.strap)?.name ?? 'Silicone'])
-  if (T.input) lines.push([T.input === 'controller' ? 'Controller' : 'Keyboard', inputOptions(type)[s.keyboard ?? 0].name])
+  if (T.input) lines.push([INPUT_NAMES[T.input], inputOptions(type)[s.keyboard ?? 0].name])
   if (T.ioLabel) lines.push([T.ioLabel, fitted])
   if (type === 'laptop' || type === 'desktop') lines.push(['Webcam', selfie.length ? sensorInfo(selfie[0].sensor ?? 0).name : 'none'])
   if (T.mains?.cool) lines.push(['Cooling', COOLERS[s.cooling ?? 0].name])

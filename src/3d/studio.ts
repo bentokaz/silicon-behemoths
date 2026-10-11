@@ -17,9 +17,11 @@ interface Studio {
   guides: Guide[]
   /** A short explanation of why something just moved by itself. */
   hint: string | null
+  /** A foldable is being shown shut. */
+  folded: boolean
 }
 
-export const useStudio = create<Studio>(() => ({ caption: null, guides: [], hint: null }))
+export const useStudio = create<Studio>(() => ({ caption: null, guides: [], hint: null, folded: false }))
 
 let hintTimer = 0
 /** Show a hint over the studio for a moment. */

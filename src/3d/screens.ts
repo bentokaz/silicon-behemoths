@@ -25,7 +25,8 @@ type Ctx = CanvasRenderingContext2D
 type Palette = [string, string, string]
 
 /** Long side of the canvas for each type, in pixels: enough to stay sharp when the camera is close. */
-const RESOLUTION: Partial<Record<DeviceType, number>> = { phone: 1280, tablet: 1536, watch: 640, laptop: 1920, desktop: 2048, tv: 2048 }
+const RESOLUTION: Partial<Record<DeviceType, number>> = { phone: 1280, tablet: 1536, watch: 640, laptop: 1920, desktop: 2048, tv: 2048, foldable: 1536, handheld: 1536, speaker: 768, headset: 256 }
+const GAMES = ['Ember Rally', 'Skyforge', 'Deep Lantern', 'Marrow Keep', 'Glasswing', 'Salt Road']
 
 const cache = new Map<string, THREE.CanvasTexture>()
 
@@ -64,7 +65,10 @@ export function screenTexture(type: DeviceType, wallpaper: number, width: number
   if (type === 'watch') drawWatch(g, c.width, c.height, pal, tag)
   else if (type === 'tv') drawTv(g, c.width, c.height, pal, index, tag)
   else if (type === 'laptop' || type === 'desktop') drawDesktop(g, c.width, c.height, pal, index, type === 'laptop', tag)
-  else if (type === 'tablet') drawTablet(g, c.width, c.height, pal, index, tag)
+  else if (type === 'tablet' || type === 'foldable') drawTablet(g, c.width, c.height, pal, index, tag)
+  else if (type === 'handheld') drawHandheld(g, c.width, c.height, pal, index, tag)
+  else if (type === 'speaker') drawSpeaker(g, c.width, c.height, pal, index, tag)
+  else if (type === 'headset') drawLens(g, c.width, c.height, pal, index)
   else drawPhone(g, c.width, c.height, pal, index, tag)
   if (panel?.lcd) {
     // a backlit panel cannot switch its pixels off: blacks are lifted and the edges glow a little
@@ -532,4 +536,137 @@ function drawTv(g: Ctx, w: number, h: number, pal: Palette, seed: number, tag: s
       }
     }
   })
+}
+
+// ---------------------------------------------------------------- handheld
+
+/** A games launcher: a shelf of games with the first one picked, and the button prompts along the bottom. */
+function drawHandheld(g: Ctx, w: number, h: number, pal: Palette, seed: number, tag: string) {
+  const u = h / 100
+  g.fillStyle = '#0a0c10'
+  g.fillRect(0, 0, w, h)
+  wallpaper(g, w, h, pal, seed)
+  box(g, 0, 0, w, h, 0, '#06080b', 0.62)
+  // status bar
+  g.fillStyle = pal[2]
+  g.beginPath()
+  g.arc(6 * u, 7 * u, 2.6 * u, 0, Math.PI * 2)
+  g.fill()
+  text(g, 'Player One', 10.5 * u, 7.2 * u, 3.4 * u, { weight: 600 })
+  text(g, '09:41', w - 21 * u, 7.2 * u, 3.4 * u, { align: 'right', alpha: 0.9 })
+  statusIcons(g, w - 5 * u, 7 * u, 2.3 * u)
+  if (tag) text(g, tag, w / 2, 7.2 * u, 2.9 * u, { weight: 600, align: 'center', alpha: 0.7 })
+
+  // the shelf: one large tile, then smaller ones running off the right-hand edge
+  const big = 46 * u
+  const small = 34 * u
+  const gap = 3 * u
+  const top = 20 * u
+  let x = 6 * u
+  for (let i = 0; x < w; i++) {
+    const size = i === 0 ? big : small
+    const y = top + (big - size)
+    wallpaperTile(g, x, y, size, size, WALLPAPERS[(seed + i * 2 + 1) % WALLPAPERS.length], seed + i * 1.7, 2 * u)
+    if (i === 0) {
+      g.strokeStyle = '#ffffff'
+      g.lineWidth = 0.7 * u
+      g.beginPath()
+      g.roundRect(x - 1.1 * u, y - 1.1 * u, size + 2.2 * u, size + 2.2 * u, 2.8 * u)
+      g.stroke()
+      const shade = g.createLinearGradient(0, y + size * 0.5, 0, y + size)
+      shade.addColorStop(0, 'rgba(0,0,0,0)')
+      shade.addColorStop(1, 'rgba(0,0,0,0.7)')
+      g.save()
+      g.beginPath()
+      g.roundRect(x, y, size, size, 2 * u)
+      g.clip()
+      g.fillStyle = shade
+      g.fillRect(x, y, size, size)
+      g.restore()
+      text(g, GAMES[seed % GAMES.length], x + 3 * u, y + size - 5.5 * u, 4.4 * u, { weight: 700 })
+    } else {
+      text(g, GAMES[(seed + i) % GAMES.length], x + size / 2, y + size + 4 * u, 2.7 * u, { align: 'center', alpha: 0.75 })
+    }
+    x += size + gap
+  }
+  // what the picked game was doing
+  text(g, 'Continue', 6 * u, top + big + 12.5 * u, 3.6 * u, { weight: 700 })
+  text(g, 'Chapter 4   62% complete   Played 2 hours ago', 6 * u + 20 * u, top + big + 12.6 * u, 2.9 * u, { alpha: 0.6 })
+
+  // prompts in the bottom right corner, then as many shortcuts as fit to the left of them
+  const by = h - 9 * u
+  let px = w - 6 * u
+  for (const [key, label] of [['A', 'Start'], ['Y', 'Options']]) {
+    text(g, label, px, by + 0.2 * u, 2.9 * u, { align: 'right', alpha: 0.85 })
+    px -= g.measureText(label).width + 5 * u
+    box(g, px - 2.4 * u, by - 2.4 * u, 4.8 * u, 4.8 * u, 2.4 * u, '#ffffff', 0.9)
+    text(g, key, px, by + 0.25 * u, 2.9 * u, { weight: 700, align: 'center', color: '#0a0c10' })
+    px -= 7 * u
+  }
+  ;['Store', 'Friends', 'Captures', 'Settings'].forEach((label, i) => {
+    const cx = 9 * u + i * 21 * u
+    if (cx + 19 * u > px) return
+    box(g, cx - 3.4 * u, by - 3.4 * u, 6.8 * u, 6.8 * u, 3.4 * u, '#ffffff', i === 0 ? 0.9 : 0.16)
+    text(g, label, cx + 5 * u, by + 0.2 * u, 2.7 * u, { alpha: 0.8 })
+  })
+}
+
+// ---------------------------------------------------------------- speaker
+
+/** A smart display at rest: the time, the weather, and what is playing. Everything stays inside the largest circle that fits, so a round screen works too. */
+function drawSpeaker(g: Ctx, w: number, h: number, pal: Palette, seed: number, tag: string) {
+  g.fillStyle = '#050608'
+  g.fillRect(0, 0, w, h)
+  const cx = w / 2
+  const cy = h / 2
+  const r = Math.min(w, h) / 2
+  const glow = g.createRadialGradient(cx, cy + r * 0.9, 0, cx, cy + r * 0.9, r * 1.9)
+  glow.addColorStop(0, pal[1])
+  glow.addColorStop(1, 'rgba(5,6,8,0)')
+  g.globalAlpha = 0.5
+  g.fillStyle = glow
+  g.fillRect(0, 0, w, h)
+  g.globalAlpha = 1
+  text(g, 'SAT 10 OCT', cx, cy - r * 0.56, r * 0.1, { weight: 600, align: 'center', color: pal[2] })
+  text(g, '09:41', cx, cy - r * 0.2, r * 0.5, { weight: 300, align: 'center' })
+  // weather: a sun and the temperature
+  const wy = cy + r * 0.22
+  g.fillStyle = '#f5d43c'
+  g.beginPath()
+  g.arc(cx - r * 0.22, wy, r * 0.07, 0, Math.PI * 2)
+  g.fill()
+  text(g, '18\u00b0  Clear', cx - r * 0.1, wy + r * 0.005, r * 0.11, { alpha: 0.9 })
+  // now playing
+  const pw = r * 1.02
+  const ph = r * 0.2
+  const py = cy + r * 0.44
+  box(g, cx - pw / 2, py, pw, ph, ph / 2, '#ffffff', 0.14)
+  wallpaperTile(g, cx - pw / 2 + ph * 0.15, py + ph * 0.15, ph * 0.7, ph * 0.7, pal, seed + 2, ph * 0.35)
+  text(g, SHOWS[(seed + 3) % SHOWS.length], cx - pw / 2 + ph * 1.05, py + ph * 0.52, r * 0.085, { weight: 600 })
+  // the assistant's four dots
+  ;['#2f9bf0', '#f0484e', '#f5d43c', '#34c77b'].forEach((col, i) => {
+    g.fillStyle = col
+    g.beginPath()
+    g.arc(cx + (i - 1.5) * r * 0.075, cy + r * 0.8, r * 0.02, 0, Math.PI * 2)
+    g.fill()
+  })
+  // a wide screen has room in its corners to name the panel
+  if (tag && w > h * 1.3) text(g, tag, w - r * 0.14, r * 0.14, r * 0.075, { weight: 600, align: 'right', alpha: 0.5 })
+}
+
+// ---------------------------------------------------------------- headset
+
+/** What one eye sees through a headset's lens: a room with windows floating in it, darkening towards the edge. */
+function drawLens(g: Ctx, w: number, h: number, pal: Palette, seed: number) {
+  wallpaper(g, w, h, pal, seed)
+  const u = Math.min(w, h) / 100
+  box(g, w * 0.2, h * 0.3, w * 0.36, h * 0.3, 3 * u, '#f4f5f7', 0.9)
+  box(g, w * 0.2, h * 0.3, w * 0.36, h * 0.07, 3 * u, pal[1], 0.9)
+  box(g, w * 0.6, h * 0.36, w * 0.22, h * 0.22, 3 * u, '#14161a', 0.85)
+  box(g, w * 0.36, h * 0.68, w * 0.28, h * 0.06, 3 * u, '#ffffff', 0.5)
+  const edge = g.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.3, w / 2, h / 2, Math.min(w, h) * 0.56)
+  edge.addColorStop(0, 'rgba(0,0,0,0)')
+  edge.addColorStop(1, 'rgba(0,0,0,0.9)')
+  g.fillStyle = edge
+  g.fillRect(0, 0, w, h)
 }

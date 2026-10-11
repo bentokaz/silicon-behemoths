@@ -59,7 +59,8 @@ const ownProducts = (s: GameState) => s.products.filter((p) => p.companyId === '
 
 function news(s: GameState, kind: NewsItem['kind'], text: string, productId?: string) {
   s.news.unshift({ id: s.nextId++, day: s.day, kind, text, productId })
-  if (s.news.length > 100) s.news.length = 100
+  // with twelve device types the rivals launch often: the log is long enough to keep most of a year of it
+  if (s.news.length > 140) s.news.length = 140
 }
 
 const emptyReport = (month: number): MonthReport => ({ month, revenue: 0, other: 0, production: 0, rd: 0, marketing: 0, development: 0, overhead: 0, salaries: 0, facilities: 0, interest: 0, units: 0, cash: 0, funding: 0 })
@@ -388,9 +389,9 @@ export function discontinue(s: GameState, productId: string) {
   }
 }
 
-const STARTER_SEGMENT: Record<DeviceType, SegmentId> = { phone: 'mainstream', tablet: 't-main', watch: 'w-smart', laptop: 'l-ultra', desktop: 'd-home', console: 'c-core', earbuds: 'e-anc', tv: 'tv-home' }
+const STARTER_SEGMENT: Record<DeviceType, SegmentId> = { phone: 'mainstream', tablet: 't-main', watch: 'w-smart', laptop: 'l-ultra', desktop: 'd-home', console: 'c-core', earbuds: 'e-anc', tv: 'tv-home', foldable: 'f-value', headset: 'v-mixed', speaker: 's-screen', handheld: 'h-pc' }
 /** Body colour of the starting template for each device type. */
-const STARTER_COLOR: Partial<Record<DeviceType, string>> = { laptop: '#8f959d', watch: '#3a3d42', desktop: '#c3c7cc', console: '#e4e5e7', earbuds: '#ecebe6', tv: '#25282d' }
+const STARTER_COLOR: Partial<Record<DeviceType, string>> = { laptop: '#8f959d', watch: '#3a3d42', desktop: '#c3c7cc', console: '#e4e5e7', earbuds: '#ecebe6', tv: '#25282d', foldable: '#3f4650', headset: '#e4e5e7', speaker: '#8a8f8a', handheld: '#2b2f36' }
 
 /** Starting template for a new design, using only what the company has researched. */
 export function starterDesign(s: GameState, type: DeviceType = 'phone'): DeviceDesign {
