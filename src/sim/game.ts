@@ -23,7 +23,10 @@ import { type ChannelId, type Company, type CostKey, type DeviceDesign, type Dev
 export const SAVE_VERSION = 4
 export const RETAIL_CUT = 0.15
 /** Games licence income a console maker books for each console sold. */
-export const GAME_ROYALTY = 45
+export const GAME_ROYALTY = 55
+/** The same for a handheld, which sells fewer games, and the services income of a smart speaker. */
+export const HANDHELD_ROYALTY = 30
+export const SPEAKER_SERVICES = 9
 
 export const DIFFICULTY: Record<Difficulty, { label: string; blurb: string; startCash: number; rivalOffset: number; awareness: number; overhead: number; debtDays: number; overdraft: number }> = {
   relaxed: { label: 'Relaxed', blurb: 'Forgiving market, slow rivals, generous credit.', startCash: 15e6, rivalOffset: -0.5, awareness: 1.6, overhead: 0.6, debtDays: 720, overdraft: 5e6 },
@@ -1110,6 +1113,8 @@ function sell(s: GameState, p: Product, c: Company, units: number, segment: stri
     s.care.month.repairCost += repairs
     // console makers earn a licence fee on the games each machine will sell
     if (p.type === 'console') earn(s, units * GAME_ROYALTY, 'other')
+    else if (p.type === 'handheld') earn(s, units * HANDHELD_ROYALTY, 'other')
+    else if (p.type === 'speaker') earn(s, units * SPEAKER_SERVICES, 'other')
     if (p.stock === 0) {
       p.carry = 0
       news(s, 'alert', `${p.name} is sold out. Order more units to keep selling.`, p.id)

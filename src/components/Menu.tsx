@@ -126,7 +126,7 @@ export function NewGame() {
               {START_TYPES.map((type) => (
                 <button key={type} onClick={() => (up({ startType: type }), sfx.toggle())} className={`border px-2 py-2 text-left transition-colors ${cfg.startType === type ? 'border-accent bg-accent/10' : 'border-line2 bg-raise hover:border-accent'}`}>
                   <div className={`text-xs uppercase tracking-wider ${cfg.startType === type ? 'text-accent' : 'text-fg'}`}>{TYPES[type].plural}</div>
-                  <div className="num text-[10px] text-faint">{segmentsOf(type).length} markets</div>
+                  <div className="num text-[10px] text-faint">{segmentsOf(type).length} markets{['console', 'handheld', 'speaker'].includes(type) ? ' / slow start' : ''}</div>
                 </button>
               ))}
               <button onClick={() => (up({ startType: 'all' }), sfx.toggle())} className={`border px-2 py-2 text-left transition-colors ${cfg.startType === 'all' ? 'border-accent bg-accent/10' : 'border-line2 bg-raise hover:border-accent'}`}>

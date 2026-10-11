@@ -492,13 +492,13 @@ export const SEGMENTS: SegmentInfo[] = [
   { id: 'v-mixed', type: 'headset', name: 'Mixed-reality headset', size: 2.2e6, priceRef: 900, sens: 1.2, expect: 0.84, weights: { perf: 0.2, display: 0.26, camera: 0.2, battery: 0.1, design: 0.16, brand: 0.08 } },
   { id: 'v-pro', type: 'headset', name: 'Spatial computer', size: 0.6e6, priceRef: 2400, sens: 0.7, expect: 0.95, weights: { perf: 0.22, display: 0.3, camera: 0.14, battery: 0.06, design: 0.18, brand: 0.1 } },
 
-  { id: 's-mini', type: 'speaker', name: 'Compact speaker', size: 12e6, priceRef: 65, sens: 2.2, expect: 0.6, weights: { perf: 0.18, display: 0.24, camera: 0.2, battery: 0.08, design: 0.14, brand: 0.16 } },
-  { id: 's-screen', type: 'speaker', name: 'Smart display', size: 5e6, priceRef: 150, sens: 1.6, expect: 0.8, weights: { perf: 0.14, display: 0.3, camera: 0.24, battery: 0.08, design: 0.12, brand: 0.12 } },
-  { id: 's-hifi', type: 'speaker', name: 'Hi-fi speaker', size: 2.5e6, priceRef: 340, sens: 1, expect: 0.9, weights: { perf: 0.36, display: 0.1, camera: 0.1, battery: 0.22, design: 0.14, brand: 0.08 } },
+  { id: 's-mini', type: 'speaker', name: 'Compact speaker', size: 18e6, priceRef: 65, sens: 2.2, expect: 0.6, weights: { perf: 0.18, display: 0.24, camera: 0.2, battery: 0.08, design: 0.14, brand: 0.16 } },
+  { id: 's-screen', type: 'speaker', name: 'Smart display', size: 8e6, priceRef: 150, sens: 1.6, expect: 0.8, weights: { perf: 0.14, display: 0.3, camera: 0.24, battery: 0.08, design: 0.12, brand: 0.12 } },
+  { id: 's-hifi', type: 'speaker', name: 'Hi-fi speaker', size: 3.5e6, priceRef: 340, sens: 1, expect: 0.9, weights: { perf: 0.36, display: 0.1, camera: 0.1, battery: 0.22, design: 0.14, brand: 0.08 } },
 
-  { id: 'h-pocket', type: 'handheld', name: 'Pocket console', size: 5e6, priceRef: 290, sens: 1.8, expect: 0.66, weights: { perf: 0.16, display: 0.16, camera: 0.24, battery: 0.18, design: 0.12, brand: 0.14 } },
-  { id: 'h-pc', type: 'handheld', name: 'Handheld gaming PC', size: 2.5e6, priceRef: 680, sens: 1.3, expect: 0.86, weights: { perf: 0.36, display: 0.2, camera: 0.16, battery: 0.14, design: 0.06, brand: 0.08 } },
-  { id: 'h-elite', type: 'handheld', name: 'Premium handheld', size: 0.9e6, priceRef: 1050, sens: 0.9, expect: 0.94, weights: { perf: 0.32, display: 0.26, camera: 0.14, battery: 0.1, design: 0.1, brand: 0.08 } },
+  { id: 'h-pocket', type: 'handheld', name: 'Pocket console', size: 7e6, priceRef: 290, sens: 1.8, expect: 0.66, weights: { perf: 0.16, display: 0.16, camera: 0.24, battery: 0.18, design: 0.12, brand: 0.14 } },
+  { id: 'h-pc', type: 'handheld', name: 'Handheld gaming PC', size: 3.5e6, priceRef: 680, sens: 1.3, expect: 0.86, weights: { perf: 0.36, display: 0.2, camera: 0.16, battery: 0.14, design: 0.06, brand: 0.08 } },
+  { id: 'h-elite', type: 'handheld', name: 'Premium handheld', size: 1.2e6, priceRef: 1050, sens: 0.9, expect: 0.94, weights: { perf: 0.32, display: 0.26, camera: 0.14, battery: 0.1, design: 0.1, brand: 0.08 } },
 ]
 export const segmentInfo = (id: SegmentId) => SEGMENTS.find((s) => s.id === id)!
 export const segmentsOf = (type: DeviceType) => SEGMENTS.filter((s) => s.type === type)
