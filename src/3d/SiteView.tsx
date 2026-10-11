@@ -5,9 +5,10 @@ import { Canvas, type ThreeEvent, useFrame, useThree } from '@react-three/fiber'
 import { EffectComposer, N8AO } from '@react-three/postprocessing'
 import { type ReactNode, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
-import { nearestBay } from '../sim/curves'
+import { type Pt, bayRun, bayStands, curveTiles, nearestBay } from '../sim/curves'
+import { EDGE_COST, keepsDoors } from '../sim/game'
 import type { FactoryLife, OfficeLife, StoreLife } from '../sim/life'
-import { ITEMS, type LineStats, SITE_TIERS, type ShapeOpts, areaOf, areaTiles, canPlace, curveFor, gridAt, inPlot, isBoundary, itemAt, reachable, roomOf, tilesOf } from '../sim/sites'
+import { ITEMS, type LineStats, SITE_TIERS, type ShapeOpts, areaOf, areaTiles, canPlace, curveFor, cutAt, gridAt, inPlot, isBoundary, itemAt, lineTiles, reachable, roomOf, rowSpots, tilesOf, wallAt } from '../sim/sites'
 import { ROLE_INFO, inTraining } from '../sim/staff'
 import type { Employee, Product, Site, SiteItem, SiteKind } from '../sim/types'
 import { QUALITY, type Quality, isHeld, useSettings } from '../store/settings'
@@ -17,7 +18,7 @@ import { type BoardPlace, type BoardText, CallLights, Face, type Palette, RackLi
 import { advanceClock, campus, hourOf } from './site/clock'
 import { type Body, Crowd, Kind, type StaffEntry, describe, meetingSlot } from './site/crowd'
 import { BayCursor, CurveOutline } from './site/curved'
-import { Environs, MOODS, type Mood } from './site/env'
+import { Environs, INDOOR_SKY, MOODS, type Mood, isIndoor } from './site/env'
 import { FactoryItem } from './site/factory'
 import { FactoryFloor } from './site/factorylife'
 import { Doors, Dropping, Sparks, SparksView, WallFx, type WallPiece, snapshot, wallChanges, wallHeight } from './site/fx'
@@ -55,6 +56,23 @@ export interface Edge {
   bay?: string
 }
 
+/** A run of wall marked out with the wall tool: straight edges, or the bays of one curved wall. */
+export interface EdgeRun {
+  edges?: { x: number; y: number; side: 'n' | 'w' }[]
+  curve?: number
+  bays?: string[]
+}
+
+/** What a tool being dragged would do if the button were let go now. */
+export interface RunInfo {
+  tool: 'item' | 'edge' | 'remove'
+  /** Places it would act on, and places in the run where it cannot. */
+  count: number
+  blocked: number
+  /** What it would cost, or for a sale what would come back. */
+  cost: number
+}
+
 /** A show in progress at a venue. */
 export interface ShowState {
   /** Share of seats filled, 0-1. */
@@ -83,9 +101,16 @@ interface Props {
   selectedRoom?: number
   sealed?: number[]
   onTile?: (x: number, y: number, item: SiteItem | undefined) => void
-  onEdge?: (edge: Edge) => void
-  /** An area tool was dragged out from one corner to the other. */
-  onArea?: (x0: number, y0: number, x1: number, y1: number) => void
+  /** The item tool was clicked, or pressed and dragged from one tile to another: a row goes down between them. */
+  onRow?: (x0: number, y0: number, x1: number, y1: number) => void
+  /** The wall tool was clicked on a stretch of wall or dragged along a run of it. */
+  onEdges?: (run: EdgeRun) => void
+  /** The sell tool was clicked on, or dragged across, these items. */
+  onSell?: (itemIds: string[]) => void
+  /** Told what a drag in progress would do, and null when there is none. */
+  onRun?: (info: RunInfo | null) => void
+  /** An area tool was marked out from one corner to the other. `apart` is set when the key for a separate room was held. */
+  onArea?: (x0: number, y0: number, x1: number, y1: number, apart: boolean) => void
   /** Tiles the area tool would cover right now (0 when not dragging one out). */
   onPreview?: (tiles: number) => void
   /** Office: seated employees, in desk order, and everyone without a desk. */
@@ -266,13 +291,14 @@ function DevHandle({ pulse, crowd }: { pulse: React.RefObject<Pulse | null>; cro
   return null
 }
 
-/** A flat tint over a set of tiles, drawn as one mesh. */
-function Tint({ tiles, w, h, color, opacity, y = 0.02 }: { tiles: [number, number][]; w: number; h: number; color: string; opacity: number; y?: number }) {
+/** A flat tint over a set of tiles, drawn as one mesh. `shapes` are odd-shaped pieces of floor, in metres from the plot's corner. */
+function Tint({ tiles, shapes, w, h, color, opacity, y = 0.02 }: { tiles: [number, number][]; shapes?: Pt[][]; w: number; h: number; color: string; opacity: number; y?: number }) {
   const geo = useMemo(() => {
     const b = new Batch()
     for (const [x, z] of tiles) b.quad('t', x - w / 2 + 0.04, z - h / 2 + 0.04, x - w / 2 + 0.96, z - h / 2 + 0.96, y, '#ffffff')
+    for (const p of shapes ?? []) b.poly('t', p.map(([x, z]): Pt => [x - w / 2, z - h / 2]), y, '#ffffff')
     return b.build(() => ({ material: new THREE.MeshBasicMaterial() }))[0]?.geometry ?? null
-  }, [tiles, w, h, y])
+  }, [tiles, shapes, w, h, y])
   useEffect(() => () => geo?.dispose(), [geo])
   if (!geo) return null
   return (
@@ -281,6 +307,62 @@ function Tint({ tiles, w, h, color, opacity, y = 0.02 }: { tiles: [number, numbe
     </mesh>
   )
 }
+
+/**
+ * The floor of some rooms, for tinting: whole tiles, and the true shape of
+ * the tiles a slanted or curved wall crosses, including the part of a tile
+ * beyond another room's curved wall where these rooms own it.
+ */
+function floorOf(site: Site, rooms: Set<number>): { tiles: [number, number][]; shapes: Pt[][] } {
+  const tiles: [number, number][] = []
+  const shapes: Pt[][] = []
+  if (!rooms.size) return { tiles, shapes }
+  const curved = curveTiles(site)
+  for (let y = 0; y < site.h; y++) {
+    for (let x = 0; x < site.w; x++) {
+      const n = site.grid[y * site.w + x]
+      if (!n) continue
+      const edge = curved.get(`${x},${y}`)
+      if (edge) {
+        if (rooms.has(n)) shapes.push(...edge.shape.inside)
+        if (edge.beyond && rooms.has(edge.beyond)) shapes.push(...edge.shape.outside)
+        continue
+      }
+      if (!rooms.has(n)) continue
+      const cut = cutAt(site, x, y)
+      if (!cut) {
+        tiles.push([x, y])
+        continue
+      }
+      // half the tile: the three corners the cut leaves
+      const corners: Record<string, Pt> = { nw: [x, y], ne: [x + 1, y], se: [x + 1, y + 1], sw: [x, y + 1] }
+      shapes.push((['nw', 'ne', 'se', 'sw'] as const).filter((k) => k !== cut).map((k) => corners[k]))
+    }
+  }
+  return { tiles, shapes }
+}
+
+/** Shows whatever is inside in one flat, see-through colour: an item that cannot go where it is being held. */
+function Tinted({ color, children }: { color: string; children: ReactNode }) {
+  const ref = useRef<THREE.Group>(null)
+  const material = useMemo(() => new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.45, roughness: 0.8, transparent: true, opacity: 0.62, depthWrite: false }), [color])
+  useEffect(() => () => material.dispose(), [material])
+  useLayoutEffect(() => {
+    ref.current?.traverse((o) => {
+      const mesh = o as THREE.Mesh
+      if (mesh.isMesh) {
+        mesh.material = material
+        mesh.castShadow = false
+      }
+    })
+  })
+  return <group ref={ref}>{children}</group>
+}
+
+/** Most models shown at once for a row being dragged out; a longer row shows the rest as tinted tiles. */
+const GHOSTS = 36
+/** Most items in one go that still drop in (or puff away) one by one. */
+const WAVE_MAX = 48
 
 // ---------------------------------------------------------------- the living site
 
@@ -446,15 +528,21 @@ function Celebrate({ count, places, sparks, palette }: { count: number; places: 
 const fmtMoney = (v: number) => (v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `$${Math.round(v / 1e3)}K` : `$${Math.round(v)}`)
 const fmtHour = (h: number) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`
 
-export function SiteView({ site, mode, mood, tool, company, color, logo, selectedRoom, sealed, onTile, onEdge, onArea, onPreview, seated = [], idle = [], applicants, onPerson, day = 0, line, producing = false, products = [], busy = 0, show, autoRotate, speed = 0, life, card, onCutOff }: Props) {
+export function SiteView({ site, mode, mood, tool, company, color, logo, selectedRoom, sealed, onTile, onRow, onEdges, onSell, onRun, onArea, onPreview, seated = [], idle = [], applicants, onPerson, day = 0, line, producing = false, products = [], busy = 0, show, autoRotate, speed = 0, life, card, onCutOff }: Props) {
   const prefs = useSettings((s) => s.settings)
   const Q = QUALITY[prefs.quality]
   const { w, h } = site
   const tier = SITE_TIERS[site.kind][site.tier]
   const M = MOODS[mood]
+  // inside a mall there is no sky: what shows past the walls is the dim upper part of the building
+  const sky = isIndoor(tier.env) ? INDOOR_SKY[mood] : M.sky
   const span = Math.max(w, h)
   const [hover, setHover] = useState<{ x: number; y: number; edge: Edge } | null>(null)
   const [anchor, setAnchor] = useState<[number, number] | null>(null)
+  /** Where the button went down with a tool that paints as it is dragged: the tile, the exact spot, and the wall under it. */
+  const [drag, setDrag] = useState<{ x: number; y: number; fx: number; fy: number; edge: Edge; bay?: string } | null>(null)
+  /** With these tools a left-drag belongs to the tool, not the camera. */
+  const dragTool = tool?.type === 'item' || tool?.type === 'edge' || tool?.type === 'remove'
   const accent = themeColor('accent', '#ff6b1a')
   const neg = themeColor('neg', '#ff4d4f')
   const palette = useMemo<Palette>(() => ({ accent, neg, pos: themeColor('pos', '#5fd08a'), warn: themeColor('warn', '#f2b631') }), [accent, neg])
@@ -468,11 +556,15 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
   const optsKey = `${opts?.thick ?? ''}|${opts?.sweep ?? ''}|${opts?.turn ?? ''}`
 
   // a half-finished drag does not survive a change of tool
-  useEffect(() => setAnchor(null), [tool?.type, tool && 'room' in tool ? tool.room : ''])
+  useEffect(() => {
+    setAnchor(null)
+    setDrag(null)
+  }, [tool?.type, tool && 'room' in tool ? tool.room : '', tool && 'kind' in tool ? tool.kind : ''])
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
       setAnchor(null)
+      setDrag(null)
       setOpen(null)
     }
     window.addEventListener('keydown', key)
@@ -600,11 +692,16 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
   // ---- furniture that has just been put down drops into place before it joins the rest
   const [known, setKnown] = useState(() => ({ site, rev: site.rev, ids: new Set(site.items.map((i) => i.id)) }))
   const [dropping, setDropping] = useState<Set<string>>(() => new Set())
+  /** How long each dropping item waits its turn, so a row lands one after another. */
+  const dropWait = useRef(new Map<string, number>())
   if (known.site !== site || known.rev !== site.rev) {
     const ids = new Set(site.items.map((i) => i.id))
     if (known.site === site && lively) {
       const fresh = site.items.filter((i) => !known.ids.has(i.id) && ITEMS[site.kind][i.kind])
-      if (fresh.length && fresh.length <= 4) setDropping(new Set([...dropping, ...fresh.map((i) => i.id)]))
+      if (fresh.length && fresh.length <= WAVE_MAX) {
+        fresh.forEach((i, k) => dropWait.current.set(i.id, k * Math.min(0.05, 0.6 / fresh.length)))
+        setDropping(new Set([...dropping, ...fresh.map((i) => i.id)]))
+      }
     }
     setKnown({ site, rev: site.rev, ids })
   }
@@ -614,11 +711,11 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
     if (lively) {
       const now = new Set(site.items.map((i) => i.id))
       const gone = lastItems.current.filter((i) => !now.has(i.id) && ITEMS[site.kind][i.kind])
-      if (gone.length <= 4) {
+      if (gone.length <= WAVE_MAX) {
         for (const item of gone) {
           const def = ITEMS[site.kind][item.kind]
           const turned = item.rot % 2 === 1
-          sparks.puff(item.x - w / 2 + (turned ? def.h : def.w) / 2, item.y - h / 2 + (turned ? def.w : def.h) / 2, Math.max(def.w, def.h) * 0.45, 8)
+          sparks.puff(item.x - w / 2 + (turned ? def.h : def.w) / 2, item.y - h / 2 + (turned ? def.w : def.h) / 2, Math.max(def.w, def.h) * 0.45, gone.length > 6 ? 5 : 8)
         }
       }
     }
@@ -746,7 +843,41 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
     const edge: Edge = k === 0 ? { x, y, side: 'n' } : k === 1 ? { x, y: y + 1, side: 'n' } : k === 2 ? { x, y, side: 'w' } : { x: x + 1, y, side: 'w' }
     // a curved wall close by wins over the grid edge
     const bay = tool?.type === 'edge' ? nearestBay(site, fx, fy, 0.6) : null
-    return { x, y, edge: bay ? { ...edge, curve: bay.curve, bay: bay.bay } : edge }
+    return { x, y, fx, fy, edge: bay ? { ...edge, curve: bay.curve, bay: bay.bay } : edge }
+  }
+
+  /** The run of wall from where the wall tool went down to where the pointer is now. */
+  const wallRun = (from: NonNullable<typeof drag>, to: NonNullable<typeof hover>): EdgeRun => {
+    if (from.edge.curve !== undefined && from.edge.bay !== undefined) {
+      // along a curved wall: every bay between the first and the last one the pointer has been on
+      const c = site.curves?.[from.edge.curve]
+      const bays = c ? bayRun(c, from.edge.bay, from.bay ?? from.edge.bay) : []
+      return { curve: from.edge.curve, bays: bays.length ? bays : [from.edge.bay] }
+    }
+    const dx = to.x - from.x
+    const dy = to.y - from.y
+    if (!dx && !dy) return { edges: [{ x: from.edge.x, y: from.edge.y, side: from.edge.side }] }
+    // the line keeps the way of the wall first pressed, unless the drag clearly runs the other way
+    const flat = from.edge.side === 'n'
+    const alongX = flat ? !(Math.abs(dy) >= 2 && Math.abs(dy) > Math.abs(dx)) : Math.abs(dx) >= 2 && Math.abs(dx) > Math.abs(dy)
+    const edges: NonNullable<EdgeRun['edges']> = []
+    if (alongX) {
+      const line = flat ? from.edge.y : Math.round(from.fy)
+      for (let x = Math.min(from.x, to.x); x <= Math.max(from.x, to.x); x++) edges.push({ x, y: line, side: 'n' })
+    } else {
+      const line = flat ? Math.round(from.fx) : from.edge.x
+      for (let y = Math.min(from.y, to.y); y <= Math.max(from.y, to.y); y++) edges.push({ x: line, y, side: 'w' })
+    }
+    return { edges }
+  }
+  /** What the sell tool would take between two tiles: everything standing on the line. */
+  const sellRun = (x0: number, y0: number, x1: number, y1: number): SiteItem[] => {
+    const out = new Set<SiteItem>()
+    for (const [x, y] of lineTiles(x0, y0, x1, y1)) {
+      const item = itemAt(site, x, y)
+      if (item) out.add(item)
+    }
+    return [...out]
   }
 
   // ---- cursor
@@ -764,66 +895,132 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
     if (tool.type === 'item') {
       const def = ITEMS[site.kind][tool.kind]
       if (!def) return null
-      const tiles = tilesOf(def, hover.x, hover.y, tool.rot)
-      return canPlace(site, tool.kind, hover.x, hover.y, tool.rot) ? { good: [], bad: tiles } : { good: tiles, bad: [] }
+      // one where the pointer is, or a row from where the button went down
+      const spots = (drag ? rowSpots(def, drag.x, drag.y, hover.x, hover.y, tool.rot) : ([[hover.x, hover.y]] as [number, number][])).map(([x, y]) => ({ x, y, ok: !canPlace(site, tool.kind, x, y, tool.rot) }))
+      const good = spots.filter((s) => s.ok).flatMap((s) => tilesOf(def, s.x, s.y, tool.rot))
+      const bad = spots.filter((s) => !s.ok).flatMap((s) => tilesOf(def, s.x, s.y, tool.rot).filter(([x, y]) => inPlot(site, x, y)))
+      const count = spots.filter((s) => s.ok).length
+      return { good, bad, spots, run: { tool: 'item' as const, count, blocked: spots.length - count, cost: count * def.cost } }
     }
-    if (tool.type === 'rotate' || tool.type === 'remove') {
+    if (tool.type === 'remove') {
+      const items = drag ? sellRun(drag.x, drag.y, hover.x, hover.y) : sellRun(hover.x, hover.y, hover.x, hover.y)
+      const good = items.flatMap((it) => tilesOf(ITEMS[site.kind][it.kind], it.x, it.y, it.rot))
+      const line = drag ? lineTiles(drag.x, drag.y, hover.x, hover.y) : ([[hover.x, hover.y]] as [number, number][])
+      const taken = new Set(good.map(([x, y]) => `${x},${y}`))
+      return { good, bad: line.filter(([x, y]) => !taken.has(`${x},${y}`)), items, run: { tool: 'remove' as const, count: items.length, blocked: 0, cost: items.reduce((a, it) => a + ITEMS[site.kind][it.kind].cost / 2, 0) } }
+    }
+    if (tool.type === 'rotate') {
       const target = itemAt(site, hover.x, hover.y)
       const tiles = target ? tilesOf(ITEMS[site.kind][target.kind], target.x, target.y, target.rot) : ([[hover.x, hover.y]] as [number, number][])
       return target ? { good: tiles, bad: [] } : { good: [], bad: tiles }
     }
+    if (tool.type === 'edge') {
+      const run = drag ? wallRun(drag, hover) : hover.edge.bay !== undefined ? { curve: hover.edge.curve, bays: [hover.edge.bay] } : { edges: [{ x: hover.edge.x, y: hover.edge.y, side: hover.edge.side }] }
+      const c = run.curve !== undefined ? site.curves?.[run.curve] : undefined
+      // each stretch: a wall that would change, one that is already so, or no wall at all
+      const spare = keepsDoors(tool.kind, (run.edges?.length ?? 0) + (run.bays?.length ?? 0))
+      const kept = (now: string) => now === tool.kind || (spare && now === 'door')
+      const edges = (run.edges ?? []).map((e) => ({ ...e, ok: isBoundary(site, e.x, e.y, e.side), same: kept(wallAt(site, e.x, e.y, e.side)?.kind ?? 'wall') }))
+      const bays = (run.bays ?? []).map((bay) => ({ bay, ok: bayStands(site, run.curve!, bay), same: kept(c?.walls?.[bay] ?? 'wall') }))
+      const count = edges.filter((e) => e.ok && !e.same).length + bays.filter((b) => b.ok && !b.same).length
+      return { good: [], bad: [], wall: { run, edges, bays }, run: { tool: 'edge' as const, count, blocked: edges.filter((e) => !e.ok).length + bays.filter((b) => !b.ok).length, cost: count * EDGE_COST[tool.kind] } }
+    }
     return null
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hover?.x, hover?.y, anchor, tool, site, site.rev, areaTool, shape, optsKey])
+  }, [hover?.x, hover?.y, hover?.edge.x, hover?.edge.y, hover?.edge.side, hover?.edge.bay, hover?.edge.curve, anchor, drag, tool, site, site.rev, areaTool, shape, optsKey])
+
+  // ---- a tool being dragged: say what it would do, and do it when the button comes up
+  const runInfo = drag && preview && 'run' in preview && preview.run ? preview.run : null
+  const runKey = runInfo ? `${runInfo.tool}|${runInfo.count}|${runInfo.blocked}|${runInfo.cost}` : ''
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => onRun?.(runInfo), [runKey, onRun])
+  const finish = useRef<() => void>(() => {})
+  finish.current = () => {
+    if (!drag) return
+    setDrag(null)
+    if (!hover || !tool) return
+    if (tool.type === 'item') onRow?.(drag.x, drag.y, hover.x, hover.y)
+    else if (tool.type === 'edge') onEdges?.(wallRun(drag, hover))
+    else if (tool.type === 'remove') {
+      const ids = sellRun(drag.x, drag.y, hover.x, hover.y).map((i) => i.id)
+      if (ids.length) onSell?.(ids)
+    }
+  }
+  const dragging = !!drag
+  useEffect(() => {
+    if (!dragging) return
+    // the button may come up anywhere, on the plot or off it
+    const up = (e: PointerEvent) => e.button === 0 && finish.current()
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
+    return () => {
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+    }
+  }, [dragging])
 
   const previewCount = areaTool && anchor && preview ? ('area' in preview && preview.area !== undefined ? preview.area : preview.good.length) : 0
   useEffect(() => onPreview?.(previewCount), [previewCount, onPreview])
 
-  const roomTiles = useMemo(() => {
-    if (!selectedRoom) return []
-    const out: [number, number][] = []
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (site.grid[y * w + x] === selectedRoom) out.push([x, y])
-    return out
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [site, site.rev, selectedRoom, w, h])
-  const sealedTiles = useMemo(() => {
-    if (!sealed?.length) return []
-    const set = new Set(sealed)
-    const out: [number, number][] = []
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (set.has(site.grid[y * w + x])) out.push([x, y])
-    return out
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [site, site.rev, sealed?.join(','), w, h])
+  // the tint over a picked room, and over rooms with no way in, follows slanted and curved walls
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const roomFloor = useMemo(() => floorOf(site, new Set(selectedRoom ? [selectedRoom] : [])), [site, site.rev, selectedRoom])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const sealedFloor = useMemo(() => floorOf(site, new Set(sealed ?? [])), [site, site.rev, sealed?.join(',')])
 
-  // the item itself, shown where it would go
+  // the item itself, shown where it would go: one under the pointer, or every one of a row being dragged out,
+  // as it will stand where it can go and in the warning colour where it cannot
   let ghost: React.ReactNode = null
-  if (hover && tool?.type === 'item' && ITEMS[site.kind][tool.kind]) {
+  if (hover && tool?.type === 'item' && ITEMS[site.kind][tool.kind] && preview && 'spots' in preview && preview.spots) {
     const def = ITEMS[site.kind][tool.kind]
     const turned = tool.rot % 2 === 1
     const fw = turned ? def.h : def.w
     const fh = turned ? def.w : def.h
-    ghost = (
-      <group position={[hover.x - w / 2 + fw / 2, 0.03, hover.y - h / 2 + fh / 2]} rotation-y={(-tool.rot * Math.PI) / 2}>
-        <ItemModel kind={site.kind} item={tool.kind} c={ctxFor({ kind: tool.kind }, 7)} />
+    ghost = preview.spots.slice(0, GHOSTS).map((s) => (
+      <group key={`${s.x},${s.y},${s.ok ? 1 : 0},${tool.kind},${tool.rot}`} position={[s.x - w / 2 + fw / 2, 0.03, s.y - h / 2 + fh / 2]} rotation-y={(-tool.rot * Math.PI) / 2}>
+        {s.ok ? (
+          <ItemModel kind={site.kind} item={tool.kind} c={ctxFor({ kind: tool.kind }, 7)} />
+        ) : (
+          <Tinted color={neg}>
+            <ItemModel kind={site.kind} item={tool.kind} c={ctxFor({ kind: tool.kind }, 7)} />
+          </Tinted>
+        )}
       </group>
-    )
+    ))
   }
 
+  // every stretch of wall the wall tool would change: straight edges as boxes, curved bays in their own shape
   let edgeCursor: React.ReactNode = null
-  if (hover && tool?.type === 'edge' && hover.edge.bay !== undefined && hover.edge.curve !== undefined) {
-    edgeCursor = <BayCursor site={site} curve={hover.edge.curve} bay={hover.edge.bay} height={mode === 'cut' ? CUT_H : STOREY - 0.1} color={accent} />
-  } else if (hover && tool?.type === 'edge') {
-    const ok = isBoundary(site, hover.edge.x, hover.edge.y, hover.edge.side)
-    const ex = hover.edge.x - w / 2 + (hover.edge.side === 'n' ? 0.5 : 0)
-    const ez = hover.edge.y - h / 2 + (hover.edge.side === 'w' ? 0.5 : 0)
+  if (hover && tool?.type === 'edge' && preview && 'wall' in preview && preview.wall) {
     const eh = mode === 'cut' ? CUT_H : STOREY - 0.1
+    const tone = (ok: boolean, same: boolean) => (!ok ? neg : same ? '#9aa0a6' : accent)
     edgeCursor = (
-      <mesh position={[ex, eh / 2 + 0.02, ez]} rotation={[0, hover.edge.side === 'w' ? Math.PI / 2 : 0, 0]} renderOrder={6}>
-        <boxGeometry args={[1, eh + 0.06, WALL_T + 0.06]} />
-        <meshBasicMaterial color={ok ? accent : neg} transparent opacity={0.45} depthWrite={false} />
-      </mesh>
+      <>
+        {preview.wall.bays.map((b) => (
+          <BayCursor key={b.bay} site={site} curve={preview.wall.run.curve!} bay={b.bay} height={eh} color={tone(b.ok, b.same)} />
+        ))}
+        {preview.wall.edges.map((e) => (
+          <mesh key={`${e.x},${e.y},${e.side}`} position={[e.x - w / 2 + (e.side === 'n' ? 0.5 : 0), eh / 2 + 0.02, e.y - h / 2 + (e.side === 'w' ? 0.5 : 0)]} rotation={[0, e.side === 'w' ? Math.PI / 2 : 0, 0]} renderOrder={6}>
+            <boxGeometry args={[1, eh + 0.06, WALL_T + 0.06]} />
+            <meshBasicMaterial color={tone(e.ok, e.same)} transparent opacity={e.ok && e.same ? 0.25 : 0.45} depthWrite={false} />
+          </mesh>
+        ))}
+      </>
     )
   }
+  // while a tool is being dragged, a tag at the pointer says how many and how much
+  const runTag =
+    hover && runInfo && (runInfo.count > 1 || runInfo.blocked > 0) ? (
+      <Html position={[hover.x - w / 2 + 0.5, mode === 'cut' ? 1.7 : STOREY + 0.4, hover.y - h / 2 + 0.5]} center zIndexRange={[30, 20]} style={{ pointerEvents: 'none' }}>
+        <div className="pointer-events-none -translate-y-full whitespace-nowrap border border-accent bg-panel/95 px-2 py-[3px] text-center">
+          <div className="num text-[11px] text-fg">
+            {runInfo.count} x {runInfo.tool === 'remove' ? '+' : ''}
+            {fmtMoney(runInfo.cost)}
+          </div>
+          {runInfo.blocked > 0 && <div className="text-[10px] text-neg">{runInfo.blocked} cannot go</div>}
+        </div>
+      </Html>
+    ) : null
 
   // ---- what the rooms say, and what can be clicked
   const places = useMemo(() => (lively && site.kind === 'office' && mode !== 'full' ? boardPlaces(site, BOARD_ROOMS) : []), [site, site.rev, lively, mode]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -1006,11 +1203,14 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
   const reach = Math.max(14, span * 0.8)
   const height = mode === 'full' ? site.floors * STOREY : 0
   const home = useMemo<[number, number, number]>(() => [span * 0.75, span * 0.95 + height, span * 1.2 + 6], [span, height])
+  // with a tool that paints as it is dragged, the left button is the tool's: the middle one turns the view instead
+  const mouseButtons = useMemo(() => ({ LEFT: dragTool ? (-1 as THREE.MOUSE) : THREE.MOUSE.ROTATE, MIDDLE: dragTool ? THREE.MOUSE.ROTATE : THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN }), [dragTool])
+  const touches = useMemo(() => ({ ONE: dragTool ? (-1 as THREE.TOUCH) : THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN }), [dragTool])
   const shadowSig = `${site.rev}|${standing.rev}|${dropping.size}|${mood}|${mode}|${seated.length}|${liveSeats.size}|${day > 0 ? Math.floor(day / 30) : 0}|${show ? show.crowd.toFixed(1) + show.cheer : ''}|${glowKey}`
   return (
     <Canvas shadows={Q.shadows > 0} dpr={[1, Q.dpr]} camera={{ fov: 30, near, far, position: home }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: mood === 'night' ? 1.25 : 1, powerPreference: 'high-performance' }}>
-      <color attach="background" args={[M.sky]} />
-      <fog attach="fog" args={[M.sky, span * 3 + 80, far * 0.9]} />
+      <color attach="background" args={[sky]} />
+      <fog attach="fog" args={[sky, span * 3 + 80, far * 0.9]} />
       <hemisphereLight args={[mood === 'night' ? '#6a7fa8' : '#fff4e6', mood === 'night' ? '#14161c' : '#4a4338', M.hemi + (mood === 'night' ? 0.35 : 0)]} />
       <directionalLight
         color={M.sunColor}
@@ -1032,14 +1232,14 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
       {/* a venue is lit from the stage outward */}
       {mood !== 'day' && site.kind === 'venue' && <pointLight position={venueStage ? [venueStage.x - w / 2 + 3, 9, venueStage.y - h / 2 + 7] : [0, 9, 0]} color="#ffe2bd" intensity={(mood === 'night' ? 9 : 4) * span} distance={span * 2} decay={1.2} />}
       <Environment resolution={128} frames={1} environmentIntensity={mood === 'night' ? 0.12 : 0.4}>
-        <color attach="background" args={[M.sky]} />
+        <color attach="background" args={[sky]} />
         <Lightformer form="rect" intensity={3} color="#fff1e0" position={[0, 8, 0]} rotation-x={Math.PI / 2} scale={[14, 14, 1]} />
         <Lightformer form="rect" intensity={1.4} color="#cfe0ff" position={[-8, 2, 0]} scale={[4, 6, 1]} target={[0, 0, 0]} />
       </Environment>
 
       <Environs env={tier.env} w={w} h={h} mood={mood} />
       <Ground site={site} dim={mood === 'night' ? 0.6 : mood === 'dusk' ? 0.85 : 1} />
-      <Structure site={standing} mode={mode} glow={mood === 'day' ? 0 : M.glow * 0.6} />
+      <Structure site={standing} mode={mode} glow={mood === 'day' ? 0 : M.glow * 0.6} leaves={false} />
 
       {/* invisible pick surface over the whole plot */}
       <mesh
@@ -1047,19 +1247,29 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
         position={[0, 0.005, 0]}
         onPointerMove={(e) => {
           const t = locate(e)
-          if (!hover || hover.x !== t.x || hover.y !== t.y || hover.edge.x !== t.edge.x || hover.edge.y !== t.edge.y || hover.edge.side !== t.edge.side || hover.edge.bay !== t.edge.bay || hover.edge.curve !== t.edge.curve) setHover(t)
+          if (!hover || hover.x !== t.x || hover.y !== t.y || hover.edge.x !== t.edge.x || hover.edge.y !== t.edge.y || hover.edge.side !== t.edge.side || hover.edge.bay !== t.edge.bay || hover.edge.curve !== t.edge.curve) setHover({ x: t.x, y: t.y, edge: t.edge })
+          // a drag along a curved wall runs to the last bay of that wall the pointer was on
+          if (drag && drag.edge.curve !== undefined && t.edge.curve === drag.edge.curve && t.edge.bay !== undefined && t.edge.bay[0] === drag.edge.bay?.[0] && t.edge.bay !== drag.bay) setDrag({ ...drag, bay: t.edge.bay })
         }}
-        onPointerOut={() => setHover(null)}
+        // a drag that wanders off the plot keeps its end where it left
+        onPointerOut={() => !drag && setHover(null)}
+        onPointerDown={(e) => {
+          if (!dragTool || e.button !== 0) return
+          const t = locate(e)
+          setHover({ x: t.x, y: t.y, edge: t.edge })
+          setDrag({ x: t.x, y: t.y, fx: t.fx, fy: t.fy, edge: t.edge, bay: t.edge.bay })
+        }}
         onClick={(e) => {
+          // tools that paint as they are dragged act when the button comes up, wherever that is
+          if (dragTool) return
           if (e.delta > 5) return
           // something standing on the floor was clicked, not the floor itself
           if (performance.now() - consumed.current < 250) return
           const t = locate(e)
-          if (tool?.type === 'edge') onEdge?.(t.edge)
-          else if (areaTool) {
+          if (areaTool) {
             if (!anchor) setAnchor([t.x, t.y])
             else {
-              onArea?.(anchor[0], anchor[1], t.x, t.y)
+              onArea?.(anchor[0], anchor[1], t.x, t.y, e.altKey)
               setAnchor(null)
             }
           } else {
@@ -1089,17 +1299,19 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
           dropping.has(item.id) && ITEMS[site.kind][item.kind] ? (
             <group key={item.id} position={place(item)} rotation-y={(-item.rot * Math.PI) / 2}>
               <Dropping
+                delay={dropWait.current.get(item.id) ?? 0}
                 x={place(item)[0]}
                 z={place(item)[2]}
                 size={Math.max(ITEMS[site.kind][item.kind].w, ITEMS[site.kind][item.kind].h)}
                 sparks={sparks}
-                onDone={() =>
+                onDone={() => {
+                  dropWait.current.delete(item.id)
                   setDropping((cur) => {
                     const next = new Set(cur)
                     next.delete(item.id)
                     return next
                   })
-                }
+                }}
               >
                 <ItemModel kind={site.kind} item={item.kind} c={ctxFor(item, Math.floor(hash(item.x * 13 + item.y * 7 + index) * 1000), flowOf(item))} />
               </Dropping>
@@ -1119,7 +1331,8 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
             }}
           />
         )}
-        {lively && cut && <Doors site={site} nav={nav} crowd={crowd} height={CUT_H} />}
+        {/* every door has a leaf that swings, whichever way the building is being looked at */}
+        <Doors site={standing} crowd={crowd} height={wallHeight(mode)} />
         {places.length > 0 && office && <RoomBoards places={places} cut={cut} text={(p) => roomText(p.type, p.room)} palette={palette} glow={M.glow} />}
         {office &&
           screens.map((item) => {
@@ -1147,8 +1360,8 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
       {site.kind === 'store' && !crowdOn && <Shoppers spots={shopperSpots} count={Math.round(busy * shopperSpots.length)} />}
       {stage && <LivePerson who={{ look: 4242, color: '#1c1e22' }} p={[stage.x - w / 2 + 3 + 1.1, STAGE_H + 0.012, stage.y - h / 2 + 2 + 0.6]} rotY={Math.PI} arms={show?.cheer ? 'up' : 'down'} />}
 
-      {roomTiles.length > 0 && <Tint tiles={roomTiles} w={w} h={h} color={accent} opacity={0.16} y={0.014} />}
-      {sealedTiles.length > 0 && <Tint tiles={sealedTiles} w={w} h={h} color={neg} opacity={0.22} y={0.016} />}
+      {roomFloor.tiles.length + roomFloor.shapes.length > 0 && <Tint tiles={roomFloor.tiles} shapes={roomFloor.shapes} w={w} h={h} color={accent} opacity={0.16} y={0.014} />}
+      {sealedFloor.tiles.length + sealedFloor.shapes.length > 0 && <Tint tiles={sealedFloor.tiles} shapes={sealedFloor.shapes} w={w} h={h} color={neg} opacity={0.22} y={0.016} />}
       {preview && preview.good.length > 0 && <Tint tiles={preview.good} w={w} h={h} color={accent} opacity={ghost ? 0.22 : 0.45} />}
       {preview && preview.bad.length > 0 && <Tint tiles={preview.bad} w={w} h={h} color={neg} opacity={0.5} />}
       {preview && 'curve' in preview && preview.curve && <CurveOutline spec={preview.curve} w={w} h={h} color={accent} />}
@@ -1159,6 +1372,7 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
         return <Marker key={item.id} p={[item.x - w / 2 + (turned ? def.h : def.w) / 2, 1.75, item.y - h / 2 + (turned ? def.w : def.h) / 2]} color={c} />
       })}
       {edgeCursor}
+      {runTag}
 
       {Q.shadows > 0 && <StaticShadows sig={shadowSig} />}
       {Q.ao && (
@@ -1167,7 +1381,7 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
         </EffectComposer>
       )}
       {!autoRotate && <CameraKeys span={span} home={home} />}
-      <OrbitControls makeDefault target={[0, height * 0.35 + 0.5, 0]} minDistance={near * 6} maxDistance={span * 3 + 40} maxPolarAngle={Math.PI * 0.485} enablePan screenSpacePanning={false} panSpeed={1.3 * prefs.cameraSpeed} rotateSpeed={0.9 * prefs.cameraSpeed} zoomSpeed={1.2 * prefs.cameraSpeed} zoomToCursor={prefs.zoomToPointer} enableDamping dampingFactor={0.2} autoRotate={autoRotate} autoRotateSpeed={0.5} />
+      <OrbitControls makeDefault target={[0, height * 0.35 + 0.5, 0]} minDistance={near * 6} maxDistance={span * 3 + 40} maxPolarAngle={Math.PI * 0.485} enablePan screenSpacePanning={false} panSpeed={1.3 * prefs.cameraSpeed} rotateSpeed={0.9 * prefs.cameraSpeed} zoomSpeed={1.2 * prefs.cameraSpeed} zoomToCursor={prefs.zoomToPointer} enableDamping dampingFactor={0.2} autoRotate={autoRotate} autoRotateSpeed={0.5} mouseButtons={mouseButtons} touches={touches} />
     </Canvas>
   )
 }

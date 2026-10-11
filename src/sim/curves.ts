@@ -87,6 +87,8 @@ const FULL = 1 - 1e-6
 export const MIN_THICK = 2
 /** Smallest radius that still reads as a curve. */
 export const MIN_RADIUS = 1
+/** A stretch of wall shorter than this, in metres, only squares off a corner the curve clips. */
+export const CLIP = 0.03
 
 // ---------------------------------------------------------------- polygons
 
@@ -392,6 +394,7 @@ function build(cx: number, cy: number, rx: number, ry: number, hole: [number, nu
 
   const bays = new Map<string, Bay>()
   const drawn = new Map<string, number>()
+  const stray: Piece[] = []
   facets.forEach((f, index) => {
     let bay = bays.get(f.bay)
     if (!bay) bays.set(f.bay, (bay = { key: f.bay, band: f.band, x: 0, y: 0, nx: 0, ny: 0, len: 0, facets: [], tiles: [], solid: true }))
@@ -421,13 +424,32 @@ function build(cx: number, cy: number, rx: number, ry: number, hole: [number, nu
         if (on(ax, bx, tx) || on(ax, bx, tx + 1) || on(ay, by, ty) || on(ay, by, ty + 1)) continue
         const key = `${tx},${ty}`
         const tile = tiles.get(key)
-        if (!tile) continue
+        if (!tile) {
+          // a corner the curve clips by a centimetre or two is too small to be floor, so its tile is not part of
+          // the shape; the wall still runs through it, and is drawn with the tile it carries on into
+          if ((t1 - t0) * f.len < CLIP) stray.push({ facet: index, t0, t1 })
+          continue
+        }
         tile.pieces.push({ facet: index, t0, t1 })
         if (!bay.tiles.includes(key)) bay.tiles.push(key)
         drawn.set(f.bay, (drawn.get(f.bay) ?? 0) + (t1 - t0) * f.len)
       }
     }
   })
+  for (const piece of stray) {
+    const f = facets[piece.facet]
+    const dx = (f.x1 - f.x0) / f.len
+    const dy = (f.y1 - f.y0) / f.len
+    const ax = f.x0 + (f.x1 - f.x0) * piece.t0
+    const ay = f.y0 + (f.y1 - f.y0) * piece.t0
+    const bx = f.x0 + (f.x1 - f.x0) * piece.t1
+    const by = f.y0 + (f.y1 - f.y0) * piece.t1
+    // the tile just before the clipped corner along the wall, or failing that the one just after
+    const host = tiles.get(`${Math.floor(ax - dx * 1e-4)},${Math.floor(ay - dy * 1e-4)}`) ?? tiles.get(`${Math.floor(bx + dx * 1e-4)},${Math.floor(by + dy * 1e-4)}`)
+    if (!host) continue
+    host.pieces.push(piece)
+    drawn.set(f.bay, (drawn.get(f.bay) ?? 0) + (piece.t1 - piece.t0) * f.len)
+  }
   for (const bay of bays.values()) {
     bay.solid = (drawn.get(bay.key) ?? 0) >= bay.len - 1e-4
     // the middle of the bay, measured along it
@@ -500,21 +522,34 @@ function overlap(a: [number, number][], b: [number, number][]): number {
 
 // ---------------------------------------------------------------- curves on a site
 
+type Plot = Pick<Site, 'w' | 'h' | 'grid' | 'curves' | 'cuts'>
 const at = (site: Pick<Site, 'w' | 'h' | 'grid'>, x: number, y: number) => (x >= 0 && y >= 0 && x < site.w && y < site.h ? site.grid[y * site.w + x] || 0 : 0)
+const SIDES: [Side, Side, number, number][] = [['n', 's', 0, -1], ['s', 'n', 0, 1], ['e', 'w', 1, 0], ['w', 'e', -1, 0]]
 
 export interface LiveTile {
   /** Index into site.curves. */
   curve: number
   shape: TileShape
+  /**
+   * The room on the far side of the curved wall here, which owns the part of
+   * the tile the curve leaves over; 0 where that part is open ground.
+   */
+  beyond: number
+}
+
+interface Found {
+  curve: number
+  shape: TileShape
+  squared: boolean
 }
 
 /** The curve whose outline crosses a tile of its own room, whether or not the tile still follows it. */
-function candidate(site: Pick<Site, 'w' | 'h' | 'grid' | 'curves'>, x: number, y: number): (LiveTile & { squared: boolean }) | undefined {
+function candidate(site: Plot, x: number, y: number): Found | undefined {
   if (!site.curves?.length) return undefined
   const n = at(site, x, y)
   if (!n) return undefined
   const key = `${x},${y}`
-  let found: (LiveTile & { squared: boolean }) | undefined
+  let found: Found | undefined
   for (let i = 0; i < site.curves.length; i++) {
     const c = site.curves[i]
     if (c.room !== n || x < c.cx - c.rx - 1 || x > c.cx + c.rx || y < c.cy - c.ry - 1 || y > c.cy + c.ry) continue
@@ -526,20 +561,89 @@ function candidate(site: Pick<Site, 'w' | 'h' | 'grid' | 'curves'>, x: number, y
   return found
 }
 
+interface Contact {
+  /** The one other room standing against the far side of the curve here, or 0. */
+  room: number
+  /** Open ground (or the edge of the plot) lies against the far side. */
+  ground: boolean
+  /** Tiles of the same curved wall whose own left-over part joins this one's. */
+  curved: [number, number][]
+  /** The tile cannot keep its curve: its own room, a slanted wall or two different rooms stand against it. */
+  clash: boolean
+}
+
+/** What a tile's curved edge has on its far side, read from the tiles next to it. */
+function contact(site: Plot, curve: number, shape: TileShape): Contact {
+  const c = site.curves![curve]
+  const out: Contact = { room: 0, ground: false, curved: [], clash: false }
+  let sides = 0
+  let shut = 0
+  for (const [side, far, dx, dy] of SIDES) {
+    if (spanLength(shape.sides[side]) > 0.98) continue
+    sides++
+    const nx = shape.x + dx
+    const ny = shape.y + dy
+    const n = at(site, nx, ny)
+    if (!n) {
+      out.ground = true
+      continue
+    }
+    const open = gaps(shape.sides[side])
+    const other = candidate(site, nx, ny)
+    if (other && (n === c.room || !other.squared)) {
+      // more curved wall: what it has along the shared side must stay clear of what is cut away here
+      if (overlap(open, other.shape.sides[far]) > 0.02) out.clash = true
+      else if (other.curve === curve && !other.squared && overlap(open, gaps(other.shape.sides[far])) > 0.02) out.curved.push([nx, ny])
+      else if (n !== c.room) out.ground = true
+      else if (other.squared) shut++
+      continue
+    }
+    // the room's own floor, a slanted corner, or a second room on another side: the curve cannot stand between them
+    if (n === c.room || site.cuts?.[`${nx},${ny}`] || (out.room && out.room !== n)) out.clash = true
+    else out.room = n
+  }
+  // every open side faces a squared-off tile of its own room: the corner the curve leaves is a pocket in the floor
+  if (sides && shut === sides) out.clash = true
+  return out
+}
+
+/** The room beyond the curve on one tile. A room standing against it comes before open ground. */
+function beyondOf(site: Plot, curve: number, shape: TileShape): number {
+  const here = contact(site, curve, shape)
+  if (here.clash) return 0
+  if (here.room || here.ground) return here.room
+  // only more of the same wall on every open side: the left-over corner belongs with its neighbours'
+  let room = 0
+  for (const [nx, ny] of here.curved) {
+    const other = geomOf(site.curves![curve]).tiles.get(`${nx},${ny}`)
+    const next = other ? contact(site, curve, other) : null
+    if (!next || next.clash || !next.room || (room && room !== next.room)) return 0
+    room = next.room
+  }
+  return room
+}
+
 /** The curved edge running through a tile, if it has one. */
-export function curveAt(site: Pick<Site, 'w' | 'h' | 'grid' | 'curves'>, x: number, y: number): LiveTile | undefined {
+export function curveAt(site: Plot, x: number, y: number): LiveTile | undefined {
   const c = candidate(site, x, y)
-  return c && !c.squared ? c : undefined
+  return c && !c.squared ? { curve: c.curve, shape: c.shape, beyond: beyondOf(site, c.curve, c.shape) } : undefined
+}
+
+/** True where a curved edge runs through a tile. Cheaper than asking what lies beyond it. */
+export function onCurve(site: Plot, x: number, y: number): boolean {
+  const c = candidate(site, x, y)
+  return !!c && !c.squared
 }
 
 /** Every tile on the site with a curved edge through it, keyed "x,y". */
-export function curveTiles(site: Pick<Site, 'w' | 'h' | 'grid' | 'curves'>): Map<string, LiveTile> {
+export function curveTiles(site: Plot): Map<string, LiveTile> {
   const out = new Map<string, LiveTile>()
   site.curves?.forEach((c, i) => {
     for (const [key, shape] of geomOf(c).tiles) {
-      if (!out.has(key) && !c.square?.[key] && at(site, shape.x, shape.y) === c.room) out.set(key, { curve: i, shape })
+      if (!out.has(key) && !c.square?.[key] && at(site, shape.x, shape.y) === c.room) out.set(key, { curve: i, shape, beyond: 0 })
     }
   })
+  for (const tile of out.values()) tile.beyond = beyondOf(site, tile.curve, tile.shape)
   return out
 }
 
@@ -556,41 +660,78 @@ export function bayStands(site: Pick<Site, 'w' | 'h' | 'grid' | 'curves'>, curve
   })
 }
 
+/** The rooms a bay of curved wall divides its own room from: none where it faces open ground. */
+export function bayBeyond(site: Plot, curve: number, bay: string): number[] {
+  const c = site.curves?.[curve]
+  const b = c && geomOf(c).bays.get(bay)
+  if (!c || !b) return []
+  const out: number[] = []
+  for (const key of b.tiles) {
+    const shape = geomOf(c).tiles.get(key)
+    if (!shape || c.square?.[key] || at(site, shape.x, shape.y) !== c.room) continue
+    const room = beyondOf(site, curve, shape)
+    if (room && !out.includes(room)) out.push(room)
+  }
+  return out
+}
+
+/**
+ * The bays from one to another along the same wall, both included: the short
+ * way round where the wall is a closed loop. Empty when they are not on the
+ * same stretch of wall.
+ */
+export function bayRun(c: CurveSpec, from: string, to: string): string[] {
+  const band = from[0]
+  if (to[0] !== band) return []
+  const count = [...geomOf(c).bays.values()].filter((b) => b.band === band).length
+  const a = Number(from.slice(1))
+  const b = Number(to.slice(1))
+  if (!(a >= 0 && a < count && b >= 0 && b < count)) return []
+  const loop = (c.sweep ?? 360) >= 360 && (band === 'o' || band === 'i')
+  let step = b >= a ? 1 : -1
+  let n = Math.abs(b - a)
+  if (loop && n > count / 2) {
+    step = -step
+    n = count - n
+  }
+  const out: string[] = []
+  for (let i = 0; i <= n; i++) out.push(`${band}${(((a + step * i) % count) + count) % count}`)
+  return out
+}
+
 /**
  * Keeps curves honest after the site changes. A tile keeps its curved edge
- * only while what lies beyond the curve is open ground or more of the same
- * curve; where another room now stands against it the tile is squared off for
- * good. Curves with nothing left to draw are dropped.
+ * while what lies beyond the curve is open ground, more of the same curve, or
+ * one other room, which then shares the curved wall. Where the room's own
+ * floor, a slanted corner or two different rooms stand against it the tile is
+ * squared off for good. Curves with nothing left to draw are dropped.
  */
 export function settle(site: Site) {
   if (!site.curves) return
   const rooms = new Set(site.rooms.map((r) => r.n))
+  // rooms that are gone take their curves with them, before the rest are looked at
+  site.curves = site.curves.filter((c) => rooms.has(c.room))
   const kept: Curve[] = []
-  for (const c of site.curves) {
-    if (!rooms.has(c.room)) continue
-    const geom = geomOf(c)
+  site.curves.forEach((c, i) => {
     let live = 0
-    for (const [key, shape] of geom.tiles) {
-      if (c.square?.[key] || at(site, shape.x, shape.y) !== c.room) continue
-      let fits = true
-      for (const [side, far, dx, dy] of [['n', 's', 0, -1], ['s', 'n', 0, 1], ['e', 'w', 1, 0], ['w', 'e', -1, 0]] as [Side, Side, number, number][]) {
-        if (spanLength(shape.sides[side]) > 0.98) continue
-        const nx = shape.x + dx
-        const ny = shape.y + dy
-        if (!at(site, nx, ny)) continue
-        // what the neighbour has along the shared side must stay clear of what is cut away here
-        const other = candidate(site, nx, ny)
-        if (!other || overlap(gaps(shape.sides[side]), other.shape.sides[far]) > 0.02) fits = false
+    // squaring one tile can leave the next one's corner shut in, so look again until nothing changes
+    for (let changed = true; changed; ) {
+      changed = false
+      live = 0
+      for (const [key, shape] of geomOf(c).tiles) {
+        if (c.square?.[key] || at(site, shape.x, shape.y) !== c.room) continue
+        if (contact(site, i, shape).clash) {
+          ;(c.square ??= {})[key] = 1
+          changed = true
+        } else live++
       }
-      if (fits) live++
-      else (c.square ??= {})[key] = 1
     }
-    if (!live) continue
-    kept.push(c)
-  }
+    if (live) kept.push(c)
+  })
   site.curves = kept
   kept.forEach((c, i) => {
     for (const bay of Object.keys(c.walls ?? {})) if (!bayStands(site, i, bay)) delete c.walls![bay]
+    if (c.walls && !Object.keys(c.walls).length) delete c.walls
   })
   if (!site.curves.length) delete site.curves
 }
