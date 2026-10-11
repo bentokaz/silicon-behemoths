@@ -1,7 +1,7 @@
 // Buildable sites: campuses, factories, stores and event venues share one
 // model. A site is an empty plot; the player zones rooms on it, the walls
 // follow the rooms, and each kind of room takes its own furniture.
-import { type CurveSpec, MIN_RADIUS, MIN_THICK, bayStands, curveAt, geomOf, holeOf, settle } from './curves'
+import { type CurveSpec, type LiveTile, MIN_RADIUS, MIN_THICK, type Side, bayBeyond, bayStands, curveAt, curveTiles, geomOf, holeOf, onCurve, settle } from './curves'
 import type { Corner, Role, Room, Site, SiteItem, SiteKind } from './types'
 
 export type Stage = 'in' | 'out' | 'belt' | 'smt' | 'assembly' | 'test' | 'pack'
@@ -252,7 +252,7 @@ export const MAX_FLOORS = 6
 /** One-off cost per floor tile to add a storey. */
 export const FLOOR_COST = 220
 
-/** Ground finishes for open land. The first is the default. */
+/** Ground finishes for open land. Which of them a plot offers, and which it starts with, depends on where it is: see groundsFor. */
 export interface GroundDef {
   id: string
   name: string
@@ -267,6 +267,8 @@ export const GROUNDS: GroundDef[] = [
   { id: 'deck', name: 'Timber deck', color: '#94704c', rough: 0.7 },
   { id: 'water', name: 'Water', color: '#3f7f9c', rough: 0.08 },
   { id: 'meadow', name: 'Wild meadow', color: '#7c9a4a', rough: 1 },
+  { id: 'tile', name: 'Polished tile', color: '#d9d3c6', rough: 0.3 },
+  { id: 'concrete', name: 'Concrete', color: '#8f918d', rough: 0.9 },
 ]
 
 // ---------------------------------------------------------------- plots
@@ -308,7 +310,39 @@ export const SITE_TIERS: Record<SiteKind, TierDef[]> = {
     { name: 'Arena site', w: 50, h: 38, env: 'valley', cost: 9e6, rent: 70e3, blurb: 'Enough land for an amphitheatre that fills a skyline shot.' },
   ],
 }
-export const tierOf = (site: Site) => SITE_TIERS[site.kind][site.tier]
+export const tierOf = (site: Pick<Site, 'kind' | 'tier'>) => SITE_TIERS[site.kind][site.tier]
+
+/**
+ * The ground finishes that make sense in each kind of surroundings; the first
+ * is what the plot is laid with until something else is chosen. A unit inside
+ * a mall stands on the mall's own tiled floor, a shop on a street or a square
+ * on paving, a yard among sheds on concrete: only plots in green surroundings
+ * start as lawn.
+ */
+const ENV_GROUNDS: Record<TierDef['env'], string[]> = {
+  suburb: ['grass', 'paving', 'asphalt', 'gravel', 'deck', 'water', 'meadow', 'concrete'],
+  estate: ['grass', 'paving', 'asphalt', 'gravel', 'deck', 'water', 'meadow', 'concrete'],
+  park: ['grass', 'paving', 'asphalt', 'gravel', 'deck', 'water', 'meadow', 'concrete'],
+  valley: ['grass', 'paving', 'asphalt', 'gravel', 'deck', 'water', 'meadow', 'concrete'],
+  industrial: ['concrete', 'asphalt', 'paving', 'gravel', 'deck', 'grass', 'meadow', 'water'],
+  mall: ['tile', 'paving', 'deck', 'concrete', 'water'],
+  street: ['paving', 'asphalt', 'concrete', 'gravel', 'deck', 'grass', 'water'],
+  plaza: ['paving', 'concrete', 'asphalt', 'gravel', 'deck', 'grass', 'meadow', 'water'],
+}
+const groundById = (id: string | undefined) => GROUNDS.find((g) => g.id === id)
+/** The finishes a plot can be laid with, its default first. */
+export const groundsFor = (site: Pick<Site, 'kind' | 'tier'>): GroundDef[] => ENV_GROUNDS[tierOf(site)?.env ?? 'park'].map((id) => groundById(id)!)
+/** What open land on a plot is laid with where nothing else has been chosen. */
+export const defaultGround = (site: Pick<Site, 'kind' | 'tier'>): GroundDef => groundsFor(site)[0]
+/** The finish on a tile of open land. A finish the plot's surroundings do not offer shows as the default. */
+export function groundAt(site: Pick<Site, 'kind' | 'tier' | 'floor'>, x: number, y: number): GroundDef {
+  const id = site.floor[`${x},${y}`]
+  if (!id) return defaultGround(site)
+  const list = groundsFor(site)
+  return list.find((g) => g.id === id) ?? list[0]
+}
+/** Things that only make sense under the open sky are kept out of a mall. */
+export const itemAllowed = (site: Pick<Site, 'kind' | 'tier'>, kind: string) => !(kind === 'otree' && tierOf(site)?.env === 'mall')
 /** Monthly cost of keeping one built tile lit, cleaned and insured. */
 export const TILE_UPKEEP = 18
 export const builtTiles = (site: Site) => site.grid.reduce((a, n) => a + (n ? 1 : 0), 0)
@@ -345,11 +379,70 @@ export function faceId(site: Site, x: number, y: number, side: 'n' | 's' | 'e' |
   if (!n) return 0
   const cut = cutAt(site, x, y)
   if (cut) return cut.includes(side) ? 0 : n
-  // a tile on a curved edge only shows the room through the sides the curve leaves it
-  const live = curveAt(site, x, y)
-  if (live && live.shape.sides[side].reduce((a, [u, v]) => a + v - u, 0) < 0.02) return 0
+  // a tile on a curved edge only shows its room through the sides the curve leaves it: through the
+  // others it shows whatever lies beyond the curve, open ground or the room that shares the wall
+  if (onCurve(site, x, y)) {
+    const live = curveAt(site, x, y)!
+    if (live.shape.sides[side].reduce((a, [u, v]) => a + v - u, 0) < 0.02) return live.beyond
+  }
   return n
 }
+
+/** A stretch of one side of a tile, as fractions from its north or west end, and the room seen through it (0 for open ground). */
+export type Stretch = [number, number, number]
+/** What shows through one side of a tile, stretch by stretch: one stretch unless a curved wall crosses the side. */
+export function sideSpans(site: Site, x: number, y: number, side: Side, curved?: Map<string, LiveTile>): Stretch[] {
+  const n = gridAt(site, x, y)
+  if (!n) return [[0, 1, 0]]
+  const cut = cutAt(site, x, y)
+  if (cut) return [[0, 1, cut.includes(side) ? 0 : n]]
+  const live = curved ? curved.get(`${x},${y}`) : curveAt(site, x, y)
+  if (!live) return [[0, 1, n]]
+  const out: Stretch[] = []
+  let from = 0
+  for (const [u, v] of live.shape.sides[side]) {
+    if (u > from + 1e-9) out.push([from, u, live.beyond])
+    out.push([Math.max(from, u), v, n])
+    from = Math.max(from, v)
+  }
+  if (from < 1 - 1e-9) out.push([from, 1, live.beyond])
+  return out
+}
+
+/** A stretch of straight wall on a grid edge: the rooms on its own tile's side and across it, from u0 to u1 along the edge. */
+export interface EdgeRun {
+  a: number
+  c: number
+  u0: number
+  u1: number
+}
+/**
+ * The straight walls standing on the north or west edge of a tile: one for
+ * the whole edge in the ordinary case, shorter stretches where a curved wall
+ * crosses it, none where the same room (or open ground) lies on both sides.
+ * Pass the site's curved tiles when asking about many edges.
+ */
+export function edgeRuns(site: Site, x: number, y: number, side: 'n' | 'w', curved?: Map<string, LiveTile>): EdgeRun[] {
+  const sa = sideSpans(site, x, y, side, curved)
+  const sc = side === 'n' ? sideSpans(site, x, y - 1, 's', curved) : sideSpans(site, x - 1, y, 'e', curved)
+  if (sa.length === 1 && sc.length === 1) return sa[0][2] !== sc[0][2] ? [{ a: sa[0][2], c: sc[0][2], u0: 0, u1: 1 }] : []
+  const marks = [...new Set([0, 1, ...sa.flatMap((s) => [s[0], s[1]]), ...sc.flatMap((s) => [s[0], s[1]])])].sort((p, q) => p - q)
+  const seen = (list: Stretch[], u: number) => list.find(([p, q]) => u > p && u < q)?.[2] ?? 0
+  const out: EdgeRun[] = []
+  for (let i = 0; i + 1 < marks.length; i++) {
+    if (marks[i + 1] - marks[i] < 1e-9) continue
+    const u = (marks[i] + marks[i + 1]) / 2
+    const a = seen(sa, u)
+    const c = seen(sc, u)
+    const last = out[out.length - 1]
+    if (a === c) continue
+    if (last && last.a === a && last.c === c && Math.abs(last.u1 - marks[i]) < 1e-9) last.u1 = marks[i + 1]
+    else out.push({ a, c, u0: marks[i], u1: marks[i + 1] })
+  }
+  return out
+}
+/** True for a wall that fills its whole grid edge, so it can carry a real door. */
+export const wholeRun = (r: EdgeRun) => r.u0 <= 0.001 && r.u1 >= 0.999
 /** Room numbers on the two sides of an edge: [the tile's own side, the far side]. */
 export const edgeIds = (site: Site, x: number, y: number, side: 'n' | 'w'): [number, number] => (side === 'n' ? [faceId(site, x, y, 'n'), faceId(site, x, y - 1, 's')] : [faceId(site, x, y, 'w'), faceId(site, x - 1, y, 'e')])
 
@@ -373,7 +466,12 @@ export function openRooms(site: Site): Set<number> {
     if (nb) open.add(nb)
   }
   site.curves?.forEach((c, i) => {
-    for (const [bay, kind] of Object.entries(c.walls ?? {})) if (kind !== 'glass' && bayStands(site, i, bay)) open.add(c.room)
+    for (const [bay, kind] of Object.entries(c.walls ?? {})) {
+      if (kind === 'glass' || !bayStands(site, i, bay)) continue
+      open.add(c.room)
+      // a door in a curved wall two rooms share is a way into both
+      for (const n of bayBeyond(site, i, bay)) open.add(n)
+    }
   })
   return open
 }
@@ -463,7 +561,7 @@ export function areaOf(tiles: [number, number][], curve: CurveSpec | null): numb
 }
 
 /** True where some open ground shows on a tile: open land, and the part of a room tile outside a slanted or curved wall. */
-export const hasGround = (site: Site, x: number, y: number) => inPlot(site, x, y) && (!gridAt(site, x, y) || !!cutAt(site, x, y) || !!curveAt(site, x, y))
+export const hasGround = (site: Site, x: number, y: number) => inPlot(site, x, y) && (!gridAt(site, x, y) || !!cutAt(site, x, y) || (onCurve(site, x, y) && !curveAt(site, x, y)!.beyond))
 
 /** Corners to cut off a set of tiles so its stepped edges become diagonals. */
 export function shapeCuts(tiles: [number, number][]): Record<string, Corner> {
@@ -539,7 +637,12 @@ export function autoDoor(site: Site, n: number) {
   if (!count) return
   cx /= count
   cy /= count
-  const wall = (x: number, y: number, side: 'n' | 'w', score: number) => isBoundary(site, x, y, side) && edges.push({ x, y, side, score })
+  const curved = curveTiles(site)
+  // a door needs a whole metre of straight wall with the room on one side of it
+  const wall = (x: number, y: number, side: 'n' | 'w', score: number) => {
+    const runs = edgeRuns(site, x, y, side, curved)
+    if (runs.length === 1 && wholeRun(runs[0]) && (runs[0].a === n || runs[0].c === n)) edges.push({ x, y, side, score })
+  }
   for (let y = 0; y < site.h; y++) {
     for (let x = 0; x < site.w; x++) {
       if (site.grid[y * site.w + x] !== n) continue
@@ -554,11 +657,21 @@ export function autoDoor(site: Site, n: number) {
   // a curved wall takes the door in the bay that faces most nearly south, on the outer side of a ring
   const bays: { curve: number; key: string; score: number }[] = []
   site.curves?.forEach((c, i) => {
-    if (c.room !== n) return
+    if (c.room === n) {
+      for (const b of geomOf(c).bays.values()) {
+        if (!bayStands(site, i, b.key)) continue
+        const beyond = !inPlot(site, Math.floor(b.x + b.nx * 1.2), Math.floor(b.y + b.ny * 1.2))
+        bays.push({ curve: i, key: b.key, score: (1 - b.ny) * 10 + Math.abs(b.x - 0.5 - cx) * 0.2 + (b.band === 'i' ? 30 : b.band === 'o' ? 0 : 12) + (beyond ? 50 : 0) })
+      }
+      return
+    }
+    // another room's curved wall that this room stands against: the door goes in the bay facing south from in here
+    if (![...curved.values()].some((t) => t.curve === i && t.beyond === n)) return
     for (const b of geomOf(c).bays.values()) {
       if (!bayStands(site, i, b.key)) continue
-      const beyond = !inPlot(site, Math.floor(b.x + b.nx * 1.2), Math.floor(b.y + b.ny * 1.2))
-      bays.push({ curve: i, key: b.key, score: (1 - b.ny) * 10 + Math.abs(b.x - 0.5 - cx) * 0.2 + (b.band === 'i' ? 30 : b.band === 'o' ? 0 : 12) + (beyond ? 50 : 0) })
+      const far = bayBeyond(site, i, b.key)
+      if (far.length !== 1 || far[0] !== n) continue
+      bays.push({ curve: i, key: b.key, score: (1 + b.ny) * 10 + Math.abs(b.x - 0.5 - cx) * 0.2 + 6 })
     }
   })
   bays.sort((a, b) => a.score - b.score)
@@ -572,6 +685,37 @@ export function autoDoor(site: Site, n: number) {
   if (!e) return
   site.walls = site.walls.filter((w) => !(w.x === e.x && w.y === e.y && w.side === e.side))
   site.walls.push({ id: `d${n}_${e.x}_${e.y}${e.side}`, x: e.x, y: e.y, side: e.side, kind: 'door' })
+  site.rev++
+}
+
+/** Rooms of one type that a set of tiles touches along an edge (a corner does not count), oldest first. */
+export function touching(site: Site, type: string, tiles: [number, number][]): number[] {
+  const own = new Set(tiles.map(([x, y]) => `${x},${y}`))
+  const types = new Map(site.rooms.map((r) => [r.n, r.type]))
+  const found = new Set<number>()
+  for (const [x, y] of tiles) {
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      if (own.has(`${x + dx},${y + dy}`)) continue
+      const n = gridAt(site, x + dx, y + dy)
+      if (n && types.get(n) === type) found.add(n)
+    }
+  }
+  return [...found].sort((a, b) => a - b)
+}
+
+/**
+ * Makes several rooms one: the floor of the others becomes the room that is
+ * kept, the walls between them go (and any doors or glass on them), and a
+ * curved wall stays wherever it still has something other than its own room
+ * on the far side.
+ */
+export function mergeRooms(site: Site, keep: number, others: number[]) {
+  const gone = new Set(others.filter((n) => n !== keep))
+  if (!gone.size || !roomOf(site, keep)) return
+  for (let i = 0; i < site.grid.length; i++) if (gone.has(site.grid[i])) site.grid[i] = keep
+  for (const c of site.curves ?? []) if (gone.has(c.room)) c.room = keep
+  site.rooms = site.rooms.filter((r) => !gone.has(r.n))
+  tidy(site)
   site.rev++
 }
 
@@ -599,6 +743,27 @@ export function tilesOf(def: Pick<ItemDef, 'w' | 'h'>, x: number, y: number, rot
 
 export const itemTiles = (site: Site, item: SiteItem) => tilesOf(ITEMS[site.kind][item.kind], item.x, item.y, item.rot)
 
+/** The straight line of tiles from one tile toward another, along whichever way the drag is longer. */
+export function lineTiles(x0: number, y0: number, x1: number, y1: number, step = 1): [number, number][] {
+  const alongX = Math.abs(x1 - x0) >= Math.abs(y1 - y0)
+  const d = alongX ? x1 - x0 : y1 - y0
+  const pace = Math.max(1, Math.round(step))
+  const out: [number, number][] = []
+  for (let k = 0; k <= Math.floor(Math.abs(d) / pace); k++) out.push(alongX ? [x0 + Math.sign(d) * k * pace, y0] : [x0, y0 + Math.sign(d) * k * pace])
+  return out
+}
+
+/**
+ * Where a row of one item goes when it is dragged out from one tile toward
+ * another: a straight line along the longer way of the drag, each one a
+ * footprint on from the last, so they stand side by side without a gap.
+ */
+export function rowSpots(def: Pick<ItemDef, 'w' | 'h'>, x0: number, y0: number, x1: number, y1: number, rot: number): [number, number][] {
+  const turned = (((rot % 4) + 4) % 4) % 2 === 1
+  const alongX = Math.abs(x1 - x0) >= Math.abs(y1 - y0)
+  return lineTiles(x0, y0, x1, y1, alongX ? (turned ? def.h : def.w) : turned ? def.w : def.h)
+}
+
 export function itemAt(site: Site, x: number, y: number): SiteItem | undefined {
   return site.items.find((it) => ITEMS[site.kind][it.kind] && itemTiles(site, it).some(([a, b]) => a === x && b === y))
 }
@@ -612,11 +777,12 @@ export function roomNames(kind: SiteKind, def: ItemDef): string {
 export function canPlace(site: Site, kind: string, x: number, y: number, rot: number): string | null {
   const def = ITEMS[site.kind][kind]
   if (!def) return 'Unknown item'
+  if (!itemAllowed(site, kind)) return 'Trees do not grow inside a mall'
   let room = -1
   for (const [a, b] of tilesOf(def, x, y, rot)) {
     if (!inPlot(site, a, b)) return 'It does not fit on the plot'
     if (cutAt(site, a, b)) return 'That corner of the room is cut away'
-    if (curveAt(site, a, b)) return 'The curved wall runs through there'
+    if (onCurve(site, a, b)) return 'The curved wall runs through there'
     if (!def.rooms.includes(typeAt(site, a, b))) return `${def.name} goes in: ${roomNames(site.kind, def)}`
     const n = gridAt(site, a, b)
     if (room >= 0 && n !== room) return 'It cannot straddle a wall'

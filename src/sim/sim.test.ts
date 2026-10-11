@@ -699,18 +699,17 @@ describe('a bigger world', () => {
     expect(site().curves![0].walls).toEqual({ o3: 'glass', o4: 'open' })
     expect(sealedRooms(site()).some((r) => r.type === 'atrium')).toBe(false)
     expect(placeItem(s, 'office', 'gbench', 5 + dx, 6 + (site().h - 22) / 2, 0)).toBeNull()
-    // a room built against it squares off the tiles it touches and leaves the rest curved
+    // a room of another kind built against it shares the curved wall: nothing is squared off, and the
+    // sliver of each tile beyond the curve is the new room's floor (see build.test.ts for more of this)
     const y0 = 1 + (site().h - 22) / 2
     expect(zoneRoom(s, 'office', 'lounge', 10 + dx, y0 + 3, 13 + dx, y0 + 6)).toBeNull()
-    const squared = Object.keys(site().curves![0].square ?? {})
-    expect(squared.length).toBeGreaterThan(0)
-    expect(squared.length).toBeLessThan(8)
-    expect(curveTiles(site()).size).toBe(before.edge - squared.length)
-    const [qx, qy] = squared[0].split(',').map(Number)
-    expect(curveAt(site(), qx, qy)).toBeUndefined()
-    expect(placeItem(s, 'office', 'otree', qx, qy, 0)).toBeNull()
-    expect(isBoundary(site(), 10 + dx, y0 + 4, 'w')).toBe(true)
-    expect(setEdge(s, 'office', 10 + dx, y0 + 4, 'w', 'door')).toBeNull()
+    const lounge = site().rooms.find((r) => r.type === 'lounge')!
+    expect(site().curves![0].square).toBeUndefined()
+    expect(curveTiles(site()).size).toBe(before.edge)
+    expect(curveAt(site(), 9 + dx, y0 + 4)?.beyond).toBe(lounge.n)
+    expect(placeItem(s, 'office', 'otree', 9 + dx, y0 + 4, 0)).toMatch(/curved wall/)
+    expect(isBoundary(site(), 10 + dx, y0 + 4, 'w')).toBe(false)
+    expect(setEdge(s, 'office', 10 + dx, y0 + 4, 'w', 'door')).toMatch(/no wall/)
     // knocking part of it down keeps the curve on what is left; knocking it all down forgets the curve
     clearZone(s, 'office', 1 + dx, y0, 4 + dx, y0 + 8)
     expect(site().curves).toHaveLength(1)
