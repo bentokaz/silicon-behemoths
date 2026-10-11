@@ -11,6 +11,7 @@ import { FACADES, GROUNDS, ITEMS, type LineStats, MAX_FLOORS, OUT, ROOFS, ROOMS,
 import type { Employee, Product, Site, SiteItem } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { actionFor, keyName, keysFor } from '../store/settings'
+import { Icon, type IconName } from './icons'
 import { Btn, Tabs, money } from './ui'
 
 interface Props {
@@ -31,11 +32,16 @@ interface Props {
 
 type Tab = 'Rooms' | 'Furnish' | 'Walls' | 'Grounds' | 'Look'
 const FACING = ['north', 'east', 'south', 'west']
-const VIEWS: { id: ViewMode; label: string }[] = [
-  { id: 'cut', label: 'Cutaway' },
-  { id: 'walls', label: 'Walls' },
-  { id: 'full', label: 'Outside' },
+const VIEWS: { id: ViewMode; label: string; icon: IconName }[] = [
+  { id: 'cut', label: 'Cutaway', icon: 'cutaway' },
+  { id: 'walls', label: 'Walls', icon: 'wallsUp' },
+  { id: 'full', label: 'Outside', icon: 'outside' },
 ]
+const TAB_ICONS: Record<Tab, IconName> = { Rooms: 'rooms', Furnish: 'furnish', Walls: 'walls', Grounds: 'grounds', Look: 'look' }
+const SHAPE_ICONS: Record<AreaShape, IconName> = { rect: 'box', round: 'round', diag: 'diagonal' }
+const EDGE_ICONS: Record<string, IconName> = { door: 'door', glass: 'glass', open: 'opening', wall: 'wall' }
+/** A toolbar button: an icon with its name beside it. */
+const toolCls = 'flex items-center gap-[6px]'
 const EDGES: { kind: 'door' | 'glass' | 'open' | 'wall'; name: string; cost: number; note: string }[] = [
   { kind: 'door', name: 'Door', cost: 300, note: 'A way in. Every room needs one.' },
   { kind: 'glass', name: 'Glass wall', cost: 120, note: 'Lets light and views through.' },
@@ -179,17 +185,21 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
 
       <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-start justify-between gap-2 p-2">
         <div className="pointer-events-auto flex flex-wrap items-center gap-2">
-          <Btn small tone={open ? 'default' : 'primary'} active={open} onClick={() => setOpen(!open)}>
+          <Btn small className={toolCls} tone={open ? 'default' : 'primary'} active={open} onClick={() => setOpen(!open)}>
+            <Icon name="build" size={13} />
             Build
           </Btn>
           <div className="flex border border-line2 bg-panel/95">
-            <Btn small tone="ghost" active={tool?.type === 'rotate'} onClick={() => pick(tool?.type === 'rotate' ? null : { type: 'rotate' })}>
+            <Btn small className={toolCls} tone="ghost" title="Turn an item a quarter turn" active={tool?.type === 'rotate'} onClick={() => pick(tool?.type === 'rotate' ? null : { type: 'rotate' })}>
+              <Icon name="turn" size={13} />
               Turn
             </Btn>
-            <Btn small tone="ghost" active={tool?.type === 'remove'} onClick={() => pick(tool?.type === 'remove' ? null : { type: 'remove' })}>
-              Sell item
+            <Btn small className={toolCls} tone="ghost" title="Sell an item for half its price" active={tool?.type === 'remove'} onClick={() => pick(tool?.type === 'remove' ? null : { type: 'remove' })}>
+              <Icon name="sell" size={13} />
+              Sell
             </Btn>
-            <Btn small tone="ghost" active={tool?.type === 'clear'} onClick={() => pick(tool?.type === 'clear' ? null : { type: 'clear', shape })}>
+            <Btn small className={toolCls} tone="ghost" title="Knock down rooms" active={tool?.type === 'clear'} onClick={() => pick(tool?.type === 'clear' ? null : { type: 'clear', shape })}>
+              <Icon name="demolish" size={13} />
               Demolish
             </Btn>
           </div>
@@ -200,15 +210,15 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
         <div className="pointer-events-auto flex gap-2">
           <div className="flex border border-line2 bg-panel/95">
             {VIEWS.map((v) => (
-              <Btn key={v.id} small tone="ghost" active={mode === v.id} onClick={() => setMode(v.id)}>
-                {v.label}
+              <Btn key={v.id} small className="flex items-center !px-2" tone="ghost" title={v.label} active={mode === v.id} onClick={() => setMode(v.id)}>
+                <Icon name={v.icon} size={15} />
               </Btn>
             ))}
           </div>
           <div className="flex border border-line2 bg-panel/95">
             {(['day', 'dusk', 'night'] as Mood[]).map((m) => (
-              <Btn key={m} small tone="ghost" active={mood === m} onClick={() => setMood(m)}>
-                {m}
+              <Btn key={m} small className="flex items-center !px-2" tone="ghost" title={m === 'day' ? 'Daylight' : m === 'dusk' ? 'Dusk' : 'Night'} active={mood === m} onClick={() => setMood(m)}>
+                <Icon name={m} size={15} />
               </Btn>
             ))}
           </div>
@@ -217,13 +227,24 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
 
       {open && (
         <div className="absolute bottom-12 left-2 top-12 flex w-[262px] flex-col border border-line2 bg-panel/95">
-          <Tabs value={tab} options={(['Rooms', 'Furnish', 'Walls', 'Grounds', 'Look'] as Tab[]).map((x) => ({ value: x, label: x }))} onChange={setTab} className="flex-wrap" />
+          <Tabs value={tab} options={(['Rooms', 'Furnish', 'Walls', 'Grounds', 'Look'] as Tab[]).map((x) => ({
+              value: x,
+              label: (
+                <span className="flex items-center gap-[5px]" title={x}>
+                  <Icon name={TAB_ICONS[x]} size={13} />
+                  {tab === x && x}
+                </span>
+              ),
+            }))} onChange={setTab} className="flex-wrap" />
           {(tab === 'Rooms' || tab === 'Grounds') && (
             <div className="flex items-center gap-2 border-b border-line px-2 py-[6px]">
               <span className="text-[10px] uppercase tracking-wider text-dim">Shape</span>
               {(['rect', 'round', 'diag'] as AreaShape[]).map((sh) => (
                 <Btn key={sh} small active={shape === sh} onClick={() => setShape(sh)} title={sh === 'diag' ? 'A triangle: the square corner sits where you click first' : sh === 'round' ? 'A circle or oval inside the box you mark out' : undefined}>
-                  {sh === 'rect' ? 'Box' : sh === 'round' ? 'Round' : 'Diagonal'}
+                  <span className="flex items-center gap-[5px]">
+                    <Icon name={SHAPE_ICONS[sh]} size={12} />
+                    {sh === 'rect' ? 'Box' : sh === 'round' ? 'Round' : 'Diagonal'}
+                  </span>
                 </Btn>
               ))}
             </div>
@@ -283,7 +304,10 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
                   const on = tool?.type === 'edge' && tool.kind === e.kind
                   return (
                     <button key={e.kind} onClick={() => pick(on ? null : { type: 'edge', kind: e.kind })} className={row(on)}>
-                      <span className="text-xs uppercase tracking-wider">{e.name}</span>
+                      <span className="flex items-center gap-2 text-xs uppercase tracking-wider">
+                        <Icon name={EDGE_ICONS[e.kind]} size={14} />
+                        {e.name}
+                      </span>
                       <span className="num text-[11px] text-dim">{e.cost ? money(e.cost, 0) : 'free'}</span>
                     </button>
                   )

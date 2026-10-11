@@ -23,6 +23,7 @@ import { FactoryScreen } from './Operations'
 import { Research } from './ResearchTree'
 import { Dashboard, Finance, Market, Products, Rivals } from './Screens'
 import { System } from './System'
+import { Icon, type IconName, TAB_ICON } from './icons'
 import { Btn, money } from './ui'
 
 interface NavItem {
@@ -66,11 +67,11 @@ const NAV: { group: string; items: NavItem[] }[] = [
     ],
   },
 ]
-const SPEEDS: { speed: Speed; label: string }[] = [
-  { speed: 0, label: 'II' },
-  { speed: 1, label: '1x' },
-  { speed: 2, label: '2x' },
-  { speed: 4, label: '4x' },
+const SPEEDS: { speed: Speed; label: string; icon: IconName }[] = [
+  { speed: 0, label: 'Pause', icon: 'pause' },
+  { speed: 1, label: 'Normal speed', icon: 'play' },
+  { speed: 2, label: 'Fast', icon: 'fast' },
+  { speed: 4, label: 'Fastest', icon: 'faster' },
 ]
 const NEWS_TONE: Record<NewsItem['kind'], string> = { launch: 'text-accent', review: 'text-pos', research: 'text-accent', rival: 'text-faint', finance: 'text-dim', alert: 'text-neg', staff: 'text-dim', event: 'text-pos', goal: 'text-warn' }
 /** Screens that are a full 3D view; the feed stays out of their way. */
@@ -162,7 +163,10 @@ export function Shell() {
     const n = badge(g, t.id)
     return (
       <button key={t.id} onClick={() => setTab(t.id)} title={railOpen ? undefined : t.label} className={`relative flex h-8 w-full items-center justify-between border-l-2 text-left transition-colors ${railOpen ? 'px-3' : 'justify-center px-0'} ${on ? 'border-l-accent bg-accent/10 text-accent' : 'border-l-transparent text-dim hover:bg-hover hover:text-fg'}`}>
-        <span className={railOpen ? 'text-xs uppercase tracking-wider' : 'num text-[10px]'}>{railOpen ? t.label : t.code}</span>
+        <span className="flex items-center gap-2">
+          <Icon name={TAB_ICON[t.id] ?? 'system'} size={railOpen ? 14 : 17} />
+          {railOpen && <span className="text-xs uppercase tracking-wider">{t.label}</span>}
+        </span>
         {n > 0 ? <span className={`num text-[10px] text-warn ${railOpen ? '' : 'absolute right-1 top-0'}`}>{n}</span> : railOpen && keyOf(t.id) && <span className="num text-[9px] text-faint">{keyOf(t.id)}</span>}
       </button>
     )
@@ -182,11 +186,11 @@ export function Shell() {
           </button>
         </div>
         <div className="flex items-center gap-2 border-r border-line px-3">
-          <span className="label text-faint">Date</span>
+          <Icon name="calendar" className="text-faint" />
           <span className="num text-sm font-semibold text-fg">{fmtDate(g.day)}</span>
         </div>
         <div className="flex items-center gap-2 border-r border-line px-3">
-          <span className="label text-faint">Cash</span>
+          <Icon name="cash" className="text-faint" />
           <span className={`num text-sm font-semibold ${g.cash < 0 && !g.config.unlimitedMoney ? 'text-neg' : 'text-accent'}`}>{g.config.unlimitedMoney ? 'UNLIMITED' : money(g.cash)}</span>
         </div>
         <div className="hidden items-center gap-2 border-r border-line px-3 lg:flex">
@@ -197,17 +201,17 @@ export function Shell() {
         <div className="flex items-center border-l border-line px-2" title="Pause and speed keys can be changed under System, Keys.">
           <span className="label mr-2 hidden text-faint md:block">{designing ? 'Paused in designer' : speed ? 'Running' : 'Paused'}</span>
           {SPEEDS.map((s) => (
-            <Btn key={s.speed} small disabled={designing} active={!designing && speed === s.speed} onClick={() => setSpeed(s.speed)} className="num w-9 !px-0">
-              {s.label}
+            <Btn key={s.speed} small disabled={designing} active={!designing && speed === s.speed} onClick={() => setSpeed(s.speed)} className="flex w-9 items-center justify-center !px-0" title={s.label}>
+              <Icon name={s.icon} size={13} />
             </Btn>
           ))}
         </div>
         <div className="flex items-center gap-1 border-l border-line px-2">
-          <Btn small onClick={() => void saveGame('quick', g).then(() => (sfx.confirm(), say('Saved to the Quick slot.')))}>
-            Save
+          <Btn small className="flex items-center justify-center !px-2" title="Quick save" onClick={() => void saveGame('quick', g).then(() => (sfx.confirm(), say('Saved to the Quick slot.')))}>
+            <Icon name="save" />
           </Btn>
-          <Btn small active={feedOpen} onClick={toggleFeed} title="Show or hide the news feed">
-            Feed
+          <Btn small className="flex items-center justify-center !px-2" active={feedOpen} onClick={toggleFeed} title="Show or hide the news feed">
+            <Icon name="feed" />
           </Btn>
         </div>
       </header>
@@ -221,7 +225,7 @@ export function Shell() {
               className={`flex h-11 w-full items-center border text-left text-[12px] font-semibold uppercase tracking-wider transition-colors ${railOpen ? 'justify-between px-3' : 'justify-center'} ${designing ? 'border-accent bg-transparent text-accent' : 'border-accent bg-accent text-carbon hover:bg-transparent hover:text-accent'}`}
             >
               {railOpen && (designing ? 'Designing' : 'New device')}
-              <span className="num text-lg leading-none">+</span>
+              <Icon name="plus" size={16} />
             </button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
@@ -235,7 +239,8 @@ export function Shell() {
           <div className="border-t border-line py-1">
             {navButton({ id: 'system', label: 'System', code: 'SYS' })}
             <button onClick={toggleRail} className={`flex h-7 w-full items-center text-[10px] uppercase tracking-wider text-faint hover:text-fg ${railOpen ? 'px-3' : 'justify-center'}`} title={railOpen ? 'Collapse the menu' : 'Expand the menu'}>
-              {railOpen ? '<< Collapse' : '>>'}
+              <Icon name={railOpen ? 'collapse' : 'expand'} size={12} />
+              {railOpen && <span className="ml-2">Collapse</span>}
             </button>
           </div>
         </nav>
