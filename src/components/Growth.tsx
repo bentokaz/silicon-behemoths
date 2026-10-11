@@ -8,6 +8,7 @@ import { homeRegion, openRegions, regionInfo } from '../sim/regions'
 import { SITE_TIERS, sitePrestige, storeStats, tierOf, upkeep, venueStats } from '../sim/sites'
 import { staffEffects } from '../sim/staff'
 import type { ChannelId, EventType, GameState } from '../sim/types'
+import { takeAim } from '../store/focus'
 import { useGame, useStore } from '../store/game'
 import { SiteBuilder } from './SiteBuilder'
 import { Btn, Choice, Empty, Fold, Kpi, Meter, Mini, Panel, Slider, Tabs, Tag, money, num, pct } from './ui'
@@ -329,7 +330,8 @@ export function MarketingScreen() {
 export function StoresScreen() {
   const g = useGame()
   const { act, say } = useStore.getState()
-  const [openId, setOpenId] = useState<string>('list')
+  // a store picked in the city view opens straight away
+  const [openId, setOpenId] = useState<string>(() => takeAim('store') ?? 'list')
   const [region, setRegion] = useState(homeRegion(g))
   const regions = openRegions(g)
   const store = g.stores.find((s) => s.id === openId)

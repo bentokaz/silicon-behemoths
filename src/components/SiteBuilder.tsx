@@ -7,7 +7,8 @@ import { campus, clockText, hourOf, moodAt } from '../3d/site/clock'
 import type { Mood } from '../3d/site/env'
 import type { ViewMode } from '../3d/site/structure'
 import { sfx } from '../audio/sfx'
-import { clearZone, lookCost, paintArea, placeItem, player, removeItem, removeRoom, roomCost, rotateItem, setEdge, setLook, setRoomStyle, zoneRoom } from '../sim/game'
+import { MIN_THICK } from '../sim/curves'
+import { clearZone, lookCost, paintArea, placeItem, player, removeItem, removeRoom, roomCost, rotateItem, setCurveEdge, setEdge, setLook, setRoomStyle, zoneRoom } from '../sim/game'
 import { factoryLife, officeLife, storeLife } from '../sim/life'
 import { FACADES, GROUNDS, ITEMS, type LineStats, MAX_FLOORS, OUT, ROOFS, ROOMS, builtTiles, gridAt, roomNames, roomOf, roomTiles, sealedRooms, tierOf } from '../sim/sites'
 import type { Employee, Product, Site, SiteItem } from '../sim/types'
@@ -41,7 +42,23 @@ const VIEWS: { id: ViewMode; label: string; icon: IconName }[] = [
   { id: 'full', label: 'Outside', icon: 'outside' },
 ]
 const TAB_ICONS: Record<Tab, IconName> = { Rooms: 'rooms', Furnish: 'furnish', Walls: 'walls', Grounds: 'grounds', Look: 'look' }
-const SHAPE_ICONS: Record<AreaShape, IconName> = { rect: 'box', round: 'round', diag: 'diagonal' }
+const SHAPE_ICONS: Record<AreaShape, IconName> = { rect: 'box', round: 'round', ring: 'ring', diag: 'diagonal' }
+const SHAPE_NAMES: Record<AreaShape, string> = { rect: 'Box', round: 'Round', ring: 'Ring', diag: 'Slant' }
+const SHAPE_NOTES: Record<AreaShape, string> = {
+  rect: 'A plain rectangle',
+  round: 'A circle or oval with a smooth curved wall, inside the box you mark out',
+  ring: 'A curved building round an open courtyard',
+  diag: 'A triangle: the square corner sits where you click first',
+}
+/** How much of a full turn a round shape covers. */
+const ARCS: { sweep: number; name: string; icon: IconName; note: string }[] = [
+  { sweep: 360, name: 'Full', icon: 'round', note: 'The whole circle' },
+  { sweep: 270, name: '3/4', icon: 'arc34', note: 'Three quarters of the circle, open at one corner' },
+  { sweep: 180, name: 'Half', icon: 'arc', note: 'A half circle or crescent filling the box, open along one side' },
+  { sweep: 90, name: '1/4', icon: 'arc14', note: 'A quarter turn filling the box: a long sweeping curve' },
+]
+/** Which way the open side of an arc faces, by quarter turn. */
+const OPEN_SIDE: Record<number, string[]> = { 180: ['south', 'west', 'north', 'east'], 90: ['south-east', 'south-west', 'north-west', 'north-east'], 270: ['south-east', 'south-west', 'north-west', 'north-east'] }
 const EDGE_ICONS: Record<string, IconName> = { door: 'door', glass: 'glass', open: 'opening', wall: 'wall' }
 /** A toolbar button: an icon with its name beside it. */
 const toolCls = 'flex items-center gap-[6px]'
@@ -91,11 +108,14 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const life = useMemo<SiteLife | undefined>(() => (siteRef === 'office' ? { office: officeLife(g) } : siteRef === 'factory' ? { factory: factoryLife(g) } : storeId ? { store: storeLife(g, storeId) ?? undefined } : undefined), [g, siteRef, storeId, useStore.getState().rev])
   const card = useCallback((target: Target, close: () => void) => <WorldCard target={target} close={close} siteRef={siteRef} />, [siteRef])
+  const [thick, setThick] = useState(5)
+  const [sweep, setSweep] = useState(360)
   const [mode, setMode] = useState<ViewMode>('cut')
   const [selected, setSelected] = useState(0)
   const [pending, setPending] = useState(0)
   const me = player(g)
-  const active: SiteTool = tool?.type === 'item' ? { ...tool, rot } : tool && 'shape' in tool ? { ...tool, shape } : tool
+  const curvy = shape === 'round' || shape === 'ring'
+  const active: SiteTool = tool?.type === 'item' ? { ...tool, rot } : tool && 'shape' in tool ? { ...tool, shape, opts: curvy ? { thick, sweep, turn: rot } : undefined } : tool
   const room = selected ? roomOf(site, selected) : undefined
   const sealed = sealedRooms(site)
   const onPreview = useCallback((n: number) => setPending(n), [])
@@ -144,20 +164,24 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
     if (active.type === 'room') {
       // starting inside a room of the same kind extends it
       const start = roomOf(site, gridAt(site, x0, y0))
-      report(act((s) => zoneRoom(s, siteRef, active.room, x0, y0, x1, y1, active.shape, start?.type === active.room ? start.n : undefined)), sfx.zone)
-    } else if (active.type === 'clear') (act((s) => clearZone(s, siteRef, x0, y0, x1, y1, active.shape)), sfx.demolish())
-    else if (active.type === 'ground') (act((s) => paintArea(s, siteRef, x0, y0, x1, y1, active.shape, active.id)), sfx.toggle())
+      report(act((s) => zoneRoom(s, siteRef, active.room, x0, y0, x1, y1, active.shape, start?.type === active.room ? start.n : undefined, active.opts)), sfx.zone)
+    } else if (active.type === 'clear') (act((s) => clearZone(s, siteRef, x0, y0, x1, y1, active.shape, active.opts)), sfx.demolish())
+    else if (active.type === 'ground') (act((s) => paintArea(s, siteRef, x0, y0, x1, y1, active.shape, active.id, active.opts)), sfx.toggle())
   }
   const onEdge = (e: Edge) => {
-    if (active?.type === 'edge') report(act((s) => setEdge(s, siteRef, e.x, e.y, e.side, active.kind)), sfx.build)
+    if (active?.type !== 'edge') return
+    const { curve, bay } = e
+    if (curve !== undefined && bay !== undefined) report(act((s) => setCurveEdge(s, siteRef, curve, bay, active.kind)), sfx.build)
+    else report(act((s) => setEdge(s, siteRef, e.x, e.y, e.side, active.kind)), sfx.build)
   }
 
-  const areaHint = 'Click one corner, then the opposite corner. Esc cancels.'
+  const turnKey = keyName(keysFor('rotate')[0] ?? 'KeyR')
+  const areaHint = `Click one corner, then the opposite corner. Esc cancels.${curvy && sweep < 360 ? ` The arc is open to the ${OPEN_SIDE[sweep][rot]} (${turnKey} turns it).` : ''}`
   const legend = site.kind === 'office' && (idle?.length || (seated ?? []).some((e) => e.ask || e.morale < 35)) ? ' Markers over people: red is unhappy or has no desk, gold wants a raise, blue over an empty chair is away on a course.' : ''
   const pointAt = site.kind === 'office' ? 'Point at a bench, a screen, the reception or a person and click to see what they are doing.' : site.kind === 'factory' ? 'Click a dock or a test station to see what the line is making.' : site.kind === 'store' ? 'Click a checkout or a table to see how the store is doing.' : ''
   const info =
     tool?.type === 'item'
-      ? `${defs[tool.kind].name}: ${defs[tool.kind].note} Goes in: ${roomNames(site.kind, defs[tool.kind])}. Facing ${FACING[rot]} (${keyName(keysFor('rotate')[0] ?? 'KeyR')} turns it).`
+      ? `${defs[tool.kind].name}: ${defs[tool.kind].note} Goes in: ${roomNames(site.kind, defs[tool.kind])}. Facing ${FACING[rot]} (${turnKey} turns it).`
       : tool?.type === 'room'
         ? pending
           ? `${rooms[tool.room].name}: ${pending} m² for ${money(roomCost(site, tool.room, pending), 0)}. Click to build.`
@@ -280,16 +304,50 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
               ),
             }))} onChange={setTab} className="flex-wrap" />
           {(tab === 'Rooms' || tab === 'Grounds') && (
-            <div className="flex items-center gap-2 border-b border-line px-2 py-[6px]">
-              <span className="text-[10px] uppercase tracking-wider text-dim">Shape</span>
-              {(['rect', 'round', 'diag'] as AreaShape[]).map((sh) => (
-                <Btn key={sh} small active={shape === sh} onClick={() => setShape(sh)} title={sh === 'diag' ? 'A triangle: the square corner sits where you click first' : sh === 'round' ? 'A circle or oval inside the box you mark out' : undefined}>
-                  <span className="flex items-center gap-[5px]">
-                    <Icon name={SHAPE_ICONS[sh]} size={12} />
-                    {sh === 'rect' ? 'Box' : sh === 'round' ? 'Round' : 'Diagonal'}
+            <div className="border-b border-line px-2 py-[6px]">
+              <div className="grid grid-cols-4 gap-1">
+                {(['rect', 'round', 'ring', 'diag'] as AreaShape[]).map((sh) => (
+                  <Btn key={sh} small className="!h-[34px] !px-0" active={shape === sh} onClick={() => setShape(sh)} title={SHAPE_NOTES[sh]}>
+                    <span className="flex flex-col items-center gap-[3px] py-[2px] text-[9px] leading-none">
+                      <Icon name={SHAPE_ICONS[sh]} size={14} />
+                      {SHAPE_NAMES[sh]}
+                    </span>
+                  </Btn>
+                ))}
+              </div>
+              {curvy && (
+                <div className="mt-1 grid grid-cols-5 gap-1">
+                  {ARCS.map((a) => (
+                    <Btn key={a.sweep} small className="!h-[34px] !px-0" active={sweep === a.sweep} onClick={() => setSweep(a.sweep)} title={a.note}>
+                      <span className="flex flex-col items-center gap-[3px] py-[2px] text-[9px] leading-none">
+                        <Icon name={a.icon} size={14} />
+                        {a.name}
+                      </span>
+                    </Btn>
+                  ))}
+                  <Btn small className="!h-[34px] !px-0" disabled={sweep >= 360} onClick={() => setRot((r) => (r + 1) % 4)} title={sweep < 360 ? `Turn the arc. It is open to the ${OPEN_SIDE[sweep][rot]}.` : 'A full circle has no open side to turn'}>
+                    <span className="flex flex-col items-center gap-[3px] py-[2px] text-[9px] leading-none">
+                      <Icon name="turn" size={14} />
+                      Turn
+                    </span>
+                  </Btn>
+                </div>
+              )}
+              {shape === 'ring' && (
+                <div className="mt-[6px] flex items-center gap-[5px]">
+                  <span className="mr-1 text-[10px] uppercase tracking-wider text-dim" title="How deep the building is, from its outer wall to the courtyard">
+                    Depth
                   </span>
-                </Btn>
-              ))}
+                  <Btn small className="!px-2" disabled={thick <= MIN_THICK} onClick={() => setThick((t) => Math.max(MIN_THICK, t - 1))}>
+                    -
+                  </Btn>
+                  <input type="range" min={MIN_THICK} max={16} step={1} value={thick} onChange={(e) => setThick(Number(e.target.value))} className="min-w-0 flex-1" title="How deep the building is, from its outer wall to the courtyard" />
+                  <Btn small className="!px-2" disabled={thick >= 16} onClick={() => setThick((t) => Math.min(16, t + 1))}>
+                    +
+                  </Btn>
+                  <span className="num w-9 text-right text-[11px] text-fg">{thick} m</span>
+                </div>
+              )}
             </div>
           )}
           {tab === 'Furnish' && <Tabs value={group} options={groups.map((x) => ({ value: x, label: x }))} onChange={setGroup} className="flex-wrap" />}

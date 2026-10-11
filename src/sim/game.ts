@@ -14,7 +14,8 @@ import { type VariantId, generateDesign, layoutParts } from './rivals'
 import { INCIDENT_WAIT, STARTUPS, economyNow, typeDemand, hasType, makeOriginal, originalName, priceIndex, rivalStrategy, rollIncident, settleIncident, unlockBlocked, unlockCost } from './world'
 import { clamp, int, pick, rand, range } from './rng'
 import { evaluate } from './scoring'
-import { FACADES, FLOOR_COST, GROUNDS, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, type Shape, areaTiles, autoDoor, builtTiles, canPlace, gridAt, inPlot, isBoundary, itemAt, itemTiles, newSite, roomOf, shapeCuts, starterLine, storeStats, tidy, tierOf, upkeep, zone } from './sites'
+import { bayStands } from './curves'
+import { FACADES, FLOOR_COST, GROUNDS, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, areaOf, areaTiles, autoDoor, builtTiles, canPlace, curveFor, gridAt, hasGround, inPlot, isBoundary, itemAt, itemTiles, newSite, roomOf, shapeCuts, starterLine, storeStats, tidy, tierOf, upkeep, zone } from './sites'
 import { HEADHUNT_COST, TEAM_SPAN, dropFromTeams, inTraining, monthlySalaries, monthlyStaff, newPolicy, perksCost, refreshCandidates, staffEffects, stepStaff, trainingCost } from './staff'
 import { CHIP_BUDGET, OS_FEATURES, chipAdoption, chipBlocked, chipProjectCost, chipProjectDays, finishChip, newOs, osBlocked, osProjectCost, osProjectDays, osShipQuality, servicesPerMonth, softwareBonus } from './tech'
 import { type ChannelId, type Company, type CostKey, type DeviceDesign, type DeviceType, type Difficulty, type EventType, type GameConfig, type GameState, type Levels, type MonthReport, type NewsItem, type Product, type ProductionOrder, type SegmentId, type Site, type SiteKind, type StaffPolicy, type StorageTier, type SupplyCat, TRACKS, type Track, monthCosts } from './types'
@@ -593,21 +594,27 @@ const siteBucket = (site: Site): CostKey => (site.kind === 'office' ? 'overhead'
 /** Rooms cost more to build when the building has upper floors to carry. */
 export const roomCost = (site: Site, type: string, tiles: number) => Math.round(tiles * (ROOMS[site.kind][type]?.cost ?? 0) * (1 + 0.4 * (site.floors - 1)))
 
-/** Tiles in an area that could become part of a room. */
-export const zoneable = (site: Site, x0: number, y0: number, x1: number, y1: number, shape: Shape) => areaTiles(x0, y0, x1, y1, shape).filter(([x, y]) => inPlot(site, x, y) && !gridAt(site, x, y))
+/** Tiles in an area that could become part of a room. A round room takes every tile its curved wall touches. */
+export const zoneable = (site: Site, x0: number, y0: number, x1: number, y1: number, shape: Shape, opts?: ShapeOpts) => areaTiles(x0, y0, x1, y1, shape, opts, true).filter(([x, y]) => inPlot(site, x, y) && !gridAt(site, x, y))
+
+/** Floor area, in square metres, that zoning an area would add: tiles a curved wall cuts count for the part inside it. */
+export const zoneArea = (site: Site, x0: number, y0: number, x1: number, y1: number, shape: Shape, opts?: ShapeOpts) => Math.max(1, Math.round(areaOf(zoneable(site, x0, y0, x1, y1, shape, opts), curveFor(x0, y0, x1, y1, shape, opts))))
 
 /**
  * Build a room over an area of open ground. Pass `into` to extend an existing
- * room of the same type instead of starting a new one.
+ * room of the same type instead of starting a new one. Round and ring shapes
+ * get a smooth curved wall; `opts` sets a ring's depth and how much of a turn
+ * an arc covers.
  */
-export function zoneRoom(s: GameState, ref: string, type: string, x0: number, y0: number, x1: number, y1: number, shape: Shape = 'rect', into?: number): string | null {
+export function zoneRoom(s: GameState, ref: string, type: string, x0: number, y0: number, x1: number, y1: number, shape: Shape = 'rect', into?: number, opts?: ShapeOpts): string | null {
   const site = siteOf(s, ref)
   if (!site) return 'Nothing to build on'
   if (!ROOMS[site.kind][type]) return 'Unknown room'
-  const tiles = zoneable(site, x0, y0, x1, y1, shape)
+  const tiles = zoneable(site, x0, y0, x1, y1, shape, opts)
   if (!tiles.length) return 'That land is already built on'
   const target = into !== undefined ? roomOf(site, into) : undefined
-  const cost = roomCost(site, type, tiles.length)
+  const curve = curveFor(x0, y0, x1, y1, shape, opts)
+  const cost = roomCost(site, type, curve ? zoneArea(site, x0, y0, x1, y1, shape, opts) : tiles.length)
   if (!canAfford(s, cost)) return `Not enough cash: that would cost $${cost.toLocaleString()}`
   spend(s, cost, siteBucket(site))
   // trees, benches and anything else standing on the land are cleared and sold on
@@ -620,19 +627,19 @@ export function zoneRoom(s: GameState, ref: string, type: string, x0: number, y0
   })
   s.cash += back
   s.cur[siteBucket(site)] -= back
-  // round and diagonal rooms get their stepped edges cut to 45 degrees
-  const cuts = shape === 'rect' ? {} : shapeCuts(areaTiles(x0, y0, x1, y1, shape))
-  const { room } = zone(site, type, tiles, target?.type === type ? target.n : undefined, 0, cuts)
+  // diagonal rooms get their stepped edges cut to 45 degrees; round ones keep their true curve
+  const cuts = shape === 'diag' ? shapeCuts(areaTiles(x0, y0, x1, y1, shape)) : {}
+  const { room } = zone(site, type, tiles, target?.type === type ? target.n : undefined, 0, cuts, curve)
   if (room) autoDoor(site, room.n)
   tidy(site)
   return null
 }
 
 /** Knock down every room tile in an area. Anything inside is sold for half its price. */
-export function clearZone(s: GameState, ref: string, x0: number, y0: number, x1: number, y1: number, shape: Shape = 'rect') {
+export function clearZone(s: GameState, ref: string, x0: number, y0: number, x1: number, y1: number, shape: Shape = 'rect', opts?: ShapeOpts) {
   const site = siteOf(s, ref)
   if (!site) return
-  const hit = new Set(areaTiles(x0, y0, x1, y1, shape).filter(([x, y]) => gridAt(site, x, y)).map(([x, y]) => `${x},${y}`))
+  const hit = new Set(areaTiles(x0, y0, x1, y1, shape, opts).filter(([x, y]) => gridAt(site, x, y)).map(([x, y]) => `${x},${y}`))
   if (!hit.size) return
   let back = 0
   site.items = site.items.filter((it) => {
@@ -686,6 +693,22 @@ export function setEdge(s: GameState, ref: string, x: number, y: number, side: '
   spend(s, cost, siteBucket(site))
   site.walls = site.walls.filter((w) => !(w.x === x && w.y === y && w.side === side))
   if (kind !== 'wall') site.walls.push({ id: `w${s.nextId++}`, x, y, side, kind })
+  site.rev++
+  return null
+}
+
+/** The same for one bay of a curved wall: `curve` is its place in the site's list, `bay` the stretch (see sim/curves.ts). */
+export function setCurveEdge(s: GameState, ref: string, curve: number, bay: string, kind: 'wall' | 'glass' | 'door' | 'open'): string | null {
+  const site = siteOf(s, ref)
+  if (!site) return 'Nothing to build on'
+  const c = site.curves?.[curve]
+  if (!c || !bayStands(site, curve, bay)) return 'There is no wall there'
+  const cost = EDGE_COST[kind]
+  if (!canAfford(s, cost)) return 'Not enough cash'
+  spend(s, cost, siteBucket(site))
+  if (kind === 'wall') {
+    if (c.walls) delete c.walls[bay]
+  } else (c.walls ??= {})[bay] = kind
   site.rev++
   return null
 }
@@ -758,20 +781,23 @@ export function rotateItem(s: GameState, ref: string, itemId: string): string | 
 /** Lay a ground finish on open land. Free. */
 export function paintFloor(s: GameState, ref: string, x: number, y: number, groundId: string) {
   const site = siteOf(s, ref)
-  if (!site || !inPlot(site, x, y) || gridAt(site, x, y)) return
+  if (!site || !hasGround(site, x, y) || (groundId === 'water' && gridAt(site, x, y))) return
   if (groundId === GROUNDS[0].id) delete site.floor[`${x},${y}`]
   else if (GROUNDS.some((g) => g.id === groundId)) site.floor[`${x},${y}`] = groundId
   site.rev++
 }
 
 /** Lay a ground finish over an area of open land. */
-export function paintArea(s: GameState, ref: string, x0: number, y0: number, x1: number, y1: number, shape: Shape, groundId: string) {
+export function paintArea(s: GameState, ref: string, x0: number, y0: number, x1: number, y1: number, shape: Shape, groundId: string, opts?: ShapeOpts) {
   const site = siteOf(s, ref)
   if (!site || !GROUNDS.some((g) => g.id === groundId)) return
-  for (const [x, y] of zoneable(site, x0, y0, x1, y1, shape)) {
+  const lay = ([x, y]: [number, number]) => {
     if (groundId === GROUNDS[0].id) delete site.floor[`${x},${y}`]
     else site.floor[`${x},${y}`] = groundId
   }
+  areaTiles(x0, y0, x1, y1, shape, opts).filter(([x, y]) => inPlot(site, x, y) && !gridAt(site, x, y)).forEach(lay)
+  // the strip of ground left outside a slanted or curved wall takes the finish too, wherever the area touches it
+  if (groundId !== 'water') areaTiles(x0, y0, x1, y1, shape, opts, true).filter(([x, y]) => gridAt(site, x, y) && hasGround(site, x, y)).forEach(lay)
   site.rev++
 }
 
@@ -792,6 +818,14 @@ function movePlot(old: Site): Site {
   for (const [key, c] of Object.entries(old.cuts ?? {})) {
     const [x, y] = key.split(',').map(Number)
     ;(site.cuts ??= {})[`${x + dx},${y + dy}`] = c
+  }
+  // curved outlines move with their rooms: the centre, and the tiles noted as squared off
+  if (old.curves?.length) {
+    const shift = (key: string) => {
+      const [x, y] = key.split(',').map(Number)
+      return `${x + dx},${y + dy}`
+    }
+    site.curves = old.curves.map((c) => ({ ...c, cx: c.cx + dx, cy: c.cy + dy, ...(c.walls ? { walls: { ...c.walls } } : {}), ...(c.square ? { square: Object.fromEntries(Object.keys(c.square).map((k) => [shift(k), 1 as const])) } : {}) }))
   }
   site.facade = old.facade
   site.roof = old.roof

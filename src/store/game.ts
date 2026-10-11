@@ -16,7 +16,7 @@ import { useSettings } from './settings'
 /** News that marks a moment worth an autosave. */
 const BIG_NEWS = /is on sale\.|now sells in|listed on the stock market|You bought|moved to a bigger|bought land|new store opened|invested \$|Goal reached/
 
-export type Tab = 'dashboard' | 'products' | 'research' | 'labs' | 'factory' | 'stores' | 'venue' | 'marketing' | 'care' | 'staff' | 'office' | 'market' | 'world' | 'rivals' | 'finance' | 'shares' | 'goals' | 'system'
+export type Tab = 'city' | 'dashboard' | 'products' | 'research' | 'labs' | 'factory' | 'stores' | 'venue' | 'marketing' | 'care' | 'staff' | 'office' | 'market' | 'world' | 'rivals' | 'finance' | 'shares' | 'goals' | 'system'
 
 /** A copy of the game from a little earlier, kept so a doomed company can be rewound. */
 export interface Checkpoint {
@@ -197,7 +197,7 @@ export const useStore = create<Store>((set, get) => {
     setSpeed: (speed) => set({ speed }),
     begin(cfg) {
       rolling = null
-      set({ game: newGame(cfg), screen: 'game', tab: 'office', speed: 0, rev: 0, checkpoint: null, showing: null, ...reset })
+      set({ game: newGame(cfg), screen: 'game', tab: 'city', speed: 0, rev: 0, checkpoint: null, showing: null, ...reset })
     },
     resume(state) {
       rolling = null

@@ -5,8 +5,9 @@ import { Canvas, type ThreeEvent, useFrame, useThree } from '@react-three/fiber'
 import { EffectComposer, N8AO } from '@react-three/postprocessing'
 import { type ReactNode, memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
+import { nearestBay } from '../sim/curves'
 import type { FactoryLife, OfficeLife, StoreLife } from '../sim/life'
-import { ITEMS, type LineStats, SITE_TIERS, areaTiles, canPlace, gridAt, inPlot, isBoundary, itemAt, roomOf, tilesOf } from '../sim/sites'
+import { ITEMS, type LineStats, SITE_TIERS, type ShapeOpts, areaOf, areaTiles, canPlace, curveFor, gridAt, inPlot, isBoundary, itemAt, reachable, roomOf, tilesOf } from '../sim/sites'
 import { ROLE_INFO, inTraining } from '../sim/staff'
 import type { Employee, Product, Site, SiteItem, SiteKind } from '../sim/types'
 import { QUALITY, type Quality, isHeld, useSettings } from '../store/settings'
@@ -15,6 +16,7 @@ import { People } from './site/People'
 import { type BoardPlace, type BoardText, CallLights, Face, type Palette, RackLights, RoomBoards, Showcase, boardBox, boardPlaces, boardY } from './site/boards'
 import { advanceClock, campus, hourOf } from './site/clock'
 import { type Body, Crowd, Kind, type StaffEntry, describe, meetingSlot } from './site/crowd'
+import { BayCursor, CurveOutline } from './site/curved'
 import { Environs, MOODS, type Mood } from './site/env'
 import { FactoryItem } from './site/factory'
 import { FactoryFloor } from './site/factorylife'
@@ -33,12 +35,12 @@ import { STAGE_H, VenueItem } from './site/venue'
 export { seatOwners }
 export type { Target }
 
-export type AreaShape = 'rect' | 'round' | 'diag'
+export type AreaShape = 'rect' | 'round' | 'ring' | 'diag'
 export type SiteTool =
   | { type: 'item'; kind: string; rot: number }
-  | { type: 'room'; room: string; shape: AreaShape }
-  | { type: 'clear'; shape: AreaShape }
-  | { type: 'ground'; id: string; shape: AreaShape }
+  | { type: 'room'; room: string; shape: AreaShape; opts?: ShapeOpts }
+  | { type: 'clear'; shape: AreaShape; opts?: ShapeOpts }
+  | { type: 'ground'; id: string; shape: AreaShape; opts?: ShapeOpts }
   | { type: 'edge'; kind: 'wall' | 'glass' | 'door' | 'open' }
   | { type: 'rotate' }
   | { type: 'remove' }
@@ -48,6 +50,9 @@ export interface Edge {
   x: number
   y: number
   side: 'n' | 'w'
+  /** Set when the pointer is on a bay of curved wall instead: which curve of the site, and which bay. */
+  curve?: number
+  bay?: string
 }
 
 /** A show in progress at a venue. */
@@ -176,7 +181,7 @@ function StaticShadows({ sig }: { sig: string }) {
 }
 
 /** Keyboard camera: slide, turn and zoom with the keys set under System. */
-function CameraKeys({ span, home }: { span: number; home: [number, number, number] }) {
+export function CameraKeys({ span, home }: { span: number; home: [number, number, number] }) {
   const camera = useThree((s) => s.camera)
   const controls = useThree((s) => s.controls) as unknown as { target: THREE.Vector3; update: () => void } | null
   const held = useRef(new Set<string>())
@@ -459,6 +464,8 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
   const lively = !!life && !autoRotate
   const office = site.kind === 'office' ? life?.office : undefined
   const cut = mode === 'cut'
+  const opts = tool && 'shape' in tool ? tool.opts : undefined
+  const optsKey = `${opts?.thick ?? ''}|${opts?.sweep ?? ''}|${opts?.turn ?? ''}`
 
   // a half-finished drag does not survive a change of tool
   useEffect(() => setAnchor(null), [tool?.type, tool && 'room' in tool ? tool.room : ''])
@@ -737,7 +744,9 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
     const d = [v, 1 - v, u, 1 - u]
     const k = d.indexOf(Math.min(...d))
     const edge: Edge = k === 0 ? { x, y, side: 'n' } : k === 1 ? { x, y: y + 1, side: 'n' } : k === 2 ? { x, y, side: 'w' } : { x: x + 1, y, side: 'w' }
-    return { x, y, edge }
+    // a curved wall close by wins over the grid edge
+    const bay = tool?.type === 'edge' ? nearestBay(site, fx, fy, 0.6) : null
+    return { x, y, edge: bay ? { ...edge, curve: bay.curve, bay: bay.bay } : edge }
   }
 
   // ---- cursor
@@ -745,10 +754,12 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
     if (!hover || !tool) return null
     if (areaTool) {
       const from = anchor ?? [hover.x, hover.y]
-      const all = areaTiles(from[0], from[1], hover.x, hover.y, shape).filter(([x, y]) => inPlot(site, x, y))
+      // a room with a curved wall takes every tile the curve touches
+      const all = areaTiles(from[0], from[1], hover.x, hover.y, shape, opts, tool.type === 'room').filter(([x, y]) => inPlot(site, x, y))
       const good = all.filter(([x, y]) => (tool.type === 'clear' ? !!gridAt(site, x, y) : !gridAt(site, x, y) && !(tool.type === 'room' && itemAt(site, x, y))))
       const bad = tool.type === 'room' ? all.filter(([x, y]) => gridAt(site, x, y) || itemAt(site, x, y)) : []
-      return { good, bad }
+      const curve = anchor ? curveFor(from[0], from[1], hover.x, hover.y, shape, opts) : null
+      return { good, bad, curve, area: tool.type === 'room' ? Math.round(areaOf(good, curve)) : good.length }
     }
     if (tool.type === 'item') {
       const def = ITEMS[site.kind][tool.kind]
@@ -763,9 +774,9 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
     }
     return null
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hover?.x, hover?.y, anchor, tool, site, site.rev, areaTool, shape])
+  }, [hover?.x, hover?.y, anchor, tool, site, site.rev, areaTool, shape, optsKey])
 
-  const previewCount = areaTool && anchor ? (preview?.good.length ?? 0) : 0
+  const previewCount = areaTool && anchor && preview ? ('area' in preview && preview.area !== undefined ? preview.area : preview.good.length) : 0
   useEffect(() => onPreview?.(previewCount), [previewCount, onPreview])
 
   const roomTiles = useMemo(() => {
@@ -799,7 +810,9 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
   }
 
   let edgeCursor: React.ReactNode = null
-  if (hover && tool?.type === 'edge') {
+  if (hover && tool?.type === 'edge' && hover.edge.bay !== undefined && hover.edge.curve !== undefined) {
+    edgeCursor = <BayCursor site={site} curve={hover.edge.curve} bay={hover.edge.bay} height={mode === 'cut' ? CUT_H : STOREY - 0.1} color={accent} />
+  } else if (hover && tool?.type === 'edge') {
     const ok = isBoundary(site, hover.edge.x, hover.edge.y, hover.edge.side)
     const ex = hover.edge.x - w / 2 + (hover.edge.side === 'n' ? 0.5 : 0)
     const ez = hover.edge.y - h / 2 + (hover.edge.side === 'w' ? 0.5 : 0)
@@ -1034,7 +1047,7 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
         position={[0, 0.005, 0]}
         onPointerMove={(e) => {
           const t = locate(e)
-          if (!hover || hover.x !== t.x || hover.y !== t.y || hover.edge.x !== t.edge.x || hover.edge.y !== t.edge.y || hover.edge.side !== t.edge.side) setHover(t)
+          if (!hover || hover.x !== t.x || hover.y !== t.y || hover.edge.x !== t.edge.x || hover.edge.y !== t.edge.y || hover.edge.side !== t.edge.side || hover.edge.bay !== t.edge.bay || hover.edge.curve !== t.edge.curve) setHover(t)
         }}
         onPointerOut={() => setHover(null)}
         onClick={(e) => {
@@ -1138,6 +1151,7 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
       {sealedTiles.length > 0 && <Tint tiles={sealedTiles} w={w} h={h} color={neg} opacity={0.22} y={0.016} />}
       {preview && preview.good.length > 0 && <Tint tiles={preview.good} w={w} h={h} color={accent} opacity={ghost ? 0.22 : 0.45} />}
       {preview && preview.bad.length > 0 && <Tint tiles={preview.bad} w={w} h={h} color={neg} opacity={0.5} />}
+      {preview && 'curve' in preview && preview.curve && <CurveOutline spec={preview.curve} w={w} h={h} color={accent} />}
       {ghost}
       {flags.map(({ item, color: c }) => {
         const def = ITEMS.office[item.kind]

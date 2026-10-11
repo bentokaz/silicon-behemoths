@@ -12,6 +12,7 @@ import { type GameState, type NewsItem, SUPPLY_CATS } from '../sim/types'
 import { DAYS_PER_SECOND, type Speed, type Tab, useGame, useStore } from '../store/game'
 import { saveGame } from '../store/saves'
 import { actionFor, keyName, keysFor, useSettings } from '../store/settings'
+import { CityScreen } from './City'
 import { OfficeScreen, PersonCard, Staff } from './Company'
 import { Designer } from './Designer'
 import { CareScreen, GoalsScreen, SharesScreen, WorldScreen } from './Empire'
@@ -38,6 +39,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: 'Run',
     items: [
+      { id: 'city', label: 'City', code: 'CTY' },
       { id: 'dashboard', label: 'Overview', code: 'OVR', key: 'F1' },
       { id: 'products', label: 'Devices', code: 'DEV', key: 'F2' },
       { id: 'research', label: 'Research', code: 'RES', key: 'F3' },
@@ -76,7 +78,7 @@ const SPEEDS: { speed: Speed; label: string; icon: IconName }[] = [
 ]
 const NEWS_TONE: Record<NewsItem['kind'], string> = { launch: 'text-accent', review: 'text-pos', research: 'text-accent', rival: 'text-faint', finance: 'text-dim', alert: 'text-neg', staff: 'text-dim', event: 'text-pos', goal: 'text-warn' }
 /** Screens that are a full 3D view; the feed stays out of their way. */
-const WIDE: Tab[] = ['office', 'factory', 'stores', 'venue']
+const WIDE: Tab[] = ['city', 'office', 'factory', 'stores', 'venue']
 
 /** A count shown beside a nav item when something there needs attention. */
 function badge(g: GameState, tab: Tab): number {
@@ -259,6 +261,7 @@ export function Shell() {
             <Designer />
           ) : (
             <>
+              {tab === 'city' && <CityScreen />}
               {tab === 'dashboard' && <Dashboard />}
               {tab === 'products' && <Products />}
               {tab === 'research' && <ResearchScreen />}
