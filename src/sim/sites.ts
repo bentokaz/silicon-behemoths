@@ -1,7 +1,7 @@
 // Buildable sites: campuses, factories, stores and event venues share one
 // model. A site is an empty plot; the player zones rooms on it, the walls
 // follow the rooms, and each kind of room takes its own furniture.
-import type { Role, Room, Site, SiteItem, SiteKind, SiteWall } from './types'
+import type { Corner, Role, Room, Site, SiteItem, SiteKind, SiteWall } from './types'
 
 export type Stage = 'in' | 'out' | 'belt' | 'smt' | 'assembly' | 'test' | 'pack'
 
@@ -327,12 +327,24 @@ export const roomAt = (site: Site, x: number, y: number) => {
 export const typeAt = (site: Site, x: number, y: number) => roomAt(site, x, y)?.type ?? OUT
 export const roomTiles = (site: Site, n: number) => site.grid.reduce((a, v) => a + (v === n ? 1 : 0), 0)
 
+export type Shape = 'rect' | 'round' | 'diag'
+export const cutAt = (site: Pick<Site, 'cuts'>, x: number, y: number): Corner | undefined => site.cuts?.[`${x},${y}`]
+/** The room seen through one side of a tile: 0 for open ground, and for the sides a diagonal cut has removed. */
+export function faceId(site: Site, x: number, y: number, side: 'n' | 's' | 'e' | 'w'): number {
+  const n = gridAt(site, x, y)
+  if (!n) return 0
+  const cut = cutAt(site, x, y)
+  return cut && cut.includes(side) ? 0 : n
+}
+/** Room numbers on the two sides of an edge: [the tile's own side, the far side]. */
+export const edgeIds = (site: Site, x: number, y: number, side: 'n' | 'w'): [number, number] => (side === 'n' ? [faceId(site, x, y, 'n'), faceId(site, x, y - 1, 's')] : [faceId(site, x, y, 'w'), faceId(site, x - 1, y, 'e')])
+
 /** The two tiles an edge lies between: [inside tile, the one north or west of it]. */
 export const edgeSides = (x: number, y: number, side: 'n' | 'w'): [[number, number], [number, number]] => [[x, y], side === 'n' ? [x, y - 1] : [x - 1, y]]
 /** True where two different rooms (or a room and open ground) meet. */
 export function isBoundary(site: Site, x: number, y: number, side: 'n' | 'w'): boolean {
-  const [a, b] = edgeSides(x, y, side)
-  return gridAt(site, a[0], a[1]) !== gridAt(site, b[0], b[1])
+  const [a, b] = edgeIds(site, x, y, side)
+  return a !== b
 }
 export const wallAt = (site: Site, x: number, y: number, side: 'n' | 'w') => site.walls.find((w) => w.x === x && w.y === y && w.side === side)
 
@@ -341,9 +353,7 @@ export function openRooms(site: Site): Set<number> {
   const open = new Set<number>()
   for (const w of site.walls) {
     if (w.kind === 'glass') continue
-    const [a, b] = edgeSides(w.x, w.y, w.side)
-    const na = gridAt(site, a[0], a[1])
-    const nb = gridAt(site, b[0], b[1])
+    const [na, nb] = edgeIds(site, w.x, w.y, w.side)
     if (na === nb) continue
     if (na) open.add(na)
     if (nb) open.add(nb)
@@ -356,8 +366,12 @@ export function newSite(kind: SiteKind, tier: number): Site {
   return { kind, tier, w: t.w, h: t.h, grid: new Array(t.w * t.h).fill(0), rooms: [], nextRoom: 1, items: [], walls: [], floor: {}, facade: 0, roof: 0, floors: 1, rev: 0 }
 }
 
-/** Tiles of a drag from one corner to the other, as a rectangle or the ellipse inside it. */
-export function areaTiles(x0: number, y0: number, x1: number, y1: number, shape: 'rect' | 'round' = 'rect'): [number, number][] {
+/**
+ * Tiles of a drag from one corner to the other: a rectangle, the ellipse
+ * inside it, or a right-angled triangle with its square corner where the
+ * drag began.
+ */
+export function areaTiles(x0: number, y0: number, x1: number, y1: number, shape: Shape = 'rect'): [number, number][] {
   const ax = Math.min(x0, x1)
   const bx = Math.max(x0, x1)
   const ay = Math.min(y0, y1)
@@ -370,10 +384,37 @@ export function areaTiles(x0: number, y0: number, x1: number, y1: number, shape:
   for (let x = ax; x <= bx; x++) {
     for (let y = ay; y <= by; y++) {
       if (shape === 'round' && ((x + 0.5 - cx) / rx) ** 2 + ((y + 0.5 - cy) / ry) ** 2 > 1.02) continue
+      if (shape === 'diag' && Math.abs(x - x0) / (bx - ax + 1) + Math.abs(y - y0) / (by - ay + 1) > 1 - 0.5 / Math.max(bx - ax + 1, by - ay + 1)) continue
       out.push([x, y])
     }
   }
   return out
+}
+
+/** Corners to cut off a set of tiles so its stepped edges become diagonals. */
+export function shapeCuts(tiles: [number, number][]): Record<string, Corner> {
+  const set = new Set(tiles.map(([x, y]) => `${x},${y}`))
+  const has = (x: number, y: number) => set.has(`${x},${y}`)
+  const out: Record<string, Corner> = {}
+  for (const [x, y] of tiles) {
+    const n = has(x, y - 1)
+    const s = has(x, y + 1)
+    const e = has(x + 1, y)
+    const w = has(x - 1, y)
+    // a tile sticking out on exactly two adjacent sides is the step of a stair
+    if (!n && !e && s && w) out[`${x},${y}`] = 'ne'
+    else if (!n && !w && s && e) out[`${x},${y}`] = 'nw'
+    else if (!s && !e && n && w) out[`${x},${y}`] = 'se'
+    else if (!s && !w && n && e) out[`${x},${y}`] = 'sw'
+  }
+  return out
+}
+
+/** A cut only stands where the two sides it opens face open ground. */
+function cutFits(site: Site, x: number, y: number, c: Corner): boolean {
+  const dy = c[0] === 'n' ? -1 : 1
+  const dx = c[1] === 'e' ? 1 : -1
+  return !gridAt(site, x, y + dy) && !gridAt(site, x + dx, y)
 }
 
 /**
@@ -381,7 +422,7 @@ export function areaTiles(x0: number, y0: number, x1: number, y1: number, shape:
  * a room are left alone. Pass `into` to extend an existing room.
  * Returns the room and how many tiles were added.
  */
-export function zone(site: Site, type: string, tiles: [number, number][], into?: number, style = 0): { room: Room | null; added: number } {
+export function zone(site: Site, type: string, tiles: [number, number][], into?: number, style = 0, cuts: Record<string, Corner> = {}): { room: Room | null; added: number } {
   const free = tiles.filter(([x, y]) => inPlot(site, x, y) && !site.grid[y * site.w + x])
   if (!free.length) return { room: null, added: 0 }
   let room = into ? roomOf(site, into) : undefined
@@ -392,6 +433,10 @@ export function zone(site: Site, type: string, tiles: [number, number][], into?:
   for (const [x, y] of free) {
     site.grid[y * site.w + x] = room.n
     delete site.floor[`${x},${y}`]
+  }
+  for (const [x, y] of free) {
+    const c = cuts[`${x},${y}`]
+    if (c && cutFits(site, x, y, c)) (site.cuts ??= {})[`${x},${y}`] = c
   }
   site.rev++
   return { room, added: free.length }
@@ -437,6 +482,10 @@ export function autoDoor(site: Site, n: number) {
 export function tidy(site: Site) {
   const used = new Set(site.grid)
   site.rooms = site.rooms.filter((r) => used.has(r.n))
+  for (const [key, c] of Object.entries(site.cuts ?? {})) {
+    const [x, y] = key.split(',').map(Number)
+    if (!gridAt(site, x, y) || !cutFits(site, x, y, c)) delete site.cuts![key]
+  }
   site.walls = site.walls.filter((w) => isBoundary(site, w.x, w.y, w.side))
 }
 
@@ -468,6 +517,7 @@ export function canPlace(site: Site, kind: string, x: number, y: number, rot: nu
   let room = -1
   for (const [a, b] of tilesOf(def, x, y, rot)) {
     if (!inPlot(site, a, b)) return 'It does not fit on the plot'
+    if (cutAt(site, a, b)) return 'That corner of the room is cut away'
     if (!def.rooms.includes(typeAt(site, a, b))) return `${def.name} goes in: ${roomNames(site.kind, def)}`
     const n = gridAt(site, a, b)
     if (room >= 0 && n !== room) return 'It cannot straddle a wall'

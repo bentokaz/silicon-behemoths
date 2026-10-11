@@ -314,6 +314,8 @@ export interface SiteWall {
   kind: 'glass' | 'door' | 'open'
 }
 
+export type Corner = 'ne' | 'nw' | 'se' | 'sw'
+
 export interface Room {
   /** Number stored in the site grid for this room's tiles. */
   n: number
@@ -333,6 +335,11 @@ export interface Site {
   nextRoom: number
   items: SiteItem[]
   walls: SiteWall[]
+  /**
+   * Room tiles cut in half along a diagonal, keyed "x,y", so walls can run at
+   * 45 degrees. The value names the corner that is cut away.
+   */
+  cuts?: Record<string, Corner>
   /** Ground finish per open tile, keyed "x,y". Missing tiles are lawn. */
   floor: Record<string, string>
   /** Index into FACADES and ROOFS, and how many storeys the building has. */

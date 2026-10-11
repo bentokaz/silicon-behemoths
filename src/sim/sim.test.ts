@@ -538,6 +538,26 @@ describe('a bigger world', () => {
     expect(staffEffects(s).research).toBeGreaterThan(loose)
   })
 
+  it('cuts the stepped edges of round and diagonal rooms to 45 degrees', () => {
+    const s = rich()
+    for (let i = 0; i < 2; i++) upgradeOffice(s)
+    expect(zoneRoom(s, 'office', 'atrium', 1, 1, 9, 9, 'round')).toBeNull()
+    const cuts = Object.keys(s.office.cuts ?? {})
+    expect(cuts.length).toBeGreaterThanOrEqual(4)
+    const [cx, cy] = cuts[0].split(',').map(Number)
+    expect(placeItem(s, 'office', 'plant', cx, cy, 0)).toMatch(/cut away/)
+    expect(sealedRooms(s.office).some((r) => r.type === 'atrium')).toBe(false)
+    // a triangle keeps its square corner where the drag began
+    expect(zoneRoom(s, 'office', 'gym', 23, 13, 29, 19, 'diag')).toBeNull()
+    expect(gridAt(s.office, 23, 13)).toBeGreaterThan(0)
+    expect(gridAt(s.office, 29, 19)).toBe(0)
+    // building against a cut edge squares it off again
+    const before = Object.keys(s.office.cuts ?? {}).length
+    clearZone(s, 'office', 1, 1, 9, 9)
+    expect(Object.keys(s.office.cuts ?? {}).length).toBeLessThan(before)
+    expect(JSON.parse(JSON.stringify(s.office))).toEqual(s.office)
+  })
+
   it('reaches goals and pays their rewards', () => {
     const s = fresh()
     expect(Object.keys(s.goals)).toEqual([])

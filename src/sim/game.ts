@@ -12,7 +12,7 @@ import { CONTRACT, LOCK_DAYS, LOCK_FEE, buildCost, costNow, factoryLine, marketP
 import { type VariantId, generateDesign, layoutParts } from './rivals'
 import { clamp, int, pick, rand, range } from './rng'
 import { evaluate } from './scoring'
-import { FACADES, FLOOR_COST, GROUNDS, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, areaTiles, autoDoor, builtTiles, canPlace, gridAt, inPlot, isBoundary, itemAt, itemTiles, newSite, roomOf, starterLine, storeStats, tidy, tierOf, upkeep, zone } from './sites'
+import { FACADES, FLOOR_COST, GROUNDS, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, type Shape, areaTiles, autoDoor, builtTiles, canPlace, gridAt, inPlot, isBoundary, itemAt, itemTiles, newSite, roomOf, shapeCuts, starterLine, storeStats, tidy, tierOf, upkeep, zone } from './sites'
 import { HEADHUNT_COST, TEAM_SPAN, dropFromTeams, inTraining, monthlySalaries, monthlyStaff, newPolicy, perksCost, refreshCandidates, staffEffects, stepStaff, trainingCost } from './staff'
 import { CHIP_BUDGET, OS_FEATURES, chipAdoption, chipBlocked, chipProjectCost, chipProjectDays, finishChip, newOs, osBlocked, osProjectCost, osProjectDays, osShipQuality, servicesPerMonth, softwareBonus } from './tech'
 import { type ChannelId, type Company, type CostKey, type DeviceDesign, type DeviceType, type Difficulty, type EventType, type GameConfig, type GameState, type Levels, type MonthReport, type NewsItem, type Product, type ProductionOrder, type SegmentId, type Site, type SiteKind, type StaffPolicy, type StorageTier, type SupplyCat, TRACKS, type Track, monthCosts } from './types'
@@ -585,31 +585,42 @@ const siteBucket = (site: Site): CostKey => (site.kind === 'office' ? 'overhead'
 export const roomCost = (site: Site, type: string, tiles: number) => Math.round(tiles * (ROOMS[site.kind][type]?.cost ?? 0) * (1 + 0.4 * (site.floors - 1)))
 
 /** Tiles in an area that could become part of a room. */
-export const zoneable = (site: Site, x0: number, y0: number, x1: number, y1: number, shape: 'rect' | 'round') => areaTiles(x0, y0, x1, y1, shape).filter(([x, y]) => inPlot(site, x, y) && !gridAt(site, x, y))
+export const zoneable = (site: Site, x0: number, y0: number, x1: number, y1: number, shape: Shape) => areaTiles(x0, y0, x1, y1, shape).filter(([x, y]) => inPlot(site, x, y) && !gridAt(site, x, y))
 
 /**
  * Build a room over an area of open ground. Pass `into` to extend an existing
  * room of the same type instead of starting a new one.
  */
-export function zoneRoom(s: GameState, ref: string, type: string, x0: number, y0: number, x1: number, y1: number, shape: 'rect' | 'round' = 'rect', into?: number): string | null {
+export function zoneRoom(s: GameState, ref: string, type: string, x0: number, y0: number, x1: number, y1: number, shape: Shape = 'rect', into?: number): string | null {
   const site = siteOf(s, ref)
   if (!site) return 'Nothing to build on'
   if (!ROOMS[site.kind][type]) return 'Unknown room'
   const tiles = zoneable(site, x0, y0, x1, y1, shape)
   if (!tiles.length) return 'That land is already built on'
-  if (tiles.some(([x, y]) => itemAt(site, x, y))) return 'Clear what is standing there first'
   const target = into !== undefined ? roomOf(site, into) : undefined
   const cost = roomCost(site, type, tiles.length)
   if (!canAfford(s, cost)) return `Not enough cash: that would cost $${cost.toLocaleString()}`
   spend(s, cost, siteBucket(site))
-  const { room } = zone(site, type, tiles, target?.type === type ? target.n : undefined)
+  // trees, benches and anything else standing on the land are cleared and sold on
+  const taken = new Set(tiles.map(([x, y]) => `${x},${y}`))
+  let back = 0
+  site.items = site.items.filter((it) => {
+    if (!ITEMS[site.kind][it.kind] || !itemTiles(site, it).some(([x, y]) => taken.has(`${x},${y}`))) return true
+    back += ITEMS[site.kind][it.kind].cost / 2
+    return false
+  })
+  s.cash += back
+  s.cur[siteBucket(site)] -= back
+  // round and diagonal rooms get their stepped edges cut to 45 degrees
+  const cuts = shape === 'rect' ? {} : shapeCuts(areaTiles(x0, y0, x1, y1, shape))
+  const { room } = zone(site, type, tiles, target?.type === type ? target.n : undefined, 0, cuts)
   if (room) autoDoor(site, room.n)
   tidy(site)
   return null
 }
 
 /** Knock down every room tile in an area. Anything inside is sold for half its price. */
-export function clearZone(s: GameState, ref: string, x0: number, y0: number, x1: number, y1: number, shape: 'rect' | 'round' = 'rect') {
+export function clearZone(s: GameState, ref: string, x0: number, y0: number, x1: number, y1: number, shape: Shape = 'rect') {
   const site = siteOf(s, ref)
   if (!site) return
   const hit = new Set(areaTiles(x0, y0, x1, y1, shape).filter(([x, y]) => gridAt(site, x, y)).map(([x, y]) => `${x},${y}`))
@@ -745,7 +756,7 @@ export function paintFloor(s: GameState, ref: string, x: number, y: number, grou
 }
 
 /** Lay a ground finish over an area of open land. */
-export function paintArea(s: GameState, ref: string, x0: number, y0: number, x1: number, y1: number, shape: 'rect' | 'round', groundId: string) {
+export function paintArea(s: GameState, ref: string, x0: number, y0: number, x1: number, y1: number, shape: Shape, groundId: string) {
   const site = siteOf(s, ref)
   if (!site || !GROUNDS.some((g) => g.id === groundId)) return
   for (const [x, y] of zoneable(site, x0, y0, x1, y1, shape)) {
@@ -768,6 +779,10 @@ function movePlot(old: Site): Site {
   for (const [key, id] of Object.entries(old.floor)) {
     const [x, y] = key.split(',').map(Number)
     site.floor[`${x + dx},${y + dy}`] = id
+  }
+  for (const [key, c] of Object.entries(old.cuts ?? {})) {
+    const [x, y] = key.split(',').map(Number)
+    ;(site.cuts ??= {})[`${x + dx},${y + dy}`] = c
   }
   site.facade = old.facade
   site.roof = old.roof

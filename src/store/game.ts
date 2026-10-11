@@ -10,6 +10,10 @@ import { monthCosts } from '../sim/types'
 import { type FingerprintStyle, type FrontStyle, type VariantId, deriveVariant, layoutParts, syncSockets } from '../sim/rivals'
 import type { Body, DeviceDesign, DeviceType, GameConfig, GameState, PartKind, PlacedPart, Product, Specs } from '../sim/types'
 import { AUTOSAVE, BEFORE_DEBT, saveGame, saveSnapshot } from './saves'
+import { useSettings } from './settings'
+
+/** News that marks a moment worth an autosave. */
+const BIG_NEWS = /is on sale\.|now sells in|listed on the stock market|You bought|moved to a bigger|bought land|new store opened|invested \$|Goal reached/
 
 export type Tab = 'dashboard' | 'products' | 'research' | 'labs' | 'factory' | 'stores' | 'venue' | 'marketing' | 'care' | 'staff' | 'office' | 'market' | 'world' | 'rivals' | 'finance' | 'shares' | 'goals' | 'system'
 
@@ -96,6 +100,9 @@ interface Store {
   checkpoint: Checkpoint | null
   /** Id of the keynote being replayed, if any. */
   showing: string | null
+  /** Employee whose card is open, from any screen. */
+  person: string | null
+  openPerson(id: string | null): void
 
   designing: boolean
   editorMode: EditorMode
@@ -166,6 +173,8 @@ export const useStore = create<Store>((set, get) => {
     toast: null,
     checkpoint: null,
     showing: null,
+    person: null,
+    openPerson: (person) => set({ person }),
 
     designing: false,
     editorMode: saved('sb-editor', 'simple') === 'advanced' ? 'advanced' : 'simple',
@@ -177,11 +186,11 @@ export const useStore = create<Store>((set, get) => {
     future: [],
 
     setScreen: (screen) => set({ screen }),
-    setTab: (tab) => set({ tab, designing: false, selectedPart: null }),
+    setTab: (tab) => set({ tab, designing: false, selectedPart: null, person: null }),
     setSpeed: (speed) => set({ speed }),
     begin(cfg) {
       rolling = null
-      set({ game: newGame(cfg), screen: 'game', tab: 'dashboard', speed: 0, rev: 0, checkpoint: null, showing: null, ...reset })
+      set({ game: newGame(cfg), screen: 'game', tab: 'office', speed: 0, rev: 0, checkpoint: null, showing: null, ...reset })
     },
     resume(state) {
       rolling = null
@@ -228,15 +237,20 @@ export const useStore = create<Store>((set, get) => {
       else if (fresh.some((n) => n.kind === 'event')) sfx.confirm()
       else if (fresh.some((n) => n.kind === 'staff')) sfx.hire()
       else if (fresh.length) sfx.notify()
-      if (Math.floor(g.day / DAYS_PER_MONTH) !== month) void saveGame(AUTOSAVE, g).catch(() => {})
+      const prefs = useSettings.getState().settings
+      const big = fresh.some((n) => BIG_NEWS.test(n.text))
+      if (prefs.autosave && (Math.floor(g.day / DAYS_PER_MONTH) !== month || big)) void saveGame(AUTOSAVE, g).catch(() => {})
+      const halt = prefs.pauseOnAlert && fresh.some((n) => n.kind === 'alert')
       // a keynote that just happened plays out on screen
       const keynote = g.events.find((e) => e.done && e.type === 'keynote' && !shown.has(e.id) && e.beats)
-      set({ rev: get().rev + 1, speed: g.gameOver || keynote ? 0 : get().speed, checkpoint, showing: keynote ? keynote.id : get().showing })
+      set({ rev: get().rev + 1, speed: g.gameOver || keynote || halt ? 0 : get().speed, checkpoint, showing: keynote ? keynote.id : get().showing })
     },
 
     act(fn) {
       const g = get().game!
+      const lastNews = g.news[0]?.id ?? 0
       const out = fn(g)
+      if (useSettings.getState().settings.autosave && g.news.some((n) => n.id > lastNews && BIG_NEWS.test(n.text))) void saveGame(AUTOSAVE, g).catch(() => {})
       set({ rev: get().rev + 1 })
       return out
     },

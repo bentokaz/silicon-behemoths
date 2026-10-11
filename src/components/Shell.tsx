@@ -11,7 +11,8 @@ import { stageOf } from '../sim/goals'
 import { type GameState, type NewsItem, SUPPLY_CATS } from '../sim/types'
 import { DAYS_PER_SECOND, type Speed, type Tab, useGame, useStore } from '../store/game'
 import { saveGame } from '../store/saves'
-import { OfficeScreen, Staff } from './Company'
+import { actionFor, keyName, keysFor, useSettings } from '../store/settings'
+import { OfficeScreen, PersonCard, Staff } from './Company'
 import { Designer } from './Designer'
 import { CareScreen, GoalsScreen, SharesScreen, WorldScreen } from './Empire'
 import { MarketingScreen, StoresScreen, VenueScreen } from './Growth'
@@ -114,20 +115,20 @@ function useHotkeys() {
       const tag = (e.target as HTMLElement).tagName
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return
       const st = useStore.getState()
-      if (st.designing) return
-      if (e.code === 'Space') {
-        e.preventDefault()
+      if (st.designing || st.showing || !st.game) return
+      const action = actionFor(e, ['Game', 'Screens'])
+      if (!action) return
+      e.preventDefault()
+      if (action === 'pause') {
         if (st.speed) (lastSpeed.current = st.speed), st.setSpeed(0)
         else st.setSpeed(lastSpeed.current)
-      } else if (e.key === '1') st.setSpeed(1)
-      else if (e.key === '2') st.setSpeed(2)
-      else if (e.key === '3' || e.key === '4') st.setSpeed(4)
-      else {
-        const item = NAV.flatMap((n) => n.items).find((t) => t.key === e.key)
-        if (!item) return
-        e.preventDefault()
-        st.setTab(item.id)
-      }
+      } else if (action === 'speed1') st.setSpeed(1)
+      else if (action === 'speed2') st.setSpeed(2)
+      else if (action === 'speed3') st.setSpeed(4)
+      else if (action === 'save') void saveGame('quick', st.game).then(() => (sfx.confirm(), st.say('Saved to the Quick slot.')))
+      else if (action === 'newDevice') st.openDesigner()
+      else if (action === 'feed') st.toggleFeed()
+      else if (action.startsWith('tab:')) st.setTab(action.slice(4) as Tab)
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
@@ -145,6 +146,11 @@ export function Shell() {
   const showing = useStore((s) => s.showing)
   const { setTab, setSpeed, focus, say, quit, toggleRail, toggleFeed, openDesigner, rewind } = useStore.getState()
   const stage = stageOf(g)
+  useSettings((s) => s.binds)
+  const keyOf = (tab: Tab) => {
+    const k = keysFor(`tab:${tab}`)[0]
+    return k ? keyName(k) : ''
+  }
   useGameLoop()
   useHotkeys()
   const me = player(g)
@@ -157,7 +163,7 @@ export function Shell() {
     return (
       <button key={t.id} onClick={() => setTab(t.id)} title={railOpen ? undefined : t.label} className={`relative flex h-8 w-full items-center justify-between border-l-2 text-left transition-colors ${railOpen ? 'px-3' : 'justify-center px-0'} ${on ? 'border-l-accent bg-accent/10 text-accent' : 'border-l-transparent text-dim hover:bg-hover hover:text-fg'}`}>
         <span className={railOpen ? 'text-xs uppercase tracking-wider' : 'num text-[10px]'}>{railOpen ? t.label : t.code}</span>
-        {n > 0 ? <span className={`num text-[10px] text-warn ${railOpen ? '' : 'absolute right-1 top-0'}`}>{n}</span> : railOpen && t.key && <span className="num text-[9px] text-faint">{t.key}</span>}
+        {n > 0 ? <span className={`num text-[10px] text-warn ${railOpen ? '' : 'absolute right-1 top-0'}`}>{n}</span> : railOpen && keyOf(t.id) && <span className="num text-[9px] text-faint">{keyOf(t.id)}</span>}
       </button>
     )
   }
@@ -188,7 +194,7 @@ export function Shell() {
           <span className="num text-xs text-dim">+{money(g.cur.revenue + g.cur.other, 1)}</span>
         </div>
         <div className="flex-1" />
-        <div className="flex items-center border-l border-line px-2" title="Space pauses. 1, 2 and 3 set the speed.">
+        <div className="flex items-center border-l border-line px-2" title="Pause and speed keys can be changed under System, Keys.">
           <span className="label mr-2 hidden text-faint md:block">{designing ? 'Paused in designer' : speed ? 'Running' : 'Paused'}</span>
           {SPEEDS.map((s) => (
             <Btn key={s.speed} small disabled={designing} active={!designing && speed === s.speed} onClick={() => setSpeed(s.speed)} className="num w-9 !px-0">
@@ -260,6 +266,7 @@ export function Shell() {
             </>
           )}
           {!designing && <ProductDrawer />}
+          {!designing && <PersonCard />}
         </main>
 
         {showFeed && (

@@ -179,7 +179,7 @@ export function FactoryScreen() {
               </div>
             </div>
           ) : (
-            <SiteBuilder siteRef="factory" site={g.factory} line={line} producing={factoryOrders.length > 0}>
+            <SiteBuilder siteRef="factory" site={g.factory} busy={Math.min(1, g.products.filter((p) => p.companyId === 'player').reduce((a, p) => a + p.stock, 0) / 150e3)} line={line} producing={factoryOrders.length > 0}>
               <Fold title="Line" right={line?.running ? <Tag tone="pos">ready</Tag> : <Tag tone="neg">down</Tag>} bodyClass="p-2">
                 {line?.running ? (
                   <div className="grid grid-cols-2 gap-1">

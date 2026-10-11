@@ -1,10 +1,11 @@
 // The building itself: floors, the walls that follow the rooms, doors and
 // glazing, and (in the outside view) upper storeys and the roof. Everything
 // is generated from the site grid into a few merged meshes.
+import { useFrame } from '@react-three/fiber'
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import { FACADES, GROUNDS, ROOFS, edgeSides, gridAt, styleOf } from '../../sim/sites'
-import type { Room, Site } from '../../sim/types'
+import { FACADES, GROUNDS, ROOFS, cutAt, edgeIds, gridAt, styleOf } from '../../sim/sites'
+import type { Corner, Room, Site } from '../../sim/types'
 import { hash } from './kit'
 
 /** How much of the building is drawn: low cut-away walls, full-height walls, or the outside with a roof. */
@@ -59,6 +60,35 @@ export class Batch {
     if (up) this.face(g, [[x0, y, z1], [x1, y, z1], [x1, y, z0], [x0, y, z0]], [0, 1, 0], c, shade)
     else this.face(g, [[x0, y, z0], [x1, y, z0], [x1, y, z1], [x0, y, z1]], [0, -1, 0], c, shade)
   }
+  /** A flat triangle facing up. Points are [x, z], counter-clockwise seen from above. */
+  tri(key: string, pts: [number, number][], y: number, color: string, shade = 1) {
+    const g = this.get(key)
+    const c = colorOf(color)
+    for (const [x, z] of pts) {
+      g.pos.push(x, y, z)
+      g.nor.push(0, 1, 0)
+      g.col.push(c.r * shade, c.g * shade, c.b * shade)
+    }
+  }
+  /** A box turned about the vertical axis by `rot` radians. */
+  boxRot(key: string, x: number, y: number, z: number, sx: number, sy: number, sz: number, rot: number, color: string, shade = 1) {
+    const g = this.get(key)
+    const c = colorOf(color)
+    const cos = Math.cos(rot)
+    const sin = Math.sin(rot)
+    const p = (i: number, j: number, k: number) => {
+      const lx = (i * sx) / 2
+      const lz = (k * sz) / 2
+      return [x + lx * cos + lz * sin, y + (j * sy) / 2, z - lx * sin + lz * cos]
+    }
+    const n = (nx: number, nz: number) => [nx * cos + nz * sin, 0, -nx * sin + nz * cos]
+    this.face(g, [p(-1, -1, 1), p(1, -1, 1), p(1, 1, 1), p(-1, 1, 1)], n(0, 1), c, shade)
+    this.face(g, [p(1, -1, -1), p(-1, -1, -1), p(-1, 1, -1), p(1, 1, -1)], n(0, -1), c, shade)
+    this.face(g, [p(1, -1, 1), p(1, -1, -1), p(1, 1, -1), p(1, 1, 1)], n(1, 0), c, shade)
+    this.face(g, [p(-1, -1, -1), p(-1, -1, 1), p(-1, 1, 1), p(-1, 1, -1)], n(-1, 0), c, shade)
+    this.face(g, [p(-1, 1, 1), p(1, 1, 1), p(1, 1, -1), p(-1, 1, -1)], [0, 1, 0], c, shade)
+    this.face(g, [p(-1, -1, -1), p(1, -1, -1), p(1, -1, 1), p(-1, -1, 1)], [0, -1, 0], c, shade)
+  }
   build(materials: (key: string) => { material: THREE.Material; cast?: boolean }): THREE.Mesh[] {
     const out: THREE.Mesh[] = []
     for (const [key, g] of this.groups) {
@@ -102,33 +132,143 @@ function useMeshes(make: () => THREE.Mesh[], deps: unknown[]) {
   return meshes
 }
 
+/** The two triangles of a tile cut along a diagonal: [the half the room keeps, the half left as ground]. */
+function halves(x0: number, z0: number, cut: Corner): [[number, number][], [number, number][]] {
+  const sw: [number, number] = [x0, z0 + 1]
+  const se: [number, number] = [x0 + 1, z0 + 1]
+  const ne: [number, number] = [x0 + 1, z0]
+  const nw: [number, number] = [x0, z0]
+  if (cut === 'ne') return [[sw, se, nw], [se, ne, nw]]
+  if (cut === 'nw') return [[sw, se, ne], [sw, ne, nw]]
+  if (cut === 'se') return [[sw, ne, nw], [sw, se, ne]]
+  return [[se, ne, nw], [sw, se, nw]]
+}
+
+let ripples: THREE.CanvasTexture | null = null
+/** A tiling normal map of small waves, drawn once. */
+function rippleMap(): THREE.CanvasTexture {
+  if (ripples) return ripples
+  const size = 128
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = size
+  const g = canvas.getContext('2d')!
+  const img = g.createImageData(size, size)
+  const height = (x: number, y: number) => {
+    const u = (x / size) * Math.PI * 2
+    const v = (y / size) * Math.PI * 2
+    return Math.sin(u * 2 + v) + 0.7 * Math.sin(v * 3 - u) + 0.35 * Math.sin((u + v) * 5) + 0.2 * Math.sin(u * 7 - v * 4) + 0.12 * Math.sin(u * 13 + v * 9)
+  }
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = height(x + 1, y) - height(x - 1, y)
+      const dy = height(x, y + 1) - height(x, y - 1)
+      const n = new THREE.Vector3(-dx * 0.6, -dy * 0.6, 1).normalize()
+      const i = (y * size + x) * 4
+      img.data[i] = (n.x * 0.5 + 0.5) * 255
+      img.data[i + 1] = (n.y * 0.5 + 0.5) * 255
+      img.data[i + 2] = (n.z * 0.5 + 0.5) * 255
+      img.data[i + 3] = 255
+    }
+  }
+  g.putImageData(img, 0, 0)
+  ripples = new THREE.CanvasTexture(canvas)
+  ripples.wrapS = ripples.wrapT = THREE.RepeatWrapping
+  return ripples
+}
+const WATER_Y = -0.1
+
+/** Open water: a sunken, reflective surface whose ripples drift. */
+function Water({ tiles, w, h, dim }: { tiles: [number, number][]; w: number; h: number; dim: number }) {
+  const mesh = useMemo(() => {
+    const pos: number[] = []
+    const uv: number[] = []
+    for (const [x, y] of tiles) {
+      const x0 = x - w / 2
+      const z0 = y - h / 2
+      for (const [px, pz] of [[x0, z0 + 1], [x0 + 1, z0 + 1], [x0 + 1, z0], [x0, z0 + 1], [x0 + 1, z0], [x0, z0]]) {
+        pos.push(px, WATER_Y, pz)
+        uv.push(px * 0.31, pz * 0.27)
+      }
+    }
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
+    geo.computeVertexNormals()
+    const material = new THREE.MeshStandardMaterial({ color: new THREE.Color('#1f6f86').multiplyScalar(dim), roughness: 0.12, metalness: 0.55, normalMap: rippleMap(), normalScale: new THREE.Vector2(0.16, 0.16), transparent: true, opacity: 0.94, envMapIntensity: 1.8 })
+    const m = new THREE.Mesh(geo, material)
+    m.receiveShadow = true
+    m.userData.live = true
+    return m
+  }, [tiles, w, h, dim])
+  useEffect(
+    () => () => {
+      mesh.geometry.dispose()
+      ;(mesh.material as THREE.Material).dispose()
+    },
+    [mesh],
+  )
+  useFrame(({ clock }) => {
+    rippleMap().offset.set(clock.elapsedTime * 0.012, clock.elapsedTime * 0.02)
+  })
+  return <primitive object={mesh} />
+}
+
 /** Floors of every room and the open ground of the plot. */
 export function Ground({ site, dim }: { site: Site; dim: number }) {
-  const meshes = useMeshes(() => {
+  const built = useMemo(() => {
     const b = new Batch()
     const rooms = new Map<number, Room>(site.rooms.map((r) => [r.n, r]))
     const ox = -site.w / 2
     const oz = -site.h / 2
+    const water: [number, number][] = []
+    const wet = (x: number, y: number) => !gridAt(site, x, y) && site.floor[`${x},${y}`] === 'water'
+    const lay = (x: number, y: number, pts: [number, number][] | null) => {
+      const jitter = (0.86 + hash(x * 31 + y * 17) * 0.1) * dim
+      const g = GROUNDS.find((d) => d.id === site.floor[`${x},${y}`]) ?? GROUNDS[0]
+      const key = `floor${Math.round(g.rough * 10)}`
+      if (pts) b.tri(key, pts, 0, g.id === 'water' ? GROUNDS[0].color : g.color, jitter)
+      else b.quad(key, ox + x, oz + y, ox + x + 1, oz + y + 1, 0, g.color, jitter)
+    }
     for (let y = 0; y < site.h; y++) {
       for (let x = 0; x < site.w; x++) {
         const room = rooms.get(site.grid[y * site.w + x])
         const jitter = (0.78 + hash(x * 31 + y * 17) * 0.1) * dim
         if (room) {
           const st = styleOf(site, room)
-          b.quad(`floor${Math.round(st.rough * 10)}`, ox + x, oz + y, ox + x + 1, oz + y + 1, 0, st.floor, jitter)
-        } else {
-          const g = GROUNDS.find((d) => d.id === site.floor[`${x},${y}`]) ?? GROUNDS[0]
-          b.quad(g.id === 'water' ? 'water' : `floor${Math.round(g.rough * 10)}`, ox + x, oz + y, ox + x + 1, oz + y + 1, g.id === 'water' ? -0.04 : 0, g.color, g.id === 'water' ? dim : jitter)
-        }
+          const cut = cutAt(site, x, y)
+          const key = `floor${Math.round(st.rough * 10)}`
+          if (cut) {
+            const [inside, outside] = halves(ox + x, oz + y, cut)
+            b.tri(key, inside, 0, st.floor, jitter)
+            lay(x, y, outside)
+          } else b.quad(key, ox + x, oz + y, ox + x + 1, oz + y + 1, 0, st.floor, jitter)
+        } else if (wet(x, y)) {
+          water.push([x, y])
+          // a stone bank wherever the water meets dry land, and a dark bed underneath
+          b.quad('floor9', ox + x, oz + y, ox + x + 1, oz + y + 1, WATER_Y - 0.25, '#20313a', dim)
+          const bank = (dx: number, dy: number) => {
+            if (wet(x + dx, y + dy)) return
+            const cx = ox + x + 0.5 + dx * 0.47
+            const cz = oz + y + 0.5 + dy * 0.47
+            b.box('wall', cx, -0.17, cz, dx ? 0.06 : 1, 0.36, dy ? 0.06 : 1, '#b9b4a8', dim)
+          }
+          bank(1, 0)
+          bank(-1, 0)
+          bank(0, 1)
+          bank(0, -1)
+        } else lay(x, y, null)
       }
     }
-    return b.build((k) => surface(k))
+    return { meshes: b.build((k) => surface(k)), water }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [site, site.rev, dim])
+  useEffect(() => () => built.meshes.forEach((m) => m.geometry.dispose()), [built])
   return (
     <>
-      {meshes.map((m) => (
+      {built.meshes.map((m) => (
         <primitive key={m.uuid} object={m} />
       ))}
+      {built.water.length > 0 && <Water tiles={built.water} w={site.w} h={site.h} dim={dim} />}
     </>
   )
 }
@@ -200,9 +340,7 @@ export function Structure({ site, mode, glow }: { site: Site; mode: ViewMode; gl
       for (let x = 0; x <= site.w; x++) {
         for (const side of ['n', 'w'] as const) {
           if ((side === 'n' && x >= site.w) || (side === 'w' && y >= site.h)) continue
-          const [ta, tb] = edgeSides(x, y, side)
-          const a = gridAt(site, ta[0], ta[1])
-          const c = gridAt(site, tb[0], tb[1])
+          const [a, c] = edgeIds(site, x, y, side)
           if (a === c) continue
           const kind = overrides.get(`${x},${y},${side}`)
           const exterior = !a || !c
@@ -276,6 +414,44 @@ export function Structure({ site, mode, glow }: { site: Site; mode: ViewMode; gl
       }
     }
 
+    // ---- diagonal walls across tiles whose corner is cut away
+    /** Diagonals ending at each grid corner: how many, and whether they all run the same way. */
+    const diag = new Map<string, { n: number; way: number; mixed: boolean }>()
+    const mark = (x: number, y: number, way: number) => {
+      const d = diag.get(`${x},${y}`)
+      if (!d) diag.set(`${x},${y}`, { n: 1, way, mixed: false })
+      else {
+        d.n++
+        if (d.way !== way) d.mixed = true
+      }
+    }
+    for (const [key, cut] of Object.entries(site.cuts ?? {})) {
+      const [x, y] = key.split(',').map(Number)
+      const room = rooms.get(gridAt(site, x, y))
+      if (!room) continue
+      // 'ne' and 'sw' cuts run from the north-west corner to the south-east; the others the opposite way
+      const falling = cut === 'ne' || cut === 'sw'
+      const rot = falling ? -Math.PI / 4 : Math.PI / 4
+      if (falling) (mark(x, y, 0), mark(x + 1, y + 1, 0))
+      else (mark(x + 1, y, 1), mark(x, y + 1, 1))
+      const nx = (cut[1] === 'e' ? 1 : -1) * Math.SQRT1_2
+      const nz = (cut[0] === 'n' ? -1 : 1) * Math.SQRT1_2
+      const cx = ox + x + 0.5
+      const cz = oz + y + 0.5
+      const len = Math.SQRT2
+      const q = half / 2
+      const seed = x * 53 + y * 97 + 3
+      const outerTop = full ? site.floors * STOREY + 0.3 : H
+      b.boxRot('wall', cx - nx * q, H / 2, cz - nz * q, len, H, half, rot, styleOf(site, room).wall, 0.97 + hash(seed) * 0.05)
+      if (facade.kind === 'glass') {
+        b.boxRot('glass', cx + nx * q, outerTop / 2 + 0.04, cz + nz * q, len, outerTop - 0.14, 0.03, rot, '#bfe0f2')
+        b.boxRot('trim', cx + nx * q, 0.04, cz + nz * q, len, 0.08, 0.1, rot, POST)
+        b.boxRot('trim', cx + nx * q, outerTop - 0.03, cz + nz * q, len, 0.06, 0.1, rot, POST)
+        for (let fl = 1; full && fl < site.floors; fl++) b.boxRot('trim', cx + nx * q, fl * STOREY + 0.05, cz + nz * q, len, 0.3, WALL_T, rot, POST)
+      } else b.boxRot(facade.kind === 'panel' ? 'trim' : 'wall', cx + nx * q, outerTop / 2, cz + nz * q, len, outerTop, half, rot, facade.color, 0.92 + hash(seed + 1) * 0.12)
+      b.boxRot('trim', cx, (full ? outerTop : H) + 0.015, cz, len, 0.03, WALL_T + (full ? 0.04 : 0), rot, CAP)
+    }
+
     // posts stand at corners, junctions and wall ends, not along a straight run
     for (let y = 0; y <= site.h; y++) {
       for (let x = 0; x <= site.w; x++) {
@@ -284,9 +460,12 @@ export function Structure({ site, mode, glow }: { site: Site; mode: ViewMode; gl
         const north = edges.get(`${x},${y - 1},w`)
         const south = edges.get(`${x},${y},w`)
         const count = (west ? 1 : 0) + (east ? 1 : 0) + (north ? 1 : 0) + (south ? 1 : 0)
-        if (!count) continue
-        const straight = count === 2 && ((west && east && west === east) || (north && south && north === south))
-        if (straight) continue
+        const d = diag.get(`${x},${y}`)
+        if (!count && !d) continue
+        const straight = !d && count === 2 && ((west && east && west === east) || (north && south && north === south))
+        // two diagonals running the same way through a corner are one straight wall
+        const slanted = !count && d && d.n === 2 && !d.mixed
+        if (straight || slanted) continue
         // only corners that touch the outside carry on up the building
         const ext = !gridAt(site, x, y) || !gridAt(site, x - 1, y) || !gridAt(site, x, y - 1) || !gridAt(site, x - 1, y - 1)
         const h = full && ext ? top + 0.345 : H + 0.035
@@ -302,6 +481,14 @@ export function Structure({ site, mode, glow }: { site: Site; mode: ViewMode; gl
           const cx = ox + x + 0.5
           const cz = oz + y + 0.5
           const sh = 0.94 + hash(x * 7 + y * 13) * 0.1
+          const cut = cutAt(site, x, y)
+          if (cut) {
+            // half a tile of roof and floor plate over a cut corner
+            const [inside] = halves(ox + x, oz + y, cut)
+            b.tri('wall', inside, roofY, roof.color, sh)
+            for (let f = 1; f < site.floors; f++) b.tri('wall', inside, f * STOREY - 0.1, '#cfccc5', 1)
+            continue
+          }
           b.box('wall', cx, roofY - 0.06, cz, 1, 0.12, 1, roof.color, sh)
           for (let f = 1; f < site.floors; f++) b.box('wall', cx, f * STOREY - 0.2, cz, 1, 0.2, 1, '#cfccc5', 1)
           const r = hash(x * 91 + y * 57)

@@ -8,7 +8,8 @@ import { type Difficulty, type GameConfig, TRACKS } from '../sim/types'
 import { useStore } from '../store/game'
 import { LogoPicker } from './Company'
 import { ImportButton, SaveList, ThemePicker } from './System'
-import { Btn, Panel, Row, Slider, TextInput, money } from './ui'
+import { KeysPanel, SettingsPanel } from './Settings'
+import { Btn, Panel, Row, Slider, Tabs, TextInput, money } from './ui'
 
 function Wordmark() {
   return (
@@ -26,6 +27,8 @@ function Wordmark() {
 
 export function MainMenu() {
   const { setScreen } = useStore.getState()
+  const [prefs, setPrefs] = useState(false)
+  const [view, setView] = useState<'settings' | 'keys'>('settings')
   return (
     <div className="grid h-full grid-cols-[420px_minmax(0,1fr)] bg-carbon">
       <div className="flex flex-col justify-between border-r border-line bg-panel p-8">
@@ -35,6 +38,9 @@ export function MainMenu() {
             New company
           </Btn>
           <ImportButton label="Load from file" />
+          <Btn active={prefs} onClick={() => setPrefs(!prefs)}>
+            Settings and keys
+          </Btn>
           <div className="mt-4">
             <div className="label mb-1">Interface colours</div>
             <ThemePicker />
@@ -46,10 +52,17 @@ export function MainMenu() {
           Saves are stored in this browser. Export them to keep a copy.
         </div>
       </div>
-      <div className="flex min-h-0 flex-col p-8">
-        <Panel title="Continue" bodyClass="overflow-auto" className="max-h-full">
-          <SaveList />
-        </Panel>
+      <div className="flex min-h-0 flex-col gap-2 p-8">
+        {prefs ? (
+          <>
+            <Tabs value={view} onChange={setView} options={[{ value: 'settings', label: 'Settings' }, { value: 'keys', label: 'Keys' }]} />
+            <div className="min-h-0 flex-1">{view === 'settings' ? <SettingsPanel /> : <KeysPanel />}</div>
+          </>
+        ) : (
+          <Panel title="Continue" bodyClass="overflow-auto" className="max-h-full">
+            <SaveList />
+          </Panel>
+        )}
       </div>
     </div>
   )

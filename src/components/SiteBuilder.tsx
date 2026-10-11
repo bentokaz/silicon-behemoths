@@ -2,7 +2,7 @@
 // the space, with a floating palette for zoning rooms, furnishing them and
 // choosing how the building looks, plus whatever stats the screen passes in.
 import { type ReactNode, useCallback, useEffect, useState } from 'react'
-import { type AreaShape, type Edge, type ShowState, type SiteTool, SiteView } from '../3d/SiteView'
+import { type AreaShape, type Edge, type ShowState, type SiteTool, SiteView, seatOwners } from '../3d/SiteView'
 import type { Mood } from '../3d/site/env'
 import type { ViewMode } from '../3d/site/structure'
 import { sfx } from '../audio/sfx'
@@ -10,6 +10,7 @@ import { clearZone, lookCost, paintArea, placeItem, player, removeItem, removeRo
 import { FACADES, GROUNDS, ITEMS, type LineStats, MAX_FLOORS, OUT, ROOFS, ROOMS, builtTiles, gridAt, roomNames, roomOf, roomTiles, sealedRooms, tierOf } from '../sim/sites'
 import type { Employee, Product, Site, SiteItem } from '../sim/types'
 import { useGame, useStore } from '../store/game'
+import { actionFor, keyName, keysFor } from '../store/settings'
 import { Btn, Tabs, money } from './ui'
 
 interface Props {
@@ -19,6 +20,8 @@ interface Props {
   /** Cards shown down the right-hand side. */
   children?: ReactNode
   seated?: Employee[]
+  /** Office: people with no desk, who walk the grounds. */
+  idle?: Employee[]
   line?: LineStats | null
   producing?: boolean
   products?: Product[]
@@ -42,7 +45,7 @@ const EDGES: { kind: 'door' | 'glass' | 'open' | 'wall'; name: string; cost: num
 
 const row = (on: boolean) => `flex w-full items-baseline justify-between gap-2 border-b border-l-2 border-b-line px-2 py-[7px] text-left ${on ? 'border-l-accent bg-accent/10 text-accent' : 'border-l-transparent text-fg hover:bg-hover'}`
 
-export function SiteBuilder({ siteRef, site, children, seated, line, producing, products, busy, show }: Props) {
+export function SiteBuilder({ siteRef, site, children, seated, idle, line, producing, products, busy, show }: Props) {
   const g = useGame()
   const { act, say } = useStore.getState()
   const defs = ITEMS[site.kind]
@@ -68,8 +71,12 @@ export function SiteBuilder({ siteRef, site, children, seated, line, producing, 
     const key = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName
       if (tag === 'INPUT' || tag === 'SELECT') return
-      if (e.key.toLowerCase() === 'r') setRot((r) => (r + 1) % 4)
-      else if (e.key === 'Escape') setTool(null)
+      const action = actionFor(e, ['Building'])
+      if (action === 'rotate') setRot((r) => (r + 1) % 4)
+      else if (action === 'cancel') setTool(null)
+      else if (action === 'sell') (setTool((cur) => (cur?.type === 'remove' ? null : { type: 'remove' })), setSelected(0))
+      else if (action === 'viewNext') setMode((m) => (m === 'cut' ? 'walls' : m === 'walls' ? 'full' : 'cut'))
+      else if (action === 'buildMenu') setOpen((o) => !o)
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
@@ -87,6 +94,9 @@ export function SiteBuilder({ siteRef, site, children, seated, line, producing, 
   }
   const onTile = (x: number, y: number, item: SiteItem | undefined) => {
     if (!active) {
+      // a person at their desk comes before the room they sit in
+      const who = item && seatOwners(site, seated ?? []).get(item.id)
+      if (who) return useStore.getState().openPerson(who.id)
       setSelected(gridAt(site, x, y))
       return
     }
@@ -108,9 +118,10 @@ export function SiteBuilder({ siteRef, site, children, seated, line, producing, 
   }
 
   const areaHint = 'Click one corner, then the opposite corner. Esc cancels.'
+  const legend = site.kind === 'office' && (idle?.length || (seated ?? []).some((e) => e.ask || e.morale < 35)) ? ' Markers: red is unhappy or has no desk, gold wants a raise.' : ''
   const info =
     tool?.type === 'item'
-      ? `${defs[tool.kind].name}: ${defs[tool.kind].note} Goes in: ${roomNames(site.kind, defs[tool.kind])}. Facing ${FACING[rot]} (R turns it).`
+      ? `${defs[tool.kind].name}: ${defs[tool.kind].note} Goes in: ${roomNames(site.kind, defs[tool.kind])}. Facing ${FACING[rot]} (${keyName(keysFor('rotate')[0] ?? 'KeyR')} turns it).`
       : tool?.type === 'room'
         ? pending
           ? `${rooms[tool.room].name}: ${pending} m² for ${money(roomCost(site, tool.room, pending), 0)}. Click to build.`
@@ -130,7 +141,7 @@ export function SiteBuilder({ siteRef, site, children, seated, line, producing, 
                   : sealed.length
                     ? `${sealed.length === 1 ? `The ${rooms[sealed[0].type].name.toLowerCase()} has` : `${sealed.length} rooms have`} no door, so nothing inside counts. Add one from the Walls tab.`
                     : site.rooms.length
-                      ? 'Click a room to restyle it. Drag to orbit, right-drag to pan, scroll to zoom.'
+                      ? `Click a room to restyle it, or a person to see how they are. Drag to turn, right-drag or ${keysFor('camForward').slice(0, 1).map(keyName).join('')}${keysFor('camLeft').slice(0, 1).map(keyName).join('')}${keysFor('camBack').slice(0, 1).map(keyName).join('')}${keysFor('camRight').slice(0, 1).map(keyName).join('')} to move, scroll to zoom.${legend}`
                       : 'An empty plot. Open Rooms and mark out your first room.'
 
   const tiles = builtTiles(site)
@@ -155,6 +166,9 @@ export function SiteBuilder({ siteRef, site, children, seated, line, producing, 
           onArea={onArea}
           onPreview={onPreview}
           seated={seated}
+          idle={idle}
+          day={g.day}
+          onPerson={(id) => useStore.getState().openPerson(id)}
           line={line}
           producing={producing}
           products={products}
@@ -207,9 +221,9 @@ export function SiteBuilder({ siteRef, site, children, seated, line, producing, 
           {(tab === 'Rooms' || tab === 'Grounds') && (
             <div className="flex items-center gap-2 border-b border-line px-2 py-[6px]">
               <span className="text-[10px] uppercase tracking-wider text-dim">Shape</span>
-              {(['rect', 'round'] as AreaShape[]).map((sh) => (
-                <Btn key={sh} small active={shape === sh} onClick={() => setShape(sh)}>
-                  {sh === 'rect' ? 'Rectangle' : 'Round'}
+              {(['rect', 'round', 'diag'] as AreaShape[]).map((sh) => (
+                <Btn key={sh} small active={shape === sh} onClick={() => setShape(sh)} title={sh === 'diag' ? 'A triangle: the square corner sits where you click first' : sh === 'round' ? 'A circle or oval inside the box you mark out' : undefined}>
+                  {sh === 'rect' ? 'Box' : sh === 'round' ? 'Round' : 'Diagonal'}
                 </Btn>
               ))}
             </div>

@@ -80,13 +80,27 @@ function build(env: Env, w: number, h: number, mood: Mood): Layout {
   const hh = h / 2
   const far = Math.max(w, h) * 4 + 160
 
-  b.quad('floor10', -far, -far, far, far, -0.08, dimHex(GROUND[env]))
+  /** A flat frame around the plot: the plot itself is left open so ponds can be sunk into it. */
+  const frame = (key: string, out: number, inner: number, y: number, color: string) => {
+    const x0 = -hw - inner
+    const x1 = hw + inner
+    const z0 = -hh - inner
+    const z1 = hh + inner
+    b.quad(key, -out, -out, out, z0, y, color)
+    b.quad(key, -out, z1, out, out, y, color)
+    b.quad(key, -out, z0, x0, z1, y, color)
+    b.quad(key, x1, z0, out, z1, y, color)
+  }
+  frame('floor10', far, 0, -0.08, dimHex(GROUND[env]))
   const indoor = env === 'mall'
 
   if (!indoor) {
     // pavement round the plot, then the road along the south side
     const a = 2.5
-    b.quad('floor8', -hw - a, -hh - a, hw + a, hh + a, -0.03, dimHex(PAVE))
+    b.quad('floor8', -hw - a, -hh - a, hw + a, -hh, -0.03, dimHex(PAVE))
+    b.quad('floor8', -hw - a, hh, hw + a, hh + a, -0.03, dimHex(PAVE))
+    b.quad('floor8', -hw - a, -hh, -hw, hh, -0.03, dimHex(PAVE))
+    b.quad('floor8', hw, -hh, hw + a, hh, -0.03, dimHex(PAVE))
     const rz = hh + a + 4.5
     b.quad('floor9', -far, rz - 4.5, far, rz + 4.5, -0.05, dimHex(ROAD))
     b.quad('floor8', -far, rz + 4.5, far, rz + 7, -0.03, dimHex(PAVE))

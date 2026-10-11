@@ -7,7 +7,8 @@ import { useGame, useStore } from '../store/game'
 import { AUTOSAVE, BEFORE_DEBT, type SaveMeta, deleteSave, exportGame, importGame, listSaves, loadGame, saveGame, slotName } from '../store/saves'
 import { THEMES, type ThemeId, applyTheme, getTheme } from '../store/theme'
 import { LogoPicker } from './Company'
-import { Btn, Panel, Row, Slider, TextInput, money } from './ui'
+import { Btn, Panel, Row, Slider, TextInput, money, Tabs } from './ui'
+import { KeysPanel, SettingsPanel } from './Settings'
 
 export function SaveList({ onChange, nonce = 0 }: { onChange?: () => void; nonce?: number }) {
   const [saves, setSaves] = useState<SaveMeta[] | null>(null)
@@ -97,13 +98,26 @@ export function ImportButton({ label = 'Import save file' }: { label?: string })
 }
 
 export function System() {
+  const [view, setView] = useState<'saves' | 'settings' | 'keys'>('saves')
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-2 p-2">
+      <Tabs value={view} onChange={setView} options={[{ value: 'saves', label: 'Saves and company' }, { value: 'settings', label: 'Settings' }, { value: 'keys', label: 'Keys' }]} />
+      <div className="min-h-0 flex-1">
+        {view === 'saves' && <Saves />}
+        {view === 'settings' && <SettingsPanel />}
+        {view === 'keys' && <KeysPanel />}
+      </div>
+    </div>
+  )
+}
+
+function Saves() {
   const g = useGame()
   const { say, quit, act } = useStore.getState()
   const [slot, setSlot] = useState('Slot 1')
   const [nonce, setNonce] = useState(0)
-  const [vol, setVol] = useState(getVolume())
   return (
-    <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_340px] gap-2 p-2">
+    <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_340px] gap-2">
       <div className="flex min-h-0 flex-col gap-2">
         <Panel title="Save game" className="shrink-0" bodyClass="flex items-center gap-2 p-2">
           <TextInput value={slot} onChange={setSlot} maxLength={24} className="w-56" placeholder="Slot name" />
@@ -120,7 +134,7 @@ export function System() {
           </Btn>
           <Btn onClick={() => exportGame(g)}>Export to file</Btn>
           <ImportButton />
-          <span className="text-[11px] text-faint">The game also autosaves at the end of every month, and keeps a copy from just before the company goes into debt.</span>
+          <span className="text-[11px] text-faint">The game also autosaves every month and at big moments such as a device going on sale, and keeps a copy from just before the company goes into debt.</span>
         </Panel>
         <Panel title="Saved games on this device" bodyClass="overflow-auto">
           <SaveList nonce={nonce} />
@@ -130,12 +144,6 @@ export function System() {
         <Panel title="Company logo" className="shrink-0" bodyClass="p-2">
           <LogoPicker value={player(g).logo} onChange={(logo) => act((s) => void (player(s).logo = logo))} />
           <div className="mt-2 text-[10px] leading-snug text-faint">Shown in the top bar and on new devices. On an existing draft, select the logo part in the advanced editor to switch it to the image.</div>
-        </Panel>
-        <Panel title="Interface colours" className="shrink-0" bodyClass="p-2">
-          <ThemePicker />
-        </Panel>
-        <Panel title="Audio" className="shrink-0" bodyClass="px-2 py-1">
-          <Slider label="Interface volume" value={vol} min={0} max={1} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => (setVol(v), setVolume(v), sfx.click())} />
         </Panel>
         <Panel title="This game" className="shrink-0" bodyClass="px-2 py-1">
           <Row k="Mode" v="Sandbox" />

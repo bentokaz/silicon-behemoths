@@ -13,6 +13,8 @@ export interface FactoryCtx {
   flow?: [number, number]
   glow: number
   seed: number
+  /** How full the warehouse is, 0-1: racks empty out as stock sells. */
+  fill?: number
 }
 
 const BELT = 0.8
@@ -218,6 +220,7 @@ export function FactoryItem({ kind, c }: { kind: string; c: FactoryCtx }) {
             <group key={y}>
               <B p={[0, y, 0]} s={[1.9, 0.06, 0.8]} c="#e0812a" r={0.008} rough={0.6} />
               {[-0.62, -0.02, 0.56].map((x, i) => {
+                if (hash(c.seed + row * 3 + i * 7) > 0.15 + (c.fill ?? 0.7) * 0.85) return null
                 const h = 0.3 + hash(c.seed + row * 5 + i) * 0.4
                 return <B key={x} p={[x, y + 0.03 + h / 2, 0]} s={[0.5, h, 0.6]} c={i === 1 ? '#8c8e90' : BOX} r={0.01} rough={0.85} />
               })}

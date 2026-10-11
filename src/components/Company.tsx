@@ -106,6 +106,15 @@ function PersonRow({ e, children, status }: { e: Employee; children?: React.Reac
   )
 }
 
+/** The card for whoever was clicked, on any screen. */
+export function PersonCard() {
+  const g = useGame()
+  const id = useStore((s) => s.person)
+  const e = g.staff.find((x) => x.id === id)
+  if (!e) return null
+  return <EmployeeDrawer e={e} seated={seatedStaff(g).some((x) => x.id === e.id)} onClose={() => useStore.getState().openPerson(null)} />
+}
+
 function EmployeeDrawer({ e, seated, onClose }: { e: Employee; seated: boolean; onClose: () => void }) {
   const g = useGame()
   const { act, say } = useStore.getState()
@@ -202,10 +211,9 @@ export function Staff() {
   const loose = unmanaged(g)
   const meet = meetingFactor(g)
   const [role, setRole] = useState<'all' | Role>('all')
-  const [openId, setOpenId] = useState<string | null>(null)
+  const setOpenId = useStore.getState().openPerson
   const fx = staffEffects(g)
   const seated = new Set(seatedStaff(g).map((e) => e.id))
-  const open = g.staff.find((e) => e.id === openId)
   const byRole = (list: Employee[]) => list.filter((e) => role === 'all' || e.role === role)
   const asks = g.staff.filter((e) => e.ask).length
   return (
@@ -427,7 +435,6 @@ export function Staff() {
           </Btn>
         </div>
       </div>
-      {open && <EmployeeDrawer e={open} seated={seated.has(open.id)} onClose={() => setOpenId(null)} />}
     </div>
   )
 }
@@ -442,7 +449,7 @@ export function OfficeScreen() {
   const sealed = sealedRooms(g.office)
   const kinds = new Set(g.office.rooms.map((r) => r.type))
   return (
-    <SiteBuilder siteRef="office" site={g.office} seated={seatedStaff(g)}>
+    <SiteBuilder siteRef="office" site={g.office} seated={seatedStaff(g)} idle={g.staff.filter((e) => !seatedStaff(g).includes(e))} products={g.products.filter((p) => p.companyId === 'player' && p.status !== 'ended').sort((a, b) => b.launchDay - a.launchDay)}>
       <Fold title="Campus" bodyClass="p-2">
         <div className="grid grid-cols-2 gap-1">
           <Mini label="Desks used" value={`${fx.seated} of ${fx.seats}`} tone={fx.idle ? 'text-warn' : 'text-fg'} />

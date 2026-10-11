@@ -1,23 +1,25 @@
 // 3D view of a buildable site: the land around it, the rooms and walls, what
 // stands in them, and the cursor for building.
 import { Environment, Lightformer, OrbitControls } from '@react-three/drei'
-import { Canvas, type ThreeEvent, useThree } from '@react-three/fiber'
+import { Canvas, type ThreeEvent, useFrame, useThree } from '@react-three/fiber'
 import { EffectComposer, N8AO } from '@react-three/postprocessing'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { ITEMS, type LineStats, SITE_TIERS, areaTiles, canPlace, gridAt, inPlot, isBoundary, itemAt, reachable, roomOf, tilesOf } from '../sim/sites'
 import { ROLE_INFO } from '../sim/staff'
-import type { Employee, Product, Site, SiteItem } from '../sim/types'
+import { inTraining } from '../sim/staff'
+import type { Employee, Product, Site, SiteItem, SiteKind } from '../sim/types'
+import { QUALITY, isHeld, useSettings } from '../store/settings'
 import { themeColor } from '../store/theme'
 import { Environs, MOODS, type Mood } from './site/env'
 import { FactoryItem } from './site/factory'
-import { Baked, LivePerson, type PersonLook, hash } from './site/kit'
+import { Baked, LivePerson, Person, type PersonLook, hash } from './site/kit'
 import { OfficeItem } from './site/office'
 import { Shoppers, StoreItem } from './site/store'
 import { Batch, CUT_H, Ground, STOREY, Structure, type ViewMode, WALL_T } from './site/structure'
 import { STAGE_H, VenueItem } from './site/venue'
 
-export type AreaShape = 'rect' | 'round'
+export type AreaShape = 'rect' | 'round' | 'diag'
 export type SiteTool =
   | { type: 'item'; kind: string; rot: number }
   | { type: 'room'; room: string; shape: AreaShape }
@@ -60,8 +62,13 @@ interface Props {
   onArea?: (x0: number, y0: number, x1: number, y1: number) => void
   /** Tiles the area tool would cover right now (0 when not dragging one out). */
   onPreview?: (tiles: number) => void
-  /** Office: seated employees, in desk order. */
+  /** Office: seated employees, in desk order, and everyone without a desk. */
   seated?: Employee[]
+  idle?: Employee[]
+  /** A person in the view was clicked. */
+  onPerson?: (employeeId: string) => void
+  /** Day of the game, for telling who is away on a course. */
+  day?: number
   /** Factory: the line, and whether it has work. */
   line?: LineStats | null
   producing?: boolean
@@ -74,6 +81,208 @@ interface Props {
 }
 
 const CHUNK = 8
+
+/** Who sits at each seat: seats are filled in the order they were built. */
+export function seatOwners(site: Site, seated: Employee[]): Map<string, Employee> {
+  const map = new Map<string, Employee>()
+  if (site.kind !== 'office') return map
+  reachable(site)
+    .filter((i) => ITEMS.office[i.kind]?.seats)
+    .forEach((seat, i) => seated[i] && map.set(seat.id, seated[i]))
+  return map
+}
+
+/** The model for one placed item of any kind of site. */
+function ItemModel({ kind, item, c }: { kind: SiteKind; item: string; c: { glow: number; company: string; logo?: string; color: string; seed: number; who?: PersonLook; devices?: Product[]; products: Product[]; running?: boolean; flow?: [number, number]; show?: ShowState; fill?: number } }) {
+  if (kind === 'office') return <OfficeItem kind={item} c={{ who: c.who, glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, devices: c.devices }} />
+  if (kind === 'factory') return <FactoryItem kind={item} c={{ running: !!c.running, flow: c.flow, glow: c.glow, seed: c.seed, fill: c.fill }} />
+  if (kind === 'store') return <StoreItem kind={item} c={{ products: c.products, glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed }} />
+  return <VenueItem kind={item} c={{ glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, crowd: c.show?.crowd ?? 0, cheer: c.show?.cheer ?? false, show: !!c.show, screen: c.show?.screen, products: c.products }} />
+}
+
+/** Shadows are drawn once and kept until something on the site changes. */
+function StaticShadows({ sig }: { sig: string }) {
+  const gl = useThree((s) => s.gl)
+  const left = useRef(6)
+  useEffect(() => {
+    gl.shadowMap.autoUpdate = false
+    return () => {
+      gl.shadowMap.autoUpdate = true
+    }
+  }, [gl])
+  useEffect(() => {
+    left.current = 6
+  }, [sig])
+  useFrame(() => {
+    if (left.current > 0) {
+      left.current--
+      gl.shadowMap.needsUpdate = true
+    }
+  })
+  return null
+}
+
+/** Keyboard camera: slide, turn and zoom with the keys set under System. */
+function CameraKeys({ span, home }: { span: number; home: [number, number, number] }) {
+  const camera = useThree((s) => s.camera)
+  const controls = useThree((s) => s.controls) as unknown as { target: THREE.Vector3; update: () => void } | null
+  const held = useRef(new Set<string>())
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.ctrlKey || e.metaKey) return
+      held.current.add(e.code)
+      if (isHeld(new Set([e.code]), 'camHome') && controls) {
+        camera.position.set(...home)
+        controls.target.set(0, 0.5, 0)
+        controls.update()
+      }
+    }
+    const up = (e: KeyboardEvent) => held.current.delete(e.code)
+    const clear = () => held.current.clear()
+    window.addEventListener('keydown', down)
+    window.addEventListener('keyup', up)
+    window.addEventListener('blur', clear)
+    return () => {
+      window.removeEventListener('keydown', down)
+      window.removeEventListener('keyup', up)
+      window.removeEventListener('blur', clear)
+    }
+  }, [camera, controls, home])
+  useFrame((_, dt) => {
+    const h = held.current
+    if (!h.size || !controls) return
+    const speed = useSettings.getState().settings.cameraSpeed
+    const step = Math.min(0.05, dt)
+    const offset = camera.position.clone().sub(controls.target)
+    const dist = offset.length()
+    const forward = new THREE.Vector3(-offset.x, 0, -offset.z).normalize()
+    const right = new THREE.Vector3(-forward.z, 0, forward.x)
+    const move = new THREE.Vector3()
+    if (isHeld(h, 'camForward')) move.add(forward)
+    if (isHeld(h, 'camBack')) move.sub(forward)
+    if (isHeld(h, 'camRight')) move.add(right)
+    if (isHeld(h, 'camLeft')) move.sub(right)
+    if (move.lengthSq()) {
+      move.normalize().multiplyScalar((6 + dist * 0.9) * step * speed)
+      controls.target.add(move)
+      // stay over the plot and a little beyond
+      controls.target.x = THREE.MathUtils.clamp(controls.target.x, -span, span)
+      controls.target.z = THREE.MathUtils.clamp(controls.target.z, -span, span)
+    }
+    const turn = (isHeld(h, 'camTurnLeft') ? 1 : 0) - (isHeld(h, 'camTurnRight') ? 1 : 0)
+    if (turn) offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), turn * 1.6 * step * speed)
+    const zoom = (isHeld(h, 'camOut') ? 1 : 0) - (isHeld(h, 'camIn') ? 1 : 0)
+    if (zoom) offset.multiplyScalar(1 + zoom * 1.4 * step * speed)
+    camera.position.copy(controls.target).add(offset)
+    controls.update()
+  })
+  return null
+}
+
+/** A small marker that bobs above someone who needs attention. */
+function Marker({ p, color }: { p: [number, number, number]; color: string }) {
+  const ref = useRef<THREE.Mesh>(null)
+  useFrame(({ clock }) => {
+    if (!ref.current) return
+    ref.current.position.y = p[1] + Math.sin(clock.elapsedTime * 3 + p[0]) * 0.06
+    ref.current.rotation.y = clock.elapsedTime * 1.5
+  })
+  return (
+    <mesh ref={ref} position={p} userData={{ live: true }}>
+      <octahedronGeometry args={[0.11, 0]} />
+      <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.9} roughness={0.4} />
+    </mesh>
+  )
+}
+
+/** People with no desk: they wander the open ground until they are given somewhere to work. */
+function Walkers({ site, people, onPerson, neg }: { site: Site; people: Employee[]; onPerson?: (id: string) => void; neg: string }) {
+  const refs = useRef<(THREE.Group | null)[]>([])
+  const free = useMemo(() => {
+    const out: [number, number][] = []
+    for (let y = 0; y < site.h; y++) for (let x = 0; x < site.w; x++) if (!gridAt(site, x, y) && !itemAt(site, x, y) && site.floor[`${x},${y}`] !== 'water') out.push([x, y])
+    return out
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [site, site.rev])
+  const state = useRef<{ x: number; z: number; tx: number; tz: number; wait: number; face: number }[]>([])
+  const walkable = (x: number, z: number) => {
+    const tx = Math.floor(x + site.w / 2)
+    const ty = Math.floor(z + site.h / 2)
+    return inPlot(site, tx, ty) && !gridAt(site, tx, ty) && !itemAt(site, tx, ty) && site.floor[`${tx},${ty}`] !== 'water'
+  }
+  const shown = people.slice(0, 24)
+  useFrame((_, dt) => {
+    if (!free.length) return
+    const step = Math.min(0.1, dt)
+    shown.forEach((e, i) => {
+      let s = state.current[i]
+      const pickSpot = (n: number) => free[Math.floor(hash(e.look + n) * free.length)]
+      if (!s) {
+        const [x, y] = pickSpot(i)
+        s = state.current[i] = { x: x - site.w / 2 + 0.5, z: y - site.h / 2 + 0.5, tx: 0, tz: 0, wait: hash(e.look) * 3, face: 0 }
+        s.tx = s.x
+        s.tz = s.z
+      }
+      const dx = s.tx - s.x
+      const dz = s.tz - s.z
+      const d = Math.hypot(dx, dz)
+      if (d < 0.08) {
+        s.wait -= step
+        if (s.wait <= 0) {
+          // somewhere new, but only if the way there is clear
+          const [x, y] = pickSpot(Math.floor(performance.now() / 700) + i * 13)
+          const nx = x - site.w / 2 + 0.5
+          const nz = y - site.h / 2 + 0.5
+          const far = Math.hypot(nx - s.x, nz - s.z)
+          let clear = far < 14
+          for (let k = 1; clear && k < far * 2; k++) clear = walkable(s.x + ((nx - s.x) * k) / (far * 2), s.z + ((nz - s.z) * k) / (far * 2))
+          if (clear) {
+            s.tx = nx
+            s.tz = nz
+          }
+          s.wait = 1.5 + hash(e.look + i) * 4
+        }
+      } else {
+        const v = Math.min(d, 1.1 * step)
+        s.x += (dx / d) * v
+        s.z += (dz / d) * v
+        s.face = Math.atan2(-dx, -dz)
+      }
+      const g = refs.current[i]
+      if (g) {
+        g.position.set(s.x, d < 0.08 ? 0 : Math.abs(Math.sin(performance.now() / 110 + i)) * 0.035, s.z)
+        g.rotation.y = s.face
+      }
+    })
+  })
+  if (!free.length) return null
+  return (
+    <>
+      {shown.map((e, i) => (
+        <group
+          key={e.id}
+          ref={(g) => {
+            refs.current[i] = g
+            g?.traverse((o) => {
+              o.userData.live = true
+            })
+          }}
+          onClick={(ev) => {
+            ev.stopPropagation()
+            onPerson?.(e.id)
+          }}
+        >
+          <Person who={{ look: e.look, color: ROLE_INFO[e.role].color }} pose="stand" arms="down" />
+          <mesh position={[0, 2.0, 0]}>
+            <octahedronGeometry args={[0.11, 0]} />
+            <meshStandardMaterial color={neg} emissive={neg} emissiveIntensity={0.9} />
+          </mesh>
+        </group>
+      ))}
+    </>
+  )
+}
 
 /** Development only: lets the camera be driven from the console for close-up checks of the models. */
 function DevHandle() {
@@ -103,7 +312,9 @@ function Tint({ tiles, w, h, color, opacity, y = 0.02 }: { tiles: [number, numbe
   )
 }
 
-export function SiteView({ site, mode, mood, tool, company, color, logo, selectedRoom, sealed, onTile, onEdge, onArea, onPreview, seated = [], line, producing = false, products = [], busy = 0, show, autoRotate }: Props) {
+export function SiteView({ site, mode, mood, tool, company, color, logo, selectedRoom, sealed, onTile, onEdge, onArea, onPreview, seated = [], idle = [], onPerson, day = 0, line, producing = false, products = [], busy = 0, show, autoRotate }: Props) {
+  const prefs = useSettings((s) => s.settings)
+  const Q = QUALITY[prefs.quality]
   const { w, h } = site
   const tier = SITE_TIERS[site.kind][site.tier]
   const M = MOODS[mood]
@@ -124,17 +335,25 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
   }, [])
 
   // who sits where: seats are filled in the order they were built
+  const owners = useMemo(() => seatOwners(site, seated), [site, site.rev, seated]) // eslint-disable-line react-hooks/exhaustive-deps
   const occupant = useMemo(() => {
     const map = new Map<string, PersonLook>()
-    if (site.kind !== 'office') return map
-    const seats = reachable(site).filter((i) => ITEMS.office[i.kind]?.seats)
-    seats.forEach((seat, i) => {
-      const e = seated[i]
-      if (e) map.set(seat.id, { look: e.look, color: ROLE_INFO[e.role].color })
-    })
+    // someone on a course is not at their desk
+    for (const [id, e] of owners) if (!inTraining(e, day)) map.set(id, { look: e.look, color: ROLE_INFO[e.role].color })
     return map
+  }, [owners, day])
+  /** Seats whose occupant wants something: a raise, or is close to quitting. */
+  const flags = useMemo(() => {
+    const out: { item: SiteItem; color: string }[] = []
+    for (const item of site.items) {
+      const e = owners.get(item.id)
+      if (!e || inTraining(e, day)) continue
+      if (e.ask) out.push({ item, color: '#f2b631' })
+      else if (e.morale < 35) out.push({ item, color: neg })
+    }
+    return out
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [site, site.rev, seated])
+  }, [owners, site, site.rev, day, neg])
 
   // free floor next to the fixtures, for shoppers to stand on
   const shopperSpots = useMemo(() => {
@@ -169,13 +388,14 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
 
   const running = !!line?.running && producing
   const productKey = products.map((p) => p.id).join('.')
+  const ctxFor = (item: { id?: string; kind: string }, seed: number, flow?: [number, number]) => ({ who: item.id ? occupant.get(item.id) : undefined, glow: M.glow, company, logo, color, seed, devices: site.kind === 'office' ? products : undefined, products, running: !!item.id && (line?.linked.has(item.id) ?? false) && running, flow, show, fill: Math.round(busy * 5) / 5 })
   const sigOf = (items: { item: SiteItem }[]) =>
     items
       .map(({ item }) => {
         const who = occupant.get(item.id)
         return `${item.id}:${item.x},${item.y},${item.rot}:${who ? who.look + who.color : ''}:${line?.linked.has(item.id) ? 1 : 0}${line?.flow.get(item.id)?.join('') ?? ''}`
       })
-      .join('|') + `#${glowKey}${running ? 'r' : ''}${company}${logo?.length ?? 0}${color}${productKey}${show ? `${show.crowd.toFixed(2)}${show.cheer ? 'c' : ''}${show.presenter ? 'p' : ''}${show.screen?.uuid ?? ''}` : ''}`
+      .join('|') + `#${glowKey}${running ? 'r' : ''}${site.kind === 'factory' ? Math.round(busy * 5) : ''}${company}${logo?.length ?? 0}${color}${productKey}${show ? `${show.crowd.toFixed(2)}${show.cheer ? 'c' : ''}${show.presenter ? 'p' : ''}${show.screen?.uuid ?? ''}` : ''}`
 
   const locate = (e: ThreeEvent<PointerEvent | MouseEvent>) => {
     const fx = e.point.x + w / 2
@@ -235,6 +455,20 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [site, site.rev, sealed?.join(','), w, h])
 
+  // the item itself, shown where it would go
+  let ghost: React.ReactNode = null
+  if (hover && tool?.type === 'item' && ITEMS[site.kind][tool.kind]) {
+    const def = ITEMS[site.kind][tool.kind]
+    const turned = tool.rot % 2 === 1
+    const fw = turned ? def.h : def.w
+    const fh = turned ? def.w : def.h
+    ghost = (
+      <group position={[hover.x - w / 2 + fw / 2, 0.03, hover.y - h / 2 + fh / 2]} rotation-y={(-tool.rot * Math.PI) / 2}>
+        <ItemModel kind={site.kind} item={tool.kind} c={ctxFor({ kind: tool.kind }, 7)} />
+      </group>
+    )
+  }
+
   let edgeCursor: React.ReactNode = null
   if (hover && tool?.type === 'edge') {
     const ok = isBoundary(site, hover.edge.x, hover.edge.y, hover.edge.side)
@@ -256,8 +490,10 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
   const near = Math.min(1.5, Math.max(0.4, span / 40))
   const reach = Math.max(14, span * 0.8)
   const height = mode === 'full' ? site.floors * STOREY : 0
+  const home = useMemo<[number, number, number]>(() => [span * 0.75, span * 0.95 + height, span * 1.2 + 6], [span, height])
+  const shadowSig = `${site.rev}|${mood}|${mode}|${seated.length}|${day > 0 ? Math.floor(day / 30) : 0}|${show ? show.crowd.toFixed(1) + show.cheer : ''}|${glowKey}`
   return (
-    <Canvas shadows dpr={[1, 1.5]} camera={{ fov: 30, near, far, position: [span * 0.75, span * 0.95 + height, span * 1.2 + 6] }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: mood === 'night' ? 1.25 : 1, powerPreference: 'high-performance' }}>
+    <Canvas shadows={Q.shadows > 0} dpr={[1, Q.dpr]} camera={{ fov: 30, near, far, position: home }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: mood === 'night' ? 1.25 : 1, powerPreference: 'high-performance' }}>
       <color attach="background" args={[M.sky]} />
       <fog attach="fog" args={[M.sky, span * 3 + 80, far * 0.9]} />
       <hemisphereLight args={[mood === 'night' ? '#6a7fa8' : '#fff4e6', mood === 'night' ? '#14161c' : '#4a4338', M.hemi + (mood === 'night' ? 0.35 : 0)]} />
@@ -265,8 +501,8 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
         color={M.sunColor}
         intensity={M.sun}
         position={sun}
-        castShadow
-        shadow-mapSize={[2048, 2048]}
+        castShadow={Q.shadows > 0}
+        shadow-mapSize={[Q.shadows || 512, Q.shadows || 512]}
         shadow-bias={-0.0006}
         shadow-normalBias={0.05}
         shadow-camera-left={-reach}
@@ -333,13 +569,9 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
                 flow = [Math.round(f[0] * Math.cos(a) - f[1] * Math.sin(a)), Math.round(f[0] * Math.sin(a) + f[1] * Math.cos(a))]
               }
             }
-            const glow = M.glow
             return (
               <group key={item.id} position={[item.x - w / 2 + fw / 2, 0, item.y - h / 2 + fh / 2]} rotation-y={(-item.rot * Math.PI) / 2}>
-                {site.kind === 'office' && <OfficeItem kind={item.kind} c={{ who: occupant.get(item.id), glow, company, logo, color, seed }} />}
-                {site.kind === 'factory' && <FactoryItem kind={item.kind} c={{ running: (line?.linked.has(item.id) ?? false) && running, flow, glow, seed }} />}
-                {site.kind === 'store' && <StoreItem kind={item.kind} c={{ products, glow, company, logo, color, seed }} />}
-                {site.kind === 'venue' && <VenueItem kind={item.kind} c={{ glow, company, logo, color, seed, crowd: show?.crowd ?? 0, cheer: show?.cheer ?? false, show: !!show, screen: show?.screen, products }} />}
+                <ItemModel kind={site.kind} item={item.kind} c={ctxFor(item, seed, flow)} />
               </group>
             )
           })}
@@ -350,15 +582,26 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
 
       {roomTiles.length > 0 && <Tint tiles={roomTiles} w={w} h={h} color={accent} opacity={0.16} y={0.014} />}
       {sealedTiles.length > 0 && <Tint tiles={sealedTiles} w={w} h={h} color={neg} opacity={0.22} y={0.016} />}
-      {preview && preview.good.length > 0 && <Tint tiles={preview.good} w={w} h={h} color={accent} opacity={0.45} />}
-      {preview && preview.bad.length > 0 && <Tint tiles={preview.bad} w={w} h={h} color={neg} opacity={0.45} />}
+      {preview && preview.good.length > 0 && <Tint tiles={preview.good} w={w} h={h} color={accent} opacity={ghost ? 0.22 : 0.45} />}
+      {preview && preview.bad.length > 0 && <Tint tiles={preview.bad} w={w} h={h} color={neg} opacity={0.5} />}
+      {ghost}
+      {flags.map(({ item, color: c }) => {
+        const def = ITEMS.office[item.kind]
+        const turned = item.rot % 2 === 1
+        return <Marker key={item.id} p={[item.x - w / 2 + (turned ? def.h : def.w) / 2, 1.75, item.y - h / 2 + (turned ? def.w : def.h) / 2]} color={c} />
+      })}
+      {site.kind === 'office' && prefs.walkers && idle.length > 0 && <Walkers site={site} people={idle} onPerson={onPerson} neg={neg} />}
       {edgeCursor}
 
-      <EffectComposer multisampling={4}>
-        <N8AO halfRes aoRadius={0.8} distanceFalloff={1} intensity={mood === 'night' ? 1.2 : 2} quality="medium" />
-      </EffectComposer>
+      {Q.shadows > 0 && <StaticShadows sig={shadowSig} />}
+      {Q.ao && (
+        <EffectComposer multisampling={4}>
+          <N8AO halfRes aoRadius={0.8} distanceFalloff={1} intensity={mood === 'night' ? 1.2 : 2} quality="medium" />
+        </EffectComposer>
+      )}
+      {!autoRotate && <CameraKeys span={span} home={home} />}
       {import.meta.env.DEV && <DevHandle />}
-      <OrbitControls makeDefault target={[0, height * 0.35 + 0.5, 0]} minDistance={near * 6} maxDistance={span * 3 + 40} maxPolarAngle={Math.PI * 0.485} enablePan panSpeed={0.8} autoRotate={autoRotate} autoRotateSpeed={0.5} />
+      <OrbitControls makeDefault target={[0, height * 0.35 + 0.5, 0]} minDistance={near * 6} maxDistance={span * 3 + 40} maxPolarAngle={Math.PI * 0.485} enablePan screenSpacePanning={false} panSpeed={1.3 * prefs.cameraSpeed} rotateSpeed={0.9 * prefs.cameraSpeed} zoomSpeed={1.2 * prefs.cameraSpeed} zoomToCursor={prefs.zoomToPointer} enableDamping dampingFactor={0.2} autoRotate={autoRotate} autoRotateSpeed={0.5} />
     </Canvas>
   )
 }
