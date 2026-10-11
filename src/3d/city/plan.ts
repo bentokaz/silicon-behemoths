@@ -2,6 +2,7 @@
 // say for itself. Worked out from the game state; nothing here draws.
 import { CHANNELS } from '../../sim/growth'
 import { factoryLine, orderLeft } from '../../sim/ops'
+import { type CapId, has, needText } from '../../sim/progress'
 import { REGIONS, type RegionDef, homeOf, homeRegion } from '../../sim/regions'
 import { SITE_TIERS, sealedRooms, storeStats, venueStats } from '../../sim/sites'
 import { staffEffects } from '../../sim/staff'
@@ -28,6 +29,8 @@ export interface Place {
   dim?: boolean
   /** What needs attention there, if anything. */
   warn?: string
+  /** A place the company has not earned yet: a few words for the sign on the lot. */
+  locked?: string
   site?: Site | null
   store?: Store
   company?: Company
@@ -143,6 +146,13 @@ function buildingDays(g: GameState, test: RegExp): number | undefined {
   return days >= 0 && days <= 45 ? days : undefined
 }
 
+/** For a place whose screen is still locked: what the sign says, and the line under its name. */
+function lockOf(g: GameState, cap: CapId, sign: string): { locked?: string; lines?: string[] } {
+  if (has(g, cap)) return {}
+  const need = needText(g, cap)
+  return { locked: sign, lines: ['Not open yet', `To open: ${need}`] }
+}
+
 /** How tall a rival's tower stands: the more it is worth, the taller. */
 export const towerFloors = (c: Company) => Math.round(5 + 12 * Math.min(1, Math.sqrt((c.value ?? rivalValue(c)) / 6e9)))
 
@@ -184,6 +194,7 @@ export function places(g: GameState): Place[] {
     region: home.region.id,
     dim: !g.factory,
     warn: g.factory && factoryOrders && !line?.running ? 'Orders are waiting on a line that is not running' : undefined,
+    ...lockOf(g, 'factory', 'Needs a COO'),
     site: g.factory,
     building: buildingDays(g, /factory moved to a bigger site|land for its first factory/),
   })
@@ -200,6 +211,7 @@ export function places(g: GameState): Place[] {
     h: g.venue ? g.venue.floors * 3 + 6 : 5,
     region: home.region.id,
     dim: !g.venue,
+    ...lockOf(g, 'venue', 'Needs a CMO'),
     site: g.venue,
     building: buildingDays(g, /venue moved to a bigger site|land for a venue/),
   })
@@ -262,7 +274,7 @@ export function places(g: GameState): Place[] {
   const stock = g.products.filter((p) => p.companyId === 'player' && p.status === 'sale').reduce((a, p) => a + p.stock, 0)
   const coming = g.orders.reduce((a, o) => a + orderLeft(o), 0)
   out.push({ id: 'port', kind: 'port', name: 'Port and warehouse', lines: [`${short(stock)} devices in stock`, g.orders.length ? `${short(coming)} more on order` : 'No orders placed'], ...LOTS.port, w: 150, d: 50, h: 18, region: home.region.id, warn: stock <= 0 && !g.orders.length && g.products.some((p) => p.companyId === 'player' && p.status === 'sale') ? 'Nothing left to sell' : undefined })
-  out.push({ id: 'research', kind: 'research', name: 'Research park', lines: [g.activeResearch.length ? `${plural(g.activeResearch.length, 'project')} running` : 'Nothing being researched', `${cash(g.rdBudget)} a month`], ...LOTS.research, w: 92, d: 84, h: 16, region: home.region.id, warn: g.activeResearch.length ? undefined : 'No research is running' })
+  out.push({ id: 'research', kind: 'research', name: 'Research park', lines: [g.activeResearch.length ? `${plural(g.activeResearch.length, 'project')} running` : 'Nothing being researched', `${cash(g.rdBudget)} a month`], ...LOTS.research, w: 92, d: 84, h: 16, region: home.region.id, warn: g.activeResearch.length || !has(g, 'research') ? undefined : 'No research is running', ...lockOf(g, 'research', 'Needs a researcher') })
   const hist = g.stock.history
   const before = hist[hist.length - 1] ?? g.stock.price
   const move = before > 0 ? (g.stock.price / before - 1) * 100 : 0
@@ -275,6 +287,7 @@ export function places(g: GameState): Place[] {
     h: 20,
     region: home.region.id,
     dim: !g.stock.listed,
+    ...lockOf(g, 'shares', 'Needs a CFO'),
   })
   g.campaigns.slice(0, BOARD_SLOTS.length).forEach((c, i) => {
     const product = g.products.find((p) => p.id === c.target)
@@ -298,6 +311,7 @@ export function places(g: GameState): Place[] {
       h: 1.2,
       region: d.region.id,
       dim: !d.open,
+      ...(d.open ? {} : lockOf(g, 'world', 'Not yet')),
     })
   }
   return out

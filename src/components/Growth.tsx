@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { sfx } from '../audio/sfx'
 import { TYPES, segmentsOf } from '../data/devices'
 import { autoVenue, buildVenue, closeStore, fmtDate, openStore, player, scheduleEvent, setCampaignBudget, startCampaign, stopCampaign } from '../sim/game'
+import { capOfChannel, has } from '../sim/progress'
 import { CHANNELS, EVENTS, EVENT_LEAD, OWN_VENUE, channelFit, dailyTickets, eventBlocked, hasStage, keynoteReach, nextFair } from '../sim/growth'
 import { homeRegion, openRegions, regionInfo } from '../sim/regions'
 import { SITE_TIERS, sitePrestige, storeStats, tierOf, upkeep, venueStats } from '../sim/sites'
@@ -10,6 +11,7 @@ import { staffEffects } from '../sim/staff'
 import type { ChannelId, EventType, GameState } from '../sim/types'
 import { takeAim } from '../store/focus'
 import { useGame, useStore } from '../store/game'
+import { LockedPane } from './Progress'
 import { SiteBuilder } from './SiteBuilder'
 import { Icon, channelIcon, eventIcon } from './icons'
 import { Btn, Choice, Empty, Fold, Head, IconBtn, Kpi, Lead, Meter, Mini, Panel, Slider, Tabs, Tag, Th, money, num, pct } from './ui'
@@ -35,10 +37,11 @@ function Campaigns() {
       <Panel title="New campaign" icon="plus" bodyClass="overflow-y-auto p-2">
         <div className="grid grid-cols-2 gap-1">
           {(Object.keys(CHANNELS) as ChannelId[]).map((id) => (
-            <button key={id} onClick={() => setChannel(id)} className={`border p-2 text-left ${channel === id ? 'border-accent bg-accent/10' : 'border-line hover:border-line2'}`}>
+            <button key={id} onClick={() => (has(g, capOfChannel(id)) ? setChannel(id) : useStore.getState().showLock(capOfChannel(id)))} className={`border p-2 text-left ${has(g, capOfChannel(id)) ? '' : 'opacity-45'} ${channel === id ? 'border-accent bg-accent/10' : 'border-line hover:border-line2'}`}>
               <div className={`flex items-center gap-[6px] text-[11px] font-semibold uppercase tracking-wider ${channel === id ? 'text-accent' : 'text-fg'}`}>
                 <Icon name={channelIcon(id)} size={13} className={channel === id ? '' : 'text-dim'} />
-                <span className="min-w-0 truncate">{CHANNELS[id].name}</span>
+                <span className="min-w-0 flex-1 truncate">{CHANNELS[id].name}</span>
+                {!has(g, capOfChannel(id)) && <Icon name="lock" size={10} className="shrink-0" />}
               </div>
               <div className="num text-[10px] text-faint">from {money(CHANNELS[id].min, 0)} / mo</div>
             </button>
@@ -348,11 +351,11 @@ export function MarketingScreen() {
         <Kpi label="Fans" icon="heart" value={num(g.fans)} sub={`buy again about every ${Math.round(800 / 360 * 10) / 10} years`} />
         <Kpi label="Campaign spend" icon="cash" value={money(spend, 1)} sub={`${g.campaigns.length} running, per month`} />
       </div>
-      <Tabs value={view} onChange={setView} options={[{ value: 'campaigns', label: 'Campaigns', icon: 'marketing', badge: g.campaigns.length }, { value: 'fans', label: 'Fans and feedback', icon: 'heart' }, { value: 'events', label: 'Events', icon: 'mic', badge: g.events.filter((e) => !e.done).length || undefined }]} />
+      <Tabs value={view} onChange={setView} options={[{ value: 'campaigns', label: 'Campaigns', icon: 'marketing', badge: g.campaigns.length }, { value: 'fans', label: 'Fans and feedback', icon: 'heart' }, { value: 'events', label: 'Events', icon: has(g, 'events') ? 'mic' : 'lock', badge: g.events.filter((e) => !e.done).length || undefined }]} />
       <div className="min-h-0 flex-1">
         {view === 'campaigns' && <Campaigns />}
         {view === 'fans' && <Fans />}
-        {view === 'events' && <Events />}
+        {view === 'events' && (has(g, 'events') ? <Events /> : <LockedPane id="events" />)}
       </div>
     </div>
   )

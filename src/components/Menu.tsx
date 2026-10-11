@@ -81,7 +81,7 @@ const logMax = 9
 
 export function NewGame() {
   const { begin, setScreen } = useStore.getState()
-  const [cfg, setCfg] = useState<GameConfig>(() => ({ ...defaultConfig(), startType: 'phone', seed: Math.floor(Math.random() * 99999) + 1 }))
+  const [cfg, setCfg] = useState<GameConfig>(() => ({ ...defaultConfig(), startType: 'phone', progression: 'guided', seed: Math.floor(Math.random() * 99999) + 1 }))
   const up = (patch: Partial<GameConfig>) => setCfg((c) => ({ ...c, ...patch }))
   const d = DIFFICULTY[cfg.difficulty]
   return (
@@ -139,6 +139,29 @@ export function NewGame() {
               </span>
               <input type="number" value={cfg.seed} onChange={(e) => up({ seed: Math.max(1, Math.floor(Number(e.target.value)) || 1) })} className="num h-7 w-48 rounded-none border border-line2 bg-raise px-2 text-xs outline-none focus:border-accent" />
             </label>
+          </Panel>
+
+          <Panel title="How the company grows" icon="branch" bodyClass="flex flex-col gap-2 p-3">
+            {(
+              [
+                ['guided', 'Start small', 'recommended', 'lock', 'A garage, a designer and a few desks. Research, marketing, finance, a factory, stores and the rest open one by one as you hire, build and sell.'],
+                ['open', 'Everything open', 'sandbox', 'unlock', 'Every screen and every lever from the first day, as in earlier builds. Nothing to earn.'],
+              ] as const
+            ).map(([id, name, tag, icon, note]) => {
+              const on = (cfg.progression ?? 'open') === id
+              return (
+                <button key={id} onClick={() => (up({ progression: id }), sfx.toggle())} className={`flex-1 border px-3 py-2 text-left transition-colors ${on ? 'border-accent bg-accent/10' : 'border-line2 bg-raise hover:border-accent'}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`flex items-center gap-2 text-xs uppercase tracking-wider ${on ? 'text-accent' : 'text-fg'}`}>
+                      <Icon name={icon} size={14} className={on ? '' : 'text-dim'} />
+                      {name}
+                    </span>
+                    <span className="num text-[9px] uppercase tracking-wider text-faint">{tag}</span>
+                  </div>
+                  <div className="mt-1 text-[11px] leading-snug text-dim">{note}</div>
+                </button>
+              )
+            })}
           </Panel>
 
           <Panel title="What your company makes" icon="devices" bodyClass="p-3" className="col-span-2">

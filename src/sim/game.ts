@@ -16,11 +16,12 @@ import { clamp, int, pick, rand, range } from './rng'
 import { evaluate } from './scoring'
 import { bayStands } from './curves'
 import { FACADES, FLOOR_COST, GROUNDS, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, areaOf, areaTiles, autoDoor, builtTiles, canPlace, curveFor, gridAt, hasGround, inPlot, isBoundary, itemAt, itemTiles, newSite, roomOf, shapeCuts, starterLine, storeStats, tidy, tierOf, upkeep, zone } from './sites'
-import { HEADHUNT_COST, TEAM_SPAN, dropFromTeams, inTraining, monthlySalaries, monthlyStaff, newPolicy, perksCost, refreshCandidates, staffEffects, stepStaff, trainingCost } from './staff'
+import { capOfChannel, locked, refreshExecs, siteLocked, stepProgress } from './progress'
+import { EXECS, HEADHUNT_COST, TEAM_SPAN, dropFromTeams, execFx, inTraining, monthlySalaries, monthlyStaff, newPolicy, perksCost, refreshCandidates, staffEffects, stepStaff, trainingCost } from './staff'
 import { CHIP_BUDGET, OS_FEATURES, chipAdoption, chipBlocked, chipProjectCost, chipProjectDays, finishChip, newOs, osBlocked, osProjectCost, osProjectDays, osShipQuality, servicesPerMonth, softwareBonus } from './tech'
 import { type ChannelId, type Company, type CostKey, type DeviceDesign, type DeviceType, type Difficulty, type EventType, type GameConfig, type GameState, type Levels, type MonthReport, type NewsItem, type Product, type ProductionOrder, type SegmentId, type Site, type SiteKind, type StaffPolicy, type StorageTier, type SupplyCat, TRACKS, type Track, monthCosts } from './types'
 
-export const SAVE_VERSION = 4
+export const SAVE_VERSION = 5
 export const RETAIL_CUT = 0.15
 /** Games licence income a console maker books for each console sold. */
 export const GAME_ROYALTY = 55
@@ -34,6 +35,10 @@ export const DIFFICULTY: Record<Difficulty, { label: string; blurb: string; star
   tough: { label: 'Tough', blurb: 'Aggressive rivals, thin credit, slow brand growth.', startCash: 3e6, rivalOffset: 0.4, awareness: 0.65, overhead: 1.5, debtDays: 180, overdraft: 0.5e6 },
 }
 
+/**
+ * A plain company with nothing locked. The new game screen adds
+ * `progression: 'guided'` on top of this; without it a game is open.
+ */
 export const defaultConfig = (): GameConfig => ({
   companyName: 'Behemoth Labs',
   color: '#ff6b1a',
@@ -222,6 +227,9 @@ export function newGame(cfg: GameConfig): GameState {
     rdBudget: 0,
     staff: [],
     candidates: [],
+    execPool: [],
+    execSeats: {},
+    unlocks: {},
     office: starterOffice(),
     factory: null,
     venue: null,
@@ -269,6 +277,7 @@ export function newGame(cfg: GameConfig): GameState {
   player(s).home = cfg.home ?? DEFAULT_HOME
   player(s).awareness = worldAwareness(s)
   refreshCandidates(s)
+  stepProgress(s)
   news(s, 'finance', `${cfg.companyName} is founded with ${cfg.unlimitedMoney ? 'unlimited funds' : '$' + (cfg.startCash / 1e6).toFixed(1) + 'M'}.`)
   return s
 }
@@ -341,6 +350,7 @@ export function startProduct(s: GameState, o: LaunchOrder): string | null {
   if (ownProducts(s).some((p) => p.name === name && p.status !== 'ended')) return `You already have a device called ${name}`
   if (o.tiers.some((t) => t.price <= o.price || t.storage <= o.design.specs.storage)) return 'Each storage option must hold more and cost more than the base model'
   if (o.mode === 'factory' && !factoryLine(s)?.running) return 'Your factory has no working line. Use a contract manufacturer or finish the line.'
+  if (o.keynote !== undefined && locked(s, 'events')) return locked(s, 'events')
   const plan = devPlan(o.design, s, isVariantOf(s, o.family, o.design.type))
   const venue = o.keynote === undefined ? undefined : EVENTS.keynote.venues[o.keynote]
   const total = plan.cost + o.marketing + (venue?.cost ?? 0)
@@ -470,6 +480,8 @@ export function toggleResearch(s: GameState, id: string): string | null {
     s.activeResearch.splice(i, 1)
     return null
   }
+  const lock = locked(s, 'research')
+  if (lock) return lock
   const item = researchItem(s, id)
   if (item.done) return 'Already researched'
   if (!item.available) return item.blocked ?? 'Not available yet'
@@ -486,6 +498,23 @@ export function hire(s: GameState, candidateId: string): string | null {
   spend(s, c.salary, 'salaries')
   s.candidates = s.candidates.filter((e) => e !== c)
   s.staff.push({ ...c, hiredDay: s.day })
+  stepProgress(s)
+  return null
+}
+
+/** Give someone from the executive shortlist their seat. One person holds each seat. */
+export function hireExec(s: GameState, candidateId: string): string | null {
+  const c = s.execPool.find((e) => e.id === candidateId)
+  if (!c || !c.exec) return 'That candidate is gone'
+  const lock = locked(s, 'execs')
+  if (lock) return lock
+  if (s.staff.some((e) => e.exec === c.exec)) return `You already have a ${EXECS[c.exec].title}`
+  if (!canAfford(s, c.salary)) return 'Not enough cash for the signing bonus'
+  spend(s, c.salary, 'salaries')
+  s.execPool = s.execPool.filter((e) => e.exec !== c.exec)
+  s.staff.push({ ...c, hiredDay: s.day })
+  news(s, 'staff', `${c.name} joined as ${EXECS[c.exec].title}.`)
+  stepProgress(s)
   return null
 }
 
@@ -495,6 +524,7 @@ export function fire(s: GameState, employeeId: string) {
 }
 
 export function createTeam(s: GameState, name: string): string {
+  if (locked(s, 'teams')) return ''
   const id = `t${s.nextId++}`
   s.teams.push({ id, name: name.trim() || `Team ${s.teams.length + 1}`, members: [] })
   return id
@@ -511,7 +541,7 @@ export function deleteTeam(s: GameState, teamId: string) {
 
 /** Put someone in a team (or take them out of any, with null). */
 export function assignTeam(s: GameState, employeeId: string, teamId: string | null) {
-  if (!s.staff.some((e) => e.id === employeeId)) return
+  if (!s.staff.some((e) => e.id === employeeId) || (teamId && locked(s, 'teams'))) return
   dropFromTeams(s, employeeId)
   const t = s.teams.find((x) => x.id === teamId)
   if (t) t.members.push(employeeId)
@@ -525,7 +555,9 @@ export function setLead(s: GameState, teamId: string, employeeId: string | undef
 }
 
 /** Sort everyone into teams by role, a lead's span at a time, led by whoever suits it best. */
-export function autoTeams(s: GameState) {
+export function autoTeams(s: GameState): string | null {
+  const lock = locked(s, 'teams')
+  if (lock) return lock
   s.teams = []
   const lead = (ids: string[]) => {
     const people = ids.map((id) => s.staff.find((e) => e.id === id)!)
@@ -541,11 +573,15 @@ export function autoTeams(s: GameState) {
       s.teams.push({ id: `t${s.nextId++}`, name: groups > 1 ? `${label} ${g + 1}` : label, members, leadId: lead(members) })
     }
   }
+  return null
 }
 
-export function setPolicy(s: GameState, patch: Partial<StaffPolicy>) {
+export function setPolicy(s: GameState, patch: Partial<StaffPolicy>): string | null {
+  const lock = locked(s, 'people')
+  if (lock) return lock
   if (patch.hours) s.policy.hours = patch.hours
   if (patch.perks !== undefined) s.policy.perks = clamp(Math.round(patch.perks), 0, 3)
+  return null
 }
 
 export function giveRaise(s: GameState, employeeId: string, salary?: number) {
@@ -569,6 +605,8 @@ export function declineRaise(s: GameState, employeeId: string) {
 export function train(s: GameState, employeeId: string): string | null {
   const e = s.staff.find((x) => x.id === employeeId)
   if (!e) return 'No such employee'
+  const lock = locked(s, 'people')
+  if (lock) return lock
   if (inTraining(e, s.day)) return 'Already on a course'
   if (e.skill >= e.potential) return `${e.name} has reached their potential`
   const cost = trainingCost(e)
@@ -614,6 +652,8 @@ export function zoneRoom(s: GameState, ref: string, type: string, x0: number, y0
   const site = siteOf(s, ref)
   if (!site) return 'Nothing to build on'
   if (!ROOMS[site.kind][type]) return 'Unknown room'
+  const lock = siteLocked(s, site.kind, 'room', type)
+  if (lock) return lock
   const tiles = zoneable(site, x0, y0, x1, y1, shape, opts)
   if (!tiles.length) return 'That land is already built on'
   const target = into !== undefined ? roomOf(site, into) : undefined
@@ -747,7 +787,7 @@ export function placeItem(s: GameState, ref: string, kind: string, x: number, y:
   const site = siteOf(s, ref)
   if (!site) return 'Nothing to build on'
   const turn = ((rot % 4) + 4) % 4
-  const err = canPlace(site, kind, x, y, turn)
+  const err = canPlace(site, kind, x, y, turn) ?? siteLocked(s, site.kind, 'item', kind)
   if (err) return err
   const cost = ITEMS[site.kind][kind].cost
   if (!canAfford(s, cost)) return 'Not enough cash'
@@ -849,6 +889,8 @@ export function upgradeOffice(s: GameState): string | null {
 }
 
 export function buildFactory(s: GameState): string | null {
+  const lock = locked(s, 'factory')
+  if (lock) return lock
   const tier = s.factory ? s.factory.tier + 1 : 0
   const def = SITE_TIERS.factory[tier]
   if (!def) return 'This is the largest factory site'
@@ -862,6 +904,7 @@ export function buildFactory(s: GameState): string | null {
 /** Build a production hall with a standard line in it. */
 export function autoLine(s: GameState): string | null {
   const site = s.factory
+  if (locked(s, 'factory')) return locked(s, 'factory')
   if (!site) return 'Buy a factory site first'
   const plan = starterLine(site)
   if (!plan) return 'There is no room: the starter hall needs a clear strip 16 by 6 in the middle of the plot'
@@ -882,6 +925,8 @@ export function autoLine(s: GameState): string | null {
 export function openStore(s: GameState, tier: number, region?: string): string | null {
   const def = SITE_TIERS.store[tier]
   if (!def) return 'No such location'
+  const lock = locked(s, 'stores')
+  if (lock) return lock
   const where = region ?? homeRegion(s)
   if (!s.regions[where]?.open) return 'You do not sell in that region yet'
   if (!canAfford(s, def.cost)) return 'Not enough cash'
@@ -903,6 +948,8 @@ export function closeStore(s: GameState, storeId: string) {
 }
 
 export function buildVenue(s: GameState): string | null {
+  const lock = locked(s, 'venue')
+  if (lock) return lock
   const tier = s.venue ? s.venue.tier + 1 : 0
   const def = SITE_TIERS.venue[tier]
   if (!def) return 'This is the largest venue site'
@@ -916,6 +963,7 @@ export function buildVenue(s: GameState): string | null {
 /** A simple open-air stage with seating, for players who want a working venue quickly. */
 export function autoVenue(s: GameState): string | null {
   const site = s.venue
+  if (locked(s, 'venue')) return locked(s, 'venue')
   if (!site) return 'Buy a venue site first'
   if (site.items.length) return 'Clear the plot first: the starter layout needs open ground'
   const cx = Math.floor(site.w / 2)
@@ -940,6 +988,8 @@ export function autoVenue(s: GameState): string | null {
 // ---------------------------------------------------------------- supply, marketing, events
 
 export function lockSupply(s: GameState, cat: SupplyCat): string | null {
+  const shut = locked(s, 'factory')
+  if (shut) return shut
   const lock = s.supply.locks[cat]
   if (lock && lock.until > s.day) return 'That price is already fixed'
   if (!canAfford(s, LOCK_FEE)) return 'Not enough cash'
@@ -949,6 +999,8 @@ export function lockSupply(s: GameState, cat: SupplyCat): string | null {
 }
 
 export function startCampaign(s: GameState, channel: ChannelId, target: string, monthly: number, region?: string): string | null {
+  const lock = locked(s, 'marketing') ?? locked(s, capOfChannel(channel))
+  if (lock) return lock
   if (region && !s.regions[region]?.open) return 'You do not sell in that region yet'
   const def = CHANNELS[channel]
   if (monthly < def.min) return `${def.name} needs at least $${def.min.toLocaleString()} a month`
@@ -968,7 +1020,7 @@ export function setCampaignBudget(s: GameState, campaignId: string, monthly: num
 }
 
 export function scheduleEvent(s: GameState, type: EventType, venue: number, productId?: string, daysAhead = 30): string | null {
-  const blocked = eventBlocked(s, type, venue, productId)
+  const blocked = locked(s, 'events') ?? eventBlocked(s, type, venue, productId)
   if (blocked) return blocked
   const v = EVENTS[type].venues[venue]
   if (!canAfford(s, v.cost)) return 'Not enough cash'
@@ -982,7 +1034,7 @@ export function scheduleEvent(s: GameState, type: EventType, venue: number, prod
 // ---------------------------------------------------------------- chips and software
 
 export function startChip(s: GameState, name: string, power: number, graphics: number, efficiency: number): string | null {
-  const blocked = chipBlocked(s, name, power, graphics, efficiency)
+  const blocked = locked(s, 'labs') ?? chipBlocked(s, name, power, graphics, efficiency)
   if (blocked) return blocked
   const gen = s.levels.chipset
   const cost = chipProjectCost(gen)
@@ -999,7 +1051,7 @@ export function setLicenceFee(s: GameState, chipId: string, fee: number) {
 
 /** Start the first version of an in-house OS, or the next one. */
 export function startOs(s: GameState, name: string, features: string[]): string | null {
-  const blocked = osBlocked(s, features)
+  const blocked = locked(s, 'labs') ?? osBlocked(s, features)
   if (blocked) return blocked
   const first = !s.os.own
   if (first && !name.trim()) return 'Name your operating system'
@@ -1128,6 +1180,7 @@ function stepSales(s: GameState) {
   const onSale = s.products.filter((p) => p.status === 'sale')
   const companies = new Map(s.companies.map((c) => [c.id, c]))
   const fx = staffEffects(s)
+  const top = execFx(s)
   const gain = DIFFICULTY[s.config.difficulty].awareness * fx.marketing
   const home = homeRegion(s)
   const regionUnits: Record<string, number> = {}
@@ -1216,7 +1269,7 @@ function stepSales(s: GameState) {
     const stats = storeStats(st.site)
     const def = tierOf(st.site)
     const local = s.regions[st.region] ?? s.regions[home]
-    spend(s, (upkeep(st.site) + stats.wages) / DAYS_PER_MONTH, 'facilities')
+    spend(s, ((upkeep(st.site) + stats.wages) / DAYS_PER_MONTH) * top.outposts, 'facilities')
     if (stats.hasSupport) storeSupport++
     st.lastVisitors = 0
     if (!stats.open) continue
@@ -1321,7 +1374,8 @@ function stepOperations(s: GameState) {
   }
   const had = s.orders.length
   const res = stepProduction(s, (amount) => canAfford(s, amount))
-  if (res.cost) spend(s, res.cost, 'production')
+  // a Head of Operations gets a better price out of suppliers
+  if (res.cost) spend(s, res.cost * execFx(s).production, 'production')
   if (res.runCost) spend(s, res.runCost, 'facilities')
   if (res.stalled && s.day % 15 === 0) news(s, 'alert', 'Production is paused: there is not enough cash to pay for it.')
   for (const id of new Set(res.finished)) {
@@ -1336,7 +1390,8 @@ function stepOperations(s: GameState) {
 function stepFinance(s: GameState) {
   const d = DIFFICULTY[s.config.difficulty]
   const selling = ownProducts(s).filter((p) => p.status !== 'ended').length
-  spend(s, ((40e3 + 15e3 * selling) * d.overhead + upkeep(s.office) + regionOverheads(s)) / DAYS_PER_MONTH, 'overhead')
+  const top = execFx(s)
+  spend(s, ((40e3 + 15e3 * selling) * d.overhead * top.overhead + upkeep(s.office) + regionOverheads(s) * top.outposts) / DAYS_PER_MONTH, 'overhead')
   if (s.staff.length) spend(s, (monthlySalaries(s) + perksCost(s)) / DAYS_PER_MONTH, 'salaries')
   stepStock(s)
   if (s.config.unlimitedMoney) return
@@ -1433,6 +1488,7 @@ function closeMonth(s: GameState) {
 
   for (const n of monthlyStaff(s)) news(s, 'staff', n.text)
   refreshCandidates(s)
+  refreshExecs(s)
 
   const alive = s.companies.filter((c) => !c.isPlayer && c.alive)
   const used = new Set(s.companies.map((c) => c.name))
@@ -1461,6 +1517,7 @@ function stepDay(s: GameState) {
   stepFinance(s)
   if (s.day % DAYS_PER_MONTH === 0) closeMonth(s)
   if (s.day % 5 === 0) for (const g of checkGoals(s)) reward(s, g)
+  stepProgress(s)
 }
 
 function reward(s: GameState, g: Goal) {
@@ -1487,6 +1544,7 @@ export { CHIP_BUDGET, CONTRACT, buildCost, segmentsOf, utility }
 
 /** Sell a stake to a private investor. */
 export function fundingRound(s: GameState, stake: number): string | null {
+  if (locked(s, 'shares')) return locked(s, 'shares')
   const r = raiseRound(s, stake)
   if (r.error) return r.error
   fund(s, r.cash)
@@ -1495,6 +1553,7 @@ export function fundingRound(s: GameState, stake: number): string | null {
 }
 
 export function listCompany(s: GameState, float: number): string | null {
+  if (locked(s, 'shares')) return locked(s, 'shares')
   const r = goPublic(s, float)
   if (r.error) return r.error
   fund(s, r.cash)
@@ -1503,6 +1562,7 @@ export function listCompany(s: GameState, float: number): string | null {
 }
 
 export function sellShares(s: GameState, pct: number): string | null {
+  if (locked(s, 'shares')) return locked(s, 'shares')
   const r = issueShares(s, pct)
   if (r.error) return r.error
   fund(s, r.cash)
@@ -1511,6 +1571,7 @@ export function sellShares(s: GameState, pct: number): string | null {
 }
 
 export function buyBackShares(s: GameState, amount: number): string | null {
+  if (locked(s, 'shares')) return locked(s, 'shares')
   if (amount <= 0) return 'Enter an amount'
   if (!canAfford(s, amount) || s.cash < amount) return 'Buybacks must be paid from cash in hand'
   const r = buyBack(s, amount)
@@ -1520,12 +1581,14 @@ export function buyBackShares(s: GameState, amount: number): string | null {
 }
 
 export function setPayout(s: GameState, share: number) {
+  if (locked(s, 'shares')) return
   s.stock.payout = clamp(share, 0, 0.5)
 }
 
 export function buyRivalStake(s: GameState, companyId: string, pct: number): string | null {
   const c = s.companies.find((x) => x.id === companyId)
   if (!c) return 'No such company'
+  if (locked(s, 'shares')) return locked(s, 'shares')
   const take = Math.min(pct, 0.49 - stakeIn(s, companyId))
   if (take > 0.001 && s.cash < stakePrice(c, take)) return 'Stakes must be paid from cash in hand'
   const r = buyStake(s, companyId, pct)
@@ -1544,6 +1607,7 @@ export function sellRivalStake(s: GameState, companyId: string) {
 export function acquire(s: GameState, companyId: string): string | null {
   const c = s.companies.find((x) => x.id === companyId)
   if (!c || c.isPlayer || !c.alive) return 'That company cannot be bought'
+  if (locked(s, 'shares')) return locked(s, 'shares')
   const price = takeoverPrice(s, c)
   if (s.cash < price) return `A takeover must be paid from cash in hand: ${(price / 1e6).toFixed(0)}M`
   fund(s, -price)
@@ -1576,7 +1640,7 @@ export function acquire(s: GameState, companyId: string): string | null {
 
 /** Start making a new kind of device. */
 export function unlockType(s: GameState, type: DeviceType): string | null {
-  const blocked = unlockBlocked(s, type)
+  const blocked = locked(s, 'research') ?? unlockBlocked(s, type)
   if (blocked) return blocked
   const cost = unlockCost(s, type)
   if (!canAfford(s, cost)) return 'Not enough cash'
@@ -1597,7 +1661,7 @@ export function decide(s: GameState, incidentId: string, choice: number): string
 // ---------------------------------------------------------------- regions
 
 export function enterRegion(s: GameState, id: string): string | null {
-  const blocked = entryBlocked(s, id)
+  const blocked = locked(s, 'world') ?? entryBlocked(s, id)
   if (blocked) return blocked
   const r = regionInfo(id)
   if (!canAfford(s, r.entry)) return 'Not enough cash'
@@ -1612,13 +1676,15 @@ export function enterRegion(s: GameState, id: string): string | null {
 
 export function setRegionPrice(s: GameState, id: string, adj: number) {
   const st = s.regions[id]
-  if (st) st.priceAdj = clamp(Math.round(adj * 100) / 100, 0.7, 1.4)
+  if (st && !locked(s, 'world')) st.priceAdj = clamp(Math.round(adj * 100) / 100, 0.7, 1.4)
 }
 
 // ---------------------------------------------------------------- after-sales
 
 export function setCare(s: GameState, patch: Partial<Pick<GameState['care'], 'warrantyYears' | 'updateYears' | 'tradeIn' | 'refurb' | 'plan' | 'planPrice'>>): string | null {
   const c = s.care
+  const lock = locked(s, 'carePolicy')
+  if (lock) return lock
   if (patch.warrantyYears !== undefined && WARRANTY_YEARS.includes(patch.warrantyYears)) c.warrantyYears = patch.warrantyYears
   if (patch.updateYears !== undefined && UPDATE_YEARS.includes(patch.updateYears)) c.updateYears = patch.updateYears
   if (patch.tradeIn !== undefined) c.tradeIn = patch.tradeIn
@@ -1689,10 +1755,14 @@ function convertSite(s: GameState, old: OldSite | null | undefined, kind: SiteKi
   return { site, refund }
 }
 
+/** Where each step of the guided start as it was before version 5 sits in today's (see components/Guide.tsx). */
+const OLD_GUIDE = [1, 2, 3, 5, 7, 8, 9, 10, 12, 14, 15, 17, 18]
+
 /** Bring a save from an older version up to date. */
 export function migrate(input: GameState): GameState {
   const s = input as GameState & Record<string, unknown>
-  if (s.version >= SAVE_VERSION && s.incidents && s.guide !== undefined) return s
+  if (s.version >= SAVE_VERSION && s.incidents && s.guide !== undefined && s.unlocks) return s
+  const from = s.version ?? 0
   const max = Object.fromEntries(TRACKS.map((t) => [t, MAX_LEVEL])) as Levels
   if (!Array.isArray(s.features)) s.features = featuresAtLevels(s.levels)
   s.progress = s.progress ?? {}
@@ -1795,7 +1865,17 @@ export function migrate(input: GameState): GameState {
   s.incidents = s.incidents ?? []
   // a company that predates the guided start has no use for it
   s.guide = s.guide ?? -1
+  // ---- capabilities: a company from before they existed already had everything
+  if (from < 5) {
+    s.config.progression = 'open'
+    // the guided start gained steps; carry a half-finished one over to where it was
+    if (s.guide >= 0) s.guide = OLD_GUIDE[s.guide] ?? -1
+  }
+  s.unlocks = s.unlocks ?? {}
+  s.execSeats = s.execSeats ?? {}
+  s.execPool = s.execPool ?? []
   refreshCandidates(s)
+  stepProgress(s)
   s.version = SAVE_VERSION
   return s
 }

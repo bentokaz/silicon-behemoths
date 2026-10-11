@@ -6,6 +6,7 @@ import { DAYS_PER_MONTH, START_YEAR } from '../data/catalog'
 import { TYPES } from '../data/devices'
 import { clampPart, newPart, nextPartId } from '../sim/geometry'
 import { migrate, newGame, player, starterDesign, tick } from '../sim/game'
+import { type CapId, type Where, capOf, capOfTab, has, locked, stepProgress } from '../sim/progress'
 import { monthCosts } from '../sim/types'
 import { hasType } from '../sim/world'
 import { type FingerprintStyle, type FrontStyle, type VariantId, deriveVariant, layoutParts, syncSockets } from '../sim/rivals'
@@ -14,7 +15,7 @@ import { AUTOSAVE, BEFORE_DEBT, saveGame, saveSnapshot } from './saves'
 import { useSettings } from './settings'
 
 /** News that marks a moment worth an autosave. */
-const BIG_NEWS = /is on sale\.|now sells in|listed on the stock market|You bought|moved to a bigger|bought land|new store opened|invested \$|Goal reached/
+const BIG_NEWS = /is on sale\.|now sells in|listed on the stock market|You bought|moved to a bigger|bought land|new store opened|invested \$|Goal reached|Now open: /
 
 export type Tab = 'city' | 'dashboard' | 'products' | 'research' | 'labs' | 'factory' | 'stores' | 'venue' | 'marketing' | 'care' | 'staff' | 'office' | 'market' | 'world' | 'rivals' | 'finance' | 'shares' | 'goals' | 'system'
 
@@ -104,6 +105,21 @@ interface Store {
   showing: string | null
   /** Employee whose card is open, from any screen. */
   person: string | null
+  /** The locked capability whose card is open, and how far down the screen it was asked for. */
+  lockCard: { cap: CapId; y?: number } | null
+  /** Capabilities that have just opened and not been announced yet, oldest first. */
+  banners: CapId[]
+  /** Screens that opened this session and have not been visited. */
+  freshTabs: Tab[]
+  /** A view inside a screen to show when it next opens ("take me there"). */
+  hint: Where | null
+  /** Open the card for a locked capability (null closes it). */
+  showLock(cap: CapId | null, y?: number): void
+  /** Put away the announcement on screen and show the next. */
+  nextBanner(): void
+  /** Go to where something can be done: a screen, and a view inside it. */
+  go(where: Where): void
+  takeHint(): void
   /** The year whose summary is on screen, if any. */
   yearEnd: number | null
   closeYear(): void
@@ -165,7 +181,17 @@ export const useStore = create<Store>((set, get) => {
     lastEdit = now
     set({ draft, future: [], past: cur && !merge ? [...get().past.slice(-59), cur] : get().past, ...extra })
   }
-  const reset = { designing: false, draft: null, inspect: null, past: [], future: [], selectedPart: null }
+  const reset = { designing: false, draft: null, inspect: null, past: [], future: [], selectedPart: null, lockCard: null, banners: [], freshTabs: [], hint: null }
+  /** Capabilities open before a step of the simulation, to tell which ones it opened. */
+  const openBefore = (g: GameState) => new Set(Object.keys(g.unlocks ?? {}))
+  /** Announce whatever opened: a sound, a banner each, and a mark on any new screen. */
+  const announce = (g: GameState, before: Set<string>) => {
+    const opened = Object.keys(g.unlocks ?? {}).filter((id) => !before.has(id)) as CapId[]
+    if (!opened.length) return false
+    sfx.unlock()
+    set({ banners: [...get().banners, ...opened], freshTabs: [...get().freshTabs, ...opened.flatMap((id) => (capOf(id).tabs ?? []) as Tab[])], lockCard: null })
+    return true
+  }
 
   return {
     screen: 'menu',
@@ -183,6 +209,17 @@ export const useStore = create<Store>((set, get) => {
     openPerson: (person) => set({ person }),
     yearEnd: null,
     closeYear: () => set({ yearEnd: null }),
+    lockCard: null,
+    banners: [],
+    freshTabs: [],
+    hint: null,
+    showLock: (cap, y) => set({ lockCard: cap ? { cap, y } : null }),
+    nextBanner: () => set({ banners: get().banners.slice(1) }),
+    go(where) {
+      set({ hint: where, lockCard: null })
+      get().setTab(where.tab as Tab)
+    },
+    takeHint: () => set({ hint: null }),
 
     designing: false,
     editorMode: saved('sb-editor', 'simple') === 'advanced' ? 'advanced' : 'simple',
@@ -194,7 +231,13 @@ export const useStore = create<Store>((set, get) => {
     future: [],
 
     setScreen: (screen) => set({ screen }),
-    setTab: (tab) => set({ tab, designing: false, selectedPart: null, person: null }),
+    setTab(tab) {
+      // a screen the company has not earned yet shows what it takes instead
+      const g = get().game
+      const cap = capOfTab(tab)
+      if (g && cap && !has(g, cap)) return set({ lockCard: { cap } })
+      set({ tab, designing: false, selectedPart: null, person: null, lockCard: null, freshTabs: get().freshTabs.filter((t) => t !== tab) })
+    },
     setSpeed: (speed) => set({ speed }),
     begin(cfg) {
       rolling = null
@@ -231,6 +274,7 @@ export const useStore = create<Store>((set, get) => {
         if (!rolling || g.day - rolling.day >= every || g.day < rolling.day) rolling = { day: g.day, json: JSON.stringify(g) }
       }
       const shown = new Set(g.events.filter((e) => e.done).map((e) => e.id))
+      const open = openBefore(g)
       tick(g, days)
       let checkpoint = get().checkpoint
       if (solvent && g.cash < 0 && rolling) {
@@ -239,7 +283,8 @@ export const useStore = create<Store>((set, get) => {
         void saveSnapshot(BEFORE_DEBT, JSON.parse(rolling.json)).catch(() => {})
       }
       const fresh = g.news.filter((n) => n.id > lastNews && n.kind !== 'rival')
-      if (fresh.some((n) => n.kind === 'goal')) sfx.goal()
+      if (announce(g, open)) void 0
+      else if (fresh.some((n) => n.kind === 'goal')) sfx.goal()
       else if (fresh.some((n) => n.kind === 'alert')) sfx.alert()
       else if (fresh.some((n) => n.kind === 'review')) sfx.launch()
       else if (fresh.some((n) => n.kind === 'research')) sfx.research()
@@ -261,7 +306,11 @@ export const useStore = create<Store>((set, get) => {
     act(fn) {
       const g = get().game!
       const lastNews = g.news[0]?.id ?? 0
+      const open = openBefore(g)
       const out = fn(g)
+      // hiring, building and the like can earn a capability on the spot
+      stepProgress(g)
+      announce(g, open)
       if (useSettings.getState().settings.autosave && g.news.some((n) => n.id > lastNews && BIG_NEWS.test(n.text))) void saveGame(AUTOSAVE, g).catch(() => {})
       set({ rev: get().rev + 1 })
       return out
@@ -291,6 +340,8 @@ export const useStore = create<Store>((set, get) => {
       const wanted = opts.from?.type ?? opts.type
       if (wanted && !hasType(g, wanted)) return get().say(`Your company does not make ${TYPES[wanted].plural.toLowerCase()} yet. Open that line under Research.`, 'bad')
       if (!wanted && g.types?.length && !g.types.includes('phone')) opts = { ...opts, type: g.types[0] }
+      // the advanced editor comes with the design studio
+      if (get().editorMode === 'advanced' && !has(g, 'studio')) set({ editorMode: 'simple' })
       const from = opts.from
       const own = g.products.filter((p) => p.companyId === 'player')
       let draft: DeviceDesign
@@ -328,6 +379,9 @@ export const useStore = create<Store>((set, get) => {
     setMeta: (patch) => set({ meta: { ...get().meta, ...patch } }),
 
     setEditorMode(editorMode) {
+      const g = get().game
+      const lock = editorMode === 'advanced' && g ? locked(g, 'studio') : null
+      if (lock) return get().say(lock, 'bad')
       remember('sb-editor', editorMode)
       set({ editorMode, selectedPart: null })
     },

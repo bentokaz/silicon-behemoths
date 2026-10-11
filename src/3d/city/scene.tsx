@@ -468,8 +468,8 @@ export function CityModel({ g, all, list, mats, lights, color, accent }: { g: Ga
       {list.map((p) => {
         if (p.kind === 'rival' && p.company && !p.dim) return <Sign key={p.id} p={[p.x, 3.2 + towerFloors(p.company) * 3.2 - 2.2, p.z + 6.1]} size={[14, 3.4]} name={p.company.name} glow={lights ? 1.1 : 0.5} />
         if (p.kind === 'board') return <Sign key={p.id} p={[p.x, 9.5, p.z + 0.02]} size={[11, 4.6]} name={p.campaign?.target === 'brand' ? me.name : p.name.replace(/ campaign$/, '')} logo={p.campaign?.target === 'brand' ? me.logo : undefined} glow={lights ? 1.3 : 0.7} />
-        if (p.kind === 'region') return <Sign key={p.id} p={[p.x, p.dim ? 13.2 : 9, p.z + ISLAND.d / 2 - 1.55]} size={p.dim ? [14, 3] : [42, 6]} name={p.dim ? 'Enter' : p.name} color={p.dim ? accent : '#f2f0ea'} glow={p.dim ? 1.4 : lights ? 0.9 : 0.5} />
-        if ((p.kind === 'factory' || p.kind === 'venue') && !p.site) return <Sign key={p.id} p={[p.x, 4.4, p.z + (p.d - 8) / 2 + 0.7]} size={[12, 3]} name="Land for sale" glow={0.6} />
+        if (p.kind === 'region') return <Sign key={p.id} p={[p.x, p.dim ? 13.2 : 9, p.z + ISLAND.d / 2 - 1.55]} size={p.dim ? [14, 3] : [42, 6]} name={p.dim ? (p.locked ?? 'Enter') : p.name} color={p.dim ? accent : '#f2f0ea'} glow={p.dim ? 1.4 : lights ? 0.9 : 0.5} />
+        if ((p.kind === 'factory' || p.kind === 'venue') && !p.site) return <Sign key={p.id} p={[p.x, 4.4, p.z + (p.d - 8) / 2 + 0.7]} size={[12, 3]} name={p.locked ?? 'Land for sale'} glow={0.6} />
         return null
       })}
       <Sign p={[SHED.x, 9, SHED.z + SHED.d / 2 + 0.45]} size={[30, 3]} name={me.name} glow={lights ? 1 : 0.5} />

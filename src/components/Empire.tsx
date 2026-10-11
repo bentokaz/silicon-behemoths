@@ -11,6 +11,7 @@ import { IPO_MIN_VALUE, RAISE_GAP, founderStake, ipoBlocked, issueBlocked, marke
 import type { GameState } from '../sim/types'
 import { takeAim } from '../store/focus'
 import { useGame, useStore } from '../store/game'
+import { LockNote } from './Progress'
 import { Icon, type IconName } from './icons'
 import { Btn, Empty, Head, Kpi, Lead, Meter, Mini, Panel, Row, Slider, Tabs, Tag, chart, money, num, pct } from './ui'
 
@@ -496,6 +497,7 @@ export function CareScreen() {
         <Kpi label="Care plan members" icon="shield" value={num(c.subscribers)} sub={c.plan ? `${money(c.subscribers * c.planPrice * 0.6, 1)} a month after claims` : 'not offered'} />
         <Kpi label="Open recalls" icon="recall" value={recalls.filter((p) => p.recall?.state === 'open').length} tone={recalls.some((p) => p.recall?.state === 'open') ? 'neg' : undefined} sub="decide before they become scandals" />
       </div>
+      <LockNote id="carePolicy" />
       <div className="grid min-h-0 flex-1 grid-cols-3 gap-2">
         <Panel title="Warranty and repairs" icon="shield" bodyClass="space-y-2 overflow-y-auto p-2">
           <div className="text-[11px] leading-snug text-dim">Every faulty unit is repaired at your cost while it is under warranty. A longer warranty costs more per fault, makes owners happier and makes buyers trust you.</div>

@@ -12,6 +12,7 @@ import { devProgress, factoryLife, officeLife, researchLines, storeLife } from '
 import { ROLE_INFO, staffEffects, titleFor } from '../sim/staff'
 import { TRACKS } from '../sim/types'
 import { type Tab, useGame, useStore } from '../store/game'
+import { ExecShortlist } from './Progress'
 import { Icon, type IconName } from './icons'
 import { Btn, Meter, Row, Tag, money, num, pct } from './ui'
 
@@ -258,6 +259,7 @@ function ApplicantsCard({ target, close }: { target: Target; close: () => void }
           </Btn>
         </div>
       ))}
+      <ExecShortlist close={close} />
     </Frame>
   )
 }

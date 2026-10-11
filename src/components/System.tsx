@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { getVolume, setVolume, sfx } from '../audio/sfx'
 import { fmtDate, player } from '../sim/game'
+import { openEverything } from '../sim/progress'
 import { useGame, useStore } from '../store/game'
 import { AUTOSAVE, BEFORE_DEBT, type SaveMeta, deleteSave, exportGame, importGame, listSaves, loadGame, saveGame, slotName } from '../store/saves'
 import { THEMES, type ThemeId, applyTheme, getTheme } from '../store/theme'
@@ -172,6 +173,11 @@ function Saves() {
           ))}
           <div className="py-1 text-[10px] text-faint">Renaming applies to this save. Devices already on sale keep their model names.</div>
         </Panel>
+        {g.config.progression === 'guided' && (
+          <Btn icon="unlock" className="shrink-0" title="Open every screen and lever now, as in a sandbox game. This cannot be undone." onClick={() => (act((s) => openEverything(s)), say('Everything is open.'))}>
+            Stop earning screens: open everything
+          </Btn>
+        )}
         {g.guide < 0 && (
           <Btn icon="goals" className="shrink-0" onClick={() => (act((s) => void (s.guide = 0)), say('The guide is back at the bottom of the screen.'))}>
             Run the guided start again

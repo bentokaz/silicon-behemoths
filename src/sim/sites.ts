@@ -38,6 +38,8 @@ export interface ItemDef {
   show?: number
   /** Lies flat on the floor (rugs). */
   flat?: boolean
+  /** Capability (an id from sim/progress.ts) a guided company needs before it can buy this. */
+  needs?: string
 }
 
 const d = (name: string, cost: number, w: number, h: number, group: string, rooms: string[], note: string, extra: Partial<ItemDef> = {}): ItemDef => ({ name, cost, w, h, group, rooms, note, ...extra })
@@ -172,6 +174,8 @@ export interface RoomDef {
   cost: number
   note: string
   styles: RoomStyle[]
+  /** Capability (an id from sim/progress.ts) a guided company needs before it can build this. */
+  needs?: string
 }
 const st = (name: string, floor: string, rough: number, wall: string, trim: string): RoomStyle => ({ name, floor, rough, wall, trim })
 
@@ -179,18 +183,18 @@ export const ROOMS: Record<SiteKind, Record<string, RoomDef>> = {
   office: {
     work: { name: 'Open office', cost: 350, note: 'Desks for anyone.', styles: [st('Oak and white', '#a8875f', 0.6, '#e9e5dd', '#2c3036'), st('Bare concrete', '#8b8d90', 0.75, '#bdb9b1', '#3a3d42'), st('Slate carpet', '#4c535f', 1, '#dfe2e6', '#1f2226'), st('Walnut and green', '#6a4f3a', 0.55, '#3e5146', '#d9c3a0')] },
     lobby: { name: 'Lobby', cost: 600, note: 'Reception, showcases and first impressions.', styles: [st('Pale stone', '#d5cfc4', 0.3, '#f0ede7', '#b28d66'), st('Black marble', '#2a2c30', 0.2, '#e4e1db', '#c9a25a'), st('Terrazzo', '#c9c1b5', 0.35, '#dfe6e4', '#3a5a55')] },
-    exec: { name: 'Executive suite', cost: 800, note: 'Corner offices and the boardroom.', styles: [st('Walnut', '#5e4634', 0.5, '#e6dfd3', '#2b2118'), st('Charcoal', '#33373d', 1, '#c8ccd0', '#8a6a4f'), st('Ivory', '#cdbfa8', 0.6, '#f2efe9', '#6a4c38')] },
+    exec: { name: 'Executive suite', cost: 800, needs: 'execs',note: 'Corner offices and the boardroom.', styles: [st('Walnut', '#5e4634', 0.5, '#e6dfd3', '#2b2118'), st('Charcoal', '#33373d', 1, '#c8ccd0', '#8a6a4f'), st('Ivory', '#cdbfa8', 0.6, '#f2efe9', '#6a4c38')] },
     lab: { name: 'Research lab', cost: 700, note: 'Lab benches for researchers.', styles: [st('Clean white', '#d9dde0', 0.35, '#f1f4f6', '#58b98a'), st('Sea green', '#9fb9b0', 0.4, '#e8efec', '#2f6b4c'), st('Graphite', '#565b62', 0.4, '#d5d9dd', '#58b98a')] },
     eng: { name: 'Hardware workshop', cost: 550, note: 'Test rigs and printers for hardware engineers.', styles: [st('Grey epoxy', '#7d8388', 0.45, '#d2d5d8', '#e0a23a'), st('Blue epoxy', '#52708c', 0.45, '#dfe3e6', '#f2f2f2'), st('Plywood', '#b99b72', 0.7, '#e7e2d8', '#3a3d42')] },
     soft: { name: 'Software studio', cost: 400, note: 'Desks, booths and screens for software engineers.', styles: [st('Navy carpet', '#2b3a55', 1, '#e3e6ea', '#8f7ad6'), st('Dark oak', '#6e563f', 0.55, '#2e3238', '#d9c3a0'), st('Moss carpet', '#4a5a48', 1, '#e7e4dc', '#2c3036')] },
-    studio: { name: 'Design studio', cost: 500, note: 'Design tables, samples and daylight.', styles: [st('Pale oak', '#c9ab82', 0.55, '#f3f0ea', '#d6a24f'), st('Polished concrete', '#9a9c9f', 0.35, '#f0f0ee', '#1f2226'), st('Cork', '#a67c52', 0.9, '#ebe6dc', '#3f7d4d')] },
-    media: { name: 'Marketing suite', cost: 450, note: 'Media sets for the marketing team.', styles: [st('Blush carpet', '#7c5560', 1, '#f0e9e6', '#d65f7c'), st('Studio black', '#2b2d31', 0.8, '#3a3d42', '#e6e2da'), st('Sand', '#bfae93', 0.8, '#efeae0', '#31506b')] },
-    support: { name: 'Support centre', cost: 380, note: 'Consoles for support agents.', styles: [st('Teal carpet', '#3f6670', 1, '#e6ecec', '#5fb8c9'), st('Grey carpet', '#565c66', 1, '#e4e4e1', '#c9553d'), st('Birch', '#c7b08a', 0.6, '#eef0ee', '#3f6670')] },
-    server: { name: 'Server room', cost: 900, note: 'Racks for software engineers to lean on.', styles: [st('Raised floor', '#3a3e44', 0.35, '#2a2d32', '#3fe08a'), st('White hall', '#c9ced3', 0.3, '#eef1f3', '#4f8fd6')] },
+    studio: { name: 'Design studio', cost: 500, needs: 'studio',note: 'Design tables, samples and daylight.', styles: [st('Pale oak', '#c9ab82', 0.55, '#f3f0ea', '#d6a24f'), st('Polished concrete', '#9a9c9f', 0.35, '#f0f0ee', '#1f2226'), st('Cork', '#a67c52', 0.9, '#ebe6dc', '#3f7d4d')] },
+    media: { name: 'Marketing suite', cost: 450, needs: 'marketing',note: 'Media sets for the marketing team.', styles: [st('Blush carpet', '#7c5560', 1, '#f0e9e6', '#d65f7c'), st('Studio black', '#2b2d31', 0.8, '#3a3d42', '#e6e2da'), st('Sand', '#bfae93', 0.8, '#efeae0', '#31506b')] },
+    support: { name: 'Support centre', cost: 380, needs: 'care',note: 'Consoles for support agents.', styles: [st('Teal carpet', '#3f6670', 1, '#e6ecec', '#5fb8c9'), st('Grey carpet', '#565c66', 1, '#e4e4e1', '#c9553d'), st('Birch', '#c7b08a', 0.6, '#eef0ee', '#3f6670')] },
+    server: { name: 'Server room', cost: 900, needs: 'labs',note: 'Racks for software engineers to lean on.', styles: [st('Raised floor', '#3a3e44', 0.35, '#2a2d32', '#3fe08a'), st('White hall', '#c9ced3', 0.3, '#eef1f3', '#4f8fd6')] },
     meeting: { name: 'Meeting room', cost: 450, note: 'Tables where teams plan their work.', styles: [st('Felt grey', '#59606b', 1, '#d8dbdf', '#b28d66'), st('Warm oak', '#a8875f', 0.6, '#ece6da', '#2c3036'), st('Forest', '#3f5346', 1, '#e3e6df', '#d9c3a0')] },
     lounge: { name: 'Lounge and café', cost: 420, note: 'Coffee, sofas and games.', styles: [st('Herringbone', '#9a7650', 0.6, '#efe7d8', '#c9553d'), st('Checker tile', '#cfc9be', 0.35, '#394c57', '#f2b631'), st('Mustard', '#8a6a3a', 1, '#eee9df', '#2f5f3a')] },
-    gym: { name: 'Fitness room', cost: 500, note: 'Treadmills, weights and mats.', styles: [st('Rubber black', '#2f3236', 0.9, '#dcdfe2', '#e0a23a'), st('Maple court', '#c9a878', 0.45, '#eef0f0', '#31506b')] },
-    atrium: { name: 'Atrium garden', cost: 650, note: 'An indoor garden: trees, water and benches.', styles: [st('Sandstone', '#cbbf9f', 0.7, '#f1eee6', '#3f7d4d'), st('Slate', '#555a5f', 0.6, '#e6e8e6', '#4a8f58'), st('Moss', '#5c7a4e', 1, '#f0eee8', '#b28d66')] },
+    gym: { name: 'Fitness room', cost: 500, needs: 'people',note: 'Treadmills, weights and mats.', styles: [st('Rubber black', '#2f3236', 0.9, '#dcdfe2', '#e0a23a'), st('Maple court', '#c9a878', 0.45, '#eef0f0', '#31506b')] },
+    atrium: { name: 'Atrium garden', cost: 650, needs: 'people',note: 'An indoor garden: trees, water and benches.', styles: [st('Sandstone', '#cbbf9f', 0.7, '#f1eee6', '#3f7d4d'), st('Slate', '#555a5f', 0.6, '#e6e8e6', '#4a8f58'), st('Moss', '#5c7a4e', 1, '#f0eee8', '#b28d66')] },
   },
   factory: {
     hall: { name: 'Production hall', cost: 500, note: 'The line: docks, conveyors and machines.', styles: [st('Grey epoxy', '#7d8388', 0.45, '#cfd3d6', '#e0b23a'), st('Green epoxy', '#4f7a66', 0.45, '#d9dedb', '#f2f2f2'), st('Blue epoxy', '#4a6a88', 0.45, '#dfe3e6', '#e0b23a')] },
@@ -208,6 +212,19 @@ export const ROOMS: Record<SiteKind, Record<string, RoomDef>> = {
     hall: { name: 'Auditorium', cost: 1200, note: 'An indoor hall for the stage and seating.', styles: [st('Black box', '#26282c', 0.8, '#1d1f23', '#c9a25a'), st('Walnut hall', '#5e4634', 0.5, '#3b2c22', '#d9c3a0'), st('Concrete hall', '#7c7f83', 0.6, '#b9b6ae', '#2c3036')] },
     foyer: { name: 'Foyer', cost: 700, note: 'Where guests arrive and try the device afterwards.', styles: [st('Pale stone', '#d5cfc4', 0.3, '#f0ede7', '#b28d66'), st('Terrazzo', '#c9c1b5', 0.35, '#e2e6e4', '#3a5a55'), st('Dark oak', '#6e563f', 0.55, '#ece6da', '#2c3036')] },
   },
+}
+
+/**
+ * The capability a room or a piece of furniture waits on, if any. Furniture
+ * that only goes in rooms which are themselves waiting takes their capability.
+ */
+export function needsOf(kind: SiteKind, what: 'room' | 'item', id: string): string | undefined {
+  if (what === 'room') return ROOMS[kind][id]?.needs
+  const def = ITEMS[kind][id]
+  if (!def) return undefined
+  if (def.needs) return def.needs
+  const homes = def.rooms.map((r) => (r === OUT ? undefined : ROOMS[kind][r]?.needs))
+  return homes.every(Boolean) ? homes[0] : undefined
 }
 
 export const roomDef = (site: Pick<Site, 'kind'>, type: string): RoomDef | undefined => ROOMS[site.kind][type]

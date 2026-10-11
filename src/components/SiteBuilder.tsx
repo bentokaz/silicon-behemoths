@@ -10,7 +10,8 @@ import { sfx } from '../audio/sfx'
 import { MIN_THICK } from '../sim/curves'
 import { clearZone, lookCost, paintArea, placeItem, player, removeItem, removeRoom, roomCost, rotateItem, setCurveEdge, setEdge, setLook, setRoomStyle, zoneRoom } from '../sim/game'
 import { factoryLife, officeLife, storeLife } from '../sim/life'
-import { FACADES, GROUNDS, ITEMS, type LineStats, MAX_FLOORS, OUT, ROOFS, ROOMS, builtTiles, gridAt, roomNames, roomOf, roomTiles, sealedRooms, tierOf } from '../sim/sites'
+import { type CapId, has } from '../sim/progress'
+import { FACADES, GROUNDS, ITEMS, type LineStats, MAX_FLOORS, OUT, ROOFS, ROOMS, builtTiles, gridAt, needsOf, roomNames, roomOf, roomTiles, sealedRooms, tierOf } from '../sim/sites'
 import type { Employee, Product, Site, SiteItem } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { actionFor, keyName, keysFor } from '../store/settings'
@@ -207,7 +208,8 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
                       : 'An empty plot. Open Rooms and mark out your first room.'
 
   const tiles = builtTiles(site)
-  const items = Object.entries(defs).filter(([, d]) => d.group === group && (!room || d.rooms.includes(room.type)))
+  // furniture that only goes in rooms the company cannot build yet stays off the list until it can
+  const items = Object.entries(defs).filter(([kind, d]) => d.group === group && (!room || d.rooms.includes(room.type)) && (!needsOf(site.kind, 'item', kind) || has(g, needsOf(site.kind, 'item', kind) as CapId)))
 
   return (
     <div className="relative h-full min-h-0 overflow-hidden">
@@ -355,12 +357,16 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
             {tab === 'Rooms' &&
               Object.entries(rooms).map(([id, r]) => {
                 const on = tool?.type === 'room' && tool.room === id
+                // a room that comes with a capability the company has not earned yet: dim, and it says what it takes
+                const need = needsOf(site.kind, 'room', id) as CapId | undefined
+                const shut = !!need && !has(g, need)
                 return (
-                  <button key={id} onClick={() => pick(on ? null : { type: 'room', room: id, shape })} className={row(on)}>
+                  <button key={id} onClick={() => (shut ? useStore.getState().showLock(need!) : pick(on ? null : { type: 'room', room: id, shape }))} className={`${row(on)} ${shut ? 'opacity-45' : ''}`}>
                     <span className="min-w-0">
                       <span className="flex items-center gap-2 text-xs uppercase tracking-wider">
                         <span className="h-3 w-3 shrink-0 border border-line2" style={{ background: r.styles[0].floor }} />
                         {r.name}
+                        {shut && <Icon name="lock" size={10} />}
                       </span>
                       <span className="mt-[2px] block text-[10px] normal-case leading-snug tracking-normal text-dim">{r.note}</span>
                     </span>

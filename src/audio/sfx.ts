@@ -140,6 +140,13 @@ export const sfx = {
     ;[784, 988, 1175, 1568].forEach((f, i) => tone(f, 0.22, 'triangle', 0.13, i * 0.07))
     tone(2093, 0.5, 'sine', 0.08, 0.3)
   },
+  /** A new part of the company opens: a bolt drawn back, then an open fifth that hangs for a moment. */
+  unlock() {
+    noise(0.05, 0.12, 2200, 1.4)
+    tone(180, 0.09, 'sine', 0.22, 0.02, 90)
+    chord([523, 784], 0.22, 0.26, 0.12)
+    chord([659, 988, 1319], 0.7, 0.3, 0.3)
+  },
   alert() {
     tone(440, 0.12, 'square', 0.07)
     tone(330, 0.2, 'square', 0.07, 0.13)

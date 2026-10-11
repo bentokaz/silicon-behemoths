@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import { sfx } from '../audio/sfx'
 import { DAYS_PER_YEAR, START_YEAR } from '../data/catalog'
 import { decide, player, trailingUnits } from '../sim/game'
+import { type CapId, type Where, guided, has } from '../sim/progress'
 import { REGIONS } from '../sim/regions'
 import { ITEMS, reachable } from '../sim/sites'
 import { teamBonus } from '../sim/staff'
@@ -21,58 +22,90 @@ interface Step {
   text: string
   /** Screen where this is done. */
   tab?: Tab
+  /** A view inside that screen to land on. */
+  where?: Where
+  /** Done in the device designer rather than on a screen. */
+  designer?: boolean
   /** True once the player has done it; steps without one wait for "Next". */
   done?: (s: GameState) => boolean
+  /** A step for one kind of game only: one where capabilities are earned, or one where everything is open. */
+  only?: 'guided' | 'open'
+  /** The capability this step uses. While that is locked the step is passed over. */
+  needs?: CapId
+  /** The capability this step opens: it says so beside the title. */
+  opens?: CapId
 }
 const mine = (s: GameState) => s.products.filter((p) => p.companyId === 'player')
 const desks = (s: GameState) => reachable(s.office).filter((i) => ITEMS.office[i.kind]?.seats).length
 
 export const STEPS: Step[] = [
-  { title: 'Welcome', tab: 'city', text: 'This is the city, and the small building in the middle is your company: two desks in a garage. Everything you build later appears here, and clicking a place takes you inside it. The next few steps take you from here to a device on sale. You can leave the guide at any time and bring it back from System.' },
+  { title: 'Welcome', tab: 'city', only: 'guided', text: 'This is the city, and the small building in the middle is your company: two desks in a garage. That is all there is for now, and the menu on the left is short to match. It grows as the company does: each person you hire, thing you build and device you sell opens another part. The next steps take you from here to a device on sale. You can leave the guide at any time and bring it back from System.' },
+  { title: 'Welcome', tab: 'city', only: 'open', text: 'This is the city, and the small building in the middle is your company: two desks in a garage. Everything you build later appears here, and clicking a place takes you inside it. The next few steps take you from here to a device on sale. You can leave the guide at any time and bring it back from System.' },
   { title: 'Look around', tab: 'office', text: 'This is the campus, seen from inside. People come in each morning, work, eat and go home; click one, or a desk or a screen, to see what is going on. Drag to turn the view, right-drag or use W A S D to move, scroll to zoom. The buttons at the top right switch between a cutaway, full walls and the outside.' },
   { title: 'Add a desk', tab: 'office', text: 'Open Build, choose Furnish, pick a Desk and click an empty spot inside the room. R turns it before you place it. Each desk seats one person.', done: (s) => desks(s) >= 3 },
-  { title: 'Hire two people', tab: 'staff', text: 'Open Staff, go to Applicants and hire an engineer and one other. Engineers shorten development; designers, researchers and marketers each help in their own way. Hiring costs one month of their salary.', done: (s) => s.staff.length >= 2 },
-  { title: 'Design a device', text: 'Press New device. Shape the body, choose what goes inside, and watch the cost and the appeal to each kind of buyer. When you are happy, press Launch, set a price a fair way above the unit cost, and order a first production run.', done: (s) => mine(s).length >= 1 },
-  { title: 'Fund research', tab: 'research', text: 'While it is being developed, set a monthly research budget and pick a project. Research unlocks better parts and, later, whole new kinds of device.', done: (s) => s.rdBudget > 0 && s.activeResearch.length > 0 },
+  { title: 'Hire an engineer', tab: 'staff', where: { tab: 'staff', view: 'hire', role: 'engineer' }, only: 'guided', text: 'Open Staff, go to Applicants and hire a hardware engineer. Engineers shorten the time a device takes to develop. Hiring costs one month of their salary.', done: (s) => s.staff.some((e) => e.role === 'engineer') },
+  { title: 'Hire two people', tab: 'staff', where: { tab: 'staff', view: 'hire' }, only: 'open', text: 'Open Staff, go to Applicants and hire an engineer and one other. Engineers shorten development; designers, researchers and marketers each help in their own way. Hiring costs one month of their salary.', done: (s) => s.staff.length >= 2 },
+  { title: 'Open Research', tab: 'staff', where: { tab: 'staff', view: 'hire', role: 'researcher' }, only: 'guided', opens: 'research', text: 'Research is the first screen to earn. Hire a researcher from the applicants, or build a research lab on the campus, and Research appears in the menu. The dim entries with a lock all work this way: click one to see what it needs.', done: (s) => has(s, 'research') },
+  { title: 'Design a device', designer: true, text: 'Press New device. Shape the body, choose what goes inside, and watch the cost and the appeal to each kind of buyer. When you are happy, press Launch, set a price a fair way above the unit cost, and order a first production run.', done: (s) => mine(s).length >= 1 },
+  { title: 'Fund research', tab: 'research', needs: 'research', text: 'While it is being developed, set a monthly research budget and pick a project. Research unlocks better parts and, later, whole new kinds of device.', done: (s) => s.rdBudget > 0 && s.activeResearch.length > 0 },
   { title: 'Let time pass', text: 'Start the clock with the play buttons at the top, or press Space. Development takes a couple of months; the faster speeds help. The game pauses itself for anything important.', done: (s) => mine(s).some((p) => p.status === 'sale') },
   { title: 'Read the reviews', tab: 'products', text: 'Your device is on sale. Click it to see what reviewers and owners think, how it is selling in each market, and to order more stock before it runs out.', done: (s) => useStore.getState().inspect !== null || mine(s).some((p) => p.unitsSold > 2000) },
-  { title: 'Get known', tab: 'marketing', text: 'Hardly anyone has heard of you yet. Start an advertising campaign: search ads are cheap and steady. Awareness is what turns a good device into sales.', done: (s) => s.campaigns.length > 0 },
+  { title: 'Open Marketing', tab: 'staff', where: { tab: 'staff', view: 'hire', role: 'marketer' }, only: 'guided', opens: 'marketing', text: 'Hardly anyone has heard of you yet. Hire a marketer and the Marketing screen opens. Your device going on sale has also opened the Market screen and the executive search.', done: (s) => has(s, 'marketing') },
+  { title: 'Get known', tab: 'marketing', needs: 'marketing', text: 'Start an advertising campaign: search ads are cheap and steady. Awareness is what turns a good device into sales.', done: (s) => s.campaigns.length > 0 },
+  { title: 'Your first executive', tab: 'staff', where: { tab: 'staff', view: 'execs' }, only: 'guided', needs: 'execs', opens: 'finance', text: 'Executives run a whole side of the company. Under Staff, Executives, a finance chief will talk to you now: hire one and the Finance screen opens, with a statement for every month. Others will follow as the company grows, each opening more. They cost about twice an ordinary salary, so there is no rush.', done: (s) => has(s, 'finance') },
   { title: 'Build a second room', tab: 'office', text: 'Open Build, choose Rooms, pick a kind of room and click two corners on open ground. Walls and a door appear on their own. A lounge lifts morale; a research lab holds benches that speed up research.', done: (s) => s.office.rooms.length >= 2 },
-  { title: 'Make a team', tab: 'staff', text: 'On the Teams tab, press Organise by role. A team with a lead gets more done, and once you pass eight people anyone without a lead slows down.', done: (s) => s.teams.some((t) => teamBonus(s, t) > 0) || s.staff.length < 2 },
-  { title: 'Grow', tab: 'world', text: 'From here the company is yours to shape: enter another region, open a store, build a factory, design a Pro or a Lite version, or open a new line of devices under Research. The Goals screen always has something to aim for.', done: (s) => REGIONS.filter((r) => s.regions[r.id]?.open).length >= 2 || s.stores.length > 0 || !!s.factory || mine(s).length >= 2 },
+  { title: 'Make a team', tab: 'staff', where: { tab: 'staff', view: 'teams' }, needs: 'teams', text: 'On the Teams tab, press Organise by role. A team with a lead gets more done, and once you pass eight people anyone without a lead slows down.', done: (s) => s.teams.some((t) => teamBonus(s, t) > 0) || s.staff.length < 2 },
+  { title: 'Grow', tab: 'goals', where: { tab: 'goals', view: 'growth' }, only: 'guided', text: 'From here the company is yours to shape. Goals has a second page, Company growth: everything still to open, what each part needs and how far along you are. A factory, stores, other regions, investors and labs are all on it. Design a Pro or a Lite version of your device in the meantime, or a successor.' },
+  { title: 'Grow', tab: 'world', only: 'open', text: 'From here the company is yours to shape: enter another region, open a store, build a factory, design a Pro or a Lite version, or open a new line of devices under Research. The Goals screen always has something to aim for.', done: (s) => REGIONS.filter((r) => s.regions[r.id]?.open).length >= 2 || s.stores.length > 0 || !!s.factory || mine(s).length >= 2 },
   { title: 'You are on your own', tab: 'goals', text: 'That is the guided start done. Incidents will come up that need a decision, rivals will react to what you do, and every year ends with a summary. Good luck.' },
 ]
 
+/** Does this step belong to the game being played, and is what it uses open? */
+const suits = (s: GameState, step: Step) => (!step.only || (step.only === 'guided') === guided(s)) && (!step.needs || has(s, step.needs))
+/** The step after this one that suits the game, or -1 when the guide is over. */
+function following(s: GameState, from: number): number {
+  for (let i = from + 1; i < STEPS.length; i++) if (suits(s, STEPS[i])) return i
+  return -1
+}
+
 export function Coach() {
   const g = useGame()
-  const { act, setTab, openDesigner } = useStore.getState()
+  const { act, go: goTo, openDesigner } = useStore.getState()
   const tab = useStore((s) => s.tab)
   const designing = useStore((s) => s.designing)
   const step = STEPS[g.guide]
+  const passed = !!step && !suits(g, step)
   const done = !!step?.done?.(g)
+  // a step that is not for this game, or uses something still locked, is passed over
+  useEffect(() => {
+    if (passed) act((s) => void (s.guide = following(s, s.guide)))
+  }, [passed, g.guide, act])
   // a finished step moves on by itself after a moment
   useEffect(() => {
-    if (!done) return
-    const t = window.setTimeout(() => (act((s) => void (s.guide = s.guide + 1 >= STEPS.length ? -1 : s.guide + 1)), sfx.confirm()), 900)
+    if (!done || passed) return
+    const t = window.setTimeout(() => (act((s) => void (s.guide = following(s, s.guide))), sfx.confirm()), 900)
     return () => window.clearTimeout(t)
-  }, [done, g.guide, act])
-  if (!step || designing) return null
-  const last = g.guide === STEPS.length - 1
-  const go = () => (g.guide === 4 ? openDesigner() : step.tab && setTab(step.tab))
+  }, [done, passed, g.guide, act])
+  if (!step || passed || designing) return null
+  // only the steps of this kind of game are counted
+  const mine = STEPS.map((x, i) => i).filter((i) => !STEPS[i].only || (STEPS[i].only === 'guided') === guided(g))
+  const at = mine.indexOf(g.guide)
+  const last = following(g, g.guide) < 0
+  const go = () => (step.designer ? openDesigner() : goTo(step.where ?? { tab: step.tab ?? 'dashboard' }))
   return (
     <div className="pointer-events-auto absolute bottom-3 left-1/2 z-30 w-[440px] -translate-x-1/2 border border-accent bg-panel">
       <div className="flex items-center justify-between border-b border-line px-3 py-[6px]">
         <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">
-          <Icon name="goals" size={13} />
+          <Icon name={step.opens ? (has(g, step.opens) ? 'unlock' : 'lock') : 'goals'} size={13} />
           {step.title}
         </span>
         <span className="num text-[10px] text-faint">
-          {g.guide + 1} / {STEPS.length}
+          {at + 1} / {mine.length}
         </span>
       </div>
       <div className="px-3 py-2 text-[12px] leading-relaxed text-fg">{step.text}</div>
       <div className="flex h-[3px] gap-[2px] px-3">
-        {STEPS.map((_, i) => (
+        {mine.map((i) => (
           <span key={i} className={`flex-1 ${i < g.guide ? 'bg-accent' : i === g.guide ? (done ? 'bg-pos' : 'bg-accent/50') : 'bg-line2'}`} />
         ))}
       </div>
@@ -81,19 +114,19 @@ export function Coach() {
           Leave the guide
         </Btn>
         <div className="flex gap-1">
-          {(step.tab && step.tab !== tab) || g.guide === 4 ? (
-            <Btn small tone="primary" className="flex items-center gap-[6px]" onClick={go}>
-              <Icon name={g.guide === 4 ? 'plus' : (TAB_ICON[step.tab ?? 'dashboard'] ?? 'overview')} size={12} />
-              {g.guide === 4 ? 'New device' : 'Take me there'}
+          {(step.tab && (step.tab !== tab || step.where?.view)) || step.designer ? (
+            <Btn small tone={step.done ? 'primary' : 'default'} className="flex items-center gap-[6px]" onClick={go}>
+              <Icon name={step.designer ? 'plus' : (TAB_ICON[step.tab ?? 'dashboard'] ?? 'overview')} size={12} />
+              {step.designer ? 'New device' : 'Take me there'}
             </Btn>
           ) : null}
           {!step.done && (
-            <Btn small tone="primary" icon={last ? 'check' : 'arrowRight'} onClick={() => act((s) => void (s.guide = last ? -1 : s.guide + 1))}>
+            <Btn small tone="primary" icon={last ? 'check' : 'arrowRight'} onClick={() => act((s) => void (s.guide = following(s, s.guide)))}>
               {last ? 'Finish' : 'Next'}
             </Btn>
           )}
           {step.done && !done && (
-            <Btn small icon="fast" onClick={() => act((s) => void (s.guide = s.guide + 1))} title="Skip this step">
+            <Btn small icon="fast" onClick={() => act((s) => void (s.guide = following(s, s.guide)))} title="Skip this step">
               Skip
             </Btn>
           )}

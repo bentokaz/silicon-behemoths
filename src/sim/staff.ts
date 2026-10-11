@@ -1,8 +1,8 @@
 // People: who can be hired, how they feel, and what the ones at their desks
 // contribute to research, development, marketing, software and support.
 import { ITEMS, reachable, sitePrestige, sumOf } from './sites'
-import { clamp, int, pick, rand, range } from './rng'
-import type { Employee, GameState, Role, StaffPolicy, Team } from './types'
+import { type RngHolder, clamp, int, pick, rand, range } from './rng'
+import { EXEC_IDS, type Employee, type ExecId, type GameState, ROLES, type Role, type StaffPolicy, type Team } from './types'
 
 export const ROLE_INFO: Record<Role, { name: string; effect: string; color: string }> = {
   engineer: { name: 'Hardware engineer', effect: 'Shortens device and chip development', color: '#4f8fd6' },
@@ -64,7 +64,98 @@ export function makeCandidate(s: GameState, boost = 0): Employee {
 
 export function refreshCandidates(s: GameState, boost = 0) {
   s.candidates = Array.from({ length: 9 }, () => makeCandidate(s, boost))
+  // a guided company opens screens by hiring its first researcher, marketer and so on,
+  // so every batch has at least one of each job: nobody waits months for the dice
+  if (s.config.progression !== 'guided') return
+  for (const role of ROLES) {
+    if (s.candidates.some((e) => e.role === role)) continue
+    const spare = s.candidates.filter((e) => s.candidates.filter((x) => x.role === e.role).length > 1).sort((a, b) => a.skill - b.skill)[0]
+    if (spare) spare.role = role
+  }
 }
+
+// ---------------------------------------------------------------- executives
+// A handful of seats at the top. Whoever holds one is an ordinary employee
+// (a desk, morale, raises, rivals who want them) with `exec` set. They do no
+// line work; each lends the whole company a modest lift in their own field,
+// and leaves a gap when they go.
+
+export interface ExecDef {
+  title: string
+  short: string
+  /** The kind of desk they keep, and how they dress. */
+  role: Role
+  color: string
+  /** What the seat does for the company, in a sentence. */
+  effect: string
+  /** What an empty seat costs, once it has been filled before. */
+  gap: string
+}
+export const EXECS: Record<ExecId, ExecDef> = {
+  cfo: { title: 'Chief Financial Officer', short: 'CFO', role: 'support', color: '#c9a25a', effect: 'Keeps the books: overheads fall by up to 10%.', gap: 'Overheads run 5% higher.' },
+  cmo: { title: 'Head of Marketing', short: 'CMO', role: 'marketer', color: '#d65f7c', effect: 'Sharpens every message: awareness grows up to 15% faster.', gap: 'Awareness grows 8% slower.' },
+  people: { title: 'Head of People', short: 'HR', role: 'support', color: '#8fc66a', effect: 'Looks after the staff: everyone’s morale settles up to 8 points higher.', gap: 'Morale settles 4 points lower.' },
+  coo: { title: 'Head of Operations', short: 'COO', role: 'engineer', color: '#e08a3a', effect: 'Leans on suppliers: building devices costs up to 5% less.', gap: 'Building devices costs 2% more.' },
+  sales: { title: 'Head of Sales', short: 'CSO', role: 'marketer', color: '#5a9bd4', effect: 'Runs the shops and the offices abroad: they cost up to 15% less to run.', gap: 'Stores and offices abroad cost 8% more to run.' },
+  care: { title: 'Head of Support', short: 'CCO', role: 'support', color: '#5fb8c9', effect: 'Organises the help desk: it answers up to 40% more tickets.', gap: 'The help desk answers 15% fewer tickets.' },
+  cto: { title: 'Chief Technology Officer', short: 'CTO', role: 'researcher', color: '#58b98a', effect: 'Points the labs the right way: research runs up to 15% faster.', gap: 'Research runs 8% slower.' },
+}
+/** An executive costs this many times the going rate for their skill. */
+export const EXEC_PAY = 2
+/** The job title to show for anyone: an executive's seat, or the ordinary role. */
+export const jobTitle = (e: Pick<Employee, 'role' | 'exec'>) => (e.exec ? EXECS[e.exec].title : ROLE_INFO[e.role].name)
+export const execOf = (s: GameState, id: ExecId) => s.staff.find((e) => e.exec === id)
+/** What the market pays this person: executives command a multiple; modest people accept a little less. */
+export const marketPay = (e: Pick<Employee, 'skill' | 'traits' | 'exec'>) => salaryFor(e.skill) * (e.exec ? EXEC_PAY : 1) * (e.traits.includes('frugal') ? 0.9 : 1)
+
+/**
+ * Someone who would take an executive seat. Drawn from a stream of its own
+ * (`n` tells candidates of one month apart), so the main dice are untouched.
+ */
+export function makeExec(s: GameState, id: ExecId, n: number): Employee {
+  const dice: RngHolder = { rng: (s.config.seed * 7919 + Math.floor(s.day / 30) * 104729 + EXEC_IDS.indexOf(id) * 1299709 + n * 15485863) | 0 }
+  const skill = clamp(Math.round(50 + 38 * Math.pow(rand(dice), 1.4) + Math.min(8, prestige(s) * 0.25)), 45, 96)
+  const traits: string[] = []
+  const pool = Object.keys(TRAITS)
+  if (rand(dice) < 0.6) traits.push(pick(dice, pool))
+  const person: Employee = { id: `x${s.day}-${id}-${n}`, name: `${pick(dice, FIRST)} ${pick(dice, LAST)}`, role: EXECS[id].role, exec: id, skill, potential: Math.min(100, skill + int(dice, 3, 10)), salary: 0, hiredDay: 0, look: int(dice, 0, 9999), morale: 72, traits, lowDays: 0 }
+  person.salary = Math.round((marketPay(person) * range(dice, 0.95, 1.1)) / 100) * 100
+  return person
+}
+
+export interface ExecFx {
+  /** Multipliers on overheads, on the cost of building devices, and on running stores and overseas offices. */
+  overhead: number
+  production: number
+  outposts: number
+  /** Multipliers on awareness growth, research speed and support capacity. */
+  marketing: number
+  research: number
+  support: number
+  /** Points added to everyone's morale target. */
+  morale: number
+}
+/**
+ * What the executives add. A seat that was never filled does nothing; one that
+ * is filled helps in proportion to its holder's skill and mood; one that was
+ * filled and now stands empty costs a little until someone takes it again.
+ */
+export function execFx(s: GameState, seated?: Employee[]): ExecFx {
+  const k = (id: ExecId): number => {
+    const e = execOf(s, id)
+    if (!e) return s.execSeats?.[id] ? -1 : 0
+    if (inTraining(e, s.day) || !(seated ??= seatedStaff(s)).includes(e)) return 0
+    return (e.skill / 100) * (0.6 + 0.4 * (e.morale / 100))
+  }
+  const mult = (id: ExecId, best: number, gap: number) => {
+    const v = k(id)
+    return v < 0 ? 1 + gap : 1 + best * v
+  }
+  const people = k('people')
+  return { overhead: mult('cfo', -0.1, 0.05), production: mult('coo', -0.05, 0.02), outposts: mult('sales', -0.15, 0.08), marketing: mult('cmo', 0.15, -0.08), research: mult('cto', 0.15, -0.08), support: mult('care', 0.4, -0.15), morale: people < 0 ? -4 : 8 * people }
+}
+/** Executive desks the staff can reach: an executive with one of their own is happier. */
+const execDesks = (s: GameState) => reachable(s.office).filter((i) => i.kind === 'exec').length
 
 const seatCount = (s: GameState) => reachable(s.office).filter((i) => ITEMS.office[i.kind]?.seats).length
 export const prestige = (s: GameState) => sitePrestige(s.office)
@@ -177,19 +268,20 @@ export function staffEffects(s: GameState): Effects {
     // the most skilled people of a role get its stations
     let stations = items.filter((i) => ITEMS.office[i.kind]?.station === role).length
     return working
-      .filter((e) => e.role === role)
+      .filter((e) => e.role === role && !e.exec)
       .sort((a, b) => b.skill - a.skill)
       .reduce((sum, e) => sum + output(e, stations-- > 0) * (managed.get(e.id) ?? 1) * hours, 0)
   }
   const comfortPoints = sumOf(s.office, 'comfort', items)
+  const top = execFx(s, seated)
   return {
-    research: 1 + 0.15 * power('researcher'),
+    research: (1 + 0.15 * power('researcher')) * top.research,
     devTime: 1 / (1 + 0.12 * power('engineer')),
-    marketing: 1 + 0.15 * power('marketer'),
+    marketing: (1 + 0.15 * power('marketer')) * top.marketing,
     polish: Math.min(0.12, 0.02 * power('designer')),
     software: power('software'),
     hardware: power('engineer'),
-    support: power('support') * 120,
+    support: power('support') * 120 * top.support,
     comfort: seated.length ? Math.min(1, comfortPoints / (seated.length * 1.1 + 2)) : Math.min(1, comfortPoints / 2),
     prestige: prestige(s),
     morale: s.staff.length ? s.staff.reduce((a, e) => a + e.morale, 0) / s.staff.length : 0,
@@ -213,6 +305,9 @@ export function stepStaff(s: GameState, crunch: boolean): StaffNote[] {
   const fx = staffEffects(s)
   const seated = new Set(seatedStaff(s).map((e) => e.id))
   const mood = clamp(s.staff.reduce((a, e) => a + (e.traits.includes('social') ? 3 : 0) - (e.traits.includes('star') ? 4 : 0), 0), -12, 12)
+  const top = execFx(s)
+  const suites = s.staff.some((e) => e.exec) ? execDesks(s) : 0
+  let execs = 0
   for (const e of [...s.staff]) {
     if (e.trainingUntil !== undefined && s.day >= e.trainingUntil) {
       const gain = Math.min(e.potential - e.skill, int(s, 4, 8) + (e.traits.includes('fast') ? 2 : 0))
@@ -220,8 +315,10 @@ export function stepStaff(s: GameState, crunch: boolean): StaffNote[] {
       e.trainingUntil = undefined
       notes.push({ text: `${e.name} finished a training course (+${Math.max(0, gain).toFixed(0)} skill).` })
     }
-    const fair = e.salary / (salaryFor(e.skill) * (e.traits.includes('frugal') ? 0.9 : 1))
-    let target = 50 + 28 * fx.comfort + (fair >= 1.1 ? 12 : fair >= 0.9 ? 0 : -20) + mood + PERKS[s.policy.perks].morale
+    const fair = e.salary / marketPay(e)
+    let target = 50 + 28 * fx.comfort + (fair >= 1.1 ? 12 : fair >= 0.9 ? 0 : -20) + mood + PERKS[s.policy.perks].morale + top.morale
+    // an executive wants an office: an executive desk of their own lifts them, a plain desk rankles a little
+    if (e.exec) target += execs++ < suites ? 6 : -3
     target += e.traits.includes('steady') ? Math.max(-4, HOURS[s.policy.hours].morale) : HOURS[s.policy.hours].morale
     if (teamOf(s, e.id)?.leadId) target += 3
     if (crunch && !e.traits.includes('steady')) target -= 12
@@ -247,7 +344,7 @@ export function monthlyStaff(s: GameState): StaffNote[] {
   }
   for (const e of s.staff) {
     if (e.ask) continue
-    const market = salaryFor(e.skill) * (e.traits.includes('frugal') ? 0.9 : 1)
+    const market = marketPay(e)
     const gap = e.traits.includes('ambitious') ? 1.06 : 1.12
     if (market > e.salary * gap && s.day - e.hiredDay > 120 && s.day >= (e.raiseAfter ?? 0)) {
       e.ask = Math.round(market / 50) * 50

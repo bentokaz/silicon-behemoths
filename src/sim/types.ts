@@ -262,11 +262,16 @@ export interface Company {
 
 export type Role = 'engineer' | 'software' | 'designer' | 'researcher' | 'marketer' | 'support'
 export const ROLES: Role[] = ['engineer', 'software', 'designer', 'researcher', 'marketer', 'support']
+/** Seats at the top of the company. Whoever holds one is an ordinary employee with `exec` set. */
+export type ExecId = 'cfo' | 'coo' | 'cmo' | 'cto' | 'people' | 'sales' | 'care'
+export const EXEC_IDS: ExecId[] = ['cfo', 'cmo', 'people', 'coo', 'sales', 'care', 'cto']
 
 export interface Employee {
   id: string
   name: string
   role: Role
+  /** Set for an executive: the seat they hold. Their `role` is then only the kind of desk they keep. */
+  exec?: ExecId
   skill: number
   /** Skill ceiling this person can reach. */
   potential: number
@@ -561,6 +566,12 @@ export interface GameConfig {
   startType?: DeviceType | 'all'
   /** Use the old parody names for rivals instead of invented ones. */
   parody?: boolean
+  /**
+   * How the company's capabilities open up: 'guided' starts as a garage and
+   * earns each one (see sim/progress.ts); 'open' has everything from the first
+   * day. Missing means open, which is what saves from before this option are.
+   */
+  progression?: 'guided' | 'open'
 }
 
 /** Something that has happened to the company and may need a decision. */
@@ -603,7 +614,7 @@ export const monthCosts = (r: MonthReport) => COST_KEYS.reduce((a, k) => a + r[k
 export interface NewsItem {
   id: number
   day: number
-  kind: 'launch' | 'review' | 'research' | 'rival' | 'finance' | 'alert' | 'staff' | 'event' | 'goal'
+  kind: 'launch' | 'review' | 'research' | 'rival' | 'finance' | 'alert' | 'staff' | 'event' | 'goal' | 'unlock'
   text: string
   productId?: string
 }
@@ -630,6 +641,12 @@ export interface GameState {
   rdBudget: number
   staff: Employee[]
   candidates: Employee[]
+  /** Executives who would take a seat if asked. */
+  execPool: Employee[]
+  /** Each executive seat that has ever been filled: when, and since when it has stood empty. */
+  execSeats: Partial<Record<ExecId, { since: number; vacant?: number }>>
+  /** Capability id (see sim/progress.ts) to the day it opened. Only filled in guided games. */
+  unlocks: Record<string, number>
   office: Site
   factory: Site | null
   venue: Site | null

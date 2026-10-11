@@ -1,13 +1,15 @@
 // Staff and office screens, plus the company logo uploader.
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { sfx } from '../audio/sfx'
 import { assignTeam, autoTeams, createTeam, declineRaise, deleteTeam, fire, fmtDate, giveRaise, headhunt, hire, renameTeam, setLead, setPolicy, train, upgradeOffice } from '../sim/game'
+import { has, locked, vacantSeats } from '../sim/progress'
 import { ROOMS, SITE_TIERS, builtTiles, reachable, sealedRooms, sumOf, upkeep } from '../sim/sites'
 import { HOURS, PERKS, TEAM_SPAN, meetingFactor, perksCost, teamBonus, teamOf, unmanaged } from '../sim/staff'
 import type { StaffPolicy } from '../sim/types'
-import { HEADHUNT_COST, ROLE_INFO, TRAITS, inTraining, monthlySalaries, salaryFor, seatedStaff, staffEffects, titleFor, trainingCost } from '../sim/staff'
+import { EXECS, HEADHUNT_COST, ROLE_INFO, TRAITS, inTraining, jobTitle, marketPay, monthlySalaries, seatedStaff, staffEffects, titleFor, trainingCost } from '../sim/staff'
 import { type Employee, ROLES, type Role } from '../sim/types'
 import { useGame, useStore } from '../store/game'
+import { Executives, LockedPane } from './Progress'
 import { SiteBuilder } from './SiteBuilder'
 import { Icon, roleIcon } from './icons'
 import { Btn, Choice, Drawer, Empty, Fold, Head, IconBtn, Kpi, Meter, Mini, Panel, Row, Tabs, Tag, TextInput, Th, money, pct } from './ui'
@@ -67,8 +69,8 @@ const skillTone = (s: number) => (s >= 70 ? 'pos' : s >= 45 ? 'accent' : 'dim') 
 const moraleTone = (m: number) => (m >= 65 ? 'pos' : m >= 40 ? 'warn' : 'neg') as 'pos' | 'warn' | 'neg'
 
 /** The job's icon, in the job's colour. */
-function RoleDot({ role }: { role: Role }) {
-  return <Icon name={roleIcon(role)} size={12} className="mr-2 inline-block" style={{ color: ROLE_INFO[role].color, verticalAlign: -2 }} />
+function RoleDot({ role, exec }: { role: Role; exec?: Employee['exec'] }) {
+  return <Icon name={exec ? 'briefcase' : roleIcon(role)} size={12} className="mr-2 inline-block" style={{ color: exec ? EXECS[exec].color : ROLE_INFO[role].color, verticalAlign: -2 }} />
 }
 
 function PersonRow({ e, children, status }: { e: Employee; children?: React.ReactNode; status?: React.ReactNode }) {
@@ -76,11 +78,11 @@ function PersonRow({ e, children, status }: { e: Employee; children?: React.Reac
     <>
       <td className="text-fg">
         {e.name}
-        {titleFor(e.skill) && <span className="ml-2 text-[10px] text-faint">{titleFor(e.skill)}</span>}
+        {!e.exec && titleFor(e.skill) && <span className="ml-2 text-[10px] text-faint">{titleFor(e.skill)}</span>}
       </td>
-      <td className="text-dim">
-        <RoleDot role={e.role} />
-        {ROLE_INFO[e.role].name}
+      <td className={e.exec ? 'text-fg' : 'text-dim'}>
+        <RoleDot role={e.role} exec={e.exec} />
+        {jobTitle(e)}
       </td>
       <td className="w-28">
         <div className="flex items-center gap-2">
@@ -116,16 +118,26 @@ export function PersonCard() {
 function EmployeeDrawer({ e, seated, onClose }: { e: Employee; seated: boolean; onClose: () => void }) {
   const g = useGame()
   const { act, say } = useStore.getState()
-  const market = salaryFor(e.skill)
+  const market = marketPay(e)
   const training = inTraining(e, g.day)
+  const courses = locked(g, 'people')
   return (
     <Drawer open onClose={onClose} width={380} title={e.name}>
       <div className="space-y-3 p-2">
         <div className="grid grid-cols-3 gap-1">
-          <Mini label="Role" icon={roleIcon(e.role)} value={ROLE_INFO[e.role].name} tone="text-fg" />
+          <Mini label="Role" icon={e.exec ? 'briefcase' : roleIcon(e.role)} value={e.exec ? EXECS[e.exec].short : ROLE_INFO[e.role].name} tone="text-fg" />
           <Mini label="Skill" icon="medal" value={`${Math.floor(e.skill)} of ${e.potential}`} tone="text-fg" />
           <Mini label="Joined" icon="calendar" value={fmtDate(e.hiredDay)} />
         </div>
+        {e.exec && (
+          <div className="border p-2" style={{ borderColor: EXECS[e.exec].color }}>
+            <Head icon="briefcase" className="mb-1 text-faint">
+              {EXECS[e.exec].title}
+            </Head>
+            <div className="text-[11px] leading-snug text-fg">{EXECS[e.exec].effect}</div>
+            <div className="mt-1 text-[10px] leading-snug text-faint">The lift follows their skill and morale, and only counts while they have a desk. They would like an executive desk of their own. If the seat falls empty, what it opened stays open: {EXECS[e.exec].gap.charAt(0).toLowerCase() + EXECS[e.exec].gap.slice(1)}</div>
+          </div>
+        )}
         <div className="border border-line p-2">
           <div className="flex items-baseline justify-between">
             <Head icon="morale" className="text-faint">
@@ -177,6 +189,11 @@ function EmployeeDrawer({ e, seated, onClose }: { e: Employee; seated: boolean; 
           </Head>
           {training ? (
             <div className="text-[11px] text-accent">On a course until {fmtDate(e.trainingUntil!)}. Not working until then.</div>
+          ) : courses ? (
+            <button className="flex w-full items-start gap-[6px] text-left text-[11px] leading-snug text-faint hover:text-dim" onClick={() => useStore.getState().showLock('people')}>
+              <Icon name="lock" size={11} className="mt-[2px] shrink-0" />
+              Training courses come with a Head of People.
+            </button>
           ) : (
             <Btn
               small
@@ -199,7 +216,7 @@ function EmployeeDrawer({ e, seated, onClose }: { e: Employee; seated: boolean; 
             </div>
           )}
         </div>
-        <div className="border border-line p-2">
+        <div className={`border border-line p-2 ${has(g, 'teams') ? '' : 'hidden'}`}>
           <Head icon="team" className="mb-1 text-faint">
             Team
           </Head>
@@ -221,7 +238,18 @@ function EmployeeDrawer({ e, seated, onClose }: { e: Employee; seated: boolean; 
 export function Staff() {
   const g = useGame()
   const { act, say, setTab } = useStore.getState()
-  const [view, setView] = useState<'team' | 'teams' | 'policy' | 'hire'>(g.staff.length ? 'team' : 'hire')
+  const [view, setView] = useState<'team' | 'teams' | 'policy' | 'hire' | 'execs'>(g.staff.length ? 'team' : 'hire')
+  // "take me there" from a requirement lands on the right view, filtered to the right job
+  const hint = useStore((s) => s.hint)
+  useEffect(() => {
+    if (hint?.tab !== 'staff') return
+    if (hint.view === 'team' || hint.view === 'teams' || hint.view === 'policy' || hint.view === 'hire' || hint.view === 'execs') setView(hint.view)
+    setRole(hint.role ?? 'all')
+    useStore.getState().takeHint()
+  }, [hint])
+  const lockIcon = (cap: 'teams' | 'people' | 'execs', icon: 'team' | 'policy' | 'briefcase') => (has(g, cap) ? icon : 'lock')
+  const gone = vacantSeats(g).length
+  const execsWaiting = new Set(g.execPool.map((e) => e.exec)).size
   const loose = unmanaged(g)
   const meet = meetingFactor(g)
   const [role, setRole] = useState<'all' | Role>('all')
@@ -247,7 +275,7 @@ export function Staff() {
         <Mini label="Support, tickets / day" icon="headset" value={Math.round(fx.support + 20)} />
       </div>
       <div className="flex shrink-0 items-center justify-between">
-        <Tabs value={view} onChange={setView} options={[{ value: 'team', label: 'People', icon: 'staff', badge: g.staff.length }, { value: 'teams', label: 'Teams', icon: 'team', badge: loose ? `${loose} unled` : g.teams.length || undefined }, { value: 'policy', label: 'Policies', icon: 'policy' }, { value: 'hire', label: 'Applicants', icon: 'hire', badge: g.candidates.length }]} className="flex-1" />
+        <Tabs value={view} onChange={setView} options={[{ value: 'team', label: 'People', icon: 'staff', badge: g.staff.length }, { value: 'teams', label: 'Teams', icon: lockIcon('teams', 'team'), badge: loose ? `${loose} unled` : g.teams.length || undefined }, { value: 'policy', label: 'Policies', icon: lockIcon('people', 'policy') }, { value: 'hire', label: 'Applicants', icon: 'hire', badge: g.candidates.length }, { value: 'execs', label: 'Executives', icon: lockIcon('execs', 'briefcase'), badge: !has(g, 'execs') ? undefined : gone ? `${gone} empty` : execsWaiting || undefined }]} className="flex-1" />
         <div className="flex gap-1 pl-2">
           <Btn small active={role === 'all'} onClick={() => setRole('all')}>
             All
@@ -306,7 +334,10 @@ export function Staff() {
               </tbody>
             </table>
           ))}
-        {view === 'teams' && (
+        {view === 'execs' && <Executives />}
+        {view === 'teams' && !has(g, 'teams') && <LockedPane id="teams" />}
+        {view === 'policy' && !has(g, 'people') && <LockedPane id="people" />}
+        {view === 'teams' && has(g, 'teams') && (
           <div className="p-2">
             <div className="mb-2 flex items-start justify-between gap-3">
               <div className="max-w-[640px] text-[11px] leading-snug text-dim">
@@ -342,7 +373,7 @@ export function Staff() {
                     {members.length > TEAM_SPAN && <div className="border-b border-line px-2 py-1 text-[10px] text-warn">Too many for one lead: the bonus is spread thin.</div>}
                     {members.map((e) => (
                       <div key={e.id} className="flex items-center gap-2 border-b border-line px-2 py-[4px] text-[11px] last:border-b-0">
-                        <RoleDot role={e.role} />
+                        <RoleDot role={e.role} exec={e.exec} />
                         <button className="flex-1 truncate text-left text-fg hover:text-accent" onClick={() => setOpenId(e.id)}>
                           {e.name}
                         </button>
@@ -360,7 +391,7 @@ export function Staff() {
             </div>
           </div>
         )}
-        {view === 'policy' && (
+        {view === 'policy' && has(g, 'people') && (
           <div className="grid grid-cols-2 gap-2 p-2">
             <div className="border border-line p-2">
               <Head icon="clock" className="mb-2 text-faint">
@@ -397,7 +428,16 @@ export function Staff() {
             </div>
           </div>
         )}
-        {view === 'hire' && (
+        {view === 'hire' && byRole(g.candidates).length === 0 && (
+          <Empty icon="hire" text={role === 'all' ? 'Everyone who applied this month has been seen. A new batch arrives next month, or a recruiter can find one now.' : `No ${ROLE_INFO[role].name.toLowerCase()} is applying at the moment. A new batch arrives each month, with at least one of every job.`}>
+            {role !== 'all' && (
+              <Btn icon="staff" onClick={() => setRole('all')}>
+                Show every applicant
+              </Btn>
+            )}
+          </Empty>
+        )}
+        {view === 'hire' && byRole(g.candidates).length > 0 && (
           <table className="grid-table">
             <thead>
               <tr>

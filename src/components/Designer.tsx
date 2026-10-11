@@ -9,6 +9,7 @@ import { ANC, COOLERS, DRIVERS, GPUS, HEAD_STRAPS, HINGES, INPUT_NAMES, MIC_ARRA
 import { RETAIL_CUT, canAfford, devPlan, isVariantOf, player, productName, startProduct } from '../sim/game'
 import { faceLabel, facesFor, faceSize, isEdge, kindsFor, partLabel, speakerShape } from '../sim/geometry'
 import { EVENTS, hasStage } from '../sim/growth'
+import { has } from '../sim/progress'
 import { appeal, bestSegment, normalised } from '../sim/market'
 import { CONTRACT, FACTORY_SAVING, costNow, factoryLine } from '../sim/ops'
 import { type FingerprintStyle, type FrontStyle, LAYOUT_NAMES } from '../sim/rivals'
@@ -1037,7 +1038,7 @@ export function Designer() {
 
                 <div className="label mb-1 mt-3 text-faint">Launch marketing</div>
                 <Slider label="One-off launch budget" value={marketing} min={0} max={20e6} step={50e3} format={(v) => money(v)} onChange={setMarketing} />
-                <Choice label="Launch keynote" value={keynote} options={[{ value: -1, label: 'None' }, ...EVENTS.keynote.venues.map((v, i) => ({ value: i, label: `${v.name} (${money(v.cost, 1)})`, locked: i === 3 && !hasStage(g) }))]} onChange={setKeynote} />
+                <Choice label="Launch keynote" value={keynote} options={[{ value: -1, label: 'None' }, ...EVENTS.keynote.venues.map((v, i) => ({ value: i, label: `${v.name} (${money(v.cost, 1)})`, locked: !has(g, 'events') || (i === 3 && !hasStage(g)) }))]} onChange={setKeynote} />
               </div>
               <div className="p-3">
                 <div className="label mb-1 text-faint">First production run</div>

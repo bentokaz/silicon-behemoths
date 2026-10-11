@@ -5,6 +5,7 @@ import { useEffect, useRef } from 'react'
 import { type Ambience, setAmbience, setAmbienceLevel, sfx } from '../audio/sfx'
 import { fmtDate, player } from '../sim/game'
 import { factoryLine, pendingUnits } from '../sim/ops'
+import { capOfTab, has, locked, lockedCaps, nearTabs, needText, vacantSeats } from '../sim/progress'
 import { sealedRooms } from '../sim/sites'
 import { staffEffects, unmanaged } from '../sim/staff'
 import { stageOf } from '../sim/goals'
@@ -15,12 +16,14 @@ import { actionFor, keyName, keysFor, useSettings } from '../store/settings'
 import { CityScreen } from './City'
 import { OfficeScreen, PersonCard, Staff } from './Company'
 import { Designer } from './Designer'
-import { CareScreen, GoalsScreen, SharesScreen, WorldScreen } from './Empire'
+import { CareScreen, SharesScreen, WorldScreen } from './Empire'
 import { MarketingScreen, StoresScreen, VenueScreen } from './Growth'
 import { Coach, Decision, YearEnd } from './Guide'
 import { LaunchShow } from './Show'
 import { ProductDrawer } from './Inspector'
 import { LabsScreen } from './Labs'
+import { GoalsHub } from './GoalsHub'
+import { LockCard, UnlockBanner } from './Progress'
 import { FactoryScreen } from './Operations'
 import { ResearchScreen } from './Lines'
 import { Dashboard, Finance, Market, Products, Rivals } from './Screens'
@@ -76,14 +79,14 @@ const SPEEDS: { speed: Speed; label: string; icon: IconName }[] = [
   { speed: 2, label: 'Fast', icon: 'fast' },
   { speed: 4, label: 'Fastest', icon: 'faster' },
 ]
-const NEWS_TONE: Record<NewsItem['kind'], string> = { launch: 'text-accent', review: 'text-pos', research: 'text-accent', rival: 'text-faint', finance: 'text-dim', alert: 'text-neg', staff: 'text-dim', event: 'text-pos', goal: 'text-warn' }
+const NEWS_TONE: Record<NewsItem['kind'], string> = { launch: 'text-accent', review: 'text-pos', research: 'text-accent', rival: 'text-faint', finance: 'text-dim', alert: 'text-neg', staff: 'text-dim', event: 'text-pos', goal: 'text-warn', unlock: 'text-accent' }
 /** Screens that are a full 3D view; the feed stays out of their way. */
 const WIDE: Tab[] = ['city', 'office', 'factory', 'stores', 'venue']
 
 /** A count shown beside a nav item when something there needs attention. */
 function badge(g: GameState, tab: Tab): number {
   if (tab === 'products') return g.products.filter((p) => p.companyId === 'player' && ((p.status === 'sale' && p.stock <= 0 && !pendingUnits(g, p.id)) || p.recall?.state === 'open')).length
-  if (tab === 'staff') return g.staff.filter((e) => e.ask).length + (unmanaged(g) ? 1 : 0)
+  if (tab === 'staff') return g.staff.filter((e) => e.ask).length + (unmanaged(g) ? 1 : 0) + vacantSeats(g).length
   if (tab === 'office') return staffEffects(g).idle + sealedRooms(g.office).length
   if (tab === 'care') return g.products.filter((p) => p.companyId === 'player' && p.recall?.state === 'open').length
   if (tab === 'shares') return g.stock.lowDays > 0 ? 1 : 0
@@ -132,7 +135,14 @@ function useHotkeys() {
       else if (action === 'save') void saveGame('quick', st.game).then(() => (sfx.confirm(), st.say('Saved to the Quick slot.')))
       else if (action === 'newDevice') st.openDesigner()
       else if (action === 'feed') st.toggleFeed()
-      else if (action.startsWith('tab:')) st.setTab(action.slice(4) as Tab)
+      else if (action.startsWith('tab:')) {
+        // a key for a screen that is not open yet says why, and goes nowhere
+        const to = action.slice(4) as Tab
+        const cap = capOfTab(to)
+        const lock = cap ? locked(st.game, cap) : null
+        if (lock) st.say(lock, 'bad')
+        else st.setTab(to)
+      }
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
@@ -148,7 +158,9 @@ export function Shell() {
   const feedOpen = useStore((s) => s.feedOpen)
   const checkpoint = useStore((s) => s.checkpoint)
   const showing = useStore((s) => s.showing)
-  const { setTab, setSpeed, focus, say, quit, toggleRail, toggleFeed, openDesigner, rewind } = useStore.getState()
+  const freshTabs = useStore((s) => s.freshTabs)
+  const lockCard = useStore((s) => s.lockCard)
+  const { setTab, setSpeed, focus, say, quit, toggleRail, toggleFeed, openDesigner, rewind, showLock, go } = useStore.getState()
   const stage = stageOf(g)
   useSettings((s) => s.binds)
   const keyOf = (tab: Tab) => {
@@ -169,16 +181,48 @@ export function Shell() {
   const showFeed = feedOpen && !designing && !WIDE.includes(tab)
   const railW = railOpen ? 'w-[172px]' : 'w-[52px]'
 
+  // what the navigation shows: screens that are open, the locked ones that are next, and a count of the rest
+  const near = nearTabs(g)
+  const lockOf = (t: NavItem) => {
+    const cap = capOfTab(t.id)
+    return cap && !has(g, cap) ? cap : undefined
+  }
+  const shown = (t: NavItem) => {
+    const cap = lockOf(t)
+    return !cap || near.includes(cap)
+  }
+  const later = lockedCaps(g).length - near.length
+
   const navButton = (t: NavItem) => {
     const on = !designing && tab === t.id
+    const cap = lockOf(t)
+    if (cap) {
+      const open = lockCard?.cap === cap
+      return (
+        <button
+          key={t.id}
+          onClick={(e) => (open ? showLock(null) : showLock(cap, e.currentTarget.getBoundingClientRect().top))}
+          title={`${t.label} is not open yet: ${needText(g, cap)}`}
+          aria-label={`${t.label}, locked`}
+          className={`relative flex h-8 w-full items-center justify-between border-l-2 text-left transition-colors ${railOpen ? 'px-3' : 'justify-center px-0'} ${open ? 'border-l-line2 bg-hover text-dim' : 'border-l-transparent text-faint hover:bg-hover hover:text-dim'}`}
+        >
+          <span className="flex items-center gap-2">
+            <Icon name={TAB_ICON[t.id] ?? 'system'} size={railOpen ? 14 : 17} />
+            {railOpen && <span className="text-xs uppercase tracking-wider">{t.label}</span>}
+          </span>
+          <Icon name="lock" size={railOpen ? 10 : 8} className={railOpen ? '' : 'absolute right-[6px] top-[5px]'} />
+        </button>
+      )
+    }
     const n = badge(g, t.id)
+    const isNew = freshTabs.includes(t.id)
     return (
       <button key={t.id} onClick={() => setTab(t.id)} title={railOpen ? undefined : t.label} className={`relative flex h-8 w-full items-center justify-between border-l-2 text-left transition-colors ${railOpen ? 'px-3' : 'justify-center px-0'} ${on ? 'border-l-accent bg-accent/10 text-accent' : 'border-l-transparent text-dim hover:bg-hover hover:text-fg'}`}>
         <span className="flex items-center gap-2">
           <Icon name={TAB_ICON[t.id] ?? 'system'} size={railOpen ? 14 : 17} />
           {railOpen && <span className="text-xs uppercase tracking-wider">{t.label}</span>}
         </span>
-        {n > 0 ? <span className={`num text-[10px] text-warn ${railOpen ? '' : 'absolute right-1 top-0'}`}>{n}</span> : railOpen && keyOf(t.id) && <span className="num text-[9px] text-faint">{keyOf(t.id)}</span>}
+        {n > 0 ? <span className={`num text-[10px] text-warn ${railOpen ? '' : 'absolute right-1 top-0'}`}>{n}</span> : isNew ? <span className={`num text-[9px] tracking-wider text-accent ${railOpen ? '' : 'absolute right-[3px] top-0'}`}>{railOpen ? 'NEW' : '+'}</span> : railOpen && keyOf(t.id) && <span className="num text-[9px] text-faint">{keyOf(t.id)}</span>}
       </button>
     )
   }
@@ -226,6 +270,7 @@ export function Shell() {
           </Btn>
         </div>
       </header>
+      {!g.gameOver && !showing && <UnlockBanner />}
 
       <div className="flex min-h-0 flex-1">
         <nav className={`flex ${railW} shrink-0 flex-col border-r border-line bg-panel`}>
@@ -240,12 +285,27 @@ export function Shell() {
             </button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {NAV.map((n) => (
-              <div key={n.group} className="border-b border-line py-1">
-                {railOpen && <div className="px-3 pb-[2px] pt-1 text-[9px] uppercase tracking-[0.18em] text-faint">{n.group}</div>}
-                {n.items.map(navButton)}
-              </div>
-            ))}
+            {NAV.map((n) => ({ ...n, items: n.items.filter(shown) }))
+              .filter((n) => n.items.length)
+              .map((n) => (
+                <div key={n.group} className="border-b border-line py-1">
+                  {railOpen && <div className="px-3 pb-[2px] pt-1 text-[9px] uppercase tracking-[0.18em] text-faint">{n.group}</div>}
+                  {n.items.map(navButton)}
+                </div>
+              ))}
+            {later > 0 && (
+              <button
+                onClick={() => go({ tab: 'goals', view: 'growth' })}
+                title={`${later} more ${later === 1 ? 'part' : 'parts'} of the company to open as it grows. See them all.`}
+                className={`flex h-8 w-full items-center justify-between text-left text-faint transition-colors hover:bg-hover hover:text-fg ${railOpen ? 'px-3' : 'justify-center px-0'}`}
+              >
+                <span className="flex items-center gap-2">
+                  <Icon name="branch" size={railOpen ? 14 : 17} />
+                  {railOpen && <span className="text-[11px] uppercase tracking-wider">More to unlock</span>}
+                </span>
+                {railOpen && <span className="num text-[10px]">{later}</span>}
+              </button>
+            )}
           </div>
           <div className="border-t border-line py-1">
             {navButton({ id: 'system', label: 'System', code: 'SYS' })}
@@ -278,7 +338,7 @@ export function Shell() {
               {tab === 'care' && <CareScreen />}
               {tab === 'world' && <WorldScreen />}
               {tab === 'shares' && <SharesScreen />}
-              {tab === 'goals' && <GoalsScreen />}
+              {tab === 'goals' && <GoalsHub />}
               {tab === 'system' && <System />}
             </>
           )}
@@ -309,6 +369,7 @@ export function Shell() {
         )}
       </div>
 
+      {!g.gameOver && !showing && <LockCard />}
       {showing && !g.gameOver && <LaunchShow eventId={showing} />}
       {!g.gameOver && !showing && <Coach />}
       {!g.gameOver && !showing && !designing && <Decision />}
