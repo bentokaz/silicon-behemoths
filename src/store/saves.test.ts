@@ -65,7 +65,7 @@ describe('slots', () => {
   })
 
   it('wants a name for a save, and keeps it to a sensible length', async () => {
-    expect(await failing(saveGame('   ', game()))).toBe('Give the save a name')
+    expect(await failing(saveGame('   ', game()))).toBe('Give the save a name, then save again')
     await saveGame('  spaced  ', game())
     await saveGame('x'.repeat(500), game())
     expect([...h.db.keys()].sort()).toEqual([KEY + 'spaced', KEY + 'x'.repeat(60)].sort())
@@ -128,8 +128,8 @@ describe('files', () => {
     const before = copy(h.db.get(KEY + 'main'))
     const text = JSON.stringify(s)
     const cases: [string, string | RegExp][] = [
-      ['', 'This file is empty'],
-      ['   \n', 'This file is empty'],
+      ['', /^This file is empty\. Choose a file/],
+      ['   \n', /^This file is empty\. Choose a file/],
       ['hello', NOT_A_SAVE],
       ['<html><body>404</body></html>', NOT_A_SAVE],
       ['null', NOT_A_SAVE],
@@ -140,7 +140,7 @@ describe('files', () => {
       [JSON.stringify({ companies: [], products: [], day: 3 }), NOT_A_SAVE],
       [JSON.stringify({ meta: { slot: 'x' }, state: { hello: 'world' } }), NOT_A_SAVE],
       // cut short on the way
-      [text.slice(0, Math.floor(text.length / 2)), /^This save is damaged or incomplete.*the file ends before the save does$/],
+      [text.slice(0, Math.floor(text.length / 2)), /^This save is damaged or incomplete and cannot be loaded: the file ends before the save does.*Load an earlier save or the autosave instead\.$/],
       [text.slice(0, text.length - 1), /^This save is damaged or incomplete/],
       // whole, but with pieces missing or of the wrong kind
       [JSON.stringify({ ...s, office: null }), /^This save is damaged or incomplete/],
@@ -156,7 +156,9 @@ describe('files', () => {
       const said = await failing(importGame(file(body)))
       if (typeof want === 'string') expect(said, body.slice(0, 40)).toBe(want)
       else expect(said, body.slice(0, 40)).toMatch(want)
-      // every refusal is a sentence for the player, never a stack of code
+      // every refusal says what to do next
+      expect(said, body.slice(0, 40)).toMatch(/(Choose a file that was exported from this game|Load an earlier save or the autosave instead|Update the game to load it)/)
+      // and is a sentence for the player, never a stack of code
       expect(said).not.toMatch(/undefined|TypeError|Unexpected token|JSON\.parse|at position/)
     }
     expect(h.db.get(KEY + 'main')).toEqual(before)
@@ -169,7 +171,7 @@ describe('files', () => {
     const huge = { size: MAX_IMPORT_BYTES + 1, text: async () => ((read = true), '{}') }
     expect(await failing(importGame(huge))).toBe(TOO_BIG)
     expect(read).toBe(false)
-    expect(await failing(importGame({ size: 10, text: async () => Promise.reject(new Error('NotReadableError')) }))).toBe('The file could not be read')
+    expect(await failing(importGame({ size: 10, text: async () => Promise.reject(new Error('NotReadableError')) }))).toMatch(/^The file could not be read\. Check that it is still where it was/)
   })
 
   it('tells a save from any other data without changing it', () => {

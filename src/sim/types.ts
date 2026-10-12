@@ -206,7 +206,12 @@ export interface Product {
   diag: number
   reviews: Review[]
   reviewAvg: number
+  /** Units in the warehouse. A rival's is always 0: rivals never run out (see `unlimited`), and nothing should read a number into it. Ask hasStock. */
   stock: number
+  /** Set on rivals' devices: there is always one to buy. */
+  unlimited?: boolean
+  /** The day the feed was told this device had sold out. Cleared once a day ends with some in stock, so one shortage is one alert. */
+  soldOut?: number
   carry: number
   unitsSold: number
   revenue: number
@@ -236,6 +241,11 @@ export const dollars = (v: number) => `${v < 0 ? '-' : ''}$${Math.abs(Math.round
 export const thousands = (v: number) => Math.round(v).toLocaleString('en-US')
 /** A large dollar amount in millions or billions: $3.2M, $1.4B. */
 export const millions = (v: number) => (Math.abs(v) >= 999.5e6 ? `${v < 0 ? '-' : ''}$${(Math.abs(v) / 1e9).toFixed(Math.abs(v) >= 9.95e9 ? 0 : 1)}B` : `${v < 0 ? '-' : ''}$${(Math.abs(v) / 1e6).toFixed(Math.abs(v) >= 9.95e6 ? 0 : 1)}M`)
+
+/** True when there is one of these to sell: some in the warehouse, or a rival's device, which never runs out. */
+export const hasStock = (p: Pick<Product, 'stock' | 'unlimited'>) => !!p.unlimited || p.stock > 0
+/** Units in stock as a number to show, or null for a rival's device, which has no such number. */
+export const stockOf = (p: Pick<Product, 'stock' | 'unlimited'>): number | null => (p.unlimited ? null : p.stock)
 
 /** A device that has been on sale at some time (and may since have been discontinued), as opposed to one still in development or shelved before it shipped. */
 export const wasReleased = (p: Pick<Product, 'status' | 'reviews'>) => p.status === 'sale' || (p.status === 'ended' && p.reviews.length > 0)
@@ -697,4 +707,6 @@ export interface GameState {
   shareHistory: { month: number; units: Record<string, number> }[]
   monthShare: Record<string, number>
   news: NewsItem[]
+  /** Troubles the feed has already been told about, by name, with the day: each is announced once and not again until it has passed. */
+  told?: Record<string, number>
 }

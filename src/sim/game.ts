@@ -21,7 +21,7 @@ import { FACADES, FLOOR_COST, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, type 
 import { capOfChannel, locked, refreshExecs, siteLocked, stepProgress } from './progress'
 import { EXECS, HEADHUNT_COST, HOURS, TEAM_SPAN, dropFromTeams, execFx, inTraining, monthlySalaries, monthlyStaff, newPolicy, perksCost, refreshCandidates, staffEffects, stepStaff, trainingCost } from './staff'
 import { CHIP_BUDGET, OS_FEATURES, chipAdoption, chipBlocked, chipProjectCost, chipProjectDays, finishChip, newOs, osBlocked, osProjectCost, osProjectDays, osShipQuality, servicesPerMonth, softwareBonus } from './tech'
-import { type ChannelId, type Company, type Corner, type CostKey, type DeviceDesign, type DeviceType, type Difficulty, type EventType, type GameConfig, type GameState, type Levels, type MonthReport, type NewsItem, type Product, type ProductionOrder, type SegmentId, type Site, type SiteKind, type StaffPolicy, type StorageTier, SUPPLY_CATS, type SupplyCat, TRACKS, type Track, dollars, millions, monthCosts, thousands, wasReleased } from './types'
+import { stockOf, type ChannelId, type Company, type Corner, type CostKey, type DeviceDesign, type DeviceType, type Difficulty, type EventType, type GameConfig, type GameState, type Levels, type MonthReport, type NewsItem, type Product, type ProductionOrder, type SegmentId, type Site, type SiteKind, type StaffPolicy, type StorageTier, SUPPLY_CATS, type SupplyCat, TRACKS, type Track, dollars, hasStock, millions, monthCosts, thousands, wasReleased } from './types'
 
 export const SAVE_VERSION = 6
 export const RETAIL_CUT = 0.15
@@ -43,7 +43,7 @@ export const MAX_NAME = 40
 export const MAX_PRICE = 10e6
 /** The most units one production order can ask for. */
 export const MAX_ORDER = 100e6
-export { dollars }
+export { dollars, hasStock, stockOf }
 /** True for the id of one of the world's regions. */
 const isRegion = (id: unknown): id is string => typeof id === 'string' && REGIONS.some((r) => r.id === id)
 /** Games licence income a console maker books for each console sold. */
@@ -191,7 +191,8 @@ function rivalLaunch(s: GameState, c: Company, segment: SegmentId, backdate = 0)
   const costBased = (product.unitCost / (1 - RETAIL_CUT)) * (1 + TIERS[segment].margin) * c.priceMult
   const refBased = seg.priceRef * priceIndex(s.day) * c.priceMult * 0.95
   product.price = roundPrice(Math.max((product.unitCost * 1.12) / (1 - RETAIL_CUT), 0.5 * costBased + 0.5 * refBased))
-  product.stock = 1e12 // rivals never run out; a finite number keeps saves valid JSON
+  // rivals never run out: said with a flag, not with a huge number that a screen might one day print
+  product.unlimited = true
   release(s, product, c, issues)
   s.day = realDay
   // keep at most two generations on sale per segment; discount the older one
@@ -1738,7 +1739,9 @@ function sell(s: GameState, p: Product, c: Company, units: number, segment: stri
     else if (p.type === 'speaker') earn(s, units * SPEAKER_SERVICES, 'other')
     if (p.stock === 0) {
       p.carry = 0
-      news(s, 'alert', `${p.name} is sold out. Order more units to keep selling.`, p.id)
+      // said once for each time it runs dry: a line that sells each day's delivery by evening is still the same shortage
+      if (p.soldOut === undefined) news(s, 'alert', `${p.name} is sold out. Order more units to keep selling.`, p.id)
+      p.soldOut = p.soldOut ?? s.day
     }
   } else c.revMonth = (c.revMonth ?? 0) + income
   return units
@@ -1763,7 +1766,7 @@ function stepSales(s: GameState) {
     if (!pool.length) continue
     const demand = segmentDemand(seg, s.day) * typeDemand(seg.type) * (seg.sens > 1.9 ? Math.sqrt(economyNow(s)) : economyNow(s))
     const makers = pool.map((p) => companies.get(p.companyId)!)
-    const base = pool.map((p, i) => (p.stock <= 0 ? 0 : pull(p, makers[i], seg, s.day)))
+    const base = pool.map((p, i) => (!hasStock(p) ? 0 : pull(p, makers[i], seg, s.day)))
     const hype = pool.map((p) => launchHype(p, s.day))
     const alloc = pool.map(() => 0)
     const kept = pool.map(() => 0)
@@ -1878,6 +1881,8 @@ function stepSales(s: GameState) {
     if (p.companyId !== 'player') continue
     p.satisfaction = clamp(productSatisfaction(p, me.software, supportGap, storeSupport, longUpdates) + cared - (p.recall?.state === 'open' ? 0.1 : p.recall?.state === 'ignored' ? 0.2 : 0), 0, 1)
     p.unitCost = Math.round(costNow(s, p.costParts) * 100) / 100
+    // the day ended with some left: the shortage, if there was one, is over
+    if (p.stock > 0) delete p.soldOut
     weight += p.monthUnits + 1
     mood += p.satisfaction * (p.monthUnits + 1)
     if (s.day % 7 === 0 && p.unitsSold > 0) {
@@ -1948,7 +1953,13 @@ function stepOperations(s: GameState) {
   // a Head of Operations gets a better price out of suppliers
   if (res.cost) spend(s, res.cost * execFx(s).production, 'production')
   if (res.runCost) spend(s, res.runCost, 'facilities')
-  if (res.stalled && s.day % 15 === 0) news(s, 'alert', 'Production is paused: there is not enough cash to pay for it.')
+  // said when it stops, and not again until it has gone a month without stopping: a company at the end of its
+  // credit starts and stops every few days as the takings come in, and that is one trouble, not twenty
+  if (res.stalled) {
+    const told = (s.told ??= {})
+    if (told.stalled === undefined || s.day - told.stalled > DAYS_PER_MONTH) news(s, 'alert', 'Production is paused: there is not enough cash to pay for it. It carries on by itself when there is.')
+    told.stalled = s.day
+  }
   for (const id of new Set(res.finished)) {
     const p = s.products.find((x) => x.id === id)
     if (p && !s.orders.some((o) => o.productId === id)) news(s, 'launch', `Production run finished for ${p.name}. ${thousands(p.stock)} in stock.`, id)
@@ -2387,6 +2398,12 @@ export function migrate(input: GameState): GameState {
   for (const p of s.products ?? []) addCoverCamera(p.design)
   // where a rival is based follows from the name it was founded under; older saves only have the name it bears now
   for (const c of s.companies ?? []) if (!c.isPlayer && c.origin === undefined) c.origin = c.name
+  // rivals' devices used to carry a stock of a million million to say they never run out
+  for (const p of s.products ?? []) {
+    if (p.companyId === 'player' || p.unlimited) continue
+    p.unlimited = true
+    p.stock = 0
+  }
   if (s.version >= SAVE_VERSION && s.incidents && s.guide !== undefined && s.unlocks) return s
   const from = s.version ?? 0
   const max = Object.fromEntries(TRACKS.map((t) => [t, MAX_LEVEL])) as Levels

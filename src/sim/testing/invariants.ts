@@ -276,6 +276,7 @@ export function checkState(s: GameState, opts: CheckOpts = {}): string[] {
     if (!DEVICE_TYPES.includes(p.type) || p.type !== p.design.type) bad('product-type', `${p.id} ${p.type}/${p.design.type}`)
     if (!(p.price >= 1) || !Number.isInteger(p.price)) bad('price', `${p.id} ${p.name} price ${p.price}`)
     if (p.stock < 0) bad('negative-stock', `${p.id} ${p.stock}`)
+    if (c.isPlayer ? p.unlimited : !p.unlimited || p.stock !== 0) bad('rival-stock', `${p.id} of ${p.companyId}: stock ${p.stock}, unlimited ${p.unlimited}`)
     if (c.isPlayer && !Number.isInteger(p.stock)) bad('fractional-stock', `${p.id} ${p.stock}`)
     if (p.unitsSold < 0 || p.monthUnits < 0 || p.revenue < 0 || p.carry < 0) bad('negative-sales', `${p.id} sold ${p.unitsSold} month ${p.monthUnits} revenue ${p.revenue} carry ${p.carry}`)
     if (!(p.unitCost > 0)) bad('unit-cost', `${p.id} ${p.unitCost}`)

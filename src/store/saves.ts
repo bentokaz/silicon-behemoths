@@ -29,10 +29,13 @@ interface SaveFile {
 
 // ---------------------------------------------------------------- what can go wrong, in words
 
-export const NOT_A_SAVE = 'This file is not a Silicon Behemoths save'
+export const NOT_A_SAVE = 'This file is not a Silicon Behemoths save. Choose a file that was exported from this game: its name ends in .sbsave.json.'
 export const DAMAGED = 'This save is damaged or incomplete and cannot be loaded'
+/** What to do about a damaged save, said after what is wrong with it. */
+export const TRY_ANOTHER = 'Load an earlier save or the autosave instead.'
+const damaged = (why: string) => new Error(`${DAMAGED}: ${why}. ${TRY_ANOTHER}`)
 export const NEWER = 'This save comes from a newer version of the game. Update the game to load it.'
-export const TOO_BIG = 'This file is far too large to be a Silicon Behemoths save'
+export const TOO_BIG = 'This file is far too large to be a Silicon Behemoths save. Choose a file that was exported from this game: its name ends in .sbsave.json.'
 export const NO_STORAGE = 'The browser will not let the game store saves (private browsing or blocked site data). Use Export to keep a copy as a file.'
 export const STORAGE_FULL = 'The browser’s storage for this site is full. Delete old saves, or use Export to keep a copy as a file.'
 /** The largest file an import will read. A save is a few megabytes; nothing near this size is one. */
@@ -81,28 +84,30 @@ export function validate(state: unknown): GameState {
   // a file from the sync folder wraps the game with its label: take the game out
   if (isObject(state) && isObject(state.meta) && isObject(state.state) && !('companies' in state)) state = state.state
   if (!looksLikeSave(state)) throw new Error(NOT_A_SAVE)
-  if (!finite(state.version ?? 0) || (state.version ?? 0) < 0) throw new Error(DAMAGED)
+  if (!finite(state.version ?? 0) || (state.version ?? 0) < 0) throw damaged('it does not say which version of the game wrote it')
   if (state.version > SAVE_VERSION) throw new Error(NEWER)
   let s: GameState
   try {
     s = migrate(state)
   } catch (e) {
-    throw new Error(`${DAMAGED} (${String((e as Error)?.message ?? e).slice(0, 80)})`)
+    void e
+    throw damaged('part of the company is missing or is not what it should be')
   }
   const problem = unusable(s)
-  if (problem) throw new Error(`${DAMAGED}: ${problem}`)
+  if (problem) throw damaged(problem)
   return s
 }
 
 /** Reads the text of a save file. Throws an Error to show the player. */
 export function parseSave(text: string): GameState {
-  if (typeof text !== 'string' || !text.trim()) throw new Error('This file is empty')
+  if (typeof text !== 'string' || !text.trim()) throw new Error('This file is empty. Choose a file that was exported from this game: its name ends in .sbsave.json.')
   let data: unknown
   try {
     data = JSON.parse(text)
   } catch {
     // cut short on the way (a failed download, a sync that stopped half way), or not JSON at all
-    throw new Error(text.trimStart().startsWith('{') ? `${DAMAGED}: the file ends before the save does` : NOT_A_SAVE)
+    if (text.trimStart().startsWith('{')) throw damaged('the file ends before the save does, as after a download or a sync that stopped half way')
+    throw new Error(NOT_A_SAVE)
   }
   return validate(data)
 }
@@ -116,7 +121,7 @@ const goodMeta = (m: unknown): m is SaveMeta => isObject(m) && typeof m.slot ===
 /** Save to a slot. Throws an Error to show the player if the browser will not store it; the slot's old contents are then untouched. */
 export async function saveGame(slot: string, state: GameState): Promise<void> {
   const name = cleanSlot(slot)
-  if (!name) throw new Error('Give the save a name')
+  if (!name) throw new Error('Give the save a name, then save again')
   const meta = metaOf(name, state)
   try {
     await set(PREFIX + name, { meta, state } satisfies SaveFile)
@@ -208,7 +213,7 @@ export async function importGame(file: Pick<File, 'size' | 'text'>): Promise<Gam
   try {
     text = await file.text()
   } catch {
-    throw new Error('The file could not be read')
+    throw new Error('The file could not be read. Check that it is still where it was, and choose it again.')
   }
   return parseSave(text)
 }

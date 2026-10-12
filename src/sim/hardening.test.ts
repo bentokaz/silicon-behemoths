@@ -22,7 +22,7 @@ import { Play } from './testing/play'
 import { ALL_PERSONAS, canon, runGame } from './testing/runner'
 import { fuzzSites } from './testing/sitefuzz'
 import { LICENCE_CAP, chipAdoption, licenceValue } from './tech'
-import { type CustomChip, DEVICE_TYPES, type DeviceType, type GameState } from './types'
+import { type CustomChip, DEVICE_TYPES, type DeviceType, type GameState, hasStock, stockOf } from './types'
 import { designProblem } from './validate'
 import { MIN_FOUNDER, RAISE_GAP, founderStake, raiseBlocked } from './stock'
 import { INCIDENTS, PEAK_DAY, STARTUPS, priceIndex, rollIncident, settleIncident } from './world'
@@ -643,6 +643,98 @@ describe('parts on a device', () => {
         expect([q.w, q.h].map((v) => Math.round(v * 10)), `${type} ${p.kind} ${p.id}`).toEqual([p.w, p.h].map((v) => Math.round(v * 10)))
       }
     }
+  })
+})
+
+describe('the feed', () => {
+  it('says a device has sold out once for each time it runs dry, however long the shortage lasts', () => {
+    const { s, p } = selling()
+    const alerts = () => s.news.filter((n) => n.text === `${p.name} is sold out. Order more units to keep selling.`).length
+    s.orders = []
+    s.regions.na.awareness = 0.9
+    s.fans = 8e6
+    p.stock = 50
+    G.tick(s, 3)
+    expect(p.stock).toBe(0)
+    expect(alerts()).toBe(1)
+    // a contractor delivering less each day than sells each day: empty again every evening, and still one shortage
+    expect(G.orderProduction(s, p.id, 20000, 'contract')).toBeNull()
+    G.tick(s, 12)
+    for (let d = 0; d < 20; d++) {
+      p.stock = Math.min(p.stock, 40)
+      G.tick(s, 1)
+    }
+    expect(p.unitsSold).toBeGreaterThan(500)
+    expect(alerts()).toBe(1)
+    expect(p.soldOut).toBeDefined()
+    // stocked again for a day or more, then dry again: that is a second shortage
+    s.orders = []
+    p.stock = 5e6
+    G.tick(s, 2)
+    expect(p.soldOut).toBeUndefined()
+    p.stock = 10
+    G.tick(s, 3)
+    expect(alerts()).toBe(2)
+    sound(s)
+  })
+
+  it('says production has stopped for want of cash once, and again only after it has run', () => {
+    const { s, p } = selling({ startCash: 6e6 })
+    const said = () => s.news.filter((n) => n.text.startsWith('Production is paused')).length
+    const gift = -1.9e6 - s.cash
+    s.cash = -1.9e6
+    expect(G.orderProduction(s, p.id, 500000, 'contract')).toBeNull()
+    G.tick(s, 45)
+    expect(said()).toBe(1)
+    // money comes in and it runs for a few days, then stops again: the same trouble, not a new one
+    s.cash += 3e6
+    G.tick(s, 20)
+    expect(said()).toBe(1)
+    // six weeks of running, then it stops: that is news
+    s.cash += 400e6
+    G.tick(s, 45)
+    s.cash = -1.9e6
+    G.tick(s, 10)
+    expect(said()).toBe(2)
+    void gift
+  })
+
+  it('writes every number in the news the same way on every machine', () => {
+    const { s } = selling()
+    G.tick(s, 400)
+    const was = Number.prototype.toLocaleString
+    // a machine set to German would write 1.234,5 unless told otherwise
+    Number.prototype.toLocaleString = function (this: number, locale?: Intl.LocalesArgument, o?: Intl.NumberFormatOptions) {
+      return was.call(this, locale ?? 'de-DE', o)
+    } as typeof was
+    try {
+      const again = selling().s
+      G.tick(again, 400)
+      expect(again.news.map((n) => n.text)).toEqual(s.news.map((n) => n.text))
+    } finally {
+      Number.prototype.toLocaleString = was
+    }
+  }, 60000)
+})
+
+describe('rivals’ stock', () => {
+  it('is a flag and never a number, in new games and in old saves', () => {
+    const { s, p } = selling()
+    const rivals = s.products.filter((x) => x.companyId !== 'player')
+    expect(rivals.length).toBeGreaterThan(50)
+    for (const r of rivals) expect([r.stock, r.unlimited, hasStock(r), stockOf(r)]).toEqual([0, true, true, null])
+    expect([p.unlimited, hasStock(p), stockOf(p)]).toEqual([undefined, p.stock > 0, p.stock])
+    // rivals still sell
+    const sold = rivals.reduce((a, r) => a + r.unitsSold, 0)
+    G.tick(s, 30)
+    expect(rivals.reduce((a, r) => a + r.unitsSold, 0)).toBeGreaterThan(sold)
+    // a save from when they carried a million million
+    const old = JSON.parse(JSON.stringify(s)) as GameState
+    for (const r of old.products) if (r.companyId !== 'player') (r.stock = 1e12), delete r.unlimited
+    const m = G.migrate(old)
+    for (const r of m.products.filter((x) => x.companyId !== 'player')) expect([r.stock, r.unlimited]).toEqual([0, true])
+    expect(m.products.find((x) => x.id === p.id)!.stock).toBe(p.stock)
+    sound(m)
   })
 })
 
