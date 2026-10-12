@@ -26,7 +26,7 @@ import { FactoryFloor, shippingDocks } from './site/factorylife'
 import { Jacks } from './site/jacks'
 import { Doors, Dropping, Sparks, SparksView, WallFx, type WallPiece, snapshot, wallChanges, wallHeight } from './site/fx'
 import { Baked, type PersonLook, hash } from './site/kit'
-import { DeskScreens, RoomLights } from './site/lights'
+import { DeskScreens, RoomLights, StageLights } from './site/lights'
 import { buildNav, cutOffRooms } from './site/nav'
 import { OfficeItem } from './site/office'
 import { type Target, itemTarget, placeBeside, rayBox } from './site/pick'
@@ -1484,8 +1484,8 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
         shadow-camera-near={1}
         shadow-camera-far={span * 5 + 60}
       />
-      {/* a venue is lit from the stage outward */}
-      {mood !== 'day' && site.kind === 'venue' && <pointLight position={venueStage ? [venueStage.x - w / 2 + 3, 9, venueStage.y - h / 2 + 7] : [0, 9, 0]} color="#ffe2bd" intensity={(mood === 'night' ? 9 : 4) * span} distance={span * 2} decay={1.2} />}
+      {/* a venue has a wash on its stage and house lights over the seats, which go down for a show */}
+      {site.kind === 'venue' && <StageLights site={site} mood={mood} show={!!staged} />}
       <Environment resolution={128} frames={1} environmentIntensity={dark ? 0.12 : 0.4}>
         <color attach="background" args={[sky]} />
         <Lightformer form="rect" intensity={3} color="#fff1e0" position={[0, 8, 0]} rotation-x={Math.PI / 2} scale={[14, 14, 1]} />
@@ -1555,7 +1555,7 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
         {crowd instanceof FactoryCrowd && <Jacks crowd={crowd} />}
         {crowd && site.kind === 'office' && <DeskScreens site={site} items={liveDesks} crowd={crowd} glow={M.glow} />}
         {/* after dark the rooms are lit from within, the ones with people in them brightest */}
-        <RoomLights site={site} crowd={crowd} mood={indoor && mood === 'night' ? 'dusk' : mood} lamps={site.kind === 'venue' ? 0 : ROOM_LAMPS[prefs.quality]} gain={site.kind === 'venue' ? 0.15 : indoor ? 0.5 : 1} busy={lively && site.kind === 'factory' && !crowd ? () => running : undefined} onDark={mode === 'cut' ? undefined : setDarkRooms} />
+        <RoomLights site={site} crowd={crowd} mood={indoor && mood === 'night' ? 'dusk' : mood} lamps={site.kind === 'venue' ? 0 : ROOM_LAMPS[prefs.quality]} gain={site.kind === 'venue' ? (staged ? 0.05 : 0.15) : indoor ? 0.5 : 1} busy={lively && site.kind === 'factory' && !crowd ? () => running : undefined} onDark={mode === 'cut' ? undefined : setDarkRooms} />
         {site.kind === 'venue' && <Audience site={site} state={houseState} filled={crowd ? filledSeat : undefined} />}
         {stage && !crowd && <Presenter site={site} cheer={!!show?.cheer} />}
         <SparksView sparks={sparks} />
