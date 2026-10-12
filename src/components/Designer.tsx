@@ -8,7 +8,7 @@ import { CHARGE_W, CHIP_TIERS, EXTRAS, LENSES, MATERIALS, PANEL_NAMES, RAM_OPTIO
 import { ANC, COOLERS, DRIVERS, FLIP, FLIP_COVERS, GPUS, HEAD_STRAPS, HINGES, INPUT_NAMES, MIC_ARRAYS, OPTICS, SPEAKERS, SPEAKER_DRIVERS, STRAPS, TYPES, headStrap, inputOptions, ioOptions, segmentsOf, sizeLimits, standInfo, standsFor, subLabel } from '../data/devices'
 import { RETAIL_CUT, canAfford, devPlan, isVariantOf, player, productName, startProduct } from '../sim/game'
 import { faceLabel, facesFor, faceSize, isCoverCam, isEdge, isFlip, kindsFor, partLabel, speakerShape } from '../sim/geometry'
-import { specShares } from '../sim/internals'
+import { layoutInternals, specShares, weightShares } from '../sim/internals'
 import { EVENTS, hasStage } from '../sim/growth'
 import { has, lockTip } from '../sim/progress'
 import { appeal, bestSegment, normalised } from '../sim/market'
@@ -756,6 +756,8 @@ function Workbench() {
   const folded = useStudio((s) => s.folded)
   const keepClosed = useStudio((s) => s.keepClosed)
   const explode = useStudio((s) => s.explode)
+  const tour = useStudio((s) => s.tour)
+  const tourSteps = useStudio((s) => s.tourSteps)
 
   const [left, setLeft] = useState<LeftPanel>('body')
   const [right, setRight] = useState<RightPanel>(null)
@@ -795,12 +797,19 @@ function Workbench() {
   const margin = price * (1 - RETAIL_CUT) - buildEach
   const n = normalised(ev.raw, g.day)
   // what the studio needs to open the device up, and to say what share of it each component is
-  const tear = useMemo(() => ({ levels: g.levels, chips: g.chips, shares: specShares(draft, ev, g.chips), unitCost: ev.unitCost, weight: ev.report.weight, costScale: ev.costScale }), [draft, ev, g.levels, g.chips])
+  // (the layout is only worked out while the Internals panel is open: nothing else needs what each component weighs)
+  const weights = useMemo(() => (left === 'internals' ? weightShares(draft, layoutInternals(draft, g.levels, g.chips)).comps : {}), [left, draft, g.levels, g.chips])
+  const hot = heat && heat.headroom < 0.8 ? { bad: heat.headroom < 0.5, text: `${heat.headroom < 0.5 ? 'Overheats' : 'Runs hot'}: ${Math.round(heat.heat)} W, ${Math.round(heat.headroom * 100)}% cooling headroom` } : null
+  const tear = useMemo(() => ({ levels: g.levels, chips: g.chips, shares: specShares(draft, ev, g.chips), unitCost: ev.unitCost, weight: ev.report.weight, costScale: ev.costScale, weights, hot }), [draft, ev, g.levels, g.chips, weights, hot?.bad, hot?.text])
   // the device opens while the Internals panel is, and shuts again when it is left
   useEffect(() => {
-    useStudio.setState({ internals: left === 'internals', hover: null, pick: null })
+    useStudio.setState({ internals: left === 'internals', hover: null, pick: null, tour: -1 })
   }, [left])
-  useEffect(() => () => useStudio.setState({ internals: false, hover: null, pick: null }), [])
+  useEffect(() => () => useStudio.setState({ internals: false, hover: null, pick: null, tour: -1 }), [])
+  // the opened device is framed clear of whichever drawers are out
+  useEffect(() => {
+    useStudio.setState({ pad: [left ? 316 : 8, right ? 316 : 8] })
+  }, [left, right])
 
   // keep the battery inside what the body can hold
   useEffect(() => {
@@ -888,16 +897,33 @@ function Workbench() {
         <div className="pointer-events-auto flex items-center gap-2">
           {left === 'internals' && (
             <div className="flex items-center border border-line2 bg-panel/95" title="Under Internals the device opens up. Keep it shut, take the cover off, or pull the layers apart.">
-              <Btn small tone="ghost" icon="lock" active={keepClosed} onClick={() => useStudio.setState({ keepClosed: true })}>
+              <Btn small tone="ghost" icon="lock" active={keepClosed} onClick={() => useStudio.setState({ keepClosed: true, tour: -1 })}>
                 Shut
               </Btn>
-              <Btn small tone="ghost" icon="layers" active={!keepClosed && explode < 0.5} onClick={() => useStudio.setState({ keepClosed: false, explode: 0 })}>
+              <Btn small tone="ghost" icon="layers" className="whitespace-nowrap" active={!keepClosed && explode < 0.5} onClick={() => useStudio.setState({ keepClosed: false, explode: 0, tour: -1 })}>
                 Lid off
               </Btn>
-              <Btn small tone="ghost" icon="layers" active={!keepClosed && explode >= 0.5} onClick={() => useStudio.setState({ keepClosed: false, explode: 1 })}>
+              <Btn small tone="ghost" icon="layers" active={!keepClosed && explode >= 0.5} onClick={() => useStudio.setState({ keepClosed: false, explode: 1, tour: -1 })}>
                 Exploded
               </Btn>
-              <input type="range" min={0} max={1} step={0.02} value={keepClosed ? 0 : explode} disabled={keepClosed} onChange={(e) => useStudio.setState({ explode: Number(e.target.value) })} className="mx-2 w-20 accent-accent" title="How far the layers are pulled apart" />
+              <input type="range" min={0} max={1} step={0.02} value={keepClosed ? 0 : explode} disabled={keepClosed} onChange={(e) => useStudio.setState({ explode: Number(e.target.value), tour: -1 })} className="mx-2 w-14 accent-accent" title="How far the layers are pulled apart" />
+              {tour < 0 ? (
+                <Btn small tone="ghost" icon="play" className="border-l border-l-line2" disabled={tourSteps < 2 && !keepClosed} title="A short tour of what is inside: the camera stops at each of the main components in turn. Move the camera or click anything to end it." onClick={() => useStudio.setState({ keepClosed: false, tour: 0 })}>
+                  Tour
+                </Btn>
+              ) : (
+                <>
+                  <span className="num border-l border-line2 px-2 text-[10px] text-dim">
+                    {tour + 1} / {tourSteps}
+                  </span>
+                  <Btn small tone="ghost" icon="arrowRight" title="Next stop" onClick={() => useStudio.setState({ tour: tour + 1 < tourSteps ? tour + 1 : -1 })}>
+                    Next
+                  </Btn>
+                  <Btn small tone="ghost" icon="stop" title="End the tour" onClick={() => useStudio.setState({ tour: -1 })}>
+                    End
+                  </Btn>
+                </>
+              )}
             </div>
           )}
           {type === 'foldable' && left !== 'internals' && (

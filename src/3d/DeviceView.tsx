@@ -1,17 +1,18 @@
 // The 3D studio: an isolated canvas that shows one device under a three-point
 // lighting rig. Used read-only in the dashboard and interactively in the designer.
-import { Environment, Lightformer, OrbitControls } from '@react-three/drei'
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { Environment, Html, Lightformer, OrbitControls } from '@react-three/drei'
+import { Canvas, type ThreeEvent, useFrame, useThree } from '@react-three/fiber'
 import { EffectComposer, N8AO } from '@react-three/postprocessing'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { TYPES } from '../data/devices'
 import type { DeviceDesign, DeviceType } from '../sim/types'
-import { layoutInternals } from '../sim/internals'
+import { layoutInternals, weightShares } from '../sim/internals'
 import { LiveDevice, type TearInfo } from './LiveDevice'
 import { buildDevice, deviceFrame, disposeDevice } from './buildDevice'
 import type { DemoHints } from './demos'
-import { useStudio } from './studio'
+import { type Picked, useStudio } from './studio'
+import { CompLabel, TEAR_LAMP, pickedOf, useCompHover } from './tearView'
 import { type Rig, newRigMemory, rigTeardown } from './teardown'
 
 export type ViewName = 'back' | 'front' | 'side' | 'bottom'
@@ -79,7 +80,23 @@ function Device({ design, selectedId, logo, colorIndex = -1, teardown }: Props) 
   useEffect(() => () => disposeDevice(group), [group])
   const opened = useRef(0)
   const mem = useRef(newRigMemory())
-  useFrame((_, dt) => {
+  const turn = useRef<THREE.Group>(null)
+  const tip = useRef<THREE.Group>(null)
+  // opened up, its components can be pointed at and picked, to read what they are: nothing here can be changed
+  const [over, setOver] = useState<Picked | null>(null)
+  const [pick, setPick] = useState<Picked | null>(null)
+  const now = useRef({ over, pick })
+  now.current = { over, pick }
+  const hoverTip = useCompHover({ rig: () => group.userData.rig as Rig | undefined, on: () => !!teardown && opened.current > 0.6, turn, over: () => now.current.over, set: setOver })
+  useEffect(() => setPick(null), [teardown, design])
+  const get = useThree((st) => st.get)
+  useEffect(() => {
+    // in development this view can be stepped and photographed from the console, as the designer's can
+    if (import.meta.env.DEV) Object.assign(window, { sbView: { three: get, rig: () => group.userData.rig as Rig | undefined, model: () => group } })
+  }, [get, group])
+  // what each component weighs is worked out only once the device is open
+  const weights = useMemo(() => (teardown ? weightShares(design, layoutInternals(design)) : null), [teardown, design])
+  useFrame((state, dt) => {
     const target = teardown ? 1 : 0
     if (!target && opened.current === 0) return
     opened.current += (target - opened.current) * (1 - Math.exp(-dt * (design.type === 'laptop' ? 1.9 : 3.2)))
@@ -87,8 +104,47 @@ function Device({ design, selectedId, logo, colorIndex = -1, teardown }: Props) 
     // the insides are built the first time the device is opened, and without research levels: a rival's device fits as built
     const rig = (group.userData.rig ??= rigTeardown(group, design, layoutInternals(design))) as Rig
     rig.pose(opened.current, 0, Math.min(dt, 0.1), mem.current, performance.now())
+    const lamp = (group.userData.lamp ??= state.scene.getObjectByName('tearLamp')) as THREE.DirectionalLight | undefined
+    if (lamp) {
+      lamp.position.copy(state.camera.position)
+      lamp.intensity = TEAR_LAMP * opened.current
+    }
+    const lit = opened.current > 0.6
+    rig.highlight(null, lit ? (now.current.pick?.id ?? null) : null, lit ? (now.current.over?.id ?? null) : null)
+    const it = now.current.pick && rig.comps.get(now.current.pick.id)
+    if (it && tip.current && turn.current) {
+      it.g.updateWorldMatrix(true, false)
+      tip.current.position.copy(turn.current.worldToLocal(it.g.localToWorld(new THREE.Vector3(0, 0, it.size[2] / 2))))
+    }
   })
-  return <primitive object={group} />
+  const click = (e: ThreeEvent<MouseEvent>) => {
+    const rig = group.userData.rig as Rig | undefined
+    if (!teardown || !rig || opened.current < 0.6) return
+    const shown = (o: THREE.Object3D | null): boolean => !o || (o.visible && shown(o.parent))
+    const hit = e.intersections.find((i) => i.object.userData.comp && shown(i.object))
+    const it = hit && rig.comps.get(hit.object.userData.comp as string)
+    setPick(it ? pickedOf(it.c) : null)
+    if (it) e.stopPropagation()
+  }
+  return (
+    <group ref={turn}>
+      <primitive object={group} onClick={teardown ? click : undefined} />
+      {teardown && pick && (
+        <group ref={tip}>
+          <Html zIndexRange={[7, 0]} style={{ pointerEvents: 'none' }}>
+            <CompLabel pick={pick} grams={weights?.comps[pick.id] ?? 0} weight={weights?.total ?? 0} />
+          </Html>
+        </group>
+      )}
+      <group ref={hoverTip}>
+        {teardown && over && over.id !== pick?.id && (
+          <Html zIndexRange={[6, 0]} style={{ pointerEvents: 'none' }}>
+            <CompLabel pick={over} compact />
+          </Html>
+        )}
+      </group>
+    </group>
+  )
 }
 
 export function DeviceView(props: Props) {
@@ -111,6 +167,8 @@ export function DeviceView(props: Props) {
       dpr={[1, 2]}
       camera={{ fov: 26, near: 5 * k, far: 6000 * k, position: [dir[0] * dist, dir[1] * dist, dir[2] * dist] }}
       gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.05 }}
+      // the teardown cuts an opening in a cover where it is drawn (see teardown.ts)
+      onCreated={(st) => (st.gl.localClippingEnabled = true)}
       onPointerMissed={() => (props.onPick?.(null), props.studio && useStudio.getState().pick && useStudio.setState({ pick: null }))}
     >
       <color attach="background" args={['#0a0c0f']} />
@@ -136,6 +194,8 @@ export function DeviceView(props: Props) {
       <directionalLight color="#ffffff" intensity={1.5 * sun} position={[-160 * k, 260 * k, -380 * k]} />
       {backFill > 0 && <directionalLight color="#d5deea" intensity={backFill} position={[-240 * k, 150 * k, -420 * k]} />}
       <ambientLight intensity={0.12} />
+      {/* a lamp at the camera, lit only while a device is open: whatever is being looked into is seen (see LiveDevice) */}
+      <directionalLight name="tearLamp" color="#f4f1ea" intensity={0} />
 
       <Environment resolution={256} frames={1} environmentIntensity={0.5}>
         <color attach="background" args={['#050608']} />
@@ -146,7 +206,7 @@ export function DeviceView(props: Props) {
         <Lightformer form="ring" intensity={1.2} color="#9fb4c8" position={[0, -7, 0]} scale={6} target={[0, 0, 0]} />
       </Environment>
 
-      {props.studio ? <LiveDevice design={design} selectedId={props.selectedId} onPick={props.onPick} logo={props.logo} colorIndex={props.colorIndex} scale={k} editable={props.studio.editable} hints={props.studio.hints} tear={props.studio.tear} /> : <Device {...props} />}
+      {props.studio ? <LiveDevice design={design} selectedId={props.selectedId} onPick={props.onPick} logo={props.logo} colorIndex={props.colorIndex} scale={k} editable={props.studio.editable} hints={props.studio.hints} tear={props.studio.tear} home={[dir[0] * dist, dir[1] * dist, dir[2] * dist]} /> : <Device {...props} />}
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, floorY, 0]} receiveShadow>
         <planeGeometry args={[3000 * k, 3000 * k]} />

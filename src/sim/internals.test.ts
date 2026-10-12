@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { marketLevel } from '../data/catalog'
 import { COOLERS, FLIP, RIVALS, segmentsOf } from '../data/devices'
-import { defaultConfig, newGame, starterDesign } from './game'
+import { SAVE_VERSION, addCoverCamera, defaultConfig, migrate, newGame, starterDesign } from './game'
 import { HINGE_CLEAR, coverScreen, isCoverCam, isFlip, partExtent } from './geometry'
-import { type Box, type Comp, type Internals, layoutInternals, specShares } from './internals'
+import { type Box, type Comp, type Internals, layoutInternals, specShares, weightShares } from './internals'
 import { generateDesign, layoutParts } from './rivals'
-import { costMaturity, evaluate, foldedThickness, maxBattery } from './scoring'
+import { budWeight, costMaturity, deviceWeight, evaluate, foldedThickness, maxBattery, weightParts } from './scoring'
 import { priceIndex } from './world'
 import { DEVICE_TYPES, type DeviceDesign, type Levels } from './types'
 
@@ -157,6 +157,238 @@ describe('the inside of a device', () => {
       // every component that names a row names one that exists
       for (const c of layoutInternals(d, s.levels).comps) for (const key of c.specs) expect(shares[key], `${type} ${c.id} ${key}`).toBeDefined()
     }
+  })
+})
+
+describe('what the teardown shows', () => {
+  const s = newGame(defaultConfig())
+  const tvOf = (specs: Partial<DeviceDesign['specs']>, body: Partial<DeviceDesign['body']> = {}) => {
+    const d = starterDesign(s, 'tv')
+    return layoutInternals({ ...d, body: { ...d.body, ...body }, specs: { ...d.specs, ...specs } }, flat(8))
+  }
+
+  it('shares the weight of every type out among its components, to the gram', () => {
+    const designs: DeviceDesign[] = DEVICE_TYPES.map((type) => starterDesign(s, type))
+    for (const type of DEVICE_TYPES) for (const seg of segmentsOf(type)) for (const level of [1, 5, 8]) designs.push(generateDesign({ rng: 77 + level }, { segment: seg.id, levels: flat(level), mLevel: 3 + level / 2, layout: level % 5, palette: ['#20242b'], logo: 'RIVAL' }))
+    for (const d of designs) {
+      const n = layoutInternals(d, flat(8))
+      const w = weightShares(d, n)
+      const total = evaluate(d, flat(8), marketLevel(0)).report.weight
+      // the breakdown is of the weight evaluate() reports, and changes nothing about it
+      expect(w.total, d.type).toBeCloseTo(total, 6)
+      expect(weightParts(d).reduce((a, p) => a + p.grams, 0), d.type).toBeCloseTo(deviceWeight(d), 6)
+      const sum = Object.values(w.comps).reduce((a, x) => a + x, 0) + w.rest.reduce((a, x) => a + x.grams, 0)
+      expect(sum / total, d.type).toBeCloseTo(1, 9)
+      // every component that is drawn weighs something, and none of them more than the whole device
+      for (const c of n.comps) {
+        expect(w.comps[c.id], `${d.type} ${c.id}`).toBeGreaterThan(0)
+        expect(w.comps[c.id], `${d.type} ${c.id}`).toBeLessThan(total)
+      }
+      for (const r of w.rest) expect(r.grams, `${d.type} ${r.label}`).toBeGreaterThan(0)
+    }
+    // the cells weigh what the capacity says, whatever else is inside
+    const phone = starterDesign(s, 'phone')
+    const pw = weightShares(phone, layoutInternals(phone, s.levels))
+    expect(pw.comps.battery).toBeCloseTo(phone.specs.battery * 0.011, 6)
+    const buds = starterDesign(s, 'earbuds')
+    const bw = weightShares(buds, layoutInternals(buds, s.levels))
+    expect(bw.rest.find((r) => r.key === 'buds')!.grams).toBeCloseTo(budWeight(buds), 6)
+  })
+
+  it('lights a television by its panel and its picture processor', () => {
+    const light = (specs: Partial<DeviceDesign['specs']>) => tvOf(specs).comps.find((c) => c.id === 'backlight')!
+    // an LCD with the entry processor is lit from its edges; faster ones dim it zone by zone, the fastest in many more
+    expect(light({ panel: 0, chipTier: 0 }).n).toBe(0)
+    expect(light({ panel: 0, chipTier: 0 }).label).toBe('Edge-lit LED backlight')
+    const full = light({ panel: 0, chipTier: 1 }).n!
+    const mini = light({ panel: 0, chipTier: 2 }).n!
+    expect(full).toBeGreaterThan(10)
+    expect(mini).toBeGreaterThan(full * 3)
+    expect(light({ panel: 0, chipTier: 1, refresh: 120 }).n!).toBeGreaterThan(light({ panel: 0, chipTier: 1, refresh: 60 }).n!)
+    expect(light({ panel: 0, chipTier: 1 }).note).toBeTruthy()
+    // a panel that lights itself has no backlight and no driver board for one
+    expect(light({ panel: 3, chipTier: 2 }).n).toBe(0)
+    expect(light({ panel: 3 }).label).toMatch(/Self-lit/)
+    expect(tvOf({ panel: 3 }).comps.some((c) => c.id === 'leddrv')).toBe(false)
+    expect(tvOf({ panel: 0 }).comps.some((c) => c.id === 'leddrv')).toBe(true)
+  })
+
+  it('fills the back of a television from its specs', () => {
+    const d = starterDesign(s, 'tv')
+    const n = layoutInternals(d, s.levels)
+    const ids = n.comps.map((c) => c.id)
+    for (const id of ['chassis', 'psu', 'board', 'tcon', 'wifi', 'keys', 'heatsink', 'chip']) expect(ids, id).toContain(id)
+    // a socket on the main board under every port the design has on its back, where the port is
+    const ports = d.parts.filter((p) => p.kind === 'port' && p.face === 'back')
+    expect(ports.length).toBeGreaterThan(0)
+    for (const p of ports) {
+      const c = n.comps.find((x) => x.partId === p.id)!
+      expect(c, p.text).toBeDefined()
+      expect(Math.abs(c.box.c[0] + p.x), p.text).toBeLessThan(2)
+      expect(Math.abs(c.box.c[1] - p.y), p.text).toBeLessThan(2)
+    }
+    // four wall-mount points, a mount for each foot or one for a pedestal
+    expect(n.comps.filter((c) => c.id.startsWith('vesa')).length).toBe(4)
+    expect(tvOf({}, { stand: 'feet' }).comps.filter((c) => c.id.startsWith('mount')).length).toBe(2)
+    expect(tvOf({}, { stand: 'pedestal' }).comps.filter((c) => c.id.startsWith('mount')).length).toBe(1)
+    // the speakers follow the sound system chosen, each with a lead to the main board
+    const sound = (speakers: number) => tvOf({ speakers }, { thickness: 60 }).comps
+    expect(sound(0).filter((c) => c.kind === 'speaker').length).toBe(2)
+    expect(sound(2).some((c) => c.id === 'woofer')).toBe(true)
+    expect(sound(3).filter((c) => c.kind === 'speaker').length).toBe(6)
+    expect(sound(4).filter((c) => c.id.startsWith('exciter')).length).toBe(2)
+    for (const k of [0, 2, 3, 4]) expect(sound(k).filter((c) => c.id.startsWith('lead:')).length, `sound ${k}`).toBe(sound(k).filter((c) => c.kind === 'speaker' || c.id === 'woofer' || c.id.startsWith('exciter')).length)
+    // a wider or faster panel is fed through more ribbons, and a tuner and voice control bring their own parts
+    const ribbons = (specs: Partial<DeviceDesign['specs']>, body: Partial<DeviceDesign['body']> = {}) => tvOf(specs, body).comps.filter((c) => c.id.startsWith('pflex')).length
+    expect(ribbons({ refresh: 120 })).toBeGreaterThan(ribbons({ refresh: 60 }))
+    expect(ribbons({ refresh: 60 }, { width: 1900, height: 1080 })).toBeGreaterThan(ribbons({ refresh: 60 }, { width: 960, height: 550 }))
+    expect(tvOf({ io: ['hdmi', 'aerial', 'voice'] }).comps.some((c) => c.id === 'tuner')).toBe(true)
+    expect(tvOf({ io: ['hdmi', 'aerial', 'voice'] }).comps.some((c) => c.id === 'voicemics')).toBe(true)
+    expect(tvOf({ io: ['hdmi'] }).comps.some((c) => c.id === 'tuner' || c.id === 'voicemics')).toBe(false)
+    // the looms run between the boards without crossing any of them
+    const loomed = tvOf({ panel: 0, chipTier: 1, speakers: 3, io: ['hdmi', 'usb', 'aerial', 'lan', 'hdmi4', 'optical', 'voice'] }, { thickness: 60 })
+    const boards = loomed.comps.filter((c) => c.kind === 'board' || c.kind === 'psu')
+    let crossings = 0
+    for (const c of loomed.comps.filter((x) => x.text === 'clips' && x.path)) {
+      for (let i = 1; i + 2 < c.path!.length; i++) {
+        const [p, q] = [c.path![i], c.path![i + 1]]
+        for (const bd of boards) if (Math.min(p[0], q[0]) < bd.box.c[0] + bd.box.s[0] / 2 && Math.max(p[0], q[0]) > bd.box.c[0] - bd.box.s[0] / 2 && Math.min(p[1], q[1]) < bd.box.c[1] + bd.box.s[1] / 2 && Math.max(p[1], q[1]) > bd.box.c[1] - bd.box.s[1] / 2) crossings++
+      }
+    }
+    expect(crossings).toBe(0)
+  })
+
+  it('builds a speaker round its drivers, in every shape', () => {
+    const base = starterDesign(s, 'speaker')
+    for (const form of ['column', 'orb', 'block'] as const) {
+      for (const screen of [false, true]) {
+        for (let driver = 0; driver < 5; driver++) {
+          const body = { ...base.body, form, screen, width: 180, height: 200, thickness: 180 }
+          const d: DeviceDesign = { ...base, body, specs: { ...base.specs, driver, mics: driver % 4 } }
+          d.parts = layoutParts(body, { type: 'speaker', layout: 1, cams: 0, sensor: 0, periscope: false, front: 'notch', fingerprint: 'none', flash: true, stereo: false, logo: '', logoImage: false, io: d.specs.io })
+          const n = layoutInternals(d, flat(8))
+          const tag = `${form}${screen ? ' with screen' : ''}, drivers ${driver}`
+          expect(faults(n), tag).toEqual([])
+          const ids = n.comps.map((c) => c.id)
+          for (const id of ['psu', 'amp', 'chamber', 'wadding', 'board', 'chip', 'mics', 'ledring', 'touch', 'cable0', 'ribbon']) expect(ids, `${tag}: ${id}`).toContain(id)
+          // a port only where the chamber is tuned with one, a lead to every driver, a lamp bar on a block and a ring on the others
+          expect(ids.includes('bassport'), tag).toBe(driver === 1 || driver === 3)
+          expect(n.comps.filter((c) => c.id.startsWith('lead:')).length, tag).toBe(n.comps.filter((c) => c.kind === 'driver').length)
+          expect(n.comps.find((c) => c.id === 'ledring')!.v, tag).toBe(form === 'block' ? 1 : 0)
+          expect(n.comps.find((c) => c.id === 'mics')!.n, tag).toBe([2, 4, 6, 8][driver % 4])
+          expect(n.comps.find((c) => c.id === 'touch')!.n, tag).toBe(d.parts.filter((p) => p.face === 'top' && p.kind === 'button').length)
+          expect(ids.includes('display'), tag).toBe(screen)
+          // the power supply and the amplifier are sized from the drivers, and say so
+          expect(n.comps.find((c) => c.id === 'amp')!.n, tag).toBe([1, 2, 3, 7, 4][driver])
+          expect(n.comps.find((c) => c.id === 'amp')!.note, tag).toBeTruthy()
+        }
+      }
+    }
+  })
+
+  it('takes an earbud apart along the shape it was designed with', () => {
+    const d = starterDesign(s, 'earbuds')
+    const stem = layoutInternals({ ...d, body: { ...d.body, buds: 'stem' }, specs: { ...d.specs, anc: 3 } }, flat(8))
+    const bean = layoutInternals({ ...d, body: { ...d.body, buds: 'bean' }, specs: { ...d.specs, anc: 3 } }, flat(8))
+    const zone = (n: Internals) => n.zones.find((z) => z.id === 'bud')!
+    // a stem makes the bud long one way; a bean is nearly round
+    expect(zone(stem).box.s[0]).toBeGreaterThan(zone(bean).box.s[0] * 1.4)
+    expect(stem.comps.some((c) => c.id === 'stemboard')).toBe(true)
+    expect(bean.comps.some((c) => c.id === 'stemboard')).toBe(false)
+    // the microphones are on the stem where there is one, and on the round board where there is not
+    expect(stem.comps.find((c) => c.id === 'stemboard')!.n).toBe(2)
+    expect(bean.comps.find((c) => c.id === 'budboard')!.n).toBe(2)
+    for (const n of [stem, bean]) {
+      const of = (id: string) => n.comps.find((c) => c.id === id)!
+      // outer half at the bottom, then the cell, the board and the driver, and the half with the ear tip on top
+      const order = ['budcap', 'budcell', 'budboard', 'driver', 'budtip'].map((id) => of(id).layer)
+      expect(order).toEqual([...order].sort((a, b) => a - b))
+      expect(of('budcell').box.c[1]).toBeLessThan(of('budboard').box.c[1])
+      expect(of('budboard').box.c[1]).toBeLessThan(of('driver').box.c[1])
+      // the driver sits inside the half with the nozzle
+      expect(of('driver').box.c[1]).toBeGreaterThan(of('budtip').box.c[1] - of('budtip').box.s[1] / 2)
+    }
+  })
+
+  it('says where a part comes from when no row of the Internals panel sets it', () => {
+    const note = (type: DeviceDesign['type'], id: string) => layoutInternals(starterDesign(s, type), s.levels).comps.find((c) => c.id === id)?.note
+    expect(note('phone', 'thermal')).toMatch(/chip tier/)
+    expect(note('tablet', 'thermal')).toMatch(/chip tier/)
+    expect(note('laptop', 'fan0')).toMatch(/no cooling row/)
+    expect(note('handheld', 'fan0')).toMatch(/chip tier/)
+    expect(note('headset', 'fan0')).toBeTruthy()
+    expect(note('tv', 'psu')).toBeTruthy()
+    expect(note('speaker', 'psu')).toBeTruthy()
+    // what a row does set carries no such note
+    expect(note('phone', 'battery')).toBeUndefined()
+    expect(note('desktop', 'heatsink')).toBeUndefined()
+  })
+
+  it('pulls the optics of a headset out by the face', () => {
+    const n = layoutInternals(starterDesign(s, 'headset'), s.levels)
+    for (const id of ['lensL', 'lensR', 'panelL', 'panelR']) expect(n.comps.find((c) => c.id === id)!.back, id).toBeGreaterThan(0)
+    // the lens leaves further than the display behind it, and nothing else goes that way
+    expect(n.comps.find((c) => c.id === 'lensL')!.back!).toBeGreaterThan(n.comps.find((c) => c.id === 'panelL')!.back!)
+    expect(n.comps.filter((c) => c.back && !['lens', 'display', 'sensor', 'motor'].includes(c.kind))).toEqual([])
+  })
+})
+
+describe('old saves', () => {
+  it('gives a book foldable from before the cover camera was a part its camera, once', () => {
+    const g = newGame(defaultConfig())
+    const d = starterDesign(g, 'foldable')
+    expect(isFlip(d.body)).toBe(false)
+    const had = d.parts.filter((p) => isCoverCam(d, p))
+    expect(had.length).toBe(1)
+    // as it was saved before: the same design without that part
+    const old: DeviceDesign = JSON.parse(JSON.stringify({ ...d, parts: d.parts.filter((p) => !isCoverCam(d, p)) }))
+    const before = evaluate(old, g.levels, marketLevel(0), g.features)
+    expect(addCoverCamera(old)).toBe(true)
+    const cam = old.parts.filter((p) => isCoverCam(old, p))
+    expect(cam.length).toBe(1)
+    // it is where laying the device out again puts it, on the cover screen, with an id of its own
+    expect(cam[0].x).toBeCloseTo(had[0].x, 6)
+    expect(cam[0].y).toBeCloseTo(had[0].y, 6)
+    expect(cam[0].w).toBeCloseTo(had[0].w, 6)
+    expect(cam[0].sensor).toBe(had[0].sensor)
+    expect(new Set(old.parts.map((p) => p.id)).size).toBe(old.parts.length)
+    const cover = coverScreen(old.body)
+    expect(Math.abs(cam[0].x - cover.x)).toBeLessThan(cover.w / 2)
+    // the design it gives is the one a new save has, issue for issue
+    expect(evaluate(old, g.levels, marketLevel(0), g.features).report.issues.map((i) => i.text)).toEqual(evaluate(d, g.levels, marketLevel(0), g.features).report.issues.map((i) => i.text))
+    expect(before.report.weight).toBeCloseTo(evaluate(old, g.levels, marketLevel(0), g.features).report.weight, 6)
+    // a second pass adds nothing, and flips and other types are left alone
+    expect(addCoverCamera(old)).toBe(false)
+    const flip = generateDesign({ rng: 43 }, { segment: 'f-value', levels: flat(6), mLevel: 6, layout: 1, palette: ['#20242b'], logo: 'RIVAL', flip: true })
+    expect(addCoverCamera(flip)).toBe(false)
+    expect(addCoverCamera(starterDesign(g, 'phone'))).toBe(false)
+  })
+
+  it('does it on loading a save of any version, for every product, and changes nothing a product was launched with', () => {
+    const g = newGame(defaultConfig())
+    const d = starterDesign(g, 'foldable')
+    const stripped: DeviceDesign = { ...d, parts: d.parts.filter((p) => !isCoverCam(d, p)) }
+    // a save of today's version, made before the part existed: one of the player's products and one of a rival's
+    const template = g.products[0]
+    expect(template).toBeDefined()
+    const mk = (id: string, companyId: string): typeof template => ({ ...JSON.parse(JSON.stringify(template)), id, companyId, type: 'foldable', design: JSON.parse(JSON.stringify(stripped)) })
+    g.products.push(mk('old1', 'player'), mk('old2', template.companyId))
+    const saved = JSON.parse(JSON.stringify(g)) as typeof g
+    expect(saved.version).toBe(SAVE_VERSION)
+    const m = migrate(saved)
+    for (const id of ['old1', 'old2']) {
+      const p = m.products.find((x) => x.id === id)!
+      expect(p.design.parts.filter((q) => isCoverCam(p.design, q)).length, id).toBe(1)
+      // what it was launched with is as it was
+      expect(p.costParts).toEqual(template.costParts)
+      expect(p.designPct).toBe(template.designPct)
+      expect(p.price).toBe(template.price)
+    }
+    // products that were not foldables are untouched, and loading it again changes nothing
+    expect(m.products.find((p) => p.id === template.id)!.design).toEqual(template.design)
+    const again = JSON.parse(JSON.stringify(migrate(JSON.parse(JSON.stringify(m)))))
+    expect(again.products).toEqual(JSON.parse(JSON.stringify(m.products)))
+    expect(m.version).toBe(SAVE_VERSION)
   })
 })
 

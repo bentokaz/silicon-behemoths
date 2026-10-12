@@ -3,7 +3,7 @@
 // parts lift while they are dragged and knock back down, handles on the model
 // resize and turn things, and changes that cannot be seen are acted out.
 import { Html } from '@react-three/drei'
-import { type ThreeEvent, useFrame, useThree } from '@react-three/fiber'
+import { type RootState, type ThreeEvent, useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { sfx } from '../audio/sfx'
@@ -17,7 +17,8 @@ import { themeColor } from '../store/theme'
 import { buildDevice, deviceFrame, disposeDevice, layerScaleOf, placeOnFace, pointToFace, setFold } from './buildDevice'
 import { DEMO_SOUND, type Demo, type DemoHints, type DemoSpec, type Pose, buildDemo, diffDesign, disposeDemo } from './demos'
 import { type Guide, studioDebug, studioHint, useStudio } from './studio'
-import { type Rig, newRigMemory, openFace, rigTeardown } from './teardown'
+import { CompLabel, TEAR_LAMP, type TourStop, fitDistance, pickedOf, tearDir, tourStops, useCompHover } from './tearView'
+import { type Rig, newRigMemory, rigTeardown } from './teardown'
 
 /** What the studio needs to open the device up and say what each component is worth. */
 export interface TearInfo {
@@ -28,11 +29,15 @@ export interface TearInfo {
   weight: number
   /** Evaluation.costScale: what evaluate() multiplied every cost by. */
   costScale: number
+  /** Grams for each component of the layout, by its id (see weightShares). */
+  weights: Record<string, number>
+  /** Set when the issue list says the design runs hot or overheats: what it says, and whether it is an error. */
+  hot?: { bad: boolean; text: string } | null
 }
+/** The components that carry the heat: the ones tinted when the design runs hot. */
+const runsHot = (c: Comp) => (c.kind === 'chip' || c.kind === 'heatsink' || c.kind === 'pump' || c.kind === 'card' || c.kind === 'sheet') && c.specs.some((k) => k === 'chip' || k === 'gpu' || k === 'cooling')
 /** True if a component stands for a row of the Internals panel. */
 const standsFor = (c: Comp, key: string) => c.specs.includes(key) || (key === 'camera' && c.kind === 'camera')
-const usd = (v: number) => (v >= 100 ? `$${Math.round(v)}` : `$${v.toFixed(2)}`)
-const weigh = (g: number) => (g >= 1000 ? `${(g / 1000).toFixed(2)} kg` : g >= 10 ? `${Math.round(g)} g` : `${g.toFixed(1)} g`)
 
 interface Props {
   design: DeviceDesign
@@ -47,6 +52,8 @@ interface Props {
   hints?: DemoHints
   /** Given in the designer: lets the device open up while the Internals panel is. */
   tear?: TearInfo
+  /** Where the camera stands for the view that is chosen: where it goes back to when the device shuts, if it has nowhere else to go back to. */
+  home?: [number, number, number]
 }
 
 // ---------------------------------------------------------------- easing the body
@@ -247,7 +254,34 @@ const BODY_OUT = 5
 const ndc = new THREE.Vector2()
 const caster = new THREE.Raycaster()
 const v3 = new THREE.Vector3()
+const vb = new THREE.Vector3()
 const q4 = new THREE.Quaternion()
+const qi = new THREE.Quaternion()
+const box = new THREE.Box3()
+const part3 = new THREE.Box3()
+
+/** The box round everything of a model that is showing, in world space. Handles, guides and demonstrations are left out. */
+function boundsOf(root: THREE.Object3D, out: THREE.Box3): THREE.Box3 {
+  out.makeEmpty()
+  const walk = (o: THREE.Object3D) => {
+    if (!o.visible || o.userData.overlay || o.userData.demo) return
+    const m = o as THREE.Mesh
+    if (m.isMesh && m.geometry) {
+      const inst = o as THREE.InstancedMesh
+      if (inst.isInstancedMesh) {
+        if (!inst.boundingBox) inst.computeBoundingBox()
+        part3.copy(inst.boundingBox!)
+      } else {
+        if (!m.geometry.boundingBox) m.geometry.computeBoundingBox()
+        part3.copy(m.geometry.boundingBox!)
+      }
+      if (!part3.isEmpty()) out.union(part3.applyMatrix4(o.matrixWorld))
+    }
+    o.children.forEach(walk)
+  }
+  walk(root)
+  return out
+}
 
 /** Where a ray meets the z = 0 plane of an object, in that object's own space. Null if it glances along it. */
 function onPlaneOf(obj: THREE.Object3D, ray: THREE.Ray): THREE.Vector3 | null {
@@ -258,7 +292,7 @@ function onPlaneOf(obj: THREE.Object3D, ray: THREE.Ray): THREE.Vector3 | null {
   return t > 0 ? local.at(t, new THREE.Vector3()) : null
 }
 
-export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, scale, editable, hints, tear }: Props) {
+export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, scale, editable, hints, tear, home }: Props) {
   const shown = useEased(design)
   const group = useMemo(() => buildDevice(shown, null, logo, colorIndex), [shown, logo, colorIndex])
   useEffect(() => () => disposeDevice(group), [group])
@@ -270,13 +304,165 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
   const turn = useRef<THREE.Group>(null)
   const bar = useRef<THREE.Group>(null)
   const tip = useRef<THREE.Group>(null)
-  const live = useRef({ design, group, hints, shown, tear })
-  live.current = { design, group, hints, shown, tear }
+  const live = useRef({ design, group, hints, shown, tear, home })
+  live.current = { design, group, hints, shown, tear, home }
   /** How far open the device is drawn, and how far its layers are pulled apart, both easing towards what is asked for. */
   const opened = useRef(0)
   const exploded = useRef(0)
   const mem = useRef(newRigMemory())
   const said = useRef(0)
+  const over = useStudio((s) => s.over)
+  const tourAt = useStudio((s) => s.tour)
+  const tourSteps = useStudio((s) => s.tourSteps)
+  const hoverTip = useCompHover({
+    rig: () => live.current.group.userData.rig as Rig | undefined,
+    on: () => opened.current > 0.6 && !dragging.current,
+    turn,
+    over: () => useStudio.getState().over,
+    set: (p) => useStudio.setState({ over: p }),
+  })
+
+  // ---- the camera: it eases to a view of the opened device, clear of the drawers, and back again when it shuts,
+  // unless the player has taken hold of it in the meantime. The tour moves it from one component to the next.
+  const view = useRef({ on: false, moved: false, key: '', shift: 0, type: design.type as DeviceType, home: null as { pos: THREE.Vector3; target: THREE.Vector3 } | null, limits: null as [number, number] | null, from: null as { pos: THREE.Vector3; target: THREE.Vector3 } | null, goal: null as { pos: THREE.Vector3; target: THREE.Vector3 } | null, t0: 0, step: -1, stepT: 0 })
+  useEffect(() => {
+    const ctl = three.controls as unknown as THREE.EventDispatcher<{ start: object }> | null
+    if (!ctl) return
+    // the player has taken the camera: stop steering it, and leave it where they put it
+    const grab = () => {
+      view.current.moved = true
+      view.current.goal = null
+      if (useStudio.getState().tour >= 0) useStudio.setState({ tour: -1 })
+    }
+    ctl.addEventListener('start', grab)
+    return () => ctl.removeEventListener('start', grab)
+  }, [three.controls])
+  useEffect(
+    () => () => {
+      const cam = three.camera as THREE.PerspectiveCamera
+      if (cam.view) {
+        cam.clearViewOffset()
+        cam.updateProjectionMatrix()
+      }
+    },
+    [three.camera],
+  )
+  const frameView = (state: RootState, rig: Rig | undefined, wantOpen: boolean, now: number, dt: number) => {
+    const V = view.current
+    const cam = state.camera as THREE.PerspectiveCamera
+    const ctl = state.controls as unknown as { target: THREE.Vector3; update(): void; minDistance: number; maxDistance: number } | null
+    const g = live.current.group
+    const d = live.current.design
+    const st = useStudio.getState()
+    if (!ctl || !turn.current) return
+    // how near and how far the camera may go when the device is shut: the view sets these from the size of the device
+    const reach = live.current.home ? Math.hypot(...live.current.home) : 0
+    const lim: [number, number] = reach ? [reach * 0.3, reach * 2.4] : (V.limits ?? [ctl.minDistance, ctl.maxDistance])
+    if (V.type !== d.type) {
+      // another kind of device: the view it came from was of something else
+      V.type = d.type
+      V.moved = false
+      V.home = null
+      V.key = ''
+      V.goal = null
+    }
+    // ---- the tour: each stop picks its component, sets how far apart the layers are, and moves on after a while
+    const stops: TourStop[] = rig ? ((g.userData.stops ??= tourStops(d.type, rig.comps)) as TourStop[]) : []
+    if (rig && st.tourSteps !== stops.length) useStudio.setState({ tourSteps: stops.length })
+    let stop: TourStop | undefined
+    if (st.tour >= 0) {
+      stop = wantOpen && rig ? stops[st.tour] : undefined
+      const comp = stop && rig?.comps.get(stop.id)
+      if (!stop || !comp) useStudio.setState({ tour: -1 })
+      else if (V.step !== st.tour) {
+        V.step = st.tour
+        V.stepT = now
+        useStudio.setState({ pick: pickedOf(comp.c), explode: stop.explode })
+      } else if (now - V.stepT > 3800) useStudio.setState({ tour: st.tour + 1 < stops.length ? st.tour + 1 : -1 })
+    } else if (V.step !== -1) {
+      // the tour is over: back to the whole device
+      V.step = -1
+      V.key = ''
+      if (!V.moved) useStudio.setState({ pick: null, explode: 0 })
+    }
+    if (wantOpen && !V.on) {
+      V.on = true
+      V.moved = false
+      V.key = ''
+      V.home = { pos: cam.position.clone(), target: ctl.target.clone() }
+      V.limits = [ctl.minDistance, ctl.maxDistance]
+    } else if (!wantOpen && V.on) {
+      V.on = false
+      V.key = ''
+      ctl.minDistance = lim[0]
+      ctl.maxDistance = Math.max(lim[1], cam.position.distanceTo(ctl.target))
+      // back to where it was; or, if the device has changed kind since, to the view that is chosen for the new one
+      const back = V.home ?? (live.current.home ? { pos: new THREE.Vector3(...live.current.home), target: new THREE.Vector3() } : null)
+      if (back && !V.moved) {
+        V.from = { pos: cam.position.clone(), target: ctl.target.clone() }
+        V.goal = back
+        V.t0 = now
+      }
+    }
+    const apart = stop ? stop.explode : st.explode >= 0.5 ? 1 : 0
+    const shape = d.type === 'console' && d.body.height > d.body.width ? 'tower' : (d.body.fold ?? d.body.form ?? '')
+    const key = V.on ? `${apart}|${stop?.id ?? ''}|${shape}|${st.pad[0]}|${st.pad[1]}|${Math.round(state.size.width / 40)}` : ''
+    if (V.on && rig && key !== V.key && (!V.moved || stop)) {
+      V.key = key
+      // measure the device as it will be once it is open, with the model facing the way it was built
+      const yawWas = turn.current.rotation.y
+      const shakeWas = turn.current.position.x
+      turn.current.rotation.y = 0
+      turn.current.position.x = 0
+      rig.pose(1, apart, 0, mem.current, now)
+      turn.current.updateWorldMatrix(true, true)
+      boundsOf(g, box)
+      const dir = stop?.dir ? v3.set(stop.dir[0], stop.dir[1], stop.dir[2]).normalize().clone() : tearDir(d, apart)
+      const free: [number, number] = [Math.max(0.3, (state.size.width - st.pad[0] - st.pad[1]) / state.size.width), Math.max(0.4, (state.size.height - 150) / state.size.height)]
+      const whole = fitDistance(box, dir, cam.fov, state.size.width / state.size.height, free) * 1.05
+      const target = box.getCenter(new THREE.Vector3())
+      let dist = whole
+      const it = stop && rig.comps.get(stop.id)
+      if (it) {
+        // a stop of the tour: close enough to see the component, far enough to see where in the device it is
+        it.g.getWorldPosition(target)
+        dist = Math.min(whole, Math.max(Math.hypot(it.size[0], it.size[1], it.size[2]) * 3.2, whole * 0.36))
+      }
+      turn.current.rotation.y = yawWas
+      turn.current.position.x = shakeWas
+      rig.pose(opened.current, exploded.current, 0, mem.current, now)
+      // opened, there is more to get close to and more to stand back from: a cover laid aside has to stay in the picture
+      ctl.minDistance = Math.min(lim[0], dist * 0.2)
+      ctl.maxDistance = Math.max(lim[1], whole * 1.7)
+      V.from = { pos: cam.position.clone(), target: ctl.target.clone() }
+      V.goal = { pos: target.clone().addScaledVector(dir, dist), target }
+      V.t0 = now
+    }
+    if (V.goal && V.from) {
+      const k = Math.min(1, (now - V.t0) / 950)
+      const s = k * k * (3 - 2 * k)
+      // swing round the point looked at, rather than cut straight across
+      const a = v3.copy(V.from.pos).sub(V.from.target)
+      const b = vb.copy(V.goal.pos).sub(V.goal.target)
+      const la = a.length()
+      const lb = b.length()
+      q4.setFromUnitVectors(a.normalize(), b.normalize())
+      qi.identity().slerp(q4, s)
+      ctl.target.lerpVectors(V.from.target, V.goal.target, s)
+      cam.position.copy(a).applyQuaternion(qi).multiplyScalar(la + (lb - la) * s).add(ctl.target)
+      ctl.update()
+      if (k >= 1) V.goal = V.from = null
+    }
+    // the middle of the picture moves to the middle of what the drawers leave clear
+    const shift = V.on ? (st.pad[0] - st.pad[1]) / 2 : 0
+    if (Math.abs(shift - V.shift) > 0.5 || (cam.view?.enabled && !V.on && Math.abs(V.shift) <= 0.5)) {
+      V.shift += (shift - V.shift) * (1 - Math.exp(-dt * 5))
+      if (Math.abs(shift - V.shift) <= 0.5) V.shift = shift
+      if (Math.abs(V.shift) > 0.5) cam.setViewOffset(state.size.width, state.size.height, -V.shift, 0, state.size.width, state.size.height)
+      else cam.clearViewOffset()
+      cam.updateProjectionMatrix()
+    }
+  }
 
   // ---- selection outline, handles and guides, redrawn onto each rebuilt model
   useEffect(() => {
@@ -380,7 +566,7 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
       window.clearTimeout(said.current)
       if (playing.current) disposeDemo(playing.current.demo)
       playing.current = null
-      useStudio.setState({ caption: null, guides: [], hint: null, folded: false, hover: null, pick: null })
+      useStudio.setState({ caption: null, guides: [], hint: null, folded: false, hover: null, pick: null, over: null, tour: -1 })
     },
     [],
   )
@@ -483,13 +669,20 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
     if (rig) {
       rig.pose(opened.current, exploded.current, Math.min(dt, 0.1), mem.current, now)
       const key = st.hover
-      rig.highlight(key && opened.current > 0.3 ? (c) => standsFor(c, key) : null, opened.current > 0.3 ? (st.pick?.id ?? null) : null)
+      const lit = opened.current > 0.3
+      rig.highlight(key && lit ? (c) => standsFor(c, key) : null, lit ? (st.pick?.id ?? null) : null, lit ? (st.over?.id ?? null) : null)
+      rig.heat(info?.hot && lit ? runsHot : null, !!info?.hot?.bad)
+    }
+    const lamp = (g.userData.lamp ??= state.scene.getObjectByName('tearLamp')) as THREE.DirectionalLight | undefined
+    if (lamp) {
+      lamp.position.copy(state.camera.position)
+      lamp.intensity = TEAR_LAMP * opened.current
     }
     if (opened.current < 0.3 && st.pick) useStudio.setState({ pick: null })
+    frameView(state, rig, wantOpen, now, dt)
     // the dock would hide whatever is being worked on underneath
     const underneath = d.parts.find((p) => p.id === selectedId)?.face === 'bottom'
     g.traverse((o) => o.userData.prop === 'dock' && (o.visible = !underneath))
-    if (!face && opened.current > 0.03) face = openFace(d)
 
     // ---- turn the device so the face that matters can be seen, then turn it back
     let want = 0
@@ -503,8 +696,6 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
         if (Math.abs(diff) > 1.05) want = diff - Math.sign(diff) * 0.5
       }
     }
-    // pulled apart, the layers are seen better from a little to one side
-    if (!cur && openFace(d)) want += 0.8 * exploded.current
     yaw.current += (want - yaw.current) * (1 - Math.exp(-dt * 8))
     if (Math.abs(yaw.current) < 0.0005 && !want) yaw.current = 0
     if (turn.current) turn.current.rotation.y = yaw.current
@@ -530,7 +721,7 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
     const seen = (o: THREE.Object3D | null): boolean => !o || (o.visible && seen(o.parent))
     const hit = e.intersections.find((i) => i.object.userData.comp && seen(i.object))
     const it = hit && rig?.comps.get(hit.object.userData.comp as string)
-    useStudio.setState({ pick: it ? { id: it.c.id, label: it.c.label, figure: it.c.figure ?? '', specs: it.c.specs, partId: it.c.partId } : null })
+    useStudio.setState({ pick: it ? pickedOf(it.c) : null, tour: -1 })
     if (it) {
       e.stopPropagation()
       sfx.pick()
@@ -541,35 +732,24 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
   const camPart = pick?.partId ? design.parts.find((p) => p.id === pick.partId && p.kind === 'camera') : undefined
   const rows = pick && tear ? [...new Set(pick.specs.map((k) => (k === 'refresh' ? 'panel' : k)))].map((k) => tear.shares[k]).filter((x) => !!x) : []
   const cost = camPart ? cameraCost(design, camPart, tear?.costScale ?? 1) : rows.reduce((a, x) => a + x.cost, 0)
-  const grams = rows.reduce((a, x) => a + (x.grams ?? 0), 0)
-  const label = pick && tear && (
-    <group ref={tip}>
-      <Html zIndexRange={[7, 0]} style={{ pointerEvents: 'none' }}>
-        <div className="ml-3 -translate-y-1/2 whitespace-nowrap border border-line2 bg-panel/95">
-          <div className="flex items-stretch">
-            <span className="w-[3px] bg-accent" />
-            <div className="px-2 py-[5px]">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-fg">{pick.label}</div>
-              {pick.figure && <div className="num text-[10px] text-dim">{pick.figure}</div>}
-              {(cost > 0 || grams > 0) && (
-                <div className="num mt-[3px] flex gap-3 border-t border-line pt-[3px] text-[10px] text-faint">
-                  {cost > 0 && (
-                    <span>
-                      <span className="text-accent">{usd(cost)}</span> {Math.round((cost / Math.max(tear.unitCost, 0.01)) * 100)}% of cost
-                    </span>
-                  )}
-                  {grams > 0 && (
-                    <span>
-                      <span className="text-fg">{weigh(grams)}</span> {Math.round((grams / Math.max(tear.weight, 0.01)) * 100)}% of weight
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </Html>
-    </group>
+  const hotPick = pick && tear?.hot && pick.kind && runsHot({ kind: pick.kind, specs: pick.specs } as Comp) ? tear.hot : null
+  const label = tear && (
+    <>
+      {pick && (
+        <group ref={tip}>
+          <Html zIndexRange={[7, 0]} style={{ pointerEvents: 'none' }}>
+            <CompLabel pick={pick} cost={cost} unitCost={tear.unitCost} grams={tear.weights[pick.id] ?? 0} weight={tear.weight} hot={hotPick} step={tourAt >= 0 ? `Tour ${tourAt + 1} / ${tourSteps}` : undefined} />
+          </Html>
+        </group>
+      )}
+      <group ref={hoverTip}>
+        {over && over.id !== pick?.id && (
+          <Html zIndexRange={[6, 0]} style={{ pointerEvents: 'none' }}>
+            <CompLabel pick={over} compact />
+          </Html>
+        )}
+      </group>
+    </>
   )
 
   // ---- dragging a part across the body

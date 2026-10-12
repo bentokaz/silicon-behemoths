@@ -29,18 +29,29 @@ interface Studio {
   hover: string | null
   /** The component picked on the opened device. */
   pick: Picked | null
+  /** The component the pointer is on, on the opened device. */
+  over: Picked | null
+  /** The step of the guided tour of the opened device that is showing, or -1 when no tour is running. */
+  tour: number
+  /** How many steps the tour of this device has. */
+  tourSteps: number
+  /** Width in pixels of what covers the left and the right of the studio (the drawers), so that the opened device can be framed clear of them. */
+  pad: [number, number]
 }
 
-/** A component of the opened device that has been clicked: enough of it to label it and find its row. */
+/** A component of the opened device that has been clicked or pointed at: enough of it to label it and find its row. */
 export interface Picked {
   id: string
   label: string
   figure: string
   specs: string[]
   partId?: string
+  /** Where its size or count comes from, when no row of the Internals panel sets it. */
+  note?: string
+  kind?: string
 }
 
-export const useStudio = create<Studio>(() => ({ caption: null, guides: [], hint: null, folded: false, internals: false, keepClosed: false, explode: 0, hover: null, pick: null }))
+export const useStudio = create<Studio>(() => ({ caption: null, guides: [], hint: null, folded: false, internals: false, keepClosed: false, explode: 0, hover: null, pick: null, over: null, tour: -1, tourSteps: 0, pad: [0, 0] }))
 
 let hintTimer = 0
 /** Show a hint over the studio for a moment. */

@@ -4,10 +4,10 @@
 // these and nothing else, so every choice under Internals shows up here first.
 // Pure: same design, same layout.
 import { EXTRAS, LENSES, sensorInfo } from '../data/catalog'
-import { ANC, COOLERS, DRIVERS, GPUS, HINGES, MIC_ARRAYS, OPTICS, SPEAKERS, SPEAKER_DRIVERS, TYPES, headStrap, inputOptions, ioInfo } from '../data/devices'
+import { ANC, COOLERS, DRIVERS, GPUS, HINGES, MIC_ARRAYS, OPTICS, SPEAKERS, SPEAKER_DRIVERS, TYPES, headStrap, inputOptions, ioInfo, standInfo } from '../data/devices'
 import { HINGE_CLEAR, carrierBody, caseShape, consoleFans, edgeBevel, faceBasis, faceSink, handheldControls, headsetEyes, isCoverCam, isFlip, laptopDeck, laptopSplit, mountOf, screenRect, speakerShape, standMount, visorShape } from './geometry'
 import { clamp } from './rng'
-import { type ChipSpec, batteryLabel, chargeWatts, chipFor, maxBattery, minThickness, panelName } from './scoring'
+import { type ChipSpec, type WeightKey, batteryLabel, chargeWatts, chipFor, maxBattery, minThickness, panelName, weightParts } from './scoring'
 import type { Body, CustomChip, DeviceDesign, DeviceType, Evaluation, Levels, PlacedPart, Specs } from './types'
 
 export type V3 = [number, number, number]
@@ -23,6 +23,7 @@ export type Dir = 1 | 2 | 3 | -1 | -2 | -3
 export type CompKind =
   | 'battery' | 'board' | 'chip' | 'mem' | 'shield' | 'sheet' | 'pipe' | 'fan' | 'heatsink' | 'pump' | 'camera' | 'led' | 'coil' | 'speaker' | 'motor' | 'port' | 'flex' | 'tray' | 'antenna'
   | 'display' | 'plate' | 'stick' | 'card' | 'psu' | 'drive' | 'hinge' | 'sensor' | 'driver' | 'radiator' | 'mic' | 'lens' | 'control' | 'cable' | 'well'
+  | 'baffle' | 'wadding' | 'duct' | 'amp' | 'ledring' | 'touch'
 
 /** What a component rides on when the device opens: the body itself, the cover that comes off, or the screen. */
 export type Host = 'tray' | 'cover' | 'screen'
@@ -40,12 +41,16 @@ export interface Comp {
   fits: boolean
   /** How far up the stack it sits, 0 to 4: layers move apart in the exploded view. */
   layer: number
+  /** Comes out the other way in the exploded view, by this many steps: the optics of a headset leave towards the face. */
+  back?: number
   /** Rows of the Internals panel this stands for: 'battery', 'chip', 'io:usbc', 'extra:wireless'... */
   specs: string[]
   /** The placed part it sits under, for camera modules and sockets. */
   partId?: string
   label: string
   figure?: string
+  /** Where its size or count comes from, when no row of the Internals panel sets it directly. */
+  note?: string
   /** A variant within the kind: a tier, a style. */
   v?: number
   /** How many of something it holds: fans on a card, microphones in a ring. */
@@ -321,6 +326,46 @@ function run(L: Lay, id: string, kind: CompKind, a: [number, number], b: [number
   return L.add(id, kind, r, w, thick, { over: true, path: [L.f.point(a[0], a[1], w + thick / 2), L.f.point(corner[0], corner[1], w + thick / 2), L.f.point(b[0], b[1], w + thick / 2)], ...o }, false)
 }
 
+/** Where a cable leaves a board: the point of it nearest to where the cable is going, a little way in from the edge. */
+function exitOf(r: R, to: [number, number], inset = 4): [number, number] {
+  const m = Math.min(inset, rw(r) / 2, rh(r) / 2)
+  return [clamp(to[0], r.u0 + m, r.u1 - m), clamp(to[1], r.v0 + m, r.v1 - m)]
+}
+const crosses = (a: [number, number], b: [number, number], o: R, pad: number) => Math.min(a[0], b[0]) < o.u1 + pad && Math.max(a[0], b[0]) > o.u0 - pad && Math.min(a[1], b[1]) < o.v1 + pad && Math.max(a[1], b[1]) > o.v0 - pad
+
+/** A cable laid flat from one board to another in straight runs, turning where it must to keep clear of whatever stands between them. */
+function loom(L: Lay, id: string, from: R, to: R, w: number, thick: number, o: Partial<Comp>, avoid: R[]): Comp {
+  thick = Math.max(0.2, Math.min(thick, L.depth - w - 0.05))
+  const a = exitOf(from, mid(to))
+  const b = exitOf(to, a)
+  const obs = avoid.filter((r) => r !== from && r !== to)
+  const A = grow(L.area, -thick)
+  const inA = (p: [number, number]): [number, number] => [clamp(p[0], A.u0, A.u1), clamp(p[1], A.v0, A.v1)]
+  const ways: [number, number][][] = [[a, [a[0], b[1]], b], [a, [b[0], a[1]], b]]
+  for (const k of [0.5, 0.25, 0.75, -0.2, 1.2, -0.5, 1.5]) {
+    const u = a[0] + (b[0] - a[0]) * k
+    const v = a[1] + (b[1] - a[1]) * k
+    ways.push([a, inA([u, a[1]]), inA([u, b[1]]), b], [a, inA([a[0], v]), inA([b[0], v]), b])
+  }
+  for (const v of [A.v0, A.v1]) ways.push([a, [a[0], v], [b[0], v], b])
+  for (const u of [A.u0, A.u1]) ways.push([a, [u, a[1]], [u, b[1]], b])
+  let best = ways[0]
+  let cost = Infinity
+  for (const way of ways) {
+    let c = 0
+    for (let i = 0; i + 1 < way.length; i++) {
+      c += Math.abs(way[i + 1][0] - way[i][0]) + Math.abs(way[i + 1][1] - way[i][1])
+      for (const r of obs) if (crosses(way[i], way[i + 1], r, thick)) c += 1e5
+    }
+    if (c < cost) {
+      cost = c
+      best = way
+    }
+  }
+  const r = join(best.map((p) => R4(p[0], p[1], thick, thick)))!
+  return L.add(id, 'cable', r, w, thick, { over: true, text: 'clips', n: thick, path: best.map((p) => L.f.point(p[0], p[1], w + thick / 2)), ...o }, false)
+}
+
 /** The memory and storage packages a design carries, as board items. */
 function memoryItems(g: Gen, k: number): Item[] {
   if (!(g.T.memory > 0)) return []
@@ -480,7 +525,7 @@ function slabGuts(g: Gen, L: Lay, o: SlabOpt) {
       // heat leaves through the floor: a graphite pad, a graphite sheet or a vapour chamber, by how hard the chip runs
       const tier = g.chip.custom ? 2 : s.chipTier
       const span = tier === 0 ? grow(soc, 4) : tier === 1 ? boards[0] : (join([boards[0], { ...rest, v1: boards[0].v0, v0: Math.max(rest.v0, boards[0].v0 - restH * 0.3) }]) ?? boards[0])
-      L.add('thermal', 'sheet', keep(grow(span, -0.6), A), 0.02, Math.max(0.05, Math.min(0.22, base * 0.7)), { label: ['Graphite pad', 'Graphite sheet', 'Vapour chamber'][tier], specs: ['chip'], v: tier === 2 ? 1 : 0, figure: 'Cooling', layer: 0 }, false)
+      L.add('thermal', 'sheet', keep(grow(span, -0.6), A), 0.02, Math.max(0.05, Math.min(0.22, base * 0.7)), { label: ['Graphite pad', 'Graphite sheet', 'Vapour chamber'][tier], specs: ['chip'], v: tier === 2 ? 1 : 0, figure: 'Cooling', note: 'Follows the chip tier: this kind of device has no cooling row of its own.', layer: 0 }, false)
     }
     if (has('nfc')) {
       const r = L.fit(boards[boards.length - 1], 14 * k, 9 * k, [0.85, 0.5], fixed, 0.5)
@@ -696,7 +741,7 @@ function layoutHandheld(g: Gen) {
   const tier = g.chip.custom ? 2 : s.chipTier
   const fanD = clamp(Math.min(2 * hy * 0.4, rw(midR) * 0.26) * (tier === 2 ? 1.12 : 1), 18, 52)
   const fan = L.fit({ ...midR, v0: -hy * 0.1 }, fanD, fanD, [0.92, 0.75])
-  if (fan) L.add('fan0', 'fan', fan, base, Math.min(tall, 9), { label: 'Fan', figure: `${Math.round(g.chip.watts)} W of heat to shed`, specs: ['chip'], axis: 2 })
+  if (fan) L.add('fan0', 'fan', fan, base, Math.min(tall, 9), { label: 'Fan', figure: `${Math.round(g.chip.watts)} W of heat to shed`, note: 'Sized from the chip tier: a handheld has no cooling row of its own.', specs: ['chip'], axis: 2 })
   const board = L.fit({ ...midR, v0: -hy * 0.12 }, rw(midR) * 0.66, hy * 0.92, [0.05, 0.7])
   if (board) {
     L.add('board', 'board', board, base, bt, { v: 0, label: 'Logic board' })
@@ -769,7 +814,7 @@ function layoutLaptop(g: Gen) {
   for (let i = 0; i < fans; i++) {
     const r = L.fit(band, fanD, fanD, [fans === 1 ? 1 : i, 1])
     if (!r) continue
-    L.add(`fan${i}`, 'fan', r, z0, Math.min(tall, 9), { label: 'Fan', figure: fans > 1 ? 'one of two' : 'single fan', specs: gpu ? ['gpu', 'chip'] : ['chip'], axis: 2, v: 1 })
+    L.add(`fan${i}`, 'fan', r, z0, Math.min(tall, 9), { label: 'Fan', figure: fans > 1 ? 'one of two' : 'single fan', note: 'A second fan comes with a graphics chip or a flagship processor: a laptop has no cooling row of its own.', specs: gpu ? ['gpu', 'chip'] : ['chip'], axis: 2, v: 1 })
     fanAt.push(r)
   }
   const bt = Math.min(1.2, D * 0.12)
@@ -791,7 +836,7 @@ function layoutLaptop(g: Gen) {
       const target = fanAt.length > 1 ? fanAt[h === 0 ? 0 : 1] : fanAt[0]
       if (!target) return
       const lines = 1 + (h === 1 ? Math.min(2, gpu - 1) : s.chipTier === 2 ? 1 : 0)
-      for (let i = 0; i < lines; i++) run(L, `pipe${n++}`, 'pipe', [mid(r)[0], mid(r)[1] + (i - (lines - 1) / 2) * 5], [mid(target)[0], mid(target)[1] + (i - (lines - 1) / 2) * 5], top + 1.3, Math.min(2.6, tall * 0.2), { label: 'Heat pipe', specs: h === 1 ? ['gpu'] : ['chip'] }, false)
+      for (let i = 0; i < lines; i++) run(L, `pipe${n++}`, 'pipe', [mid(r)[0], mid(r)[1] + (i - (lines - 1) / 2) * 5], [mid(target)[0], mid(target)[1] + (i - (lines - 1) / 2) * 5], top + 1.3, Math.min(2.6, tall * 0.2), { label: 'Heat pipe', note: 'More pipes for a faster chip or graphics tier.', specs: h === 1 ? ['gpu'] : ['chip'] }, false)
     })
   }
   // ---- the front half: speakers in the corners, cells between them
@@ -831,25 +876,37 @@ function layoutPanel(g: Gen) {
   const z0 = D - De
   const plateT = Math.min(1.2, z0 * 0.5)
   const lit = s.panel === 0 ? 0 : s.panel >= 5 ? 2 : 1
-  L.add('backlight', 'plate', grow(A, -2), 0.05, Math.max(0.1, z0 - plateT - 0.2), { label: ['LED backlight', 'Self-lit panel, from behind', 'MicroLED tiles, from behind'][lit], figure: panelName(d.type, s.panel), specs: ['panel'], v: 5 + lit, layer: 0 }, false)
-  // an all-in-one hides its panel behind a steel chassis; a TV's boards stand on the back of the panel itself, which shows what lights it
-  if (!tv) L.add('chassis', 'plate', grow(A, -1), z0 - plateT, plateT, { label: 'Steel chassis', v: 2, layer: 1 }, false)
+  // what lights an LCD follows the picture processor: strips along the edges, a grid of zones, or a dense grid of small lamps
+  const tier = g.chip.custom ? 2 : s.chipTier
+  const areaM2 = (b.width * b.height) / 1e6
+  const zoneRows = tv && lit === 0 && tier > 0 ? clamp(Math.round(Math.sqrt(areaM2 * (tier === 2 ? 420 : 56) * (s.refresh >= 120 ? 1.4 : 1) * (b.height / b.width))), 3, 20) : 0
+  const zones = zoneRows * Math.round((zoneRows * b.width) / b.height)
+  const light = lit === 0
+    ? { label: zones ? (tier === 2 ? 'Mini-LED backlight' : 'Full-array LED backlight') : 'Edge-lit LED backlight', figure: zones ? `${zones} dimming zones` : 'LED strips along two edges', note: tv ? 'Follows the picture processor and the size of the screen: a faster one drives more dimming zones.' : undefined }
+    : { label: ['', 'Self-lit panel, from behind', 'MicroLED tiles, from behind'][lit], figure: `${panelName(d.type, s.panel)}: every pixel lights itself, so there is no backlight` }
+  L.add('backlight', 'plate', grow(A, -2), 0.05, Math.max(0.1, z0 - plateT - 0.2), { ...light, specs: ['panel'], v: 5 + lit, n: zones, layer: 0 }, false)
+  // behind the panel is a stamped steel chassis, and everything else is bolted to that
+  const vesa = b.width < 1000 ? 200 : b.width < 1500 ? 300 : b.width < 1800 ? 400 : 600
+  if (tv) L.add('chassis', 'plate', grow(A, -1), z0 - plateT, plateT, { label: 'Stamped steel back chassis', figure: `VESA ${vesa} x ${vesa} mm wall mount`, v: 10, n: vesa, layer: 1 }, false)
+  else L.add('chassis', 'plate', grow(A, -1), z0 - plateT, plateT, { label: 'Steel chassis', v: 2, layer: 1 }, false)
   const tall = Math.max(1, De - 0.6)
   // ---- fixed by the outside: where the stand bolts on, and where the sockets are
   const mount = standMount(b, d.type)
-  if (mount) L.add('bracket', 'plate', keep(R4(mount.x, mount.y, mount.w, mount.h), A), z0, Math.min(tall, 6), { label: 'Stand bracket', v: 4 })
+  if (mount) L.add('bracket', 'plate', keep(R4(mount.x, mount.y, mount.w, mount.h), A), z0, tall, { label: 'Stand bracket', figure: standInfo(d.type, b.stand).name, v: 4 })
   const sockets = d.parts.filter((p) => p.kind === 'port')
   const onBack = sockets.filter((p) => p.face === 'back')
   const backR = join(onBack.map((p) => R4(p.x, p.y, p.w + 6, p.h + 8)))
   const bt = Math.min(1.6, tall * 0.12)
+  // a TV's boards stand off the chassis on short posts, with the cable looms lying under and between them
+  const so = tv ? Math.min(1.4, tall * 0.08) : 0
   let ioBoard: R | null = null
   if (backR) {
     // a TV's main board carries its sockets; an all-in-one has a separate row of them
     ioBoard = keep(tv ? R4(mid(backR)[0], mid(backR)[1], Math.max(rw(backR) + 60, cw * 0.22), Math.max(rh(backR) + 80, ch * 0.4)) : grow(backR, 4), A)
-    L.add(tv ? 'board' : 'ioboard', 'board', ioBoard, z0, bt, { v: tv ? 0 : 1, label: tv ? 'Main board' : 'Port board' })
+    L.add(tv ? 'board' : 'ioboard', 'board', ioBoard, z0 + so, bt, { v: tv ? 0 : 1, label: tv ? 'Main board' : 'Port board', figure: tv ? `${onBack.length} socket${onBack.length === 1 ? '' : 's'} in the bank` : undefined })
     for (const p of onBack) {
       const info = p.text ? ioInfo(d.type, p.text) : undefined
-      L.add(`port:${p.id}`, 'port', keep(R4(p.x, p.y, p.w + 3, p.h + 3), ioBoard), z0 + bt, Math.max(1, tall - bt - 0.2), { partId: p.id, label: info?.name ?? (p.text === 'power' ? 'Power inlet' : 'Socket'), specs: p.text && info ? [`io:${p.text}`] : [] }, false)
+      L.add(`port:${p.id}`, 'port', keep(R4(p.x, p.y, p.w + 3, p.h + 3), ioBoard), z0 + so + bt, Math.max(1, tall - bt - so - 0.2), { partId: p.id, label: info?.name ?? (p.text === 'power' ? 'Power inlet' : 'Socket'), specs: p.text && info ? [`io:${p.text}`] : [] }, false)
     }
   }
   for (const p of sockets.filter((q) => q.face !== 'back')) {
@@ -869,15 +926,30 @@ function layoutPanel(g: Gen) {
     const at = R4(-b.width * 0.3, tv ? -b.height * 0.12 : b.height * 0.16, 2 * r, 2 * r)
     L.add('woofer', 'driver', keep(at, A), z0, Math.min(tall, r * 0.9), { ...sp, label: 'Woofer', axis: 2, v: 0 })
   }
+  if (tv) {
+    // the four threaded points a wall bracket bolts to, and the mounts the stand's risers push up into
+    for (const [i, [sx, sy]] of [[-1, -1], [1, -1], [-1, 1], [1, 1]].entries()) {
+      const r = R4((sx * vesa) / 2, (sy * Math.min(vesa, ch * 0.6)) / 2, 22, 22)
+      if (!L.taken.some((q) => hit(q, r, 1)) && r.u0 > A.u0 && r.u1 < A.u1 && r.v0 > A.v0 && r.v1 < A.v1) L.add(`vesa${i}`, 'plate', r, z0, Math.min(tall, 9), { label: 'Wall-mount point', figure: `VESA ${vesa} x ${vesa} mm, M${vesa >= 400 ? 8 : 6} thread`, v: 11 })
+    }
+    const stand = standInfo('tv', b.stand)
+    const riser = stand.id === 'feet' ? Math.min(40, Math.max(14, b.width * 0.03)) : b.width * 0.1
+    for (const [i, sx] of (stand.id === 'feet' ? [-1, 1] : [0]).entries()) {
+      const r = L.fit({ ...A, v1: A.v0 + 44 }, riser + 26, 34, [clamp((sx * b.width * 0.36 - (riser + 26) / 2 - A.u0) / Math.max(1, cw - riser - 26), 0, 1), 0])
+      if (r) L.add(`mount${i}`, 'plate', r, z0, Math.min(tall, 12), { label: 'Stand mount', figure: stand.name, v: 4 })
+    }
+  }
   const boxW = cw * (tv ? [0.12, 0.16, 0.16, 0.11, 0][si] : [0.07, 0.1, 0.1, 0.08, 0][si])
   const boxH = Math.min(ch * 0.12, boxW * 0.5)
   if (si === 4) {
     for (const [i, u] of [-0.25, 0.25].entries()) L.add(`exciter${i}`, 'driver', R4(u * cw, ch * 0.08, Math.min(70, ch * 0.16), Math.min(70, ch * 0.16)), z0, Math.min(tall, 9), { ...sp, label: 'Panel actuator', axis: 2, v: 2 })
   } else {
     const n = si === 3 ? 4 : 2
+    // a TV's speakers fire down from inboard of its feet; each is a sealed box with its drivers in the face
+    const spots = tv ? (n === 2 ? [0.2, 0.8] : [0.17, 0.39, 0.61, 0.83]) : Array.from({ length: n }, (_, i) => i / (n - 1))
     for (let i = 0; i < n; i++) {
-      const r = L.fit({ ...A, v1: A.v0 + boxH + 8 }, boxW, boxH, [i / (n - 1), 0])
-      if (r) L.add(`spk${i}`, 'speaker', r, z0, Math.min(tall, tv ? 16 : 22), { ...sp, label: si === 3 ? 'Array driver' : 'Speaker' })
+      const r = L.fit({ ...A, v1: A.v0 + boxH + 8 }, boxW, boxH, [spots[i], 0])
+      if (r) L.add(`spk${i}`, 'speaker', r, z0, Math.min(tall, tv ? 16 : 22), { ...sp, label: si === 3 ? 'Array driver' : 'Speaker', v: tv ? 2 : 0, n: tv ? (si === 0 ? 1 : 2) : 0 })
     }
     if (si === 3) {
       for (const [i, sx] of [-1, 1].entries()) {
@@ -889,28 +961,76 @@ function layoutPanel(g: Gen) {
   const above: R = { ...A, v0: mount ? mount.y + mount.h / 2 + 4 : -hy * 0.2 }
   if (tv) {
     // ---- a TV: power board, the main board with its chip under a heat sink, and the timing board feeding the panel
-    const psu = L.fit(A, cw * 0.24, ch * 0.42, [0.28, 0.55])
-    if (psu) L.add('psu', 'psu', psu, z0, Math.min(tall, 18), { label: 'Power board', v: 1 })
-    const board = ioBoard ?? L.fit(A, cw * 0.22, ch * 0.4, [0.75, 0.5])
-    if (board && !ioBoard) L.add('board', 'board', board, z0, bt, { v: 0, label: 'Main board' })
+    const zb = z0 + so
+    const io = s.io ?? []
+    // how much it draws follows the size of the screen and what lights it: there is no row for it under Internals
+    const watts = Math.round((areaM2 * (lit === 0 ? (zones ? 150 : 110) : lit === 1 ? 130 : 95) * (s.refresh >= 120 ? 1.1 : 1) + 30 + (sound.quality ?? 0) * 40) / 5) * 5
+    const psu = L.fit(A, cw * 0.22, ch * 0.4, [0.08, 0.6])
+    if (psu) L.add('psu', 'psu', psu, zb, Math.min(tall - so, 18), { label: 'Power supply board', figure: `${watts} W`, note: 'Sized from the screen area, the panel type and the speakers.', v: 1, n: watts })
+    const board = ioBoard ?? L.fit(A, cw * 0.22, ch * 0.4, [0.8, 0.5])
+    if (board && !ioBoard) L.add('board', 'board', board, zb, bt, { v: 0, label: 'Main board' })
     if (board) {
       const obs = g.out.filter((c) => c.kind === 'port' && c.zone === 'main').map((c) => R4(L.f.at(c.box.c)[0], L.f.at(c.box.c)[1], c.box.s[0], c.box.s[1]))
-      const items: Item[] = [{ id: 'heatsink', kind: 'heatsink', su: Math.max(46, cw * 0.06), sv: Math.max(46, cw * 0.06), dz: 2, sw: Math.max(1, Math.min(tall - bt - 2.4, 10)), at: [0.3, 0.8], o: { label: 'Heat sink', specs: ['chip'], v: 0 } }]
-      if ((s.io ?? []).includes('aerial')) items.push({ id: 'tuner', kind: 'shield', su: 40, sv: 26, sw: 7, at: [0.9, 0.9], o: { label: 'Tuner', specs: ['io:aerial'] } })
-      for (const [id, label] of [['vrr', 'Game-mode video chip'], ['earc', 'Audio return chip'], ['voice', 'Voice microphones'], ['ambient', 'Light sensor board']] as const) {
-        if ((s.io ?? []).includes(id)) items.push({ id, kind: 'mem', su: 14, sv: 14, sw: 1.6, at: [id === 'vrr' ? 0.1 : id === 'earc' ? 0.4 : id === 'voice' ? 0.7 : 0.95, 0.1], o: { label, specs: [`io:${id}`], v: 2, text: id.toUpperCase() } })
+      const items: Item[] = [{ id: 'heatsink', kind: 'heatsink', su: Math.max(46, cw * 0.06), sv: Math.max(46, cw * 0.06), dz: 2, sw: Math.max(1, Math.min(tall - so - bt - 2.4, 10)), at: [0.3, 0.8], o: { label: 'Heat sink', specs: ['chip'], v: 0 } }]
+      if (io.includes('aerial')) items.push({ id: 'tuner', kind: 'shield', su: 40, sv: 26, sw: Math.min(7, tall - so - bt - 0.4), at: [0.9, 0.9], o: { label: 'Tuner can', specs: ['io:aerial'], v: 2 } })
+      for (const [id, label] of [['vrr', 'Game-mode video chip'], ['earc', 'Audio return chip'], ['voice', 'Voice processor'], ['ambient', 'Light sensor hub']] as const) {
+        if (io.includes(id)) items.push({ id, kind: 'mem', su: 14, sv: 14, sw: 1.6, at: [id === 'vrr' ? 0.1 : id === 'earc' ? 0.4 : id === 'voice' ? 0.7 : 0.95, 0.1], o: { label, specs: [`io:${id}`], v: 2, text: id.toUpperCase() } })
       }
-      const placed = populate(L, [board], z0 + bt, items, obs)
+      const placed = populate(L, [board], zb + bt, items, obs)
       const hs = placed.get('heatsink')
-      if (hs) L.add('chip', 'chip', grow(hs, -rw(hs) * 0.28), z0 + bt, 1.8, { specs: ['chip'], label: g.chip.name, figure: 'Picture processor', v: s.chipTier, text: g.chip.name }, false)
+      if (hs) L.add('chip', 'chip', grow(hs, -rw(hs) * 0.28), zb + bt, 1.8, { specs: ['chip'], label: g.chip.name, figure: 'Picture processor', v: s.chipTier, text: g.chip.name }, false)
     }
-    const tcon = L.fit({ ...A, v0: hy * 0.45 }, cw * 0.22, ch * 0.1, [0.5, 1])
+    // the timing controller sits under the top edge and feeds the panel through flat ribbons fanned out along it
+    const upfire = si === 3
+    const tcon = L.fit({ ...A, v0: hy * 0.3, v1: A.v1 - ch * 0.07 }, cw * 0.2, ch * 0.09, [0.5, 1])
     if (tcon) {
-      L.add('tcon', 'board', tcon, z0, bt, { v: 2, label: 'Timing controller', figure: `${panelName('tv', s.panel)}, ${s.refresh} Hz`, specs: ['panel', 'refresh'] })
-      for (const [i, k] of [-0.3, 0.3].entries()) L.add(`pflex${i}`, 'flex', { u0: mid(tcon)[0] + k * rw(tcon) - 13, u1: mid(tcon)[0] + k * rw(tcon) + 13, v0: tcon.v1 - 3, v1: A.v1 }, z0 + bt, 0.5, { label: 'Panel ribbon', specs: ['panel'], over: true, v: 1 }, false)
-      if (psu) run(L, 'cable0', 'cable', mid(psu), mid(tcon), z0 + tall * 0.5, 3, { label: 'Power harness' })
+      L.add('tcon', 'board', tcon, zb, bt, { v: 2, label: 'Timing controller', figure: `${panelName('tv', s.panel)}, ${s.refresh} Hz`, specs: ['panel', 'refresh'] })
+      const lanes = clamp(Math.round(b.width / 420) * (s.refresh >= 120 ? 2 : 1), 2, 8)
+      const spread = upfire ? cw * 0.13 : Math.min(cw * 0.34, lanes * 95)
+      const fw = Math.min(26, (rw(tcon) / lanes) * 0.7)
+      for (let i = 0; i < lanes; i++) {
+        const k = (i + 0.5) / lanes - 0.5
+        const from: [number, number] = [mid(tcon)[0] + k * rw(tcon) * 0.9, tcon.v1 - 2]
+        const to: [number, number] = [mid(tcon)[0] + k * 2 * spread, A.v1 - 1]
+        L.add(`pflex${i}`, 'flex', join([R4(from[0], from[1], fw, 1), R4(to[0], to[1], fw, 1)])!, zb + bt, 0.5, { label: 'Panel ribbon', figure: `one of ${lanes}`, note: 'A wider or faster panel is fed through more ribbons.', specs: ['panel', 'refresh'], over: true, v: 4, n: fw, path: [L.f.point(from[0], from[1], zb + bt + 0.25), L.f.point(to[0], to[1], zb + bt + 0.25)] }, false)
+      }
     }
-    if (psu && board) run(L, 'cable1', 'cable', mid(psu), mid(board), z0 + tall * 0.5, 3, { label: 'Power harness' }, false)
+    // an LCD's lamps have a driver board of their own; a panel that lights itself has none
+    const ledDrv = lit === 0 ? L.fit({ ...A, v0: -hy * 0.5, v1: hy * 0.4 }, cw * 0.1, ch * 0.2, [0.42, 0.3]) : null
+    if (ledDrv) L.add('leddrv', 'board', ledDrv, zb, bt, { v: 1, label: 'LED driver board', figure: zones ? `${zones} zones` : 'two strips', specs: ['panel'] })
+    // wireless: a small module near the bottom edge with a lead to an aerial in each lower corner
+    const wifi = L.fit({ ...A, v1: -hy * 0.3 }, 44, 30, [0.62, 0.35])
+    if (wifi) L.add('wifi', 'board', wifi, zb, bt, { v: 4, label: 'Wi-Fi and Bluetooth module' })
+    const aerials: R[] = []
+    for (const [i, sx] of [-1, 1].entries()) {
+      const r = L.fit({ ...A, v1: A.v0 + 70 }, 34, 9, [sx < 0 ? 0 : 1, 0.9])
+      if (r && wifi) {
+        L.add(`ant${i}`, 'antenna', r, z0, Math.min(tall, 1.2), { label: 'Wi-Fi aerial', v: 2 })
+        aerials.push(r)
+      }
+    }
+    // the remote receiver, the status lamp and the key look out under the bottom edge
+    const front = L.fit({ ...A, v1: A.v0 + 20 }, 46, 11, [0.5, 0])
+    if (front) L.add('keys', 'board', front, zb, bt, { v: 1, label: io.includes('ambient') ? 'Remote receiver, key and light sensor' : 'Remote receiver and key board', specs: io.includes('ambient') ? ['io:ambient'] : [] })
+    const voice = io.includes('voice') ? L.fit({ ...A, v1: A.v0 + 20 }, 70, 8, [0.36, 0]) : null
+    if (voice) L.add('voicemics', 'mic', voice, zb, Math.min(tall - so, 3), { label: 'Far-field microphones', specs: ['io:voice'], n: 4, v: 1 })
+    // ---- the looms: laid on the chassis, turning to keep clear of the boards, held down by clips
+    const avoid = [...L.taken]
+    const cw0 = z0 + 0.05
+    const thick = clamp(tall * 0.22, 0.8, 4.5)
+    if (psu && board) loom(L, 'cable1', psu, board, cw0, thick, { label: 'Power harness', figure: 'to the main board' }, avoid)
+    if (psu && tcon) loom(L, 'cable0', psu, tcon, cw0, thick, { label: 'Power harness', figure: 'to the timing controller' }, avoid)
+    if (psu && ledDrv) loom(L, 'cable2', psu, ledDrv, cw0, thick, { label: 'Backlight power', specs: ['panel'] }, avoid)
+    if (board && tcon) loom(L, 'lvds', board, tcon, cw0, Math.min(thick, 1), { label: 'Panel data cable', figure: `${s.refresh} Hz video`, specs: ['refresh'], v: 2, n: 22 }, avoid)
+    if (board && wifi) loom(L, 'wificable', wifi, board, cw0, Math.min(thick, 1), { label: 'Wireless module cable', v: 2, n: 10 }, avoid)
+    if (wifi) aerials.forEach((r, i) => loom(L, `antlead${i}`, wifi, r, cw0, Math.min(thick, 1.1), { label: 'Aerial lead', v: 4 }, avoid))
+    if (board && front) loom(L, 'keycable', front, board, cw0, Math.min(thick, 1.2), { label: 'Front panel cable', v: 3 }, avoid)
+    if (board && voice) loom(L, 'miccable', voice, board, cw0, Math.min(thick, 1.2), { label: 'Microphone cable', specs: ['io:voice'], v: 3 }, avoid)
+    for (const c of g.out.filter((x) => x.zone === 'main' && (x.kind === 'speaker' || x.id === 'woofer' || x.id.startsWith('exciter')))) {
+      const at = L.f.at(c.box.c)
+      const r = R4(at[0], at[1], c.box.s[0], c.box.s[1])
+      if (board) loom(L, `lead:${c.id}`, r, board, cw0, Math.min(thick, 2.2), { label: 'Speaker lead', figure: sound.name, specs: ['speakers'], v: 3 }, avoid)
+    }
   } else {
     // ---- an all-in-one: motherboard with its cooler, a graphics card, a power supply and a drive
     const gpu = s.gpu ?? 0
@@ -964,6 +1084,8 @@ function layoutPanel(g: Gen) {
     if (psu && boardC) run(L, 'cable0', 'cable', mid(psu), [L.f.at(boardC.box.c)[0], L.f.at(boardC.box.c)[1] - boardC.box.s[1] * 0.42], z0 + tall * 0.6, 4, { label: 'Power harness' })
     if (psu && gpuC) run(L, 'cable1', 'cable', [mid(psu)[0] + 10, mid(psu)[1]], [L.f.at(gpuC.box.c)[0], L.f.at(gpuC.box.c)[1] - gpuC.box.s[1] * 0.45], z0 + tall * 0.6, 4, { label: 'Graphics power', specs: ['gpu'] }, false)
   }
+  // pulled apart, it comes away in three sheets: the panel and what lights it, the chassis, and everything bolted to that
+  for (const c of g.out) if (c.zone === 'main' && c.id !== 'backlight' && c.id !== 'chassis') c.layer = c.kind === 'heatsink' || c.kind === 'pump' || c.kind === 'pipe' || c.id.startsWith('hose') ? 3 : 2
   const bev = edgeBevel(b)
   display(g, 0, 0, b.width - 2 * bev - 0.4, b.height - 2 * bev - 0.4, b.thickness / 2 - dm.disp / 2, dm.disp)
 }
@@ -1126,19 +1248,33 @@ function layoutEarbuds(g: Gen) {
   const anc = ANC[s.anc ?? 0] ?? ANC[0]
   const dv = s.driver ?? 0
   const dia = [6, 10, 10, 8.5, 10.5, 9.5][dv] ?? 8
+  // the loose bud is split where it lies, outer face down: the half that faces out stays on the desk, what was inside
+  // rises out of it in order, and the half with the nozzle and the ear tip comes off the top. Across runs along the
+  // stem, and up is the way the ear tip points, so this is the bud's own shape and not a stand-in for it.
+  const bean = b.buds === 'bean'
   const fb = new Frame([0, 0, 0], 1, -3, 2)
-  const stack = 4.2 + 1.3 + 4 + 3 + 5.5
-  g.zones.push({ id: 'bud', anchor: 'bud', box: { c: [0, stack / 2, 0], s: [15, stack, 15] }, up: 2, wall: 1 })
-  const B = new Lay(g.out, 'bud', fb, R4(0, 0, 15, 15), stack)
-  B.add('driver', 'driver', R4(0, 0, dia, dia), 0.2, 3.6, { label: `${driver.name} driver`, figure: 'in each bud', specs: ['driver'], axis: 2, v: 10 + dv, n: dv === 3 ? 2 : 1, layer: 0 }, false)
-  B.add('budboard', 'board', R4(0, 0, 9, 9), 4.4, 0.7, { label: 'Bud board', figure: anc.name, specs: ['anc'], v: 1, n: [0, 1, 2, 2, 3, 3][s.anc ?? 0] ?? 0, layer: 1 }, false)
-  if (s.anc) B.add('ancchip', 'mem', R4(-1.6, 0, 3.6, 3.6), 5.1, 0.6, { label: 'Noise-cancelling chip', figure: anc.name, specs: ['anc'], v: 2, text: 'ANC', layer: 1 }, false)
-  B.add('budcell', 'battery', R4(0, 0, b.buds === 'bean' ? 9.5 : 8, b.buds === 'bean' ? 9.5 : 8), 6.2, 3.6, { label: 'Bud cell', figure: b.buds === 'bean' ? 'coin cell' : 'coin cell, with more in the stem', specs: ['battery'], axis: 2, v: 1, layer: 2 }, false)
+  const hr = bean ? 8.4 : 7.6
+  const halfW = bean ? hr * 1.12 : hr
+  const halfV = bean ? hr * 0.92 : hr * 0.95
+  const deep = hr * (bean ? 0.7 : 0.86)
+  const stemEnd = bean ? halfW : 22.4
+  const lo = -deep - 0.1
+  const hi = bean ? 10.6 : 12.4
+  const BA: R = { u0: -halfW - 0.2, v0: -halfV - 0.2, u1: stemEnd + 0.2, v1: halfV + 0.2 }
+  g.zones.push({ id: 'bud', anchor: 'bud', box: fb.box(BA, lo, hi - lo), up: 2, wall: 1 })
+  const B = new Lay(g.out, 'bud', new Frame([0, lo, 0], 1, -3, 2), BA, hi - lo)
+  const at = (w: number) => w - lo
+  const mics = [0, 1, 2, 2, 3, 3][s.anc ?? 0] ?? 0
   const feats = (s.io ?? []).filter((id) => ['touch', 'ear', 'pulse', 'find'].includes(id))
-  if (feats.length) B.add('budsense', 'sensor', R4(0, 0, 7, 7), 10, 0.5, { label: 'Touch and wear sensors', specs: feats.map((id) => `io:${id}`), n: feats.length, v: 2, layer: 3 }, false)
-  // the shell it all came out of, in two halves: the cap that faces out, above, and the half with the ear tip, below
-  B.add('budcap', 'plate', R4(0, 0, 14, 14), 10.8, 5, { label: 'Bud shell', figure: b.buds === 'bean' ? 'bean' : 'with stem', v: 8, layer: 4 }, false)
-  B.add('budtip', 'plate', R4(0, 0, 13, 13), 0, 0.15, { label: 'Ear tip and nozzle', v: 9, layer: 0, over: true }, false)
+  B.add('budcap', 'plate', { ...BA }, at(lo), -lo, { label: 'Outer shell', figure: bean ? 'bean, touch surface outermost' : 'with stem', v: 8, layer: 0, over: true }, false)
+  if (feats.length) B.add('budsense', 'sensor', R4(0, 0, 7, 7), at(-deep + 1.1), 0.4, { label: 'Touch and wear sensors', specs: feats.map((id) => `io:${id}`), n: feats.length, v: 2, layer: 1 }, false)
+  B.add('budcell', 'battery', R4(0, 0, bean ? 9.5 : 8, bean ? 9.5 : 8), at(-deep + 1.7), Math.max(1.6, deep - 3), { label: 'Bud cell', figure: bean ? 'coin cell' : 'coin cell behind the driver', specs: ['battery'], axis: 2, v: 1, layer: 1 }, false)
+  // a stem carries the microphones and the charging contacts on a strip of its own; a bean has them on the round board
+  if (!bean) B.add('stemboard', 'board', { u0: 5.2, u1: 21, v0: -1.5, v1: 1.5 }, at(-2.1), 0.5, { label: 'Stem board', figure: mics ? `${mics} microphone${mics > 1 ? 's' : ''} and the charging contacts` : 'charging contacts', specs: ['anc'], v: 5, n: mics, layer: 1 }, false)
+  B.add('budboard', 'board', R4(0, 0, 9, 9), at(-0.9), 0.6, { label: 'Bud board', figure: anc.name, specs: ['anc'], v: 1, n: bean ? mics : 0, layer: 2 }, false)
+  if (s.anc) B.add('ancchip', 'mem', R4(-1.6, 0, 3.6, 3.6), at(-0.3), 0.6, { label: 'Noise-cancelling chip', figure: anc.name, specs: ['anc'], v: 2, text: 'ANC', layer: 2 }, false)
+  B.add('driver', 'driver', R4(0, 0, dia, dia), at(0.9), 3.4, { label: `${driver.name} driver`, figure: 'in each bud', specs: ['driver'], axis: 2, v: 10 + dv, n: dv === 3 ? 2 : 1, layer: 3 }, false)
+  B.add('budtip', 'plate', { u0: -halfW - 0.2, u1: halfW + 0.2, v0: BA.v0, v1: BA.v1 }, at(0), hi, { label: 'Inner shell, nozzle and ear tip', figure: 'the half that sits in the ear', v: 9, layer: 4, over: true }, false)
 }
 
 // ---------------------------------------------------------------- headset
@@ -1166,11 +1302,11 @@ function layoutHeadset(g: Gen) {
   const lr = Math.max(4, Math.min(eyes.lr, hy - 1, hx - eyes.apart - 0.5))
   for (const sx of [-1, 1]) {
     const tag = sx < 0 ? 'L' : 'R'
-    L.add(`lens${tag}`, 'lens', R4(sx * eyes.apart, 0, 2 * lr, 2 * lr), 0.2, barrel, { label: optics.name, figure: optics.depth ? `needs ${optics.depth} mm of depth` : 'flat waveguide', specs: ['optics'], v: s.optics ?? 0, axis: 2, fits: lensFits, layer: 0 }, false)
-    L.add(`panel${tag}`, 'display', R4(sx * eyes.apart, 0, 2 * lr * 0.92, 2 * lr * 0.82), 0.2 + barrel + 0.2, 1.4, { label: 'Display', figure: `${panelName('headset', s.panel)}, ${s.refresh} Hz`, specs: ['panel', 'refresh'], v: s.panel, layer: 1 }, false)
-    if (io.includes('eyes')) L.add(`eye${tag}`, 'sensor', R4(sx * eyes.apart, 0, 2 * lr + 3, 2 * lr + 3), 0.05, 0.14, { label: 'Eye-tracking ring', specs: ['io:eyes'], v: 3, over: true, layer: 0 }, false)
+    L.add(`lens${tag}`, 'lens', R4(sx * eyes.apart, 0, 2 * lr, 2 * lr), 0.2, barrel, { label: optics.name, figure: optics.depth ? `needs ${optics.depth} mm of depth` : 'flat waveguide', specs: ['optics'], v: s.optics ?? 0, axis: 2, fits: lensFits, layer: 0, back: 3 }, false)
+    L.add(`panel${tag}`, 'display', R4(sx * eyes.apart, 0, 2 * lr * 0.92, 2 * lr * 0.82), 0.2 + barrel + 0.2, 1.4, { label: 'Display', figure: `${panelName('headset', s.panel)}, ${s.refresh} Hz`, specs: ['panel', 'refresh'], v: s.panel, layer: 1, back: 2 }, false)
+    if (io.includes('eyes')) L.add(`eye${tag}`, 'sensor', R4(sx * eyes.apart, 0, 2 * lr + 3, 2 * lr + 3), 0.05, 0.14, { label: 'Eye-tracking ring', specs: ['io:eyes'], v: 3, over: true, layer: 0, back: 4 }, false)
   }
-  if (io.includes('ipd')) L.add('ipd', 'motor', R4(0, hy * 0.5, Math.min(2 * (eyes.apart - lr) - 1, 16), 6), 0.4, Math.min(barrel - 0.4, 6), { label: 'Lens spacing motor', specs: ['io:ipd'], v: 2, layer: 0 }, false)
+  if (io.includes('ipd')) L.add('ipd', 'motor', R4(0, hy * 0.5, Math.min(2 * (eyes.apart - lr) - 1, 16), 6), 0.4, Math.min(barrel - 0.4, 6), { label: 'Lens spacing motor', specs: ['io:ipd'], v: 2, layer: 0, back: 1 }, false)
   // ---- in front of those: the board, its fan and the cells; and against the front plate, the cameras
   const zo = 0.2 + barrel + 1.8
   const camT = Math.min(7, D * 0.14)
@@ -1191,7 +1327,7 @@ function layoutHeadset(g: Gen) {
     const items: Item[] = [chipItem(g, [11, 13, 15][s.chipTier] ?? 13, 1, [0.5, 0.35]), ...memoryItems(g, 1.2)]
     const fans = tier >= 2 ? 2 : 1
     const fd = Math.min(rh(board) * 0.55, 30)
-    for (let i = 0; i < fans; i++) items.push({ id: `fan${i}`, kind: 'fan', su: fd, sv: fd, sw: Math.min(he - bt - 0.2, 8), at: [fans === 1 ? 0.5 : i, 1], o: { label: 'Fan', figure: `${Math.round(g.chip.watts)} W of heat to shed`, specs: ['chip'], axis: 2 } })
+    for (let i = 0; i < fans; i++) items.push({ id: `fan${i}`, kind: 'fan', su: fd, sv: fd, sw: Math.min(he - bt - 0.2, 8), at: [fans === 1 ? 0.5 : i, 1], o: { label: 'Fan', figure: `${Math.round(g.chip.watts)} W of heat to shed`, note: 'A flagship processor gets a second fan: a headset has no cooling row of its own.', specs: ['chip'], axis: 2 } })
     if (io.includes('depth')) items.push({ id: 'depth', kind: 'mem', su: 8, sv: 6, sw: 1.2, at: [0.5, 0], o: { label: 'Depth sensor driver', specs: ['io:depth'], v: 2, text: 'ToF' } })
     if (io.includes('hands')) items.push({ id: 'hands', kind: 'mem', su: 7, sv: 7, sw: 1, at: [0.1, 0.5], o: { label: 'Hand-tracking processor', specs: ['io:hands'], v: 2, text: 'HAND' } })
     if (io.includes('face')) items.push({ id: 'face', kind: 'mem', su: 6, sv: 6, sw: 1, at: [0.9, 0.5], o: { label: 'Face-tracking processor', specs: ['io:face'], v: 2, text: 'FACE' } })
@@ -1284,7 +1420,7 @@ function layoutSpeaker(g: Gen) {
   const spine = Math.min(11, all[1] * 0.4)
   const block = (id: string, kind: CompKind, w0: number, sw: number, ku: number, kv: number, o: Partial<Comp>, cu = 0, cv = 0) => {
     // a driver, a ring of microphones or a round board fills the circle; anything square keeps to the square inside it
-    const [ru, rv] = span(w0, sw, kind === 'driver' || kind === 'mic')
+    const [ru, rv] = span(w0, sw, kind === 'driver' || kind === 'mic' || kind === 'baffle' || kind === 'touch' || kind === 'ledring')
     // nothing reaches back into the strip the sockets stand in
     const back = Math.min(rv, span(w0, sw)[1]) - spine
     const su = 2 * ru * ku
@@ -1309,12 +1445,21 @@ function layoutSpeaker(g: Gen) {
   }
   // ---- from the bottom up: power supply, drivers, the board, the microphones
   const hP = clamp(H * 0.13, 8, 24)
-  block('psu', 'psu', 0.5, hP, 0.7, 0.7, { label: 'Power supply', v: 2 })
+  // neither has a row of its own under Internals: both are sized for the drivers they feed
+  const watts = [15, 30, 60, 100, 150][dv] ?? 30
+  const channels = [1, 2, 3, 7, 4][dv] ?? 1
+  const psuC = block('psu', 'psu', 0.5, hP, 0.5, 0.7, { label: 'Power supply', figure: `${watts} W from the wall`, note: 'Sized for the drivers chosen: a speaker runs from the mains and has no battery.', v: 2 }, -0.48)
+  const ampC = block('amp', 'amp', 0.5, hP, 0.42, 0.7, { label: 'Amplifier board', figure: `${channels} channel${channels > 1 ? 's' : ''}, class D`, note: 'One channel for every driver it feeds.', n: channels }, 0.54)
   const topRoom = clamp(H * 0.11, 6.5, 16)
   const z0 = hP + 2
   const hd = Math.max(6, H - z0 - topRoom - 1)
   const [du, dw] = span(z0, hd)
   const side = Math.min(2 * du, dw + (dw - spine))
+  // the drivers work into a chamber of their own: sealed, tuned with a port, or with passive radiators in its walls
+  const tuned = dv === 1 || dv === 3
+  block('chamber', 'baffle', z0 - 0.9, hd + 1.6, 1, 1, { label: dv === 2 ? 'Chamber with passive radiators' : tuned ? 'Ported chamber' : dv === 4 ? 'Sealed twin chamber' : 'Sealed chamber', figure: `${sh.litres.toFixed(2)} L enclosure`, fits, v: sh.form === 'block' ? 1 : 0, over: true, layer: 1 })
+  block('wadding', 'wadding', z0 + hd * 0.12, hd * 0.5, 0.56, 0.3, { label: 'Acoustic damping', figure: 'polyester wadding', over: true }, -0.3, 0.62)
+  if (tuned) block('bassport', 'duct', z0 + 0.4, Math.max(4, hd * 0.55), 0.2, 0.2, { label: 'Bass port', figure: 'tunes the chamber', over: true, axis: 2 }, 0.62, 0.6)
   if (dv === 0) {
     const dia = Math.min(side * 0.82, hd * 0.9)
     block('woofer', 'driver', z0 + (hd - dia) / 2, dia, dia / (2 * du), 0.5, { ...dp, label: 'Full-range driver', axis: 1, v: 0 }, 0, -0.5)
@@ -1343,6 +1488,42 @@ function layoutSpeaker(g: Gen) {
   const feats = (s.io ?? []).filter((id) => !ioInfo('speaker', id)?.size)
   if (feats.length) block('radio', 'shield', zt + 1.2, 1.6, 0.26, 0.24, { label: 'Radio and smart-home module', specs: feats.map((id) => `io:${id}`), v: 0 }, 0.6, 0.6)
   block('mics', 'mic', H - 2.6, 1.4, 0.98, 0.98, { label: 'Microphone ring', figure: mics.name, specs: ['mics'], n: mics.count, v: sh.form === 'block' ? 1 : 0, layer: 3 })
+  // under the top: the board the keys are touched through, and the lamps of the light ring round it
+  const keys = d.parts.filter((p) => p.face === 'top' && p.kind === 'button')
+  const ring = d.parts.find((p) => p.face === 'top' && p.kind === 'light')
+  const [tu, tv] = span(H - 1.1, 1, true)
+  const P = (u: number, v: number, w: number) => f.point(u, v, w)
+  if (ring) {
+    const [u, v] = f.at(partPoint(d, ring))
+    const bar = sh.form === 'block'
+    const r = bar ? keep(R4(u, v, Math.min(ring.w, 2 * tu), 3), { u0: -tu, v0: -tv, u1: tu, v1: tv }) : R4(0, 0, Math.min(ring.w, 2 * tu), Math.min(ring.h, 2 * tv))
+    const lamps = bar ? clamp(Math.round(rw(r) / 7), 4, 24) : clamp(Math.round((Math.PI * (rw(r) + rh(r))) / 2 / 9), 6, 48)
+    L.add('ledring', 'ledring', r, H - 1.1, 0.7, { label: bar ? 'Light bar' : 'Light ring', figure: `${lamps} colour LEDs`, note: 'One lamp for about every 9 mm of the ring drawn on the top.', n: lamps, v: bar ? 1 : 0, over: true, layer: 4, partId: ring.id }, false)
+  }
+  if (keys.length) {
+    const at = keys.map((p) => f.at(partPoint(d, p)))
+    const r = join(at.map(([u, v], i) => R4(u, v, keys[i].w + 5, keys[i].h + 5)))!
+    L.add('touch', 'touch', keep(r, { u0: -tu * 0.8, v0: -tv * 0.8, u1: tu * 0.8, v1: tv * 0.8 }), H - 1.1, 0.6, { label: 'Touch-control board', figure: `${keys.length} key${keys.length > 1 ? 's' : ''}`, n: keys.length, over: true, layer: 4 }, false)
+  }
+  // ---- wiring: mains to the amplifier, a lead up a post to each driver, and a ribbon up the back to the logic board
+  const wire = (id: string, pts: V3[], thick: number, o: Partial<Comp>) => {
+    const lo = pts.reduce((m, p) => m.map((x, i) => Math.min(x, p[i])) as V3, pts[0])
+    const hi = pts.reduce((m, p) => m.map((x, i) => Math.max(x, p[i])) as V3, pts[0])
+    g.out.push({ id, kind: 'cable', zone: 'main', host: 'tray', box: { c: [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2], s: [Math.max(thick, hi[0] - lo[0]), Math.max(thick, hi[1] - lo[1]), Math.max(thick, hi[2] - lo[2])] }, ax: f.ax, fits: true, layer: 1, specs: [], label: '', over: true, path: pts, n: thick, ...o })
+  }
+  const pu = f.at(psuC.box.c)
+  const au = f.at(ampC.box.c)
+  const [bu, bv] = span(0.5, hP)
+  const backV = Math.min(bv, span(0.5, hP)[1]) - spine
+  wire('cable0', [P(pu[0], pu[1], hP - 0.5), P(pu[0], backV - 1.5, hP - 0.5), P(au[0], backV - 1.5, hP - 0.5), P(au[0], au[1], hP - 0.5)], 1.6, { label: 'Power harness', figure: `${watts} W` })
+  const post = Math.min(bu, span(z0, hd)[0]) * 0.86
+  let lead = 0
+  for (const c of g.out.filter((x) => x.zone === 'main' && x.kind === 'driver')) {
+    const [cu, cv2, cw2] = f.at(c.box.c)
+    const side2 = lead++ % 2 ? -1 : 1
+    wire(`lead:${c.id}`, [P(au[0], au[1], hP), P(side2 * post, au[1], hP + 0.8), P(side2 * post, au[1], cw2), P(cu + (side2 * post - cu) * 0.35, cv2 + (au[1] - cv2) * 0.35, cw2)], 1.1, { label: 'Driver lead', figure: c.label, specs: ['driver'], v: 3 })
+  }
+  wire('ribbon', [P(au[0] * 0.5, backV - 0.8, hP), P(au[0] * 0.5, backV - 0.8, zt + 0.6)], 1, { label: 'Board ribbon', figure: 'amplifier to logic board', v: 2, n: 7 })
   if (sh.screen) g.out.push({ id: 'display', kind: 'display', zone: 'body', host: 'cover', box: { c: [0, sh.screen.y, b.thickness / 2 - sh.frontSink - 1.6], s: [sh.screen.w * (sh.form === 'orb' ? 0.7 : 1), sh.screen.h * (sh.form === 'orb' ? 0.7 : 1), 2.4] }, ax: [1, 2, 3], fits: true, layer: 4, specs: ['panel', 'refresh'], label: 'Touch screen', figure: `${panelName('speaker', s.panel)}, ${s.refresh} Hz`, v: s.panel, over: true })
 }
 
@@ -1436,6 +1617,81 @@ export function specShares(d: DeviceDesign, ev: Evaluation, chips?: CustomChip[]
   out.camera = { cost: cams }
   for (const key of Object.keys(out)) if (!raw.has(key) && key !== 'refresh') out[key] = { ...out[key], cost: out[key].cost * ev.costScale }
   return out
+}
+
+// ---------------------------------------------------------------- what each component weighs
+
+/** How heavy a kind of component is for the room it takes: a share of the weight is given out by volume times this. */
+const HEFT: Partial<Record<CompKind, number>> = { board: 0.9, chip: 2, mem: 2, shield: 1.2, sheet: 2, pipe: 3, fan: 0.5, heatsink: 1.2, pump: 2, camera: 2.5, coil: 1.5, motor: 4, port: 1.5, flex: 0.3, tray: 2, antenna: 0.5, plate: 4, stick: 1.2, card: 0.9, drive: 0.8, driver: 1.2, radiator: 0.6, mic: 0.5, lens: 1.2, well: 0.3, baffle: 0.25, wadding: 0.03, duct: 0.15, amp: 0.8, ledring: 0.3, touch: 0.8, display: 2, hinge: 4, battery: 2.6 }
+
+/** The room a component takes, in cubic millimetres: its boxes, or its length for a cable. */
+function bulk(c: Comp): number {
+  if (c.path && c.path.length > 1) {
+    const thick = Math.min(...c.box.s)
+    let len = 0
+    for (let i = 0; i + 1 < c.path.length; i++) len += Math.hypot(c.path[i + 1][0] - c.path[i][0], c.path[i + 1][1] - c.path[i][1], c.path[i + 1][2] - c.path[i][2])
+    return Math.max(1, len) * thick * thick
+  }
+  return [c.box, ...(c.more ?? [])].reduce((a, k) => a + k.s[0] * k.s[1] * k.s[2], 0)
+}
+
+export interface WeightShares {
+  /** Grams for every component of the layout, by its id. */
+  comps: Record<string, number>
+  /** What no component stands for: the frame, the back, a stand, a strap, the display in a laptop's lid. */
+  rest: { key: WeightKey; label: string; grams: number }[]
+  total: number
+}
+
+/**
+ * The weight of a device shared out among the components drawn inside it. The terms deviceWeight() adds up go to
+ * the components that stand for them (the cells, the display, the hinge), and the lump it allows for everything
+ * else inside is divided among the rest by size and kind. Components and the rows left over sum to the total.
+ */
+export function weightShares(d: DeviceDesign, n: Internals): WeightShares {
+  const parts = weightParts(d)
+  const comps: Record<string, number> = {}
+  const rest: WeightShares['rest'] = []
+  const given = new Set<string>()
+  const give = (list: Comp[], grams: number) => {
+    const w = list.map((c) => bulk(c) * (HEFT[c.kind] ?? 1))
+    const sum = w.reduce((a, x) => a + x, 0)
+    list.forEach((c, i) => {
+      comps[c.id] = (comps[c.id] ?? 0) + (sum > 0 ? (grams * w[i]) / sum : grams / list.length)
+      given.add(c.id)
+    })
+  }
+  const inBud = (c: Comp) => c.zone === 'bud'
+  const pick: Partial<Record<WeightKey, (c: Comp) => boolean>> = {
+    battery: (c) => c.kind === 'battery' && !inBud(c),
+    display: (c) => (c.kind === 'display' && c.zone === 'body') || c.id === 'backlight',
+    gpu: (c) => c.id === 'gpu',
+    hinge: (c) => c.kind === 'hinge',
+    optics: (c) => c.kind === 'lens',
+    driver: (c) => c.kind === 'driver' && !inBud(c),
+  }
+  let lump = 0
+  for (const p of parts) {
+    if (p.key === 'works') lump += p.grams
+    else if (!(p.grams > 0)) continue
+    else if (p.key === 'buds') {
+      // one bud is the one taken apart; the other is whole
+      const bud = n.comps.filter(inBud)
+      if (bud.length) {
+        give(bud, p.grams / 2)
+        rest.push({ key: 'buds', label: 'The other earbud', grams: p.grams / 2 })
+      } else rest.push(p)
+    } else if (pick[p.key]) {
+      const list = n.comps.filter(pick[p.key]!)
+      if (list.length) give(list, p.grams)
+      else if (p.grams > 0) rest.push(p)
+    } else if (p.grams > 0) rest.push(p)
+  }
+  const others = n.comps.filter((c) => !given.has(c.id))
+  if (others.length) give(others, lump)
+  else rest.push({ key: 'works', label: 'Everything inside', grams: lump })
+  for (const c of n.comps) comps[c.id] = comps[c.id] ?? 0
+  return { comps, rest, total: parts.reduce((a, p) => a + p.grams, 0) }
 }
 
 /** What one camera part costs, by the sum evaluate() uses. */

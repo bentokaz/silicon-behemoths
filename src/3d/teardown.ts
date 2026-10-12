@@ -6,7 +6,7 @@
 // printed labels) is made once and marked so that disposing of a model leaves it alone.
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
-import { caseShape, isFlip } from '../sim/geometry'
+import { caseShape, isFlip, speakerShape, standMount } from '../sim/geometry'
 import type { Box, Comp, Dir, Internals, V3, Zone } from '../sim/internals'
 import type { DeviceDesign, Face, PlacedPart } from '../sim/types'
 import { themeColor } from '../store/theme'
@@ -27,6 +27,14 @@ const RING = share(new THREE.RingGeometry(0.44, 0.5, 44))
 const PLANE = share(new THREE.PlaneGeometry(1, 1))
 const DOME = share(new THREE.SphereGeometry(1, 28, 12, 0, Math.PI * 2, 0, Math.PI / 2).rotateX(Math.PI / 2))
 const EDGES = share(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)))
+const BALL = share(new THREE.SphereGeometry(0.5, 10, 8))
+const LUMP = share(new THREE.IcosahedronGeometry(0.5, 1))
+/** An arc of wall, open top and bottom, bulging towards +Y: the back of a round chamber. */
+const ARC = share(new THREE.CylinderGeometry(0.5, 0.5, 1, 28, 1, true, Math.PI - 1.25, 2.5).rotateX(Math.PI / 2))
+const TORUS = share(new THREE.TorusGeometry(0.36, 0.14, 8, 20))
+/** The axes an earbud is laid out in, as directions of the bud's own: across is down its stem, along is its own X, up is the way its ear tip points. */
+const BUD_AXES = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(-1, 0, 0)))
+const Z_AXIS = new THREE.Vector3(0, 0, 1)
 
 const std = (color: string, roughness: number, metalness = 0, extra: THREE.MeshStandardMaterialParameters = {}) => share(new THREE.MeshStandardMaterial({ color, roughness, metalness, ...extra }))
 // matte boards, brushed cans, satin cell wrap: nothing in here is glossy
@@ -59,7 +67,26 @@ const M = {
   ribbon: std('#c9ccd1', 0.4, 0.9),
   film: std('#31271d', 0.7, 0.2),
   liner: std('#202226', 0.8, 0.1, { side: THREE.DoubleSide }),
+  phenolic: std('#8a6a35', 0.86),
+  galv: std('#8b9096', 0.62, 0.55),
+  galvDark: std('#70757b', 0.66, 0.5),
+  reflector: std('#dfe1dc', 0.9),
+  wool: std('#cfcdc4', 0.98),
+  red: std('#8c2a22', 0.7),
+  ferrite: std('#2b2c30', 0.8, 0.2),
+  shell: std('#2c2e33', 0.86, 0.05, { side: THREE.DoubleSide }),
+  ledOff: std('#f1ead2', 0.5, 0, { emissive: '#ffe9b0', emissiveIntensity: 0.12 }),
+  blue: std('#5ab4ff', 0.5, 0, { emissive: '#5ab4ff', emissiveIntensity: 0.5 }),
+  eyeGlass: share(new THREE.MeshPhysicalMaterial({ color: '#2a3442', roughness: 0.2, metalness: 0.1, clearcoat: 0.6, clearcoatRoughness: 0.25, side: THREE.DoubleSide })),
 }
+
+/**
+ * Nothing in here is drawn above this plane (in world space). It stands far out of the way except while a
+ * speaker's sleeve is being lifted off: then it rides up with the rim of the sleeve, so that what is inside comes
+ * into view under the sleeve as it rises instead of showing through it. The view has to allow materials to clip.
+ */
+const REVEAL = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e9)
+for (const m of Object.values(M).flat()) m.clippingPlanes = [REVEAL]
 
 const boxCache = new Map<string, THREE.BufferGeometry>()
 /** A box with rounded edges, kept so that the next model to want the same one gets it for nothing. */
@@ -115,7 +142,7 @@ function printed(text: string, style: 'etch' | 'label' | 'pcb'): THREE.MeshStand
   const t = new THREE.CanvasTexture(c)
   t.colorSpace = THREE.SRGBColorSpace
   t.anisotropy = 4
-  const m = share(new THREE.MeshStandardMaterial({ map: t, roughness: style === 'label' ? 0.82 : 0.7, metalness: 0 }))
+  const m = share(new THREE.MeshStandardMaterial({ map: t, roughness: style === 'label' ? 0.82 : 0.7, metalness: 0, clippingPlanes: [REVEAL] }))
   textCache.set(key, m)
   if (textCache.size > 240) {
     const old = textCache.keys().next().value!
@@ -212,12 +239,89 @@ function rotor(g: THREE.Object3D, dia: number, h: number, z: number, blades = 9)
 
 /** A cone driver looking up: basket, cone, dust cap and the magnet behind it. */
 function cone(g: THREE.Object3D, dia: number, h: number, small = false) {
-  cy(g, dia, h * 0.16, M.darkSteel, 0, 0, h / 2 - h * 0.08)
-  part(g, RING, M.rubber, dia * 0.96, dia * 0.96, 1, 0, 0, h / 2 + 0.03, false)
-  const c = part(g, CONE, M.cone, dia * 0.84, dia * 0.84, h * 0.42, 0, 0, h / 2 - h * 0.3, false)
+  // the rim of the basket, with the roll of the surround inside it
+  cy(g, dia, h * 0.1, M.darkSteel, 0, 0, h / 2 - h * 0.05)
+  const roll = part(g, TORUS, M.rubber, dia * 0.9, dia * 0.9, Math.min(h * 0.5, dia * 0.5), 0, 0, h / 2 - h * 0.02, false)
+  roll.rotation.z = 0.2
+  const c = part(g, CONE, M.cone, dia * 0.78, dia * 0.78, h * 0.4, 0, 0, h / 2 - h * 0.26, false)
   ;(c.material as THREE.Material).side = THREE.DoubleSide
-  cy(g, dia * 0.3, h * 0.12, small ? M.pale : M.black, 0, 0, h / 2 - h * 0.44)
-  cy(g, dia * 0.5, h * 0.4, M.steel, 0, 0, -h / 2 + h * 0.2)
+  // the dust cap is a shallow dome in the throat of the cone
+  const cap = part(g, DOME, small ? M.pale : M.black, dia * 0.15, dia * 0.15, h * 0.1, 0, 0, h / 2 - h * 0.44, false)
+  cap.receiveShadow = true
+  // the legs of the basket run down to the magnet: its top plate, the ferrite ring and the back plate
+  if (!small && dia > 5) {
+    for (let i = 0; i < 4; i++) {
+      const leg = bx(g, Math.hypot(dia * 0.25, h * 0.48), dia * 0.07, Math.max(0.3, dia * 0.02), M.darkSteel, 0, 0, 0, false)
+      const an = (i / 4) * Math.PI * 2 + 0.4
+      leg.position.set(Math.cos(an) * dia * 0.36, Math.sin(an) * dia * 0.36, h * 0.16)
+      leg.rotation.set(0, 0, an)
+      leg.rotateY(-Math.atan2(h * 0.48, dia * 0.25))
+    }
+  }
+  cy(g, dia * 0.46, h * 0.07, M.steel, 0, 0, -h * 0.1)
+  cy(g, dia * 0.56, h * 0.26, M.ferrite, 0, 0, -h * 0.27)
+  cy(g, dia * 0.46, h * 0.07, M.steel, 0, 0, -h * 0.44)
+}
+
+/** Many copies of a box, each with its own size and place: fins, ribs, lamps. */
+function boxes(g: THREE.Object3D, mat: THREE.Material, list: [number, number, number, number, number, number][], geo: THREE.BufferGeometry = BOX, shadow = false): THREE.InstancedMesh {
+  const o = new THREE.InstancedMesh(geo, mat, list.length)
+  const m4 = new THREE.Matrix4()
+  list.forEach(([sx, sy, sz, x, y, z], i) => o.setMatrixAt(i, m4.makeScale(Math.max(sx, 0.01), Math.max(sy, 0.01), Math.max(sz, 0.01)).setPosition(x, y, z)))
+  o.castShadow = shadow
+  o.receiveShadow = true
+  g.add(o)
+  return o
+}
+
+/**
+ * A run of cable or ribbon through points given in the component's own space. Round when `wide` is 0; otherwise a
+ * flat ribbon that wide, lying on its face. With `clips` it is tied down along the way and ends in a plug at each end.
+ */
+function strand(g: THREE.Object3D, pts: THREE.Vector3[], t: number, mat: THREE.Material, wide = 0, clips = false) {
+  const dir = new THREE.Vector3()
+  const side = new THREE.Vector3()
+  const upv = new THREE.Vector3()
+  const m4 = new THREE.Matrix4()
+  const ties: [number, number, number, number, number, number][] = []
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const len = pts[i].distanceTo(pts[i + 1])
+    if (len < 0.05) continue
+    dir.copy(pts[i + 1]).sub(pts[i]).normalize()
+    const o = new THREE.Mesh(wide ? BOX : CYL_LOW, mat)
+    o.position.copy(pts[i]).add(pts[i + 1]).multiplyScalar(0.5)
+    if (wide) {
+      // a ribbon keeps its face up where it runs along the floor, and against the wall where it climbs
+      upv.copy(Math.abs(dir.z) > 0.9 ? new THREE.Vector3(0, 1, 0) : Z_AXIS)
+      side.crossVectors(upv, dir).normalize()
+      upv.crossVectors(dir, side)
+      o.quaternion.setFromRotationMatrix(m4.makeBasis(dir, side, upv))
+      o.scale.set(len + (i + 2 < pts.length ? wide * 0.5 : 0), wide, t)
+    } else {
+      o.quaternion.setFromUnitVectors(Z_AXIS, dir)
+      o.scale.set(t, t, len)
+      if (i + 2 < pts.length) part(g, BALL, mat, t, t, t, pts[i + 1].x, pts[i + 1].y, pts[i + 1].z, false)
+    }
+    o.receiveShadow = true
+    g.add(o)
+    if (clips) {
+      // a loom runs square to the chassis, so a clip lies either across it or along it
+      const every = Math.max(70, t * 34)
+      const n = Math.floor(len / every)
+      const along = Math.abs(dir.x) > Math.abs(dir.y)
+      const cw = Math.max(t * 1.5, 3)
+      const cl = (wide || t) + Math.max(3, t * 1.6)
+      for (let k = 1; k <= n; k++) {
+        const at = (k * len) / (n + 1)
+        ties.push([along ? cw : cl, along ? cl : cw, t + 0.5, pts[i].x + dir.x * at, pts[i].y + dir.y * at, pts[i].z + dir.z * at])
+      }
+    }
+  }
+  if (clips) {
+    if (ties.length) boxes(g, M.black, ties)
+    const w = (wide || t * 2.4) + 2
+    boxes(g, M.white, [pts[0], pts[pts.length - 1]].map((p) => [w, Math.max(4, t * 2.2), t + 3.2, p.x, p.y, p.z + 1.4]))
+  }
 }
 
 // ---------------------------------------------------------------- drawing one component
@@ -250,12 +354,28 @@ function draw(c: Comp, g: THREE.Group, a: number, b: number, h: number, toLocal:
       break
     }
     case 'board': {
+      if (v === 5) {
+        // the strip that runs down an earbud's stem: a microphone at each station, and the charging contacts at its foot
+        bx(g, a, b, h, M.pcb[1])
+        const n = c.n ?? 0
+        for (let i = 0; i < n; i++) bx(g, 1.5, Math.min(b * 0.7, 1.4), 0.5, M.steel, -a / 2 + ((i + 0.7) * a) / (n + 0.6), 0, -top - 0.25, false)
+        for (const s of [-1, 1]) bx(g, 0.9, 0.9, 0.5, M.gold, a / 2 - 0.9, s * b * 0.24, -top - 0.2, false)
+        bx(g, 1.2, b * 0.7, 0.4, M.flex, -a / 2 + 0.2, 0, 0, false)
+        break
+      }
       if (c.zone === 'bud') {
         cy(g, Math.min(a, b), h, M.pcb[1])
         for (let i = 0; i < (c.n ?? 0); i++) cy(g, 1.3, 0.5, M.steel, Math.cos(i * 2.1) * a * 0.3, Math.sin(i * 2.1) * a * 0.3, top + 0.25, true)
+        for (let i = 0; i < 5; i++) bx(g, 0.9, 0.5, 0.3, M.pale, Math.cos(i * 1.3 + 0.6) * a * 0.22, Math.sin(i * 1.3 + 0.6) * a * 0.22, top + 0.15, false)
         break
       }
-      bx(g, a, b, h, M.pcb[v] ?? M.pcb[0])
+      bx(g, a, b, h, v === 4 ? M.pcb[0] : (M.pcb[v] ?? M.pcb[0]))
+      if (v === 4) {
+        // a wireless module: its can, and the two small sockets the aerial leads snap on to
+        rb(g, a * 0.6, b * 0.66, Math.max(1.4, h * 1.8), 0.3, M.steel, -a * 0.12, 0, top + Math.max(1.4, h * 1.8) / 2)
+        for (const s of [-1, 1]) cy(g, 2.2, 1.2, M.gold, a * 0.36, s * b * 0.24, top + 0.6, true)
+        break
+      }
       // a scatter of small parts, so that it reads as a populated board
       const n = Math.max(6, Math.min(56, Math.round((a * b) / (18 + Math.sqrt(a * b)))))
       const u = Math.max(0.5, Math.min(3.2, Math.sqrt(a * b) / 34))
@@ -303,6 +423,13 @@ function draw(c: Comp, g: THREE.Group, a: number, b: number, h: number, toLocal:
       }
       rb(g, a, b, h, Math.min(a, b, h) * 0.12, M.steel)
       for (let i = 0; i < 3; i++) cy(g, Math.min(a, b) * 0.08, 0.05, M.darkSteel, (i - 1) * a * 0.28, 0, top + 0.02, true)
+      if (v === 2) {
+        // a tuner: the aerial socket stands out of one end of the can
+        const o = part(g, CYL_LOW, M.steel, Math.min(h * 0.8, 9), Math.min(h * 0.8, 9), 9, 0, b / 2 + 4, 0)
+        o.rotation.x = Math.PI / 2
+        const pin = part(g, CYL_LOW, M.gold, 1.4, 1.4, 11, 0, b / 2 + 4.4, 0, false)
+        pin.rotation.x = Math.PI / 2
+      }
       break
     }
     case 'sheet':
@@ -313,21 +440,29 @@ function draw(c: Comp, g: THREE.Group, a: number, b: number, h: number, toLocal:
     case 'flex': {
       if (c.path && c.path.length > 1) {
         const pts = c.path.map(toLocal)
-        const mat = c.kind === 'pipe' ? M.copper : c.kind === 'cable' ? (v === 1 ? M.blueCap : M.black) : M.flex
-        const t = Math.max(0.3, Math.min(a, b, h) > 0 ? h : 1)
-        for (let i = 0; i + 1 < pts.length; i++) {
-          const len = pts[i].distanceTo(pts[i + 1])
-          if (len < 0.05) continue
-          const seg = new THREE.Group()
-          seg.position.copy(pts[i]).add(pts[i + 1]).multiplyScalar(0.5)
-          seg.rotation.z = Math.atan2(pts[i + 1].y - pts[i].y, pts[i + 1].x - pts[i].x)
-          g.add(seg)
-          if (c.kind === 'pipe') bx(seg, len + t * 0.8, t * 1.5, t * 0.6, mat)
-          else {
-            const o = part(seg, CYL_LOW, mat, t, t, len + t * 0.5)
-            o.rotation.y = Math.PI / 2
+        // a round cable says how thick it is; a ribbon says how wide
+        const t = Math.max(0.3, c.kind === 'cable' && v !== 2 && c.n ? c.n : Math.min(a, b, h))
+        const tied = c.text === 'clips'
+        if (c.kind === 'flex') {
+          // a flat ribbon from a board to the edge of the panel: silver, with a stiffener and a plug at each end
+          const w = Math.max(2, c.n ?? 12)
+          strand(g, pts, 0.25, M.ribbon, w)
+          for (const [i, p] of [pts[0], pts[pts.length - 1]].entries()) bx(g, w + 2.5, i ? 5 : 4, i ? 0.9 : 1.8, i ? M.film : M.white, p.x, p.y + (i ? -2 : 0), p.z + (i ? 0.2 : 0.7), false)
+        } else if (c.kind === 'pipe') {
+          for (let i = 0; i + 1 < pts.length; i++) {
+            const len = pts[i].distanceTo(pts[i + 1])
+            if (len < 0.05) continue
+            const o = bx(g, len + t * 0.8, t * 1.5, t * 0.6, M.copper)
+            o.position.copy(pts[i]).add(pts[i + 1]).multiplyScalar(0.5)
+            o.rotation.z = Math.atan2(pts[i + 1].y - pts[i].y, pts[i + 1].x - pts[i].x)
           }
-        }
+        } else if (v === 2) strand(g, pts, Math.min(t, 0.5), M.pale, Math.max(3, c.n ?? 10), tied)
+        else if (v === 3) {
+          // a twisted pair: a red and a black lead side by side
+          const off = new THREE.Vector3(0, 0, t * 0.5)
+          strand(g, pts, t * 0.55, M.black, 0, tied)
+          strand(g, pts.map((p) => p.clone().add(off)), t * 0.5, M.red)
+        } else strand(g, pts, v === 4 ? t * 0.7 : t, v === 1 ? M.blueCap : v === 4 ? M.grey : M.black, 0, tied)
         break
       }
       // a ribbon with a connector at each end
@@ -419,6 +554,23 @@ function draw(c: Comp, g: THREE.Group, a: number, b: number, h: number, toLocal:
       break
     }
     case 'speaker': {
+      if (v === 2) {
+        // a sealed box with its drivers in the face, a gasket round each, and the terminals on one end
+        rb(g, a, b, h * 0.78, Math.min(a, b, h) * 0.1, M.black, 0, 0, -top + h * 0.39)
+        const n = Math.max(1, c.n ?? 1)
+        const dia = Math.min(b * 0.82, (a / n) * 0.74)
+        for (let i = 0; i < n; i++) {
+          const x = (i - (n - 1) / 2) * (a / n) * 0.92
+          const hold = new THREE.Group()
+          hold.position.set(x, 0, -top + h * 0.78 - h * 0.1)
+          // a TV's drivers are long ovals: a round one, stretched
+          hold.scale.set(i === 1 && n > 1 ? 0.55 : Math.min(1.5, ((a / n) * 0.8) / dia), 1, 1)
+          g.add(hold)
+          cone(hold, i === 1 && n > 1 ? dia * 0.8 : dia, h * 0.44, i === 1 && n > 1)
+        }
+        bx(g, 5, Math.min(b * 0.4, 8), 2.4, M.white, -a / 2 + 4, 0, -top + h * 0.78 + 1.2, false)
+        break
+      }
       rb(g, a, b, h, Math.min(a, b, h) * 0.14, M.black)
       face(g, a * 0.7, b * 0.62, M.grey, 0, 0, top + 0.03)
       bx(g, a * 0.76, b * 0.68, 0.1, M.steel, 0, 0, top - 0.06, false)
@@ -455,6 +607,13 @@ function draw(c: Comp, g: THREE.Group, a: number, b: number, h: number, toLocal:
       face(g, a * 0.6, b * 0.66, M.gold, -a * 0.08, 0, top + 0.02)
       break
     case 'antenna':
+      if (v === 2) {
+        // a printed aerial: a copper meander on a strip of film stuck to the chassis
+        bx(g, a, b, h * 0.5, M.film, 0, 0, -top + h * 0.25, false)
+        bx(g, a * 0.86, b * 0.14, h * 0.3, M.copper, 0, b * 0.28, top - h * 0.2, false)
+        for (let i = 0; i < 4; i++) bx(g, a * 0.05, b * 0.56, h * 0.3, M.copper, -a * 0.36 + i * a * 0.24, 0, top - h * 0.2, false)
+        break
+      }
       bx(g, a, b, h, v === 1 ? M.copper : M.pale, 0, 0, 0, false)
       if (v !== 1) bx(g, a * 0.9, b * 1.04, h * 0.2, M.copper, 0, 0, h * 0.2, false)
       break
@@ -496,15 +655,60 @@ function draw(c: Comp, g: THREE.Group, a: number, b: number, h: number, toLocal:
         bx(g, a, b, h, M.darkSteel)
         for (const sx of [-1, 1]) for (const sy of [-1, 1]) cy(g, Math.min(a, b) * 0.1, 1.6, M.steel, sx * a * 0.36, sy * b * 0.3, top + 0.8, true)
       } else if (v === 5) {
-        // an LED backlight: a white reflector with a grid of lamps
-        bx(g, a, b, h, M.pale, 0, 0, 0, false)
-        const cols = 14
-        const rows = 8
-        const leds = new THREE.InstancedMesh(BOX, M.led, cols * rows)
-        const m4 = new THREE.Matrix4()
-        const s = Math.max(1.5, a / 220)
-        for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) leds.setMatrixAt(i * rows + j, m4.makeScale(s, s, 0.1).setPosition(-a / 2 + ((i + 0.5) * a) / cols, -b / 2 + ((j + 0.5) * b) / rows, top))
-        g.add(leds)
+        // an LED backlight on its white reflector: a grid of dimming zones with a lamp in each, or strips along two edges.
+        // All of it keeps inside its own thickness: the chassis lies directly on top
+        const base = h * 0.4
+        const rise = h - base
+        const zb = -top + base
+        bx(g, a, b, base, M.reflector, 0, 0, -top + base / 2, false)
+        const zones = c.n ?? 0
+        const lamp = Math.max(1.6, a / 260)
+        if (zones > 0) {
+          const rows = Math.max(1, Math.round(Math.sqrt((zones * b) / a)))
+          const cols = Math.max(1, Math.round(zones / rows))
+          const list: [number, number, number, number, number, number][] = []
+          for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) list.push([lamp, lamp, rise * 0.5, -a / 2 + ((i + 0.5) * a) / cols, -b / 2 + ((j + 0.5) * b) / rows, zb + rise * 0.25])
+          boxes(g, M.ledOff, list)
+          // the low walls that keep the light of one zone out of the next
+          const walls: [number, number, number, number, number, number][] = []
+          const wt = Math.max(0.6, a / 900)
+          for (let i = 1; i < cols; i++) walls.push([wt, b, rise * 0.8, -a / 2 + (i * a) / cols, 0, zb + rise * 0.4])
+          for (let j = 1; j < rows; j++) walls.push([a, wt, rise * 0.8, 0, -b / 2 + (j * b) / rows, zb + rise * 0.4])
+          if (walls.length) boxes(g, M.white, walls)
+        } else {
+          // edge-lit: a light guide over the reflector, and a strip of lamps along the bottom and the top
+          bx(g, a * 0.985, b * 0.95, rise * 0.5, M.pale, 0, 0, zb + rise * 0.25, false)
+          const n = Math.max(12, Math.min(72, Math.round(a / 16)))
+          const list: [number, number, number, number, number, number][] = []
+          for (const s2 of [-1, 1]) {
+            bx(g, a * 0.97, b * 0.016, rise * 0.3, M.white, 0, s2 * b * 0.488, zb + rise * 0.15, false)
+            for (let i = 0; i < n; i++) list.push([lamp * 1.4, b * 0.009, rise * 0.5, -a * 0.47 + ((i + 0.5) * a * 0.94) / n, s2 * b * 0.488, zb + rise * 0.55])
+          }
+          boxes(g, M.ledOff, list)
+        }
+      } else if (v === 10) {
+        // a television's back chassis: galvanised steel pressed into ribs, with a flange round it and a screw at every boss
+        bx(g, a, b, h, M.galv, 0, 0, 0)
+        const ribs: [number, number, number, number, number, number][] = []
+        const rh = Math.min(1.1, Math.max(0.5, a / 1400))
+        for (let j = 0; j < 4; j++) ribs.push([a * 0.9, b * 0.018, rh, 0, -b * 0.36 + j * b * 0.24, top + rh / 2])
+        for (let i = 0; i < 5; i++) ribs.push([a * 0.012, b * 0.84, rh, -a * 0.4 + i * a * 0.2, 0, top + rh / 2])
+        for (const s of [-1, 1]) {
+          ribs.push([a, b * 0.012, rh * 2.4, 0, s * b * 0.494, top + rh * 1.2])
+          ribs.push([a * 0.007, b, rh * 2.4, s * a * 0.4965, 0, top + rh * 1.2])
+        }
+        boxes(g, M.galvDark, ribs)
+        const screws: [number, number, number, number, number, number][] = []
+        const sd = Math.max(3, a / 300)
+        for (let i = 0; i < 9; i++) for (let j = 0; j < 5; j++) if ((i + j) % 2 === 0) screws.push([sd, sd, rh * 1.5, -a * 0.45 + i * a * 0.1125, -b * 0.42 + j * b * 0.21, top + rh * 0.75])
+        boxes(g, M.darkSteel, screws, CYL_LOW)
+      } else if (v === 11) {
+        // a wall-mount point: a threaded boss pressed up out of a square pad
+        bx(g, a, b, Math.min(h * 0.2, 1.4), M.galvDark, 0, 0, -top + Math.min(h * 0.2, 1.4) / 2)
+        cy(g, Math.min(a, b) * 0.62, h, M.steel, 0, 0, 0)
+        part(g, DISC, M.black, Math.min(a, b) * 0.3, Math.min(a, b) * 0.3, 1, 0, 0, top + 0.04, false)
+      } else if (v === 8 || v === 9) {
+        // the two halves of an earbud's shell are cut from the bud itself when the model is rigged
       } else if (v === 7) {
         // MicroLED tiles, butted together
         const cols = 6
@@ -514,18 +718,6 @@ function draw(c: Comp, g: THREE.Group, a: number, b: number, h: number, toLocal:
         for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) tiles.setMatrixAt(i * rows + j, m4.makeScale((a / cols) * 0.985, (b / rows) * 0.985, h).setPosition(-a / 2 + ((i + 0.5) * a) / cols, -b / 2 + ((j + 0.5) * b) / rows, 0))
         tiles.receiveShadow = true
         g.add(tiles)
-      } else if (v === 8 || v === 9) {
-        // half of an earbud's shell: the outer cap, or the inner half with its ear tip
-        const dome = new THREE.Mesh(DOME, M.white)
-        dome.scale.set(a / 2, b / 2, h * (v === 8 ? 1 : 0.6))
-        dome.position.z = v === 8 ? -top : top
-        if (v === 9) {
-          dome.rotation.x = Math.PI
-          cy(g, a * 0.36, h * 0.3, M.white, 0, 0, -top + h * 0.6 + h * 0.15)
-          cy(g, a * 0.52, h * 0.24, M.pale, 0, 0, top - h * 0.12)
-        }
-        dome.castShadow = true
-        g.add(dome)
       } else bx(g, a, b, h, v === 6 ? M.graphite : M.zinc, 0, 0, 0, false)
       break
     }
@@ -571,8 +763,53 @@ function draw(c: Comp, g: THREE.Group, a: number, b: number, h: number, toLocal:
     }
     case 'psu': {
       if (v === 1) {
-        draw({ ...c, kind: 'board', v: 3 }, g, a, b, Math.min(h, 1.6), toLocal)
-        g.children.forEach((o) => (o.position.z += -top + Math.min(h, 1.6) / 2))
+        // an open power board, as in the back of a television: mains comes in at one end past the fuse and the filter,
+        // is smoothed by the big capacitors, chopped through the transformer, and leaves past a row of small ones
+        const t = Math.min(1.6, h * 0.2)
+        const z = -top + t
+        const up = h - t
+        bx(g, a, b, t, M.phenolic, 0, 0, -top + t / 2)
+        const u = Math.min(a, b)
+        const bits: [number, number, number, number, number, number][] = []
+        for (let i = 0; i < 46; i++) bits.push([u * (0.012 + rnd() * 0.02), u * (0.008 + rnd() * 0.012), up * (0.06 + rnd() * 0.08), (rnd() - 0.5) * a * 0.9, (rnd() - 0.5) * b * 0.9, z + up * 0.05])
+        boxes(g, M.black, bits)
+        // mains inlet, fuse and the filter: a white plug, a glass tube, a blue capacitor and a common-mode choke
+        bx(g, a * 0.16, b * 0.05, up * 0.5, M.white, -a * 0.34, -b * 0.44, z + up * 0.25)
+        const fuse = part(g, CYL_LOW, M.pale, up * 0.2, up * 0.2, a * 0.1, -a * 0.1, -b * 0.44, z + up * 0.14, false)
+        fuse.rotation.y = Math.PI / 2
+        bx(g, a * 0.12, b * 0.05, up * 0.62, M.blueCap, -a * 0.33, -b * 0.34, z + up * 0.31)
+        const choke = part(g, TORUS, M.copper, a * 0.17, a * 0.17, up * 0.9, -a * 0.1, -b * 0.32, z + up * 0.3)
+        choke.receiveShadow = true
+        // the reservoir capacitors, standing; each has a scored silver top
+        const cd = Math.min(a * 0.13, up * 1.5)
+        for (let i = 0; i < 3; i++) {
+          const x = a * 0.14 + i * (cd * 1.12)
+          cy(g, cd, up * 0.96, M.wrap, x, -b * 0.34, z + up * 0.48)
+          part(g, DISC, M.alu, cd * 0.86, cd * 0.86, 1, x, -b * 0.34, z + up * 0.96 + 0.03, false)
+        }
+        // the switching transistors on a finned heat sink along each side
+        for (const s of [-1, 1]) {
+          const fins: [number, number, number, number, number, number][] = []
+          const len = b * 0.34
+          const nf = Math.max(6, Math.round(len / Math.max(4, u * 0.03)))
+          bx(g, a * 0.012, len, up * 0.9, M.alu, s * a * 0.44, s * b * 0.02, z + up * 0.45)
+          for (let i = 0; i < nf; i++) fins.push([a * 0.045, (len / nf) * 0.4, up * 0.86, s * (a * 0.44 - a * 0.026), s * b * 0.02 - len / 2 + ((i + 0.5) * len) / nf, z + up * 0.45])
+          boxes(g, M.alu, fins, BOX, true)
+          for (let i = 0; i < 3; i++) bx(g, a * 0.012, len * 0.16, up * 0.5, M.black, s * (a * 0.44 - a * 0.056), s * b * 0.02 + (i - 1) * len * 0.3, z + up * 0.28, false)
+        }
+        // the transformer in its yellow tape, in a ferrite core, and a second, smaller one for standby power
+        for (const [k, x, y] of [[1, -a * 0.08, b * 0.02], [0.6, a * 0.2, b * 0.06]] as const) {
+          bx(g, a * 0.2 * k, b * 0.13 * k, up * 0.82 * Math.min(1, k + 0.25), M.ferrite, x, y, z + up * 0.41 * Math.min(1, k + 0.25))
+          bx(g, a * 0.15 * k, b * 0.145 * k, up * 0.66 * Math.min(1, k + 0.25), M.yellow, x, y, z + up * 0.4 * Math.min(1, k + 0.25), false)
+        }
+        if (c.figure) face(g, a * 0.11, b * 0.05, printed(c.figure, 'label'), -a * 0.08, b * 0.02, z + up * 0.82 + 0.05)
+        // the output side: a row of small capacitors, two chokes and the plugs the harnesses leave from
+        for (let i = 0; i < 6; i++) cy(g, cd * 0.5, up * 0.72, M.wrap, -a * 0.3 + i * cd * 0.62, b * 0.3, z + up * 0.36, true)
+        for (let i = 0; i < 2; i++) {
+          const o = part(g, TORUS, M.copper, a * 0.11, a * 0.11, up * 0.7, a * 0.16 + i * a * 0.13, b * 0.28, z + up * 0.22)
+          o.receiveShadow = true
+        }
+        for (let i = 0; i < 3; i++) bx(g, a * 0.12, b * 0.035, up * 0.4, M.white, -a * 0.3 + i * a * 0.3, b * 0.44, z + up * 0.2, false)
         break
       }
       rb(g, a, b, h, Math.min(2, h * 0.08), v === 2 ? M.black : M.darkSteel)
@@ -702,12 +939,19 @@ function draw(c: Comp, g: THREE.Group, a: number, b: number, h: number, toLocal:
         bx(g, a * 0.24, b * 0.2, Math.max(2, h * 0.8), M.black, 0, b * 0.42, 0)
         break
       }
-      // the barrel, open at both ends, with its elements inside: one thick one, or a thin folded stack
+      // the barrel, with its elements inside: one thick one, or a thin folded stack. The eye looks in at the bottom,
+      // where the glass bulges out of a bright retaining ring; the display sits against the top.
       cy(g, dia, h, M.black)
       part(g, RING, v >= 2 ? M.steel : M.grey, dia * 1.02, dia * 1.02, 1, 0, 0, top + 0.05, false)
       const els = v >= 2 ? 2 : 1
       for (let i = 0; i < els; i++) part(g, DISC, M.lensGlass, dia * 0.9, dia * 0.9, 1, 0, 0, top - 0.3 - i * Math.min(2.4, h * 0.3) + 0.06, false)
       if (v === 0) for (const k of [0.34, 0.52, 0.7]) part(g, RING, M.pale, dia * k, dia * k, 1, 0, 0, top + 0.08, false)
+      const rim = part(g, TORUS, v >= 2 ? M.steel : M.darkSteel, dia * 1.02, dia * 1.02, dia * 0.12, 0, 0, -top, false)
+      rim.receiveShadow = true
+      const eye = part(g, DOME, M.eyeGlass, dia * 0.44, dia * 0.44, dia * (v >= 2 ? 0.05 : v === 1 ? 0.1 : 0.16), 0, 0, -top + 0.02, false)
+      eye.rotation.x = Math.PI
+      // a Fresnel lens is ridged in rings; the others are smooth
+      if (v === 0) for (const k of [0.3, 0.46, 0.62, 0.78]) part(g, RING, M.pale, dia * k, dia * k, 1, 0, 0, -top - dia * 0.02 * (1 - k) * 6 - 0.3, false).rotation.x = Math.PI
       break
     }
     case 'control': {
@@ -735,6 +979,103 @@ function draw(c: Comp, g: THREE.Group, a: number, b: number, h: number, toLocal:
           cy(g, Math.min(b, h) * 0.5, h * 0.2, M.gold, a * 0.1, 0, h * 0.2, true)
         }
       }
+      break
+    }
+    case 'baffle': {
+      // the chamber the drivers work into, with its front cut away: a floor, a top plate, and the back of its wall
+      const t = Math.max(0.8, Math.min(1.6, h * 0.03))
+      if (v === 1) {
+        bx(g, a, b, t, M.shell, 0, 0, -top + t / 2)
+        bx(g, a, b * 0.55, t, M.shell, 0, b * 0.225, top - t / 2)
+        bx(g, a, t, h, M.shell, 0, b / 2 - t / 2, 0)
+        for (const s of [-1, 1]) bx(g, t, b * 0.4, h, M.shell, s * (a / 2 - t / 2), b * 0.3, 0)
+      } else {
+        const floor = part(g, DISC, M.shell, a, b, 1, 0, 0, -top + 0.05)
+        floor.castShadow = false
+        const lid = part(g, RING, M.shell, a, b, 1, 0, 0, top)
+        lid.scale.set(a, b, 1)
+        part(g, ARC, M.shell, a, b, h, 0, 0, 0)
+        // ribs up the inside of the wall stiffen it
+        for (const an of [-0.8, 0, 0.8]) bx(g, t * 1.6, t * 1.6, h, M.grey, Math.sin(an) * a * 0.485, Math.cos(an) * b * 0.485, 0, false)
+      }
+      break
+    }
+    case 'wadding': {
+      // loose polyester fill: a few soft lumps pressed against the back wall
+      const n = 7
+      for (let i = 0; i < n; i++) {
+        const o = part(g, LUMP, M.wool, a * (0.3 + rnd() * 0.22), b * (0.5 + rnd() * 0.4), h * (0.3 + rnd() * 0.25), (rnd() - 0.5) * a * 0.7, (rnd() - 0.5) * b * 0.3, (rnd() - 0.5) * h * 0.66)
+        o.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3)
+      }
+      break
+    }
+    case 'duct': {
+      // a bass port: a tube with a flared mouth, open through the floor of the chamber
+      const t = turned(g, c.axis, a, b, h)
+      const dia = Math.min(t.a, t.b)
+      const tube = part(t.g, CYL, M.liner, dia * 0.8, dia * 0.8, t.h, 0, 0, 0)
+      tube.receiveShadow = true
+      for (const s of [-1, 1]) {
+        const lip = part(t.g, TORUS, M.black, dia, dia, dia * 0.5, 0, 0, s * (t.h / 2 - dia * 0.04), false)
+        lip.receiveShadow = true
+      }
+      part(t.g, DISC, M.rubber, dia * 0.66, dia * 0.66, 1, 0, 0, t.h / 2 + 0.06, false)
+      break
+    }
+    case 'amp': {
+      // a class-D amplifier: an output coil and capacitor for every channel, and the output chips under a finned heat sink
+      const t = Math.min(1.2, h * 0.14)
+      const z = -top + t
+      const up = h - t
+      bx(g, a, b, t, M.pcb[1], 0, 0, -top + t / 2)
+      const n = Math.max(1, Math.min(8, c.n ?? 2))
+      const fins: [number, number, number, number, number, number][] = []
+      const nf = Math.max(5, Math.round(a / 2.6))
+      bx(g, a * 0.9, b * 0.3, up * 0.2, M.alu, 0, b * 0.3, z + up * 0.1)
+      for (let i = 0; i < nf; i++) fins.push([(a * 0.9) / nf * 0.45, b * 0.3, up * 0.74, -a * 0.45 + ((i + 0.5) * a * 0.9) / nf, b * 0.3, z + up * 0.2 + up * 0.37])
+      boxes(g, M.alu, fins, BOX, true)
+      const cols = Math.min(n, 4)
+      const rows = Math.ceil(n / cols)
+      const cell = Math.min((a * 0.9) / cols, (b * 0.5) / rows)
+      for (let i = 0; i < n; i++) {
+        const x = (i % cols - (cols - 1) / 2) * ((a * 0.9) / cols)
+        const y = -b * 0.38 + Math.floor(i / cols) * ((b * 0.5) / rows) + cell * 0.3
+        const coil = part(g, TORUS, M.copper, cell * 0.62, cell * 0.62, Math.min(up * 0.9, cell * 1.4), x - cell * 0.14, y, z + Math.min(up * 0.25, cell * 0.2))
+        coil.receiveShadow = true
+        cy(g, cell * 0.3, Math.min(up * 0.7, cell * 0.8), M.wrap, x + cell * 0.3, y, z + Math.min(up * 0.7, cell * 0.8) / 2, true)
+      }
+      bx(g, a * 0.2, b * 0.1, up * 0.3, M.white, -a * 0.3, -b * 0.02, z + up * 0.15, false)
+      break
+    }
+    case 'ledring': {
+      const n = Math.max(3, c.n ?? 12)
+      const list: [number, number, number, number, number, number][] = []
+      if (v === 1) {
+        bx(g, a, b, h * 0.5, M.white, 0, 0, -top + h * 0.25, false)
+        for (let i = 0; i < n; i++) list.push([Math.min(2.2, (a / n) * 0.5), Math.min(2.2, b * 0.6), h * 0.5, -a / 2 + ((i + 0.5) * a) / n, 0, top - h * 0.25])
+      } else {
+        // a ring of flexible board with a lamp at each station, under the diffuser round the top
+        const ring = part(g, RING, M.white, a, b, 1, 0, 0, -top + 0.05, false)
+        ;(ring.material as THREE.Material).side = THREE.DoubleSide
+        const s = Math.min(2.4, (Math.PI * (a + b)) / 2 / n / 2)
+        for (let i = 0; i < n; i++) {
+          const an = (i / n) * Math.PI * 2
+          list.push([s, s, h * 0.7, Math.cos(an) * a * 0.47, Math.sin(an) * b * 0.47, 0])
+        }
+      }
+      boxes(g, M.blue, list)
+      break
+    }
+    case 'touch': {
+      // the board the keys on top are touched through: a copper pad under each, and the ribbon it leaves by
+      bx(g, a, b, h * 0.6, M.pcb[1], 0, 0, -top + h * 0.3)
+      const n = Math.max(1, c.n ?? 3)
+      const long = a >= b
+      for (let i = 0; i < n; i++) {
+        const k = (i - (n - 1) / 2) / n
+        part(g, DISC, M.copper, Math.min(a, b) * (n > 1 ? 0.5 : 0.6), Math.min(a, b) * (n > 1 ? 0.5 : 0.6), 1, long ? k * a * 0.94 : 0, long ? 0 : k * b * 0.94, top - h * 0.38, false)
+      }
+      bx(g, Math.min(4, a * 0.2), Math.min(8, b), h * 0.7, M.flex, 0, b / 2, -top + h * 0.35, false)
       break
     }
     case 'well': {
@@ -813,6 +1154,8 @@ interface Cover {
   move: Motion
   /** Where it goes in the exploded view instead: straight out along the opening. */
   stack: THREE.Vector3 | null
+  /** Its own way of getting there, where a straight line from one place to the other would take it through something. */
+  apart?: (k: number, e: number, pos: THREE.Vector3, quat: THREE.Quaternion) => void
 }
 
 interface Drawn {
@@ -824,24 +1167,34 @@ interface Drawn {
   up: THREE.Vector3
   gap: number
   hl?: THREE.Object3D
+  /** The fainter outline it wears while the pointer is on it. */
+  hov?: THREE.Object3D
+  /** The wash of colour over it when it runs hot. */
+  hot?: THREE.Object3D
 }
 
 /** What a rig remembers from one rebuild of the model to the next, so that components ease to a new size instead of jumping. */
 export interface RigMemory {
-  boxes: Map<string, { c: THREE.Vector3; s: THREE.Vector3 }>
+  boxes: Map<string, { c: THREE.Vector3; s: THREE.Vector3; comp: Comp }>
   fresh: boolean
   /** Components to bounce, with the time each was asked for. */
   pulse: Map<string, number>
+  /** Components the last layout had and this one has not, shrinking away: what each was, and when it went. */
+  gone: Map<string, { comp: Comp; t0: number }>
 }
-export const newRigMemory = (): RigMemory => ({ boxes: new Map(), fresh: true, pulse: new Map() })
+export const newRigMemory = (): RigMemory => ({ boxes: new Map(), fresh: true, pulse: new Map(), gone: new Map() })
 
 export interface Rig {
   internals: Internals
   comps: Map<string, Drawn>
   /** Pose everything: `open` and `explode` run from 0 to 1, `dt` is the time since the last frame in seconds. */
   pose(open: number, explode: number, dt: number, mem: RigMemory, now: number): void
-  /** Outline the components that `match` picks, and the one that is selected. */
-  highlight(match: ((c: Comp) => boolean) | null, picked: string | null): void
+  /** Outline the components that `match` picks, the one that is selected, and more faintly the one the pointer is on. */
+  highlight(match: ((c: Comp) => boolean) | null, picked: string | null, hovered?: string | null): void
+  /** Wash the components that `match` picks in the warning colour, or the error colour when it is `bad`: what runs hot. */
+  heat(match: ((c: Comp) => boolean) | null, bad: boolean): void
+  /** The objects a pointer can land on: one group for each component. */
+  targets(): THREE.Object3D[]
   stats(): { triangles: number; meshes: number; components: number }
 }
 
@@ -938,9 +1291,16 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
     return t
   }
   if (d.type === 'earbuds') {
+    // the loose bud is taken apart where it lies: across runs along its stem, and up is the way its ear tip points
     const at = new THREE.Group()
-    const p = looseBudAt(b)
-    at.position.set(p.x, -caseShape(b).shell / 2, p.z)
+    const loose = (tagged.get('bud') ?? [])[0]
+    if (loose) {
+      at.position.copy(loose.position)
+      at.quaternion.copy(loose.quaternion).multiply(BUD_AXES)
+    } else {
+      const p = looseBudAt(b)
+      at.position.set(p.x, -caseShape(b).shell / 2 + 7, p.z)
+    }
     anchor.add(at)
     anchors.set('bud', at)
     for (const o of tagged.get('bud') ?? []) hidden.push(o)
@@ -986,7 +1346,11 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
     hidden.push(mesh)
     const coverG = new THREE.Group()
     at.add(coverG)
-    const lidMesh = new THREE.Mesh(cutGeometry(mesh.geometry, z.cut.axis, cutAt, z.cut.side, false), mesh.material as THREE.Material)
+    // Pressing the far side of the shell flat closes the cut, but keeps every triangle of the body in the cover as
+    // well as in the tray. Where the body is a plain rounded slab the cover keeps only its own side, and is closed
+    // with a flat cap of the same outline instead: a few dozen triangles for some thousands.
+    const capped = z.cut.axis === 2 && z.anchor !== 'pack' && d.type !== 'headset' && d.type !== 'console' && z.wall > 0.3 && depth > 0.3
+    const lidMesh = new THREE.Mesh(cutGeometry(mesh.geometry, z.cut.axis, cutAt, z.cut.side, capped), mesh.material as THREE.Material)
     lidMesh.castShadow = lidMesh.receiveShadow = true
     lidMesh.raycast = () => {}
     lidMesh.position.set(0, 0, -off)
@@ -1029,6 +1393,16 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
       lf.quaternion.copy(frame.quaternion)
       lf.position.copy(frame.position).addScaledVector(up, depth - 0.05 * layer)
       lf.add(liner)
+      if (capped) {
+        const capMat = (mesh.material as THREE.Material).clone()
+        capMat.side = THREE.DoubleSide
+        const cap = new THREE.Mesh(new THREE.ShapeGeometry(roundedRectShape(o.w, o.h, o.r), 10), capMat)
+        cap.position.z = 0.05 * layer - 0.004 * layer
+        cap.receiveShadow = true
+        cap.raycast = () => {}
+        cap.userData.cut = true
+        lf.add(cap)
+      }
       coverG.add(lf)
       shown.push(lf)
     }
@@ -1045,7 +1419,11 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
     } else if (d.type === 'console') {
       const tower = b.height > b.width
       move = tower ? hinged(new THREE.Vector3(z.cut.at, 0, -b.thickness / 2), yaw, 1.83, up, 6) : hinged(new THREE.Vector3(0, z.cut.at, -b.thickness / 2), pitch, -1.75, up, 6)
-    } else if (d.type === 'headset') move = hinged(new THREE.Vector3(0, b.height / 2, z.cut.at), pitch, -1.9, up, 5)
+    } else if (d.type === 'headset') {
+      // the front plate stays on its hinge when the rest is pulled apart: what comes out then leaves by the face
+      move = hinged(new THREE.Vector3(0, b.height / 2, z.cut.at), pitch, -1.9, up, 5)
+      stack = null
+    }
     else if (d.type === 'desktop' || d.type === 'tv') move = hinged(new THREE.Vector3(0, b.height / 2, seam.z), pitch, 1.83, up, size * 0.02)
     // a laptop's bottom plate is laid flat behind it, inside up
     else if (d.type === 'laptop') move = hinged(new THREE.Vector3(0, -(b.height / 2 + 6), seam.z), pitch, -Math.PI, up, 5)
@@ -1062,9 +1440,26 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
     if (stack) {
       move(1, pos0, quat0)
       const aside = pos0.clone().addScaledVector(up, -pos0.dot(up))
-      if (aside.lengthSq() > 1 && d.type !== 'console' && d.type !== 'headset' && d.type !== 'laptop') stack.addScaledVector(aside.normalize(), Math.min(b.width, b.height) * 0.9)
+      // the back of a television comes away as the last of three sheets, each slid clear of the one before
+      if (d.type === 'tv' || d.type === 'desktop') stack.copy(up).multiplyScalar(size * 0.06 * 4.4).add(new THREE.Vector3(b.width * 1.04, 0, 0))
+      else if (aside.lengthSq() > 1 && d.type !== 'console' && d.type !== 'headset') stack.addScaledVector(aside.normalize(), Math.min(b.width, b.height) * 0.9)
     }
-    covers.push({ zone: z.id, group: coverG, move, stack })
+    let apart: Cover['apart']
+    if ((d.type === 'tv' || d.type === 'desktop') && stack) {
+      // the back of a screen on a stand swings shut again as it is drawn straight back, clear of the stand that
+      // passes through it, and only then rises clear of the sheets under it
+      const pivot = new THREE.Vector3(0, b.height / 2, seam.z)
+      const far = stack.dot(up)
+      const pop = size * 0.02
+      apart = (k, e, pos, quat) => {
+        const back = smooth(e / 0.5)
+        const swing = smooth((k - 0.14) / 0.86) * (1 - back)
+        quat.setFromAxisAngle(pitch, 1.83 * swing)
+        pos.copy(pivot).negate().applyQuaternion(quat).add(pivot).addScaledVector(up, pop * smooth(k / 0.22) * (1 - 0.7 * swing) + far * back * k)
+        pos.y += b.height * 1.16 * smooth((e - 0.5) / 0.5) * k
+      }
+    }
+    covers.push({ zone: z.id, group: coverG, move, stack, apart })
   }
 
   // ---- covers that are not cut from the shell: a speaker's sleeve, and the works of an earbud case, which lift out whole
@@ -1083,13 +1478,46 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
     const round = (b.form ?? 'column') !== 'block'
     // four posts between a base and a hoop at the top; on a round speaker they stand on the circle
     const k = round ? 0.7071 : 1
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) bx(t, 2.4, zy, 2.4, M.black, sx * (zx / 2 + 1.2) * k, z.box.c[1], sz * (zz / 2 + 1.2) * k, false)
+    if ((b.form ?? 'column') !== 'orb') for (const sx of [-1, 1]) for (const sz of [-1, 1]) bx(t, 2.4, zy, 2.4, M.black, sx * (zx / 2 + 1.2) * k, z.box.c[1], sz * (zz / 2 + 1.2) * k, false)
     const flat = (o: THREE.Mesh, y: number) => {
       o.rotation.x = -Math.PI / 2
       o.position.set(0, y, 0)
       ;(o.material as THREE.Material).side = THREE.DoubleSide
     }
-    if (round) {
+    if ((b.form ?? 'column') === 'orb') {
+      // an orb's frame follows its shell: ribs from the base to the top like lines of longitude, and a hoop at each end and round the middle
+      const sh = speakerShape(b)
+      const lo = z.box.c[1] - zy / 2
+      const hi = z.box.c[1] + zy / 2
+      const at = (an: number, y: number) => {
+        const k2 = Math.sqrt(Math.max(0.02, 1 - (y / sh.ry) ** 2))
+        return new THREE.Vector3(Math.cos(an) * (b.width / 2 - 3.4) * k2, y, Math.sin(an) * (b.thickness / 2 - 3.4) * k2)
+      }
+      const ribs = 6
+      const steps = 8
+      const cage = new THREE.InstancedMesh(BOX, M.black, ribs * steps)
+      const m4 = new THREE.Matrix4()
+      const q = new THREE.Quaternion()
+      const yAxis = new THREE.Vector3(0, 1, 0)
+      for (let i = 0; i < ribs; i++) {
+        for (let j = 0; j < steps; j++) {
+          const an = ((i + 0.5) / ribs) * Math.PI * 2
+          const p0 = at(an, lo + ((hi - lo) * j) / steps)
+          const p1 = at(an, lo + ((hi - lo) * (j + 1)) / steps)
+          const len = p0.distanceTo(p1)
+          q.setFromUnitVectors(yAxis, p1.clone().sub(p0).normalize())
+          cage.setMatrixAt(i * steps + j, m4.compose(p0.add(p1).multiplyScalar(0.5), q, new THREE.Vector3(2, len + 0.6, 2)))
+        }
+      }
+      cage.raycast = () => {}
+      cage.receiveShadow = true
+      t.add(cage)
+      for (const [y, solid] of [[lo - 0.4, true], [hi + 0.6, false], [0, false]] as const) {
+        const edge = at(0, y).x * 2 + 2.4
+        const edgeZ = at(Math.PI / 2, y).z * 2 + 2.4
+        flat(part(t, solid ? DISC : RING, M.black, edge, edgeZ, 1), y)
+      }
+    } else if (round) {
       flat(part(t, DISC, M.black, zx + 5, zz + 5, 1), z.box.c[1] - zy / 2 - 0.4)
       flat(part(t, RING, M.black, zx + 5, zz + 5, 1), z.box.c[1] + zy / 2 + 0.6)
     } else {
@@ -1140,9 +1568,11 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
   const comps = new Map<string, Drawn>()
   const zoneOf = new Map(n.zones.map((z) => [z.id, z]))
   const mainZone = zoneOf.get('main')
-  for (const c of n.comps) {
+  const sheets = d.type === 'tv' || d.type === 'desktop'
+  /** Stand one component in its place. A ghost is one the layout no longer has, drawn once more so that it can shrink away. */
+  const make = (c: Comp, ghost = false): Drawn | null => {
     const z = zoneOf.get(c.zone)
-    if (!z) continue
+    if (!z) return null
     const g = new THREE.Group()
     g.quaternion.copy(basisQuat(c.ax))
     g.position.set(c.box.c[0], c.box.c[1], c.box.c[2])
@@ -1150,15 +1580,26 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
     const origin = g.position.clone()
     const [a, bb, h] = localSize(c.ax, c.box.s)
     draw(c, g, a, bb, h, (p) => new THREE.Vector3(p[0], p[1], p[2]).sub(origin).applyQuaternion(inv))
-    g.traverse((o) => (o.userData.comp = c.id))
+    if (ghost) g.traverse((o) => (o.raycast = () => {}))
+    else g.traverse((o) => (o.userData.comp = c.id))
     const host = c.host === 'cover' ? coverOf.get(c.zone === 'body' || c.zone === 'hinge' ? 'main' : c.zone) : c.host === 'screen' ? screenG : null
     const parent = host ?? (guts && c.zone === 'main' ? guts : trayOf(z.anchor))
     parent.add(g)
-    if (host || parent === guts) shown.push(g)
+    if (!ghost && (host || parent === guts)) shown.push(g)
     const zu = z.id === 'body' || z.id === 'hinge' ? (mainZone ?? z) : z
     const up = dirVec(zu.up)
     const depth = zu.box.s[Math.abs(zu.up) - 1]
-    comps.set(c.id, { c, g, at: origin, size: [a, bb, h], up, gap: c.host === 'tray' ? Math.max(3.5, Math.min(depth * 0.9, size * 0.12)) : 0 })
+    // a wide, shallow device comes apart in sheets, which have to be moved well clear of each other to be seen at all
+    return { c, g, at: origin, size: [a, bb, h], up, gap: c.host !== 'tray' ? 0 : sheets ? size * 0.06 : Math.max(3.5, Math.min(depth * 0.9, size * 0.12)) }
+  }
+  const ghosts = new Map<string, Drawn>()
+  for (const c of n.comps) {
+    const it = make(c)
+    if (!it) continue
+    const { g } = it
+    const origin = it.at
+    const inv = g.quaternion.clone().invert()
+    comps.set(c.id, it)
     // what does not fit is said in the colour the issue list uses
     if (!c.fits) {
       const neg = new THREE.MeshBasicMaterial({ color: themeColor('neg', '#ff5a4a'), transparent: true, opacity: 0.55, depthWrite: false })
@@ -1171,14 +1612,87 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
       }
     }
   }
+  // ---- the two halves of an earbud's shell are the loose bud itself, cut across the middle where it lies
+  const looseBud = d.type === 'earbuds' ? (tagged.get('bud') ?? [])[0] : undefined
+  if (looseBud) {
+    const toBud = BUD_AXES.clone().invert()
+    for (const [side, id] of [[-1, 'budcap'], [1, 'budtip']] as const) {
+      const it = comps.get(id)
+      if (!it) continue
+      const hold = new THREE.Group()
+      const inv = it.g.quaternion.clone().invert()
+      hold.quaternion.copy(inv).multiply(toBud)
+      hold.position.copy(it.at).negate().applyQuaternion(inv)
+      it.g.add(hold)
+      for (const child of looseBud.children) {
+        const m = child as THREE.Mesh
+        if (!m.isMesh) continue
+        m.updateMatrix()
+        const whole = m.geometry.clone().applyMatrix4(m.matrix)
+        const half = cutGeometry(whole, 2, 0, side, true)
+        whole.dispose()
+        if (!half.attributes.position.count) {
+          half.dispose()
+          continue
+        }
+        const mat = (m.material as THREE.Material).clone()
+        mat.side = THREE.DoubleSide
+        const o = new THREE.Mesh(half, mat)
+        o.castShadow = o.receiveShadow = true
+        o.userData.comp = id
+        hold.add(o)
+      }
+    }
+  }
+
+  // ---- a stand bolted to the back passes through a cut-out in the cover, which is open to the bottom edge so
+  // that the cover can swing up past it. The cut-out is made where the cover is drawn, and follows it as it moves.
+  const mount = d.type === 'desktop' ? standMount(b, d.type) : null
+  const coverMain = coverOf.get('main')
+  let notch: { local: THREE.Plane[]; world: THREE.Plane[]; on: THREE.Object3D } | null = null
+  if (mount && coverMain && mainZone) {
+    const hw = (mount.w - 12) / 2 + 2.5
+    const yTop = mount.y + (mount.h - 12) / 2 + 2.5
+    const local = [new THREE.Plane(new THREE.Vector3(-1, 0, 0), -hw), new THREE.Plane(new THREE.Vector3(1, 0, 0), -hw), new THREE.Plane(new THREE.Vector3(0, 1, 0), -yTop)]
+    const world = local.map((p) => p.clone())
+    coverMain.traverse((o) => {
+      const m = o as THREE.Mesh
+      if (!m.isMesh || o.userData.comp || Array.isArray(m.material)) return
+      for (let p: THREE.Object3D | null = o; p && p !== coverMain; p = p.parent) if (p.userData.partRoot) return
+      const mat = m.material.clone()
+      mat.clippingPlanes = world
+      mat.clipIntersection = true
+      mat.clipShadows = true
+      m.material = mat
+    })
+    // the cut edge, and the neck that joins the stand to its bracket through it
+    const seamZ = mainZone.box.c[2] - mainZone.box.s[2] / 2
+    const backZ = -b.thickness / 2
+    const ct = Math.max(0.4, seamZ - backZ)
+    const low = -b.height / 2
+    const rim = new THREE.Group()
+    for (const s of [-1, 1]) bx(rim, 1, yTop - low, ct, linerMat, s * (hw + 0.5), (yTop + low) / 2, backZ + ct / 2, false)
+    bx(rim, 2 * hw + 2, 1, ct, linerMat, 0, yTop + 0.5, backZ + ct / 2, false)
+    rim.traverse((o) => ((o.raycast = () => {}), (o.userData.cut = true)))
+    coverMain.add(rim)
+    shown.push(rim)
+    bx(trayOf('body'), (mount.w - 12) * 0.86, (mount.h - 12) * 0.86, ct + 1.4, M.darkSteel, 0, mount.y, backZ + (ct + 1.4) / 2 + 0.2, false).raycast = () => {}
+    notch = { local, world, on: coverMain }
+  }
   for (const o of shown) o.visible = false
 
   const accent = new THREE.LineBasicMaterial({ color: themeColor('accent', '#ff6b1a'), depthTest: false, transparent: true, toneMapped: false })
+  const faint = new THREE.LineBasicMaterial({ color: '#e8eaee', depthTest: false, transparent: true, opacity: 0.75, toneMapped: false })
+  let heatMat: THREE.MeshBasicMaterial | null = null
+  const lift = (it: Drawn, k: number, e: number) => (it.c.back ? -it.gap * 1.25 * it.c.back * e : it.gap * it.c.layer * (it.c.zone === 'bud' ? 0.75 * k : e))
   const fill = new THREE.MeshBasicMaterial({ color: themeColor('accent', '#ff6b1a'), transparent: true, opacity: 0.09, depthWrite: false, depthTest: false, toneMapped: false })
   const pos = new THREE.Vector3()
   const quat = new THREE.Quaternion()
   const ident = new THREE.Quaternion()
   const shut = model.userData.shut as ((k: number) => void) | undefined
+  let dock: THREE.Object3D | undefined
+  model.traverse((o) => o.userData.prop === 'dock' && (dock = o))
+  const dockY = (dock as THREE.Object3D | undefined)?.position.y ?? 0
   const tall = d.type !== 'foldable' && !(b.width > b.height * 1.15) && (d.type === 'phone' || d.type === 'tablet' || d.type === 'watch')
   const screenDir = mainZone ? dirVec(mainZone.up).negate() : new THREE.Vector3(0, 0, 1)
   const screenGap = mainZone ? mainZone.box.s[Math.abs(mainZone.up) - 1] * 2.2 + size * 0.05 : 0
@@ -1196,7 +1710,8 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
       const e = smooth(explode) * k
       for (const cv of covers) {
         cv.move(k, pos, quat)
-        if (cv.stack && e > 0) {
+        if (cv.apart && e > 0) cv.apart(k, e, pos, quat)
+        else if (cv.stack && e > 0) {
           pos.lerp(cv.stack, e)
           quat.slerp(ident, e)
         }
@@ -1210,19 +1725,28 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
       if (tall) model.position.set((b.width / 2 + Math.max(2, size * 0.03)) * 0.25 * aside, 0, 0)
       else if (d.type === 'speaker') model.position.set(-b.width * 0.6 * smooth((open - 0.34) / 0.4), 0, 0)
       else model.position.set(0, 0, 0)
+      // a handheld is lifted out of its dock before it is opened: the wall of the dock stands where its back swings
+      if (dock) {
+        const out = (b.height * 0.5 + 6) * smooth(k / 0.16)
+        model.position.y = out
+        dock.position.y = dockY - out
+      }
       const ease = 1 - Math.exp(-dt * 9)
       for (const [id, it] of comps) {
         let cur = mem.boxes.get(id)
         const target = new THREE.Vector3(...it.size)
         if (!cur) {
-          cur = { c: it.at.clone(), s: mem.fresh ? target.clone() : target.clone().multiplyScalar(0.05) }
+          cur = { c: it.at.clone(), s: mem.fresh ? target.clone() : target.clone().multiplyScalar(0.05), comp: it.c }
           mem.boxes.set(id, cur)
         }
+        cur.comp = it.c
         cur.c.lerp(it.at, ease)
         cur.s.lerp(target, ease)
         if (cur.c.distanceToSquared(it.at) < 1e-5) cur.c.copy(it.at)
         if (cur.s.distanceToSquared(target) < 1e-5) cur.s.copy(target)
-        it.g.position.copy(cur.c).addScaledVector(it.up, it.gap * it.c.layer * (it.c.zone === 'bud' ? 0.75 * k : e))
+        it.g.position.copy(cur.c).addScaledVector(it.up, lift(it, k, e))
+        // and each sheet is slid to one side of the one under it, so that both show
+        if (sheets && it.c.host === 'tray' && it.c.layer >= 1) it.g.position.x += b.width * 0.52 * e
         it.g.scale.set(cur.s.x / Math.max(target.x, 0.01), cur.s.y / Math.max(target.y, 0.01), cur.s.z / Math.max(target.z, 0.01))
         const t0 = mem.pulse.get(id)
         if (t0 !== undefined) {
@@ -1241,11 +1765,73 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
         // the display stack is inside the body until the screen is lifted off it
         if (it.c.kind === 'display' && it.c.host === 'screen') it.g.visible = e > 0.01
       }
-      for (const id of [...mem.boxes.keys()]) if (!comps.has(id)) mem.boxes.delete(id)
+      // what the layout no longer has shrinks away where it stood, instead of vanishing
+      for (const [id, was] of [...mem.boxes]) {
+        if (comps.has(id)) continue
+        if (vis && k > 0.5) mem.gone.set(id, { comp: was.comp, t0: now })
+        mem.boxes.delete(id)
+      }
+      for (const [id, was] of [...mem.gone]) {
+        const t = (now - was.t0) / 320
+        let gh = ghosts.get(id)
+        if (comps.has(id) || t >= 1 || !vis) {
+          mem.gone.delete(id)
+          if (gh) gh.g.visible = false
+          continue
+        }
+        if (!gh) {
+          const made = make(was.comp, true)
+          if (!made) {
+            mem.gone.delete(id)
+            continue
+          }
+          ghosts.set(id, (gh = made))
+        }
+        gh.g.visible = true
+        gh.g.position.copy(gh.at).addScaledVector(gh.up, lift(gh, k, e))
+        gh.g.scale.setScalar(Math.max(0.001, 1 - smooth(t)))
+      }
+      if (d.type === 'speaker' && vis && k < 0.4) {
+        anchor.updateWorldMatrix(true, false)
+        REVEAL.constant = anchor.localToWorld(pos.set(0, -b.height / 2 + b.height * 1.08 * smooth(k / 0.4), 0)).y
+      } else REVEAL.constant = 1e9
+      if (notch) {
+        notch.on.updateWorldMatrix(true, false)
+        notch.world.forEach((p, i) => p.copy(notch!.local[i]).applyMatrix4(notch!.on.matrixWorld))
+      }
       mem.fresh = false
     },
-    highlight(match, picked) {
+    heat(match, bad) {
       for (const it of comps.values()) {
+        const on = !!match && match(it.c)
+        if (on && !it.hot) {
+          heatMat ??= new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.42, depthWrite: false, toneMapped: false })
+          const o = new THREE.Mesh(BOX, heatMat)
+          o.scale.set(it.size[0] + 0.5, it.size[1] + 0.5, it.size[2] + 0.5)
+          o.renderOrder = 5
+          o.raycast = () => {}
+          o.userData.overlay = true
+          it.g.add(o)
+          it.hot = o
+        }
+        if (it.hot) it.hot.visible = on
+      }
+      heatMat?.color.set(themeColor(bad ? 'neg' : 'warn', bad ? '#ff5a4a' : '#ffb020'))
+    },
+    targets: () => [...comps.values()].map((it) => it.g),
+    highlight(match, picked, hovered) {
+      for (const it of comps.values()) {
+        const hov = it.c.id === hovered && it.c.id !== picked
+        if (hov && !it.hov) {
+          const box = new THREE.LineSegments(EDGES, faint)
+          box.renderOrder = 21
+          box.scale.set(it.size[0] + 0.4, it.size[1] + 0.4, it.size[2] + 0.4)
+          box.raycast = () => {}
+          box.userData.overlay = true
+          it.g.add(box)
+          it.hov = box
+        }
+        if (it.hov) it.hov.visible = hov
         const on = it.c.id === picked || (!!match && match(it.c))
         if (on && !it.hl) {
           const h = new THREE.Group()
