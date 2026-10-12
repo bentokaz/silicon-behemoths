@@ -154,12 +154,12 @@ export function SharesScreen() {
               </ResponsiveContainer>
             )}
           </Panel>
-          <Panel title="Other companies" icon="rivals" className="flex-1" bodyClass="overflow-auto">
+          <Panel title="Other companies" icon="rivals" className="flex-1" bodyClass="@container overflow-auto">
             <table className="grid-table">
               <thead>
                 <tr>
                   <th>Company</th>
-                  <th>Based in</th>
+                  <th className="@max-[640px]:hidden">Based in</th>
                   <th className="r">Worth</th>
                   <th className="r">You own</th>
                   <th />
@@ -175,7 +175,7 @@ export function SharesScreen() {
                         <span className="mr-2 inline-block h-2 w-2" style={{ background: c.color }} />
                         {c.name}
                       </td>
-                      <td className="text-dim">{REGIONS.find((r) => r.id === homeOf(c))?.name}</td>
+                      <td className="text-dim @max-[640px]:hidden">{REGIONS.find((r) => r.id === homeOf(c))?.name}</td>
                       <td className="num r text-dim">{c.acquired ? '--' : big(worth)}</td>
                       <td className="num r text-fg">{c.acquired ? <Tag tone="pos" icon="check">yours</Tag> : own ? pct(own, 0) : '--'}</td>
                       <td className="r whitespace-nowrap">
@@ -417,7 +417,7 @@ export function WorldScreen() {
           <Panel title="World" icon="world" className="flex-1" bodyClass="p-3" right={<span className="num text-[10px] text-faint">brighter = better known / grey = not entered</span>}>
             <WorldMap g={g} selected={selected} onSelect={setSelected} />
           </Panel>
-          <Panel className="shrink-0" bodyClass="overflow-auto">
+          <Panel className="shrink-0" bodyClass="@container overflow-auto">
             <table className="grid-table">
               <thead>
                 <tr>
@@ -425,7 +425,7 @@ export function WorldScreen() {
                   <th className="r">World demand</th>
                   <th className="w-32">Awareness</th>
                   <th className="r">Units last month</th>
-                  <th className="r">Share of your sales</th>
+                  <th className="r @max-[580px]:hidden">Share of your sales</th>
                   <th className="r">Local price</th>
                 </tr>
               </thead>
@@ -445,7 +445,7 @@ export function WorldScreen() {
                       <td className="num r text-dim">{pct(r.share, 0)}</td>
                       <td>{st.open ? <Meter value={st.awareness} tone="accent" /> : <span className="text-[10px] text-faint">not entered ({money(r.entry, 1)})</span>}</td>
                       <td className="num r text-fg">{st.open ? num(st.history.at(-1) ?? 0) : '--'}</td>
-                      <td className="num r text-dim">{st.open && total > 0 ? pct((st.history.at(-1) ?? 0) / total, 0) : '--'}</td>
+                      <td className="num r text-dim @max-[580px]:hidden">{st.open && total > 0 ? pct((st.history.at(-1) ?? 0) / total, 0) : '--'}</td>
                       <td className="num r text-dim">{st.open ? `${st.priceAdj >= 1 ? '+' : ''}${Math.round((st.priceAdj - 1) * 100)}%` : '--'}</td>
                     </tr>
                   )

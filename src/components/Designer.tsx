@@ -355,7 +355,7 @@ function PartsPanel() {
       <Group title="Add part">
         <div className="grid grid-cols-2 gap-1">
           {kindsFor(d.type).map((k) => (
-            <Btn key={k} small onClick={() => addPart(k)} className="truncate text-left">
+            <Btn key={k} small onClick={() => addPart(k)} className="truncate text-left" title={`Add: ${partLabel({ kind: k, face: "back", crown: d.type === "watch" && k === "button" }, d.type)}`}>
               + {partLabel({ kind: k, face: 'back', crown: d.type === 'watch' && k === 'button' }, d.type)}
             </Btn>
           ))}
@@ -374,7 +374,7 @@ function PartsPanel() {
             </span>
             <span className="flex shrink-0 items-center gap-2">
               <span className="num text-faint">{faceLabel(p.face, d.type)}</span>
-              <button className="num px-1 text-dim hover:text-neg" title="Remove this part" aria-label={`Remove ${isCoverCam(d, p) ? "cover camera" : partLabel(p, d.type)}`} onClick={(e) => (e.stopPropagation(), removePart(p.id))}>
+              <button className="num flex h-5 w-5 items-center justify-center text-dim hover:text-neg" title="Remove this part" aria-label={`Remove ${isCoverCam(d, p) ? "cover camera" : partLabel(p, d.type)}`} onClick={(e) => (e.stopPropagation(), removePart(p.id))}>
                 x
               </button>
             </span>
@@ -570,7 +570,7 @@ function ColoursPanel({ preview, setPreview }: { preview: number; setPreview: (i
             <div className="flex items-center gap-2">
               <button className="h-4 w-4 shrink-0 border border-line2" style={{ background: c.back }} onClick={() => setPreview(i)} title="Preview this colour" aria-label={`Preview ${c.name || "this colour"}`} />
               <TextInput aria-label="Colour name" value={c.name} maxLength={16} onChange={(v) => update(i, { name: v })} className="h-6 min-w-0 flex-1" />
-              <button className="num px-1 text-dim hover:text-neg" title="Remove this colour" aria-label={`Remove ${c.name || "this colour"}`} onClick={() => (setPreview(-1), setDraft({ colors: colors.filter((_, k) => k !== i) }))}>
+              <button className="num flex h-5 w-5 shrink-0 items-center justify-center text-dim hover:text-neg" title="Remove this colour" aria-label={`Remove ${c.name || "this colour"}`} onClick={() => (setPreview(-1), setDraft({ colors: colors.filter((_, k) => k !== i) }))}>
                 x
               </button>
             </div>
@@ -960,9 +960,17 @@ function Workbench() {
                 {DEVICE_TYPES.map((t) => {
                   const game = useStore.getState().game
                   const closed = !!game && !hasType(game, t)
+                  const label = <span className="truncate">{TYPES[t].name}</span>
+                  // switching throws the design away: once it has been worked on, that takes a second click
+                  if (canUndo && !closed && t !== type)
+                    return (
+                      <ConfirmBtn key={t} small tone="default" icon={typeIcon(t)} confirm="Start over?" onClick={() => setType(t)} className="justify-start px-[6px]" title={`${TYPES[t].name}: switching starts a fresh design and discards this one`}>
+                        {label}
+                      </ConfirmBtn>
+                    )
                   return (
-                    <Btn key={t} small icon={closed ? 'lock' : typeIcon(t)} active={type === t} onClick={() => setType(t)} className={`justify-start px-[6px] ${closed ? 'opacity-40' : ''}`} title={closed ? 'Your company does not make these yet. Open the line under Research.' : t === type ? '' : 'Switching starts a fresh design'}>
-                      <span className="truncate">{TYPES[t].name}</span>
+                    <Btn key={t} small icon={closed ? 'lock' : typeIcon(t)} active={type === t} onClick={() => setType(t)} className={`justify-start px-[6px] ${closed ? 'opacity-40' : ''}`} title={closed ? `${TYPES[t].name}: your company does not make these yet. Open the line under Research.` : t === type ? TYPES[t].name : `${TYPES[t].name}: switching starts a fresh design`}>
+                      {label}
                     </Btn>
                   )
                 })}
@@ -1074,7 +1082,7 @@ function Workbench() {
               ))}
             </div>
           )}
-          <button onClick={() => setIssuesOpen(!issuesOpen)} disabled={errors.length + warns.length === 0} aria-expanded={issuesOpen} className="num flex h-8 items-center gap-3 px-3 text-[11px]">
+          <button onClick={() => setIssuesOpen(!issuesOpen)} disabled={errors.length + warns.length === 0} title={errors.length + warns.length === 0 ? "Nothing stands in the way of this design" : undefined} aria-expanded={issuesOpen} className="num flex h-8 items-center gap-3 px-3 text-[11px]">
             {errors.length + warns.length === 0 ? (
               <span className="text-pos">NO ISSUES</span>
             ) : (
@@ -1087,7 +1095,7 @@ function Workbench() {
           </button>
         </div>
         <div className="pointer-events-auto flex items-center gap-2">
-          <span className="num hidden border border-line2 bg-panel/95 px-2 py-[7px] text-[11px] text-dim xl:block">
+          <span className="num hidden max-w-[320px] truncate border border-line2 bg-panel/95 px-2 py-[7px] text-[11px] text-dim xl:block" title={`${productName(meta.family, meta.variant) || "Unnamed"} / ${T.name}`}>
             {productName(meta.family, meta.variant) || 'Unnamed'} <span className="text-faint">/ {T.name}</span>
             {variant && <span className="ml-2"><Tag tone="accent">shared platform</Tag></span>}
           </span>
@@ -1184,8 +1192,8 @@ function Workbench() {
               <Btn className="flex-1" onClick={() => setLaunching(false)}>
                 Back to the design
               </Btn>
-              <Btn tone="primary" className="flex-[2]" disabled={!canAfford(g, dueNow)} onClick={launch}>
-                {canAfford(g, dueNow) ? `Start development of ${productName(meta.family, meta.variant) || 'this device'}` : 'Not enough cash'}
+              <Btn tone="primary" className="min-w-0 flex-[2] truncate" disabled={!canAfford(g, dueNow) || !meta.family.trim()} title={!meta.family.trim() ? "Give the device a name first" : !canAfford(g, dueNow) ? `You need ${money(dueNow)} now for development, marketing and the keynote` : `Start development of ${productName(meta.family, meta.variant)}`} onClick={launch}>
+                {!meta.family.trim() ? "Name the device first" : canAfford(g, dueNow) ? `Start development of ${productName(meta.family, meta.variant)}` : "Not enough cash"}
               </Btn>
             </div>
           </div>

@@ -275,7 +275,7 @@ export function Staff() {
         <Mini label="Support, tickets / day" icon="headset" value={Math.round(fx.support + 20)} />
       </div>
       <div className="flex shrink-0 items-center justify-between">
-        <Tabs value={view} onChange={setView} options={[{ value: 'team', label: 'People', icon: 'staff', badge: g.staff.length }, { value: 'teams', label: 'Teams', icon: lockIcon('teams', 'team'), badge: loose ? `${loose} unled` : g.teams.length || undefined }, { value: 'policy', label: 'Policies', icon: lockIcon('people', 'policy') }, { value: 'hire', label: 'Applicants', icon: 'hire', badge: g.candidates.length }, { value: 'execs', label: 'Executives', icon: lockIcon('execs', 'briefcase'), badge: !has(g, 'execs') ? undefined : gone ? `${gone} empty` : execsWaiting || undefined }]} className="flex-1" />
+        <Tabs value={view} onChange={setView} options={[{ value: 'team', label: 'People', icon: 'staff', badge: g.staff.length }, { value: 'teams', label: 'Teams', icon: lockIcon('teams', 'team'), badge: loose ? `${loose} unled` : g.teams.length || undefined }, { value: 'policy', label: 'Policies', icon: lockIcon('people', 'policy') }, { value: 'hire', label: 'Applicants', icon: 'hire', badge: g.candidates.length }, { value: 'execs', label: 'Executives', icon: lockIcon('execs', 'briefcase'), badge: !has(g, 'execs') ? undefined : gone ? `${gone} empty` : execsWaiting || undefined }]} className="min-w-0 flex-1" fit />
         <div className="flex gap-1 pl-2">
           <Btn small active={role === 'all'} onClick={() => setRole('all')}>
             All

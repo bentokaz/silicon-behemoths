@@ -317,7 +317,7 @@ export function Shell() {
         </div>
         <div className="flex items-center gap-2 border-r border-line px-3">
           <Icon name="cash" className="text-faint" />
-          <span className={`num text-sm font-semibold ${g.cash < 0 && !g.config.unlimitedMoney ? 'text-neg' : 'text-accent'}`}>{g.config.unlimitedMoney ? 'UNLIMITED' : money(g.cash)}</span>
+          <span className={`num min-w-[4.5rem] text-sm font-semibold ${g.cash < 0 && !g.config.unlimitedMoney ? "text-neg" : "text-accent"}`}>{g.config.unlimitedMoney ? 'UNLIMITED' : money(g.cash)}</span>
         </div>
         <div className="hidden items-center gap-2 border-r border-line px-3 lg:flex">
           <span className="label text-faint">This month</span>
@@ -392,7 +392,7 @@ export function Shell() {
           </div>
         </nav>
 
-        <main className="relative min-h-0 min-w-0 flex-1 bg-carbon">
+        <main className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-carbon">
           {designing ? (
             <Designer />
           ) : (

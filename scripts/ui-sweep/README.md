@@ -37,6 +37,8 @@ Saving `sweep.js` makes Vite reload the page: import it again afterwards.
 | --- | --- |
 | `sweep.seed(name)` | Puts a game state on screen. Built once by playing the simulation, then restored from a copy, so every visit starts identical. |
 | `sweep.crawlState(name, { only, depth, budget, fields })` | Every stop of a state: each screen, the frame around them, the designer in both modes, a device, a rival's device and a person. At each stop every control is pressed in turn, the stop is put back whenever a press changed anything, and controls that reveal more controls (a sub-tab, a fold, a drawer) are gone into, `depth` levels down. `only` is a regular expression on the stop name. |
+| `sweep.crawlMenu()` | The same for the screens before a game: the main menu, its settings and keys, the Continue list and the new-company form. |
+| `sweep.lookMenu()` | Those two screens audited without pressing, for each window size. |
 | `sweep.lookState(name, { themes, only })` | No pressing beyond sub-tabs and folds: opens every view and audits its layout, then its colours in each theme. This is the pass to repeat at each window size. |
 | `sweep.hotkeys(name)` | Every key from System, Keys, on every screen. |
 | `sweep.soak({ state, rounds, designer, speed })` | A long session at top speed: hops screens, opens every device, opens and closes the designer, and samples heap, DOM size, listeners, timers and live WebGL contexts after each round. |
@@ -82,4 +84,11 @@ a request through on purpose, set `sweep.allowNetwork = true` first.
   3D views) or timers (toasts, the game clock) moves slowly there. Run it in
   a visible tab when those matter.
 - Findings are deduplicated by kind and text, and carry the path of presses
-  that led to them.
+  that led to them. They are also kept in `sessionStorage`, so a reload of the
+  page (which saving any source file can cause) does not lose them:
+  `sweep.earlier()` reads them back. Do not edit source files while a crawl is
+  running; a hot update in the middle of one makes noise.
+- Long lists are sampled: two rows of each table, four of each kind of button
+  that repeats down a list. Everything else is pressed.
+- The crawler deletes and overwrites saves in the dev server's own storage
+  (`localhost:5212`), which no other copy of the game shares.

@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { getVolume, setAmbienceLevel, setVolume, sfx } from '../audio/sfx'
 import { chooseFolder, cloudBuiltIn, cloudConfig, cloudUser, folderState, forgetFolder, setCloudConfig, signIn, signOut, signUp, unlockFolder } from '../store/cloud'
-import { ACTIONS, type Action, QUALITY, type Quality, keyName, keysFor, useSettings } from '../store/settings'
+import { ACTIONS, type Action, DEFAULT_SETTINGS, QUALITY, type Quality, keyName, keysFor, useSettings } from '../store/settings'
 import { ThemePicker } from './System'
 import { Icon, type IconName } from './icons'
 import { Btn, ConfirmBtn, Head, Lead, Panel, Slider, TextInput, useLayer } from './ui'
@@ -77,9 +77,9 @@ export function SettingsPanel() {
           ))}
         </div>
         <div className="mt-2 text-[10px] leading-snug text-faint">Every sound is generated in the browser.</div>
-        <Btn small icon="reset" className="mt-4 w-full" onClick={() => (resetSettings(), sfx.confirm())}>
+        <ConfirmBtn small tone="default" icon="reset" className="mt-4 w-full" confirm="Put every setting back?" title="Graphics, camera, play and sound go back to how they were at first. Keys and colours are left alone." onClick={() => (resetSettings(), setVol(0.5), setVolume(0.5), setAmbienceLevel(DEFAULT_SETTINGS.ambience), sfx.confirm())}>
           Reset all settings
-        </Btn>
+        </ConfirmBtn>
       </Panel>
     </div>
   )
@@ -141,9 +141,9 @@ export function SavesBeyond() {
         {!cfg ? (
           <>
             <div className="text-[11px] leading-snug text-dim">Not set up. Online saves need a free Supabase project; the steps are in CLOUD.md in the game's folder. Paste the project address and public key here once you have them.</div>
-            <TextInput value={url} onChange={setUrl} placeholder="Project address (https://...supabase.co)" className="mt-2 w-full" />
-            <TextInput value={key} onChange={setKey} placeholder="Public (anon) key" className="mt-1 w-full" />
-            <Btn small icon="check" className="mt-1" disabled={!url.trim() || !key.trim()} onClick={() => (setCloudConfig(url, key), setCfg(cloudConfig()), setNote('Project saved. Now sign in or create an account.'))}>
+            <TextInput value={url} onChange={setUrl} maxLength={200} placeholder="Project address (https://...supabase.co)" className="mt-2 w-full" />
+            <TextInput value={key} onChange={setKey} maxLength={600} placeholder="Public (anon) key" className="mt-1 w-full" />
+            <Btn small icon="check" className="mt-1" disabled={!url.trim() || !key.trim()} title={!url.trim() || !key.trim() ? "Paste the project address and its public key first" : undefined} onClick={() => (setCloudConfig(url, key), setCfg(cloudConfig()), setNote('Project saved. Now sign in or create an account.'))}>
               Use this project
             </Btn>
           </>
@@ -159,13 +159,13 @@ export function SavesBeyond() {
         ) : (
           <>
             <div className="text-[11px] leading-snug text-dim">Sign in to keep saves online and load them on any device.</div>
-            <TextInput value={email} onChange={setEmail} placeholder="Email" className="mt-2 w-full" />
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="mt-1 h-7 w-full rounded-none border border-line2 bg-raise px-2 text-xs text-fg outline-none focus:border-accent" />
+            <TextInput value={email} onChange={setEmail} placeholder="Email" aria-label="Email" maxLength={254} inputMode="email" autoComplete="email" className="mt-2 w-full" />
+            <input type="password" aria-label="Password" maxLength={128} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="mt-1 h-7 w-full rounded-none border border-line2 bg-raise px-2 text-xs text-fg outline-none focus:border-accent" />
             <div className="mt-1 flex gap-1">
-              <Btn small tone="primary" icon="key" disabled={!email || password.length < 6} onClick={() => run(() => signIn(email, password), 'Signed in.')}>
+              <Btn small tone="primary" icon="key" disabled={!email || password.length < 6} title={!email || password.length < 6 ? "Enter your email and a password of at least six characters" : undefined} onClick={() => run(() => signIn(email, password), 'Signed in.')}>
                 Sign in
               </Btn>
-              <Btn small icon="hire" disabled={!email || password.length < 6} onClick={() => run(() => signUp(email, password), 'Account created.')}>
+              <Btn small icon="hire" disabled={!email || password.length < 6} title={!email || password.length < 6 ? "Enter your email and a password of at least six characters" : undefined} onClick={() => run(() => signUp(email, password), 'Account created.')}>
                 Create account
               </Btn>
               {!cloudBuiltIn() && (

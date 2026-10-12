@@ -526,10 +526,10 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
                     <span className="num text-fg">{site.floors}</span>
                   </div>
                   <div className="flex gap-2">
-                    <Btn small className="flex-1" disabled={site.floors <= 1} onClick={() => report(act((s) => setLook(s, siteRef, { floors: site.floors - 1 })), () => setMode('full'))}>
+                    <Btn small className="flex-1" disabled={site.floors <= 1} title={site.floors <= 1 ? "A building keeps at least one storey" : undefined} onClick={() => report(act((s) => setLook(s, siteRef, { floors: site.floors - 1 })), () => setMode('full'))}>
                       Remove one
                     </Btn>
-                    <Btn small className="flex-1" disabled={site.floors >= MAX_FLOORS || !tiles} onClick={() => report(act((s) => setLook(s, siteRef, { floors: site.floors + 1 })), () => (sfx.zone(), setMode('full')))}>
+                    <Btn small className="flex-1" disabled={site.floors >= MAX_FLOORS || !tiles} title={!tiles ? "Build a room first" : site.floors >= MAX_FLOORS ? `${MAX_FLOORS} storeys is the most a building can have` : undefined} onClick={() => report(act((s) => setLook(s, siteRef, { floors: site.floors + 1 })), () => (sfx.zone(), setMode('full')))}>
                       Add one {tiles ? `(${money(lookCost(site, { floors: site.floors + 1 }), 0)})` : ''}
                     </Btn>
                   </div>

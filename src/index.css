@@ -214,6 +214,9 @@ table.grid-table td {
 .tight table.grid-table th {
   letter-spacing: 0.02em;
 }
+.tight table.grid-table td {
+  font-size: 12px;
+}
 /* and its longer names are cut short there; the cell's tooltip has them in full */
 .tight table.grid-table td.clip {
   max-width: 9.5rem;

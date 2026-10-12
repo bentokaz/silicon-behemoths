@@ -345,7 +345,7 @@ async function seed(name, { tab, rebuild } = {}) {
   fb.setState({ form: null, ask: null, flagged: false })
   // all in one go, so the screen wanted is the only one drawn
   st().resume(G().migrate(JSON.parse(snap.json)))
-  W.sb.setState({ yearEnd: snap.yearEnd, checkpoint: snap.checkpoint })
+  W.sb.setState({ yearEnd: snap.yearEnd, checkpoint: snap.checkpoint, railOpen: true, feedOpen: true })
   if (typeof tab === 'function') tab()
   else if (tab) st().setTab(tab)
   // the game's frame is on screen once the lazily loaded parts are in
@@ -395,10 +395,13 @@ function describe(el) {
 }
 function controls() {
   const out = []
+  // with a dialog or a drawer up, only what is in the top one can be reached
+  const top = Array.from(document.querySelectorAll('[role=dialog], [role=alertdialog]')).filter(isShown).pop()
   for (const el of document.querySelectorAll(INTERACTIVE)) {
     if (!isShown(el) || el.closest('[data-ruler]') || el.hasAttribute('data-ruler')) continue
     if (S.scope === 'screen' && inChrome(el)) continue
     if (S.scope === 'chrome' && !inChrome(el)) continue
+    if (top && !top.contains(el)) continue
     out.push(el)
   }
   return out
@@ -539,8 +542,8 @@ function audit(label, { colours = true } = {}) {
     const ownText = Array.from(el.childNodes).filter((n) => n.nodeType === 3).map((n) => n.textContent).join('').trim()
     if (!ownText) continue
     if (RAW.test(ownText) && !el.closest('pre, textarea')) note('raw-value', `"${ownText.slice(0, 60)}" in ${regionOf(el)}`)
-    if (EMOJI.test(ownText) && !el.closest('textarea, pre')) note('emoji', `"${ownText.slice(0, 40)}"`)
-    if (/\d{7,}/.test(ownText.replace(/[\d,]*\.\d+/g, '')) && !el.closest('pre, textarea') && !/seed/i.test(textOf(el.parentElement ?? el))) note('unformatted-number', `"${ownText.slice(0, 50)}" in ${regionOf(el)}`)
+    if (EMOJI.test(ownText) && !el.closest('textarea, pre') && !ownText.includes(String.fromCodePoint(0x1f600))) note('emoji', `"${ownText.slice(0, 40)}"`)
+    if (/\d{7,}/.test(ownText.replace(/[\d,]*\.\d+/g, '')) && !/9{9}/.test(ownText) && !el.closest('pre, textarea') && !/seed/i.test(textOf(el.parentElement ?? el))) note('unformatted-number', `"${ownText.slice(0, 50)}" in ${regionOf(el)}`)
     // cut off: by its own box, or by a parent that hides what runs over
     const cut = el.scrollWidth > el.clientWidth + 1 && cs.overflowX !== 'visible' && !sx
     if (cut && !hasTip(el) && el.tagName !== 'SELECT' && el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') note('text-cut-no-tooltip', `"${ownText.slice(0, 50)}" in ${regionOf(el)} (${el.clientWidth}px of ${el.scrollWidth}px)`)
@@ -638,7 +641,7 @@ function stamp() {
   try {
     ls = JSON.stringify(Object.entries(localStorage))
   } catch {}
-  return JSON.stringify(ui) + '|' + (s.draft ? JSON.stringify(s.draft).length + ':' + s.past.length : '') + '|' + ls.length + '|' + S.mutations + '|' + S.audio + '|' + S.blocked.length + '|' + (document.activeElement?.tagName ?? '')
+  return JSON.stringify(ui) + '|' + (s.draft ? JSON.stringify(s.draft).length + ':' + s.past.length : '') + '|' + ls.length + '|' + S.mutations + '|' + S.audio + '|' + S.blocked.length
 }
 const gameStamp = () => {
   const g = st().game
@@ -679,7 +682,8 @@ async function probeField(el, label) {
     for (const v of el.type === 'number' ? NUM_PROBES : TEXT_PROBES) {
       if (!el.isConnected) return
       el.focus()
-      setValue(el, v)
+      // what a person could actually get into the field: typing and pasting both stop at its length limit
+      setValue(el, el.maxLength > 0 ? v.slice(0, el.maxLength) : v)
       await settle(15)
       audit(`${label} > type ${JSON.stringify(v.slice(0, 12))} into ${describe(el)}`)
       // game keys must not fire while typing
@@ -736,6 +740,13 @@ async function crawl(name, setup, { depth = 2, path = [], skip, budget = { left:
     if (/^tr /.test(sig)) {
       const table = sig.replace(/"[^"]*"/, '').replace(/ #\d+$/, '')
       if ((rowsSeen[table] = (rowsSeen[table] ?? 0) + 1) > 2) continue
+    } else {
+      // and so do buttons that repeat down a list ("Take Ana off this team", "Take Ravi off this team", "Hire", "Hire"): four of a kind
+      const m = /^(\w+) "([^"]*)"(.*?)( #\d+)?$/.exec(sig)
+      if (m && (m[1] === 'button' || m[1] === 'select')) {
+        const kind = `${m[1]} ${m[2].split(/\s+/).slice(0, 1).join(' ')} ${m[2].split(/\s+/).length > 3 ? m[2].split(/\s+/).slice(-2).join(' ') : ''}${m[3]}`
+        if ((rowsSeen[kind] = (rowsSeen[kind] ?? 0) + 1) > 4) continue
+      }
     }
     if (budget.left-- <= 0) return note('budget-spent', label)
     if (skip?.(sig)) continue
@@ -958,6 +969,47 @@ async function soak({ state = 'late', rounds = 10, designer = 20, speed = 4 } = 
   return { seconds: Math.round((performance.now() - t0) / 1000), samples: samples.map(({ byType, ...s }) => s), listenersAtEnd: vitals().byType, counters: S.counters }
 }
 
+/** The screens before a game: the main menu with its settings and keys, and the new-company form. */
+async function crawlMenu(opts = {}) {
+  const menu = async (screen) => {
+    if (st().screen === 'game') st().quit()
+    st().setScreen(screen)
+    S.feedback?.setState({ form: null, ask: null, flagged: false })
+    await settle(60)
+  }
+  for (const [name, screen] of [['menu', 'menu'], ['new-game', 'new']]) {
+    try {
+      await crawl(name, () => menu(screen), { depth: opts.depth ?? 2, scope: 'all' })
+      S.done.push(name)
+    } catch (e) {
+      note('crawler-threw', `${name}: ${e.message}`)
+    }
+  }
+  if (st().screen === 'game') st().quit()
+  return summary()
+}
+
+/** The same, without pressing: for each window size and theme. */
+async function lookMenu({ themes = THEMES } = {}) {
+  S.scope = undefined
+  if (st().screen === 'game') st().quit()
+  for (const screen of ['menu', 'new']) {
+    st().setScreen(screen)
+    await settle(80)
+    const label = `${screen} @${innerWidth}x${innerHeight}`
+    audit(label, { colours: false })
+    auditRows(label)
+    for (const t of themes) {
+      document.documentElement.dataset.theme = t
+      auditColours(`${screen} [${t}]`)
+    }
+    document.documentElement.dataset.theme = themes[0]
+    S.counters.stops++
+  }
+  st().setScreen('menu')
+  return summary()
+}
+
 /** Start a long job and come back at once; poll sweep.job for the result. */
 function run(fn) {
   const job = (S.job = { done: false, started: Date.now() })
@@ -995,6 +1047,6 @@ function earlier() {
 }
 
 S.done ??= []
-Object.assign(S, { earlier, run, install, seed, SEEDS, snapshots, audit, auditRows, auditColours, crawl, crawlState, lookState, hotkeys, soak, vitals, summary, report, reset, click, key, setValue, listControls, describe, stopsOf, settle, TABS, THEMES, START_TYPES })
+Object.assign(S, { crawlMenu, lookMenu, earlier, run, install, seed, SEEDS, snapshots, audit, auditRows, auditColours, crawl, crawlState, lookState, hotkeys, soak, vitals, summary, report, reset, click, key, setValue, listControls, describe, stopsOf, settle, TABS, THEMES, START_TYPES })
 install()
 export default S

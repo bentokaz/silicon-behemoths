@@ -95,7 +95,9 @@ function Supply() {
             <div className="flex items-center justify-between">
               <span className="flex min-w-0 items-center gap-[6px] text-[11px] font-semibold uppercase tracking-[0.12em] text-fg">
                 <Icon name={supplyIcon(c)} size={13} className="text-dim" />
-                <span className="truncate">{SUPPLY_LABELS[c]}</span>
+                <span className="truncate" title={SUPPLY_LABELS[c]}>
+                  {SUPPLY_LABELS[c]}
+                </span>
               </span>
               {short ? <Tag tone="neg" icon="alert">shortage</Tag> : price > 1.08 ? <Tag tone="warn" icon="trendUp">dear</Tag> : price < 0.94 ? <Tag tone="pos" icon="trendDown">cheap</Tag> : <Tag>normal</Tag>}
             </div>

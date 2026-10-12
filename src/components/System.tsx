@@ -2,7 +2,7 @@
 // used by the main menu.
 import { useEffect, useRef, useState } from 'react'
 import { getVolume, setVolume, sfx } from '../audio/sfx'
-import { fmtDate, player } from '../sim/game'
+import { DIFFICULTY, fmtDate, player } from '../sim/game'
 import { openEverything } from '../sim/progress'
 import { useGame, useStore } from '../store/game'
 import { AUTOSAVE, BEFORE_DEBT, type SaveMeta, deleteSave, exportGame, importGame, listSaves, loadGame, saveGame, slotName } from '../store/saves'
@@ -58,9 +58,9 @@ export function SaveList({ onChange, nonce = 0, inGame = false }: { onChange?: (
       <thead>
         <tr>
           <Th icon="save">Slot</Th>
-          <Th icon="campus">Company</Th>
+          <Th icon="campus" className="@max-[470px]:hidden">Company</Th>
           <Th icon="calendar">Game date</Th>
-          <Th icon="cash" r>
+          <Th icon="cash" r className="@max-[600px]:hidden">
             Cash
           </Th>
           <Th icon="clock">Saved</Th>
@@ -71,9 +71,11 @@ export function SaveList({ onChange, nonce = 0, inGame = false }: { onChange?: (
         {saves.map((s) => (
           <tr key={s.slot} className="row">
             <td className={s.slot === AUTOSAVE || s.slot === BEFORE_DEBT ? 'text-dim' : ''}>{slotName(s.slot)}</td>
-            <td>{s.company}</td>
+            <td className="clip @max-[470px]:hidden" title={s.company}>
+              {s.company}
+            </td>
             <td className="num">{fmtDate(s.day)}</td>
-            <td className="num r">{money(s.cash)}</td>
+            <td className="num r @max-[600px]:hidden">{money(s.cash)}</td>
             <td className="num text-dim" title={new Date(s.savedAt).toLocaleString()}>
               {savedWhen(s.savedAt)}
             </td>
@@ -201,7 +203,7 @@ function Saves() {
           <ImportButton />
           <span className="min-w-[18rem] flex-1 text-[11px] text-faint">The game also autosaves every month and at big moments such as a device going on sale, and keeps a copy from just before the company goes into debt.</span>
         </Panel>
-        <Panel title="Saved games" icon="folder" bodyClass="overflow-auto">
+        <Panel title="Saved games" icon="folder" bodyClass="@container overflow-auto">
           <SaveList nonce={nonce} inGame />
         </Panel>
       </div>
@@ -215,7 +217,8 @@ function Saves() {
         </Panel>
         <Panel title="This game" icon="info" className="shrink-0" bodyClass="px-2 py-1">
           <Row icon="box" k="Mode" v="Sandbox" />
-          <Row icon="gauge" k="Difficulty" v={g.config.difficulty} />
+          <Row icon="gauge" k="Difficulty" v={DIFFICULTY[g.config.difficulty]?.label ?? g.config.difficulty} />
+          <Row icon="branch" k="Growth" v={g.config.progression === "guided" ? "Start small" : "Everything open"} />
           <Row icon="research" k="Research speed" v={`${g.config.researchSpeed.toFixed(2)}x`} />
           <Row icon="rivals" k="Rival strength" v={`${g.config.rivalStrength.toFixed(2)}x`} />
           <Row icon="cash" k="Unlimited money" v={g.config.unlimitedMoney ? 'on' : 'off'} />

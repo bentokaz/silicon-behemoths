@@ -301,7 +301,7 @@ function ProductTable({ g, rows, compact = false, showMaker = false, winRate }: 
           <Th iconClass="@max-[720px]:hidden" icon="devices">Device</Th>
           {showMaker && <Th iconClass="@max-[720px]:hidden" icon="campus">Maker</Th>}
           <Th iconClass="@max-[720px]:hidden" icon="info">Status</Th>
-          {!compact && <Th iconClass="@max-[720px]:hidden" icon="target">Segment</Th>}
+          {!compact && <Th className="@max-[520px]:hidden" iconClass="@max-[720px]:hidden" icon="target">Segment</Th>}
           <Th iconClass="@max-[720px]:hidden" icon="tag" r>
             Price
           </Th>
@@ -317,7 +317,7 @@ function ProductTable({ g, rows, compact = false, showMaker = false, winRate }: 
             Review
           </Th>
           {!compact && (
-            <Th iconClass="@max-[720px]:hidden" icon="design" r>
+            <Th className="@max-[470px]:hidden" iconClass="@max-[720px]:hidden" icon="design" r>
               Design
             </Th>
           )}
@@ -351,7 +351,7 @@ function ProductTable({ g, rows, compact = false, showMaker = false, winRate }: 
                 </Tag>
               </td>
               {!compact && (
-                <td className="clip text-dim" title={p.segment ? segmentInfo(p.segment).name : undefined}>
+                <td className="clip text-dim @max-[520px]:hidden" title={p.segment ? segmentInfo(p.segment).name : undefined}>
                   {p.segment ? segmentInfo(p.segment).name : "--"}
                 </td>
               )}
@@ -359,7 +359,7 @@ function ProductTable({ g, rows, compact = false, showMaker = false, winRate }: 
               {showStock && <td className={`num r ${p.stock <= 0 && p.status === 'sale' ? 'text-neg' : 'text-dim'}`}>{num(p.stock)}</td>}
               <td className="num r text-dim">{num(showMaker ? (p.history.at(-1) ?? p.monthUnits) : p.unitsSold)}</td>
               <td className="num r text-fg">{p.reviewAvg ? p.reviewAvg.toFixed(1) : '--'}</td>
-              {!compact && <td className="num r text-dim">{Math.round(p.designPct)}</td>}
+              {!compact && <td className="num r text-dim @max-[470px]:hidden">{Math.round(p.designPct)}</td>}
               {winRate && <td className="num r text-accent">{pct(winRate.get(p.id) ?? 0)}</td>}
             </tr>
           )
@@ -419,7 +419,7 @@ export function Products() {
           )}
         </div>
       </div>
-      <Panel className="flex-1" bodyClass="overflow-auto" keep={`products:${filter}`}>
+      <Panel className="flex-1" bodyClass="@container overflow-auto" keep={`products:${filter}`}>
         {rows.length === 0 ? (
           <Empty icon="devices" text={all.length ? 'No devices under this heading. Choose Current or All above, or press New device.' : 'No devices here yet. Press New device to choose a type and open the designer.'} />
         ) : (
@@ -482,7 +482,7 @@ export function Market() {
           </button>
         ))}
       </div>
-      <Panel title={info ? `${info.name}: who wins a buyer today` : `${TYPES[type].plural} on sale, by last month's sales`} icon={typeIcon(type)} className="flex-1" bodyClass="overflow-auto">
+      <Panel title={info ? `${info.name}: who wins a buyer today` : `${TYPES[type].plural} on sale, by last month's sales`} icon={typeIcon(type)} className="flex-1" bodyClass="@container overflow-auto">
         <ProductTable g={g} rows={rows} showMaker winRate={info ? weights : undefined} />
       </Panel>
       <Fold title="Market share by units, all device types" icon="pie" open={false} bodyClass="h-52">
@@ -505,13 +505,13 @@ export function Rivals() {
   const types = (ids: string[]) => [...new Set(ids.map((s) => segmentInfo(s).type))]
   return (
     <div className="grid h-full min-h-0 grid-cols-[minmax(0,5fr)_minmax(0,6fr)] gap-2 p-2">
-      <Panel title="Companies" icon="rivals" bodyClass="overflow-auto">
+      <Panel title="Companies" icon="rivals" bodyClass="@container overflow-auto">
         <table className="grid-table">
           <thead>
             <tr>
               <th>Company</th>
-              <th>Makes</th>
-              <th className="r">Brand</th>
+              <th className="@max-[350px]:hidden">Makes</th>
+              <th className="r @max-[400px]:hidden">Brand</th>
               <th className="r">Units 12 mo</th>
               <th className="r">Share</th>
             </tr>
@@ -524,7 +524,7 @@ export function Rivals() {
                   {c.name}
                   {c.isPlayer && <span className="ml-2"><Tag tone="accent" icon="person">you</Tag></span>}
                 </td>
-                <td className="text-dim">
+                <td className="text-dim @max-[420px]:max-w-[7.5rem] @max-[420px]:whitespace-normal @max-[350px]:hidden">
                   {c.isPlayer
                     ? '--'
                     : types(c.segments).map((t) => (
@@ -533,7 +533,7 @@ export function Rivals() {
                         </span>
                       ))}
                 </td>
-                <td className="num r text-dim">{Math.round(c.brand * 100)}</td>
+                <td className="num r text-dim @max-[400px]:hidden">{Math.round(c.brand * 100)}</td>
                 <td className="num r text-dim">{num(units)}</td>
                 <td className="num r text-fg">{pct(units / total)}</td>
               </tr>
@@ -604,14 +604,14 @@ export function Finance() {
               <th>Month</th>
               <th className="r">Units</th>
               <th className="r">Sales</th>
-              <th className="r">Other income</th>
+              <th className="r" title="Income other than device sales: licensing, services, care plans">Other</th>
               {COST_KEYS.map((k) => (
                 <th key={k} className="r">
                   {COST_LABELS[k]}
                 </th>
               ))}
               <th className="r">Profit</th>
-              <th className="r">Cash at close</th>
+              <th className="r" title="Cash in the bank when the month closed">Cash</th>
             </tr>
           </thead>
           <tbody>

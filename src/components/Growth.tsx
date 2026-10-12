@@ -43,7 +43,9 @@ function Campaigns() {
             <button key={id} onClick={() => (has(g, capOfChannel(id)) ? setChannel(id) : useStore.getState().showLock(capOfChannel(id)))} className={`border p-2 text-left ${has(g, capOfChannel(id)) ? '' : 'opacity-45'} ${channel === id ? 'border-accent bg-accent/10' : 'border-line hover:border-line2'}`}>
               <div className={`flex items-center gap-[6px] text-[11px] font-semibold uppercase tracking-wider ${channel === id ? 'text-accent' : 'text-fg'}`}>
                 <Icon name={channelIcon(id)} size={13} className={channel === id ? '' : 'text-dim'} />
-                <span className="min-w-0 flex-1 truncate">{CHANNELS[id].name}</span>
+                <span className="min-w-0 flex-1 truncate" title={CHANNELS[id].name}>
+                  {CHANNELS[id].name}
+                </span>
                 {!has(g, capOfChannel(id)) && <Icon name="lock" size={10} className="shrink-0" />}
               </div>
               <div className="num text-[10px] text-faint">from {money(CHANNELS[id].min, 0)} / mo</div>
@@ -65,7 +67,9 @@ function Campaigns() {
               const fit = channelFit(channel, s)
               return (
                 <div key={s.id} className="flex items-center gap-2 py-[2px]">
-                  <span className="w-28 truncate text-[11px] text-dim">{s.name}</span>
+                  <span className="w-28 truncate text-[11px] text-dim" title={s.name}>
+                    {s.name}
+                  </span>
                   <Meter value={fit} max={2} tone={fit >= 1.3 ? 'pos' : fit >= 0.9 ? 'accent' : 'dim'} />
                 </div>
               )
@@ -94,10 +98,10 @@ function Campaigns() {
             <thead>
               <tr>
                 <th>Channel</th>
-                <th>Advertising</th>
-                <th className="w-36">Monthly budget</th>
+                <th className="@max-[520px]:hidden">Advertising</th>
+                <th className="w-32">Budget / month</th>
                 <th className="r @max-[500px]:hidden">Spent</th>
-                <th className="w-16">Interest</th>
+                <th className="w-16 @max-[440px]:hidden">Interest</th>
                 <th />
               </tr>
             </thead>
@@ -107,12 +111,14 @@ function Campaigns() {
                 const buzz = p ? Math.max(0, ...Object.values(p.buzz)) : 0
                 return (
                   <tr key={c.id} className="row">
-                    <td className="text-fg">
+                    <td className="clip text-fg" title={`${CHANNELS[c.channel].name}${c.region ? `, ${regionInfo(c.region).name} only` : ""}`}>
                       <Lead icon={channelIcon(c.channel)} size={12} />
                       {CHANNELS[c.channel].name}
-                      {c.region && <span className="ml-2 text-[10px] text-faint">{regionInfo(c.region).name}</span>}
+                      {/* in a narrow panel the column for what is advertised goes, and it is said here instead */}
+                      <span className="hidden truncate pl-[17px] text-[10px] text-dim @max-[520px]:block">{p ? p.name : "the company"}</span>
+                      {c.region && <span className="block truncate pl-[17px] text-[10px] text-faint">{regionInfo(c.region).name}</span>}
                     </td>
-                    <td className={p ? 'text-accent' : 'text-dim'}>
+                    <td className={`clip @max-[520px]:hidden ${p ? "text-accent" : "text-dim"}`}>
                       {p ? (
                         <button className="hover:underline" title={`Open ${p.name}`} onClick={() => focus(p.id)}>
                           {p.name}
@@ -128,7 +134,7 @@ function Campaigns() {
                       </div>
                     </td>
                     <td className="num r text-dim @max-[500px]:hidden">{money(c.spent, 1)}</td>
-                    <td>{p ? <Meter value={buzz} tone={buzz > 0.5 ? 'pos' : 'accent'} /> : <span className="text-[10px] text-faint">brand only</span>}</td>
+                    <td className="@max-[440px]:hidden">{p ? <Meter value={buzz} tone={buzz > 0.5 ? 'pos' : 'accent'} /> : <span className="text-[10px] text-faint">brand only</span>}</td>
                     <td className="r">
                       <IconBtn icon="stop" tone="ghost" title="Stop this campaign" onClick={() => (act((s) => stopCampaign(s, c.id)), say(`${CHANNELS[c.channel].name} campaign stopped.`))} />
                     </td>

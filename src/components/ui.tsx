@@ -148,13 +148,16 @@ function useTight(ref: RefObject<HTMLElement | null>): boolean {
     if (!el.classList.contains('tight')) need.current = el.scrollWidth
     setTight(need.current > el.clientWidth + 1)
   }, [ref])
-  // when the panel changes size
+  // when the panel changes size, and when a table arrives in it later (a list that had to be read first)
   useLayoutEffect(() => {
     const el = ref.current
     if (!el || typeof ResizeObserver === 'undefined') return
     const watch = new ResizeObserver(check)
     watch.observe(el)
-    return () => watch.disconnect()
+    const arrivals = new MutationObserver(check)
+    arrivals.observe(el, { childList: true })
+    if (el.firstElementChild && el.firstElementChild.tagName !== 'TABLE') arrivals.observe(el.firstElementChild, { childList: true })
+    return () => (watch.disconnect(), arrivals.disconnect())
   }, [ref, check])
   // and whenever what is in it is drawn again: more rows, another view
   useLayoutEffect(check)
@@ -174,7 +177,9 @@ export function Panel({ title, icon, right, children, className = '', bodyClass 
           <span className="flex min-w-0 items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-fg">
             <span className="h-3 w-[3px] shrink-0 bg-accent" />
             {icon && <Icon name={icon} size={13} className="text-dim" />}
-            <span className="truncate">{title}</span>
+            <span className="truncate" title={typeof title === "string" ? title : undefined}>
+              {title}
+            </span>
           </span>
           {right}
         </header>
