@@ -66,7 +66,7 @@ async function folderList(): Promise<RemoteSave[]> {
       const file = await (entry as FileSystemFileHandle).getFile()
       // the meta sits at the front of the file; reading it all is still quick
       const data = JSON.parse(await file.text()) as { meta?: RemoteSave['meta']; state?: unknown }
-      if (data.meta && data.state) out.push({ slot: data.meta.slot, meta: data.meta, load: async () => data.state })
+      if (data.meta && data.state && typeof data.meta.slot === 'string' && typeof data.meta.savedAt === 'number') out.push({ slot: data.meta.slot, meta: data.meta, load: async () => data.state })
     } catch {
       /* not one of ours */
     }
@@ -98,34 +98,88 @@ export function cloudConfig(): CloudConfig | null {
   if (env.VITE_SUPABASE_URL && env.VITE_SUPABASE_KEY) return { url: env.VITE_SUPABASE_URL, key: env.VITE_SUPABASE_KEY }
   try {
     const c = JSON.parse(localStorage.getItem(CFG) ?? 'null') as CloudConfig | null
-    return c?.url && c.key ? c : null
+    // an address stored by an older version that no browser would talk to is as good as none
+    return c?.url && c.key && !cloudAddressProblem(c.url, c.key) ? c : null
   } catch {
     return null
   }
 }
 /** True when the project address comes with the game rather than from the player. */
 export const cloudBuiltIn = () => !!(env.VITE_SUPABASE_URL && env.VITE_SUPABASE_KEY)
-export function setCloudConfig(url: string, key: string) {
-  localStorage.setItem(CFG, JSON.stringify({ url: url.trim().replace(/\/+$/, ''), key: key.trim() }))
+/**
+ * Why a project address cannot be used, or null. It must be a web address the
+ * browser will talk to from a page served over https: https itself, or http
+ * on this computer for a project run locally.
+ */
+export function cloudAddressProblem(url: string, key: string): string | null {
+  if (typeof url !== 'string' || typeof key !== 'string' || !url.trim() || !key.trim()) return 'Enter both the project address and its key'
+  let u: URL
+  try {
+    u = new URL(url.trim())
+  } catch {
+    return 'That is not a web address. It should look like https://your-project.supabase.co'
+  }
+  const local = u.hostname === 'localhost' || u.hostname === '127.0.0.1' || u.hostname === '[::1]'
+  if (u.protocol !== 'https:' && !(u.protocol === 'http:' && local)) return 'The project address must begin with https://'
+  if (u.username || u.password) return 'The project address must not contain a user name or password'
+  return null
+}
+/** Remember a project. Returns why not, or null; an address that cannot be used is not stored. */
+export function setCloudConfig(url: string, key: string): string | null {
+  const problem = cloudAddressProblem(url, key)
+  if (problem) return problem
+  try {
+    localStorage.setItem(CFG, JSON.stringify({ url: url.trim().replace(/\/+$/, ''), key: key.trim() }))
+  } catch {
+    return 'The browser will not let the game remember the project (private browsing or blocked site data)'
+  }
+  return null
 }
 const session = (): Session | null => {
   try {
-    return JSON.parse(localStorage.getItem(SES) ?? 'null') as Session | null
+    const s = JSON.parse(localStorage.getItem(SES) ?? 'null') as Session | null
+    return s && typeof s === 'object' && typeof s.access === 'string' && typeof s.expires === 'number' ? s : null
   } catch {
     return null
   }
 }
 export const cloudUser = () => session()?.email ?? null
-export const signOut = () => localStorage.removeItem(SES)
+export const signOut = () => {
+  try {
+    localStorage.removeItem(SES)
+  } catch {
+    /* nothing was stored */
+  }
+}
+
+/** Thrown when the server could not be reached or did not answer as itself: nothing is known about the account either way. */
+class Unreachable extends Error {}
+export const OFFLINE = 'The online save server could not be reached. Check your connection and try again.'
 
 async function auth(path: string, body: object): Promise<Session> {
   const cfg = cloudConfig()
   if (!cfg) throw new Error('Online saves are not set up')
-  const res = await fetch(`${cfg.url}/auth/v1/${path}`, { method: 'POST', headers: { apikey: cfg.key, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-  const data = (await res.json()) as { access_token?: string; refresh_token?: string; expires_in?: number; user?: { email?: string }; msg?: string; error_description?: string; message?: string }
+  let res: Response
+  try {
+    res = await fetch(`${cfg.url}/auth/v1/${path}`, { method: 'POST', headers: { apikey: cfg.key, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  } catch {
+    throw new Unreachable(OFFLINE)
+  }
+  let data: { access_token?: string; refresh_token?: string; expires_in?: number; user?: { email?: string }; msg?: string; error_description?: string; message?: string }
+  try {
+    data = ((await res.json()) ?? {}) as typeof data
+  } catch {
+    // an error page from something in between, not an answer from the project
+    throw new Unreachable(res.status >= 500 ? `The online save server is having trouble (error ${res.status}). Try again in a little while.` : `The project address did not answer like a save server (error ${res.status}). Check the address.`)
+  }
+  if (res.status >= 500) throw new Unreachable(`The online save server is having trouble (error ${res.status}). Try again in a little while.`)
   if (!res.ok || !data.access_token) throw new Error(data.error_description ?? data.msg ?? data.message ?? (res.ok ? 'Check your email to confirm the account, then sign in' : 'Sign-in failed'))
-  const s: Session = { access: data.access_token, refresh: data.refresh_token ?? '', expires: Date.now() + (data.expires_in ?? 3600) * 1000, email: data.user?.email ?? '' }
-  localStorage.setItem(SES, JSON.stringify(s))
+  const s: Session = { access: data.access_token, refresh: data.refresh_token ?? '', expires: Date.now() + (Number.isFinite(data.expires_in) ? data.expires_in! : 3600) * 1000, email: data.user?.email ?? '' }
+  try {
+    localStorage.setItem(SES, JSON.stringify(s))
+  } catch {
+    /* signed in for now; it will not be remembered */
+  }
   return s
 }
 export const signIn = (email: string, password: string) => auth('token?grant_type=password', { email, password })
@@ -137,8 +191,9 @@ async function token(): Promise<string | null> {
   if (s.expires - Date.now() > 60e3) return s.access
   try {
     return (await auth('token?grant_type=refresh_token', { refresh_token: s.refresh })).access
-  } catch {
-    signOut()
+  } catch (e) {
+    // only the server saying the session is over ends it: a train tunnel must not sign anyone out
+    if (!(e instanceof Unreachable)) signOut()
     return null
   }
 }
@@ -148,19 +203,47 @@ async function rest(path: string, init: RequestInit = {}): Promise<Response | nu
   if (!cfg || !t) return null
   return fetch(`${cfg.url}/rest/v1/${path}`, { ...init, headers: { apikey: cfg.key, Authorization: `Bearer ${t}`, 'Content-Type': 'application/json', ...(init.headers ?? {}) } })
 }
+
+/** How the last copy sent to the online account went: when, and what the server said if it refused. */
+export interface SyncStatus {
+  at: number
+  ok: boolean
+  error?: string
+}
+let lastSync: SyncStatus | null = null
+/** The outcome of the most recent online save in this session, or null if none has been tried. */
+export const cloudStatus = (): SyncStatus | null => lastSync
+
 async function cloudWrite(slot: string, file: { meta: object; state: unknown }) {
-  await rest('saves?on_conflict=user_id,slot', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates' }, body: JSON.stringify({ slot, meta: file.meta, state: file.state }) })
+  let res: Response | null
+  try {
+    res = await rest('saves?on_conflict=user_id,slot', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates' }, body: JSON.stringify({ slot, meta: file.meta, state: file.state }) })
+  } catch {
+    lastSync = { at: Date.now(), ok: false, error: OFFLINE }
+    throw new Error(OFFLINE)
+  }
+  // not signed in: there is nothing to report
+  if (!res) return
+  lastSync = res.ok ? { at: Date.now(), ok: true } : { at: Date.now(), ok: false, error: res.status === 413 ? 'This save is too large for the online account' : res.status === 401 || res.status === 403 ? 'The online account refused the save. Sign in again.' : `The online account could not store the save (error ${res.status})` }
+  if (!res.ok) throw new Error(lastSync.error)
+}
+const goodRow = (r: unknown): r is { slot: string; meta: RemoteSave['meta'] } => {
+  const row = r as { slot?: unknown; meta?: RemoteSave['meta'] } | null
+  return !!row && typeof row.slot === 'string' && !!row.meta && typeof row.meta === 'object' && typeof row.meta.savedAt === 'number'
 }
 async function cloudList(): Promise<RemoteSave[]> {
   const res = await rest('saves?select=slot,meta')
   if (!res?.ok) return []
-  const rows = (await res.json()) as { slot: string; meta: RemoteSave['meta'] }[]
-  return rows.map((r) => ({
+  const rows = (await res.json()) as unknown
+  if (!Array.isArray(rows)) return []
+  return rows.filter(goodRow).map((r) => ({
     slot: r.slot,
     meta: r.meta,
     load: async () => {
       const one = await rest(`saves?select=state&slot=eq.${encodeURIComponent(r.slot)}`)
-      return ((await one?.json()) as { state: unknown }[])?.[0]?.state
+      if (!one?.ok) return undefined
+      const found = (await one.json()) as unknown
+      return Array.isArray(found) ? (found[0] as { state?: unknown } | undefined)?.state : undefined
     },
   }))
 }

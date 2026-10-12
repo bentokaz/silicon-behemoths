@@ -13,7 +13,7 @@ import { CONTRACT, buildCost, factoryLine, pendingUnits, supplyPrice } from '../
 import { VARIANTS } from '../sim/rivals'
 import { coverScreen, isCoverCam, isFlip } from '../sim/geometry'
 import { batteryLabel, chargeWatts, chipFor, foldedThickness, panelName } from '../sim/scoring'
-import { type DeviceDesign, type DeviceType, type GameState, type Product, type ProductionOrder, SUBS, SUPPLY_CATS } from '../sim/types'
+import { type DeviceDesign, type DeviceType, type GameState, type Product, type ProductionOrder, SUBS, SUPPLY_CATS, hasStock } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { Icon, type IconName, supplyIcon, typeIcon } from './icons'
 import { MAX_PRICE, MAX_RUN } from './format'
@@ -282,7 +282,7 @@ function Manage({ p }: { p: Product }) {
   return (
     <div className="space-y-3 p-2">
       <div className="grid grid-cols-3 gap-1">
-        <Mini label="In stock" icon="warehouse" value={num(p.stock)} tone={p.stock <= 0 && p.status === 'sale' ? 'text-neg' : 'text-fg'} />
+        <Mini label="In stock" icon="warehouse" value={p.unlimited ? '--' : num(p.stock)} tone={!hasStock(p) && p.status === 'sale' ? 'text-neg' : 'text-fg'} />
         <Mini label="On order" icon="truck" value={num(pending)} />
         <Mini label="Margin / unit" icon="percent" value={money(margin)} tone={margin > 0 ? 'text-pos' : 'text-neg'} />
       </div>

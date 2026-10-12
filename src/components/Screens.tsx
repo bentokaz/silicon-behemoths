@@ -13,7 +13,7 @@ import { REGIONS } from '../sim/regions'
 import { sealedRooms } from '../sim/sites'
 import { staffEffects, unmanaged } from '../sim/staff'
 import { founderStake, marketCap } from '../sim/stock'
-import { COST_KEYS, DEVICE_TYPES, type DeviceType, type GameState, type Product, SUPPLY_CATS, TRACKS, monthCosts } from '../sim/types'
+import { COST_KEYS, DEVICE_TYPES, type DeviceType, type GameState, type Product, SUPPLY_CATS, TRACKS, hasStock, monthCosts } from '../sim/types'
 import { hasType, unlockBlocked, unlockCost } from '../sim/world'
 import { type Tab, useGame, useStore } from '../store/game'
 import { goStep, guideStep } from './Guide'
@@ -458,7 +458,7 @@ export function Market() {
   if (info) {
     let total = OUTSIDE_OPTION
     for (const p of onSale) {
-      const w = p.stock <= 0 ? 0 : attraction(p, companyOf(g, p.companyId), info, g.day)
+      const w = !hasStock(p) ? 0 : attraction(p, companyOf(g, p.companyId), info, g.day)
       weights.set(p.id, w)
       total += w
     }

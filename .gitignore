@@ -5,3 +5,4 @@ dist
 *.diag.test.ts
 balance.out.txt
 *.zip
+soak-*/

@@ -2,28 +2,50 @@
 // All functions mutate the GameState passed in and use only its seeded RNG.
 import { DAYS_PER_MONTH, DAYS_PER_YEAR, MAX_LEVEL, START_YEAR, SUPPLY_LABELS, TRACK_INFO, TRUNK_REQS, featureCost, featureInfo, featuresAtLevels, marketLevel, researchCost } from '../data/catalog'
 import { RIVALS, type RivalSeed, SEGMENTS, TIERS, TYPES, segmentInfo, segmentsOf } from '../data/devices'
-import { BUZZ_DECAY, CHANNELS, EVENTS, EVENT_LEAD, FAN_CYCLE, campaignDay, dailyTickets, eventBlocked, nextFair, productSatisfaction, resolveEvent } from './growth'
+import { BUZZ_DECAY, CHANNELS, EVENTS, EVENT_LEAD, FAN_CYCLE, OWN_VENUE, campaignDay, hasStage, dailyTickets, eventBlocked, nextFair, productSatisfaction, resolveEvent } from './growth'
 import { INCIDENTS } from './world'
-import { RECALL_DEADLINE, TRADE_CREDIT, TRADE_PULL, REFURB_RETURN, UPDATE_YEARS, WARRANTY_YEARS, careBonus, careSatisfaction, checkRecalls, closeCareMonth, newCare, recallCost, stepCare, warrantyLoad } from './care'
+import { RECALL_DEADLINE, TRADE_CREDIT, TRADE_PULL, REFURB_RETURN, UPDATE_YEARS, WARRANTY_YEARS, canRefurb, careBonus, careSatisfaction, checkRecalls, closeCareMonth, newCare, recallCost, stepCare, warrantyLoad } from './care'
 import { type Goal, checkGoals } from './goals'
 import { OUTSIDE_OPTION, bestSegment, launchHype, lifecycle, makeFeedback, makeReviews, priceFactor, pull, segmentDemand, tierAverages, utility } from './market'
 import { DEFAULT_HOME, REGIONS, addAwareness, entryBlocked, homeRegion, newRegion, newRegions, regionIncome, regionInfo, regionOverheads, regionTaste, rivalReach, worldAwareness } from './regions'
 import { buyBack, buyStake, goPublic, holdingIncome, issueShares, monthlyStock, moveSentiment, newStock, raiseRound, sellStake, stakeIn, stakePrice, stepStock, takeoverPrice, valuation } from './stock'
 import { CONTRACT, LOCK_DAYS, LOCK_FEE, buildCost, costNow, factoryLine, marketPrice, newSupply, stepProduction, stepSupply } from './ops'
 import { type VariantId, generateDesign, layoutParts } from './rivals'
-import { INCIDENT_WAIT, STARTUPS, economyNow, typeDemand, hasType, makeOriginal, originalName, priceIndex, rivalStrategy, rollIncident, settleIncident, unlockBlocked, unlockCost } from './world'
+import { INCIDENT_WAIT, PEAK_DAY, STARTUPS, economyNow, typeDemand, hasType, makeOriginal, originalName, priceIndex, rivalStrategy, rollIncident, settleIncident, unlockBlocked, unlockCost } from './world'
 import { clamp, int, pick, rand, range } from './rng'
 import { clampPart, coverScreen, isCoverCam, isFlip } from './geometry'
 import { evaluate, selfieMinDia } from './scoring'
+import { designProblem } from './validate'
 import { bayStands, curveAt, curveTiles, onCurve } from './curves'
-import { FACADES, FLOOR_COST, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, SHORT_WALL, areaOf, areaTiles, autoDoor, builtTiles, canPlace, courtyardFor, curveFor, defaultGround, doorFits, fillError, gridAt, groundsFor, hasGround, inPlot, isBoundary, itemAllowed, itemAt, itemTiles, mergeRooms, newSite, openRooms, pocketAt, roomOf, rowSpots, shapeCuts, starterLine, storeStats, tidy, tierOf, touching, upkeep, wallAt, zone } from './sites'
+import { FACADES, FLOOR_COST, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, SHORT_WALL, UNKNOWN_ITEM, areaOf, areaTiles, autoDoor, builtTiles, canPlace, courtyardFor, curveFor, defaultGround, doorFits, fillError, gridAt, groundsFor, hasGround, inPlot, isBoundary, itemAllowed, itemAt, itemTiles, mergeRooms, newSite, openRooms, pocketAt, roomOf, rowSpots, shapeCuts, starterLine, storeStats, tidy, tierOf, touching, upkeep, venueStats, wallAt, zone } from './sites'
 import { capOfChannel, locked, refreshExecs, siteLocked, stepProgress } from './progress'
-import { EXECS, HEADHUNT_COST, TEAM_SPAN, dropFromTeams, execFx, inTraining, monthlySalaries, monthlyStaff, newPolicy, perksCost, refreshCandidates, staffEffects, stepStaff, trainingCost } from './staff'
+import { EXECS, HEADHUNT_COST, HOURS, TEAM_SPAN, dropFromTeams, execFx, inTraining, monthlySalaries, monthlyStaff, newPolicy, perksCost, refreshCandidates, staffEffects, stepStaff, trainingCost } from './staff'
 import { CHIP_BUDGET, OS_FEATURES, chipAdoption, chipBlocked, chipProjectCost, chipProjectDays, finishChip, newOs, osBlocked, osProjectCost, osProjectDays, osShipQuality, servicesPerMonth, softwareBonus } from './tech'
-import { type ChannelId, type Company, type Corner, type CostKey, type DeviceDesign, type DeviceType, type Difficulty, type EventType, type GameConfig, type GameState, type Levels, type MonthReport, type NewsItem, type Product, type ProductionOrder, type SegmentId, type Site, type SiteKind, type StaffPolicy, type StorageTier, type SupplyCat, TRACKS, type Track, monthCosts } from './types'
+import { stockOf, type ChannelId, type Company, type Corner, type CostKey, type DeviceDesign, type DeviceType, type Difficulty, type EventType, type GameConfig, type GameState, type Levels, type MonthReport, type NewsItem, type Product, type ProductionOrder, type SegmentId, type Site, type SiteKind, type StaffPolicy, type StorageTier, SUPPLY_CATS, type SupplyCat, TRACKS, type Track, dollars, hasStock, millions, monthCosts, thousands, wasReleased } from './types'
 
-export const SAVE_VERSION = 5
+export const SAVE_VERSION = 6
 export const RETAIL_CUT = 0.15
+
+// ---------------------------------------------------------------- what an action will take
+// Every action checks what it is handed before it touches the game: a number
+// that is not a number, an id that names nothing, a name from an object's own
+// plumbing ("constructor") must be refused in words, never written to the state.
+
+/** A real, finite number. */
+const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+/** A whole number. */
+const whole = (v: unknown): v is number => Number.isInteger(v)
+/** True when a table really lists a key, as opposed to inheriting something of that name. */
+const lists = (table: object, key: unknown): boolean => typeof key === 'string' && Object.prototype.hasOwnProperty.call(table, key)
+/** The longest name a device, a team, a chip or an operating system can have. */
+export const MAX_NAME = 40
+/** No device sells for more than this, however the years inflate prices. */
+export const MAX_PRICE = 10e6
+/** The most units one production order can ask for. */
+export const MAX_ORDER = 100e6
+export { dollars, hasStock, stockOf }
+/** True for the id of one of the world's regions. */
+const isRegion = (id: unknown): id is string => typeof id === 'string' && REGIONS.some((r) => r.id === id)
 /** Games licence income a console maker books for each console sold. */
 export const GAME_ROYALTY = 55
 /** The same for a handheld, which sells fewer games, and the services income of a smart speaker. */
@@ -169,7 +191,8 @@ function rivalLaunch(s: GameState, c: Company, segment: SegmentId, backdate = 0)
   const costBased = (product.unitCost / (1 - RETAIL_CUT)) * (1 + TIERS[segment].margin) * c.priceMult
   const refBased = seg.priceRef * priceIndex(s.day) * c.priceMult * 0.95
   product.price = roundPrice(Math.max((product.unitCost * 1.12) / (1 - RETAIL_CUT), 0.5 * costBased + 0.5 * refBased))
-  product.stock = 1e12 // rivals never run out; a finite number keeps saves valid JSON
+  // rivals never run out: said with a flag, not with a huge number that a screen might one day print
+  product.unlimited = true
   release(s, product, c, issues)
   s.day = realDay
   // keep at most two generations on sale per segment; discount the older one
@@ -268,6 +291,7 @@ export function newGame(cfg: GameConfig): GameState {
   RIVALS.forEach((seed, i) => {
     const c = makeCompany(`r${i}`, seed)
     if (!cfg.parody) makeOriginal(c)
+    c.origin = c.name
     s.companies.push(c)
     for (const seg of c.segments) {
       rivalLaunch(s, c, seg, int(s, 20, 330))
@@ -279,7 +303,7 @@ export function newGame(cfg: GameConfig): GameState {
   player(s).awareness = worldAwareness(s)
   refreshCandidates(s)
   stepProgress(s)
-  news(s, 'finance', `${cfg.companyName} is founded with ${cfg.unlimitedMoney ? 'unlimited funds' : '$' + (cfg.startCash / 1e6).toFixed(1) + 'M'}.`)
+  news(s, 'finance', `${cfg.companyName} is founded with ${cfg.unlimitedMoney ? 'unlimited funds' : millions(cfg.startCash)}.`)
   return s
 }
 
@@ -341,28 +365,54 @@ export const isVariantOf = (s: GameState, family: string, type: DeviceType) => o
 
 /** Start developing a device. Returns an error message, or null on success. */
 export function startProduct(s: GameState, o: LaunchOrder): string | null {
+  const problem = designProblem(o?.design)
+  if (problem) return `That is not a device design the game can build: ${problem}. Start again from a fresh design.`
+  const type = o.design.type
+  if (!hasType(s, type)) return `Your company does not make ${TYPES[type].plural.toLowerCase()} yet. Open that line under Research.`
   const ev = evaluate(o.design, s.levels, marketLevel(s.day), s.features, s.chips)
   const blocking = ev.report.issues.find((i) => i.level === 'error')
   if (blocking) return blocking.text
-  if (!hasType(s, o.design.type)) return `Your company does not make ${TYPES[o.design.type].plural.toLowerCase()} yet. Open that line under Research.`
-  if (!o.family.trim()) return 'The device needs a name'
-  if (o.price <= 0) return 'Set a price'
-  const name = productName(o.family, o.variant)
-  if (ownProducts(s).some((p) => p.name === name && p.status !== 'ended')) return `You already have a device called ${name}`
-  if (o.tiers.some((t) => t.price <= o.price || t.storage <= o.design.specs.storage)) return 'Each storage option must hold more and cost more than the base model'
+  // a design whose figures do not come out as numbers cannot be costed, built or sold
+  if (!(ev.unitCost > 0) || !num(ev.unitCost) || !Object.values(ev.raw).every(num) || !num(ev.featureBonus) || !num(ev.report.pct)) return 'This design cannot be built: one of its measurements or parts is not a valid choice. Start again from a fresh design.'
+  const family = typeof o.family === 'string' ? o.family.trim() : ''
+  const variant = typeof o.variant === 'string' ? o.variant.trim() : ''
+  if (!family) return 'The device needs a name'
+  if (family.length > MAX_NAME || variant.length > MAX_NAME) return `Keep the name to ${MAX_NAME} characters or fewer`
+  if (!num(o.price) || o.price < 1) return 'Set a price of at least $1'
+  if (o.price > MAX_PRICE) return `Nobody pays more than ${dollars(MAX_PRICE)} for a device. Set a lower price.`
+  const price = Math.round(o.price)
+  const name = productName(family, variant)
+  if (ownProducts(s).some((p) => p.name === name && p.status !== 'ended')) return `You already have a device called ${name}. Give this one another name, or discontinue the old one first.`
+  if (!Array.isArray(o.tiers) || o.tiers.length > 3) return 'A device can have at most three storage options'
+  const tiers = o.tiers.map((t) => ({ storage: t?.storage, price: Math.round(t?.price) }))
+  if (tiers.some((t) => !num(t.price) || !num(t.storage) || t.price <= price || t.price > MAX_PRICE || t.storage <= o.design.specs.storage)) return 'Each storage option must hold more and cost more than the base model'
+  if (o.mode !== 'contract' && o.mode !== 'factory') return 'Choose who builds it: a contract manufacturer or your own factory'
+  if (!num(o.quantity) || o.quantity < 0) return 'Enter how many to build first: zero or more'
+  if (o.quantity > MAX_ORDER) return `A single production run can be at most ${MAX_ORDER.toLocaleString('en-US')} units`
+  if (!num(o.marketing) || o.marketing < 0) return 'The launch budget cannot be less than zero'
+  if (o.marketing > MAX_CAMPAIGN) return `A launch budget can be at most ${dollars(MAX_CAMPAIGN)}`
   if (o.mode === 'factory' && !factoryLine(s)?.running) return 'Your factory has no working line. Use a contract manufacturer or finish the line.'
-  if (o.keynote !== undefined && locked(s, 'events')) return locked(s, 'events')
-  const plan = devPlan(o.design, s, isVariantOf(s, o.family, o.design.type))
   const venue = o.keynote === undefined ? undefined : EVENTS.keynote.venues[o.keynote]
+  if (o.keynote !== undefined) {
+    // everything that could stop the keynote is settled before any money is spent on the device
+    const lock = locked(s, 'events')
+    if (lock) return lock
+    if (!whole(o.keynote) || !venue) return 'Pick a venue for the keynote'
+    if (o.keynote === OWN_VENUE && !hasStage(s)) return s.venue ? `Your venue is not ready for a keynote. ${venueStats(s.venue).problem ?? ''}`.trim() : 'Build a venue of your own first, or pick a hired one for the keynote'
+  }
+  const plan = devPlan(o.design, s, isVariantOf(s, family, type))
   const total = plan.cost + o.marketing + (venue?.cost ?? 0)
-  if (!canAfford(s, total)) return 'Not enough cash for development and marketing'
+  if (!canAfford(s, total)) {
+    const what = ['development', ...(o.marketing > 0 ? ['the launch budget'] : []), ...(venue ? ['the keynote'] : [])]
+    return `Not enough cash: ${what.length > 1 ? `${what.slice(0, -1).join(', ')} and ${what[what.length - 1]} come` : 'development comes'} to ${dollars(total)}`
+  }
   const c = player(s)
-  const { product } = createProduct(s, c, { name, family: o.family.trim(), variant: o.variant, design: JSON.parse(JSON.stringify(o.design)), price: Math.round(o.price), tiers: o.tiers }, s.levels, true)
+  const { product } = createProduct(s, c, { name, family, variant, design: JSON.parse(JSON.stringify(o.design)), price, tiers }, s.levels, true)
   product.devDaysLeft = plan.days
   product.marketing = o.marketing
   spend(s, plan.cost, 'development')
   spend(s, o.marketing, 'marketing')
-  if (o.quantity > 0) s.orders.push({ id: `q${s.nextId++}`, productId: product.id, quantity: Math.floor(o.quantity), done: 0, mode: o.mode, placedDay: s.day })
+  if (Math.floor(o.quantity) > 0) s.orders.push({ id: `q${s.nextId++}`, productId: product.id, quantity: Math.floor(o.quantity), done: 0, mode: o.mode, placedDay: s.day })
   if (o.keynote !== undefined) {
     const err = scheduleEvent(s, 'keynote', o.keynote, product.id)
     if (err) news(s, 'alert', `No keynote was booked: ${err}`)
@@ -373,9 +423,12 @@ export function startProduct(s: GameState, o: LaunchOrder): string | null {
 
 export function orderProduction(s: GameState, productId: string, quantity: number, mode: ProductionOrder['mode']): string | null {
   const p = s.products.find((x) => x.id === productId)
-  if (!p || p.companyId !== 'player' || p.status === 'ended') return 'Product is not available'
-  if (quantity <= 0) return 'Enter a quantity'
-  if (mode === 'factory' && !factoryLine(s)?.running) return 'Your factory has no working line'
+  if (!p || p.companyId !== 'player') return 'There is no such device of yours to build'
+  if (p.status === 'ended') return `${p.name} has been discontinued, so no more can be ordered`
+  if (!num(quantity) || Math.floor(quantity) < 1) return 'Enter a quantity of at least 1'
+  if (quantity > MAX_ORDER) return `A single production run can be at most ${MAX_ORDER.toLocaleString('en-US')} units`
+  if (mode !== 'contract' && mode !== 'factory') return 'Choose who builds it: a contract manufacturer or your own factory'
+  if (mode === 'factory' && !factoryLine(s)?.running) return 'Your factory has no working line. Use a contract manufacturer or finish the line.'
   s.orders.push({ id: `q${s.nextId++}`, productId, quantity: Math.floor(quantity), done: 0, mode, placedDay: s.day })
   return null
 }
@@ -384,22 +437,29 @@ export function cancelOrder(s: GameState, orderId: string) {
   s.orders = s.orders.filter((o) => o.id !== orderId)
 }
 
-export function setPrice(s: GameState, productId: string, price: number) {
+/** Change what a device sells for. Returns why not, or null. */
+export function setPrice(s: GameState, productId: string, price: number): string | null {
   const p = s.products.find((x) => x.id === productId)
-  if (!p || p.companyId !== 'player' || price <= 0) return
+  if (!p || p.companyId !== 'player') return 'There is no such device of yours to price'
+  if (!num(price) || Math.round(price) < 1) return 'Set a price of at least $1'
+  if (price > MAX_PRICE) return `Nobody pays more than ${dollars(MAX_PRICE)} for a device. Set a lower price.`
   const delta = Math.round(price) - p.price
   p.price = Math.round(price)
   // storage options keep their step above the base price
   for (const t of p.tiers) t.price += delta
+  return null
 }
+
+export { wasReleased }
 
 export function discontinue(s: GameState, productId: string) {
   const p = s.products.find((x) => x.id === productId)
   if (p && p.companyId === 'player' && p.status !== 'ended') {
+    const shelved = p.status === 'dev'
     endProduct(s, p)
     s.orders = s.orders.filter((o) => o.productId !== p.id)
     s.campaigns = s.campaigns.filter((c) => c.target !== p.id)
-    news(s, 'launch', `${p.name} was discontinued with ${p.stock.toLocaleString()} units unsold.`, p.id)
+    news(s, 'launch', shelved ? `Development of ${p.name} was cancelled. It never went on sale.` : `${p.name} was discontinued with ${p.stock.toLocaleString('en-US')} units unsold.`, p.id)
   }
 }
 
@@ -461,7 +521,11 @@ export function trunkBlocked(s: GameState, t: Track, level: number): string | un
   return undefined
 }
 
+/** True for the id of something that can be researched: a track, or 'f:' and a feature. */
+export const isResearchId = (id: unknown): id is string => typeof id === 'string' && ((TRACKS as string[]).includes(id) || (id.startsWith('f:') && !!featureInfo(id.slice(2))))
+
 export function researchItem(s: GameState, id: string): ResearchItem {
+  if (!isResearchId(id)) return { id: String(id), name: 'Unknown project', cost: 0, done: false, available: false, blocked: 'There is no such research project' }
   if (id.startsWith('f:')) {
     const f = featureInfo(id.slice(2))!
     const done = s.features.includes(f.id)
@@ -484,9 +548,17 @@ export function toggleResearch(s: GameState, id: string): string | null {
   const lock = locked(s, 'research')
   if (lock) return lock
   const item = researchItem(s, id)
-  if (item.done) return 'Already researched'
+  if (item.done) return id.startsWith('f:') ? `${item.name} is already researched` : `${item.name} is at its highest level`
   if (!item.available) return item.blocked ?? 'Not available yet'
   s.activeResearch.push(id)
+  return null
+}
+
+/** Set what research gets each month. Returns why not, or null. */
+export function setResearchBudget(s: GameState, monthly: number): string | null {
+  if (!num(monthly) || monthly < 0) return 'A research budget is zero or more a month'
+  if (monthly > MAX_CAMPAIGN) return `A research budget can be at most ${dollars(MAX_CAMPAIGN)} a month`
+  s.rdBudget = Math.round(monthly)
   return null
 }
 
@@ -494,8 +566,8 @@ export function toggleResearch(s: GameState, id: string): string | null {
 
 export function hire(s: GameState, candidateId: string): string | null {
   const c = s.candidates.find((e) => e.id === candidateId)
-  if (!c) return 'That candidate is gone'
-  if (!canAfford(s, c.salary)) return 'Not enough cash for the signing bonus'
+  if (!c) return 'That applicant is no longer available. New applicants arrive every month.'
+  if (!canAfford(s, c.salary)) return `Not enough cash for the signing bonus of ${dollars(c.salary)}`
   spend(s, c.salary, 'salaries')
   s.candidates = s.candidates.filter((e) => e !== c)
   s.staff.push({ ...c, hiredDay: s.day })
@@ -506,11 +578,11 @@ export function hire(s: GameState, candidateId: string): string | null {
 /** Give someone from the executive shortlist their seat. One person holds each seat. */
 export function hireExec(s: GameState, candidateId: string): string | null {
   const c = s.execPool.find((e) => e.id === candidateId)
-  if (!c || !c.exec) return 'That candidate is gone'
+  if (!c || !c.exec) return 'That candidate is no longer on the shortlist. It is drawn up afresh every month.'
   const lock = locked(s, 'execs')
   if (lock) return lock
   if (s.staff.some((e) => e.exec === c.exec)) return `You already have a ${EXECS[c.exec].title}`
-  if (!canAfford(s, c.salary)) return 'Not enough cash for the signing bonus'
+  if (!canAfford(s, c.salary)) return `Not enough cash for the signing bonus of ${dollars(c.salary)}`
   spend(s, c.salary, 'salaries')
   s.execPool = s.execPool.filter((e) => e.exec !== c.exec)
   s.staff.push({ ...c, hiredDay: s.day })
@@ -524,35 +596,47 @@ export function fire(s: GameState, employeeId: string) {
   dropFromTeams(s, employeeId)
 }
 
+/** A name as it will be kept: trimmed, and cut to the longest a name may be. */
+const named = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, MAX_NAME) : '')
+
+/** The most teams a company keeps: more than any org chart needs, and few enough to list. */
+export const MAX_TEAMS = 60
+
+/** Start a team. Returns its id, or '' if teams are not open yet or there are already as many as a company can keep. */
 export function createTeam(s: GameState, name: string): string {
-  if (locked(s, 'teams')) return ''
+  if (locked(s, 'teams') || s.teams.length >= MAX_TEAMS) return ''
   const id = `t${s.nextId++}`
-  s.teams.push({ id, name: name.trim() || `Team ${s.teams.length + 1}`, members: [] })
+  s.teams.push({ id, name: named(name) || `Team ${s.teams.length + 1}`, members: [] })
   return id
 }
 
 export function renameTeam(s: GameState, teamId: string, name: string) {
   const t = s.teams.find((x) => x.id === teamId)
-  if (t && name.trim()) t.name = name.trim()
+  if (t && named(name)) t.name = named(name)
 }
 
 export function deleteTeam(s: GameState, teamId: string) {
   s.teams = s.teams.filter((t) => t.id !== teamId)
 }
 
-/** Put someone in a team (or take them out of any, with null). */
+/** Put someone in a team (or take them out of any, with null). Asking for a team that does not exist changes nothing. */
 export function assignTeam(s: GameState, employeeId: string, teamId: string | null) {
   if (!s.staff.some((e) => e.id === employeeId) || (teamId && locked(s, 'teams'))) return
+  const t = teamId ? s.teams.find((x) => x.id === teamId) : undefined
+  if (teamId && !t) return
   dropFromTeams(s, employeeId)
-  const t = s.teams.find((x) => x.id === teamId)
   if (t) t.members.push(employeeId)
 }
 
+/** Name a team's lead (or leave it without one, with undefined). Someone from outside the team joins it. */
 export function setLead(s: GameState, teamId: string, employeeId: string | undefined) {
   const t = s.teams.find((x) => x.id === teamId)
   if (!t) return
+  if (employeeId !== undefined && !s.staff.some((e) => e.id === employeeId)) return
   if (employeeId && !t.members.includes(employeeId)) assignTeam(s, employeeId, teamId)
-  t.leadId = employeeId
+  // nobody leads a team they are not in (they could not join it while teams are locked)
+  if (employeeId && !t.members.includes(employeeId)) return
+  t.leadId = employeeId || undefined
 }
 
 /** Sort everyone into teams by role, a lead's span at a time, led by whoever suits it best. */
@@ -580,15 +664,21 @@ export function autoTeams(s: GameState): string | null {
 export function setPolicy(s: GameState, patch: Partial<StaffPolicy>): string | null {
   const lock = locked(s, 'people')
   if (lock) return lock
+  if (patch.hours !== undefined && !lists(HOURS, patch.hours)) return 'Working hours are relaxed, standard or crunch'
+  if (patch.perks !== undefined && !num(patch.perks)) return 'Perks run from 0 (none) to 3 (lavish)'
   if (patch.hours) s.policy.hours = patch.hours
   if (patch.perks !== undefined) s.policy.perks = clamp(Math.round(patch.perks), 0, 3)
   return null
 }
 
+/** The most anyone can be paid a month. */
+export const MAX_SALARY = 5e6
+
+/** Raise someone's pay: to a figure, or to what they are asking, or by 8%. A figure at or below what they earn changes nothing. */
 export function giveRaise(s: GameState, employeeId: string, salary?: number) {
   const e = s.staff.find((x) => x.id === employeeId)
-  if (!e) return
-  const to = Math.round((salary ?? e.ask ?? e.salary * 1.08) / 50) * 50
+  if (!e || (salary !== undefined && !num(salary))) return
+  const to = Math.min(MAX_SALARY, Math.round((salary ?? e.ask ?? e.salary * 1.08) / 50) * 50)
   if (to <= e.salary) return
   e.morale = Math.min(100, e.morale + 12)
   e.salary = to
@@ -605,20 +695,20 @@ export function declineRaise(s: GameState, employeeId: string) {
 
 export function train(s: GameState, employeeId: string): string | null {
   const e = s.staff.find((x) => x.id === employeeId)
-  if (!e) return 'No such employee'
+  if (!e) return 'That person no longer works here'
   const lock = locked(s, 'people')
   if (lock) return lock
-  if (inTraining(e, s.day)) return 'Already on a course'
-  if (e.skill >= e.potential) return `${e.name} has reached their potential`
+  if (inTraining(e, s.day)) return `${e.name} is already on a course until ${fmtDate(e.trainingUntil!)}`
+  if (e.skill >= e.potential) return `${e.name} has reached their potential: a course would teach them nothing more`
   const cost = trainingCost(e)
-  if (!canAfford(s, cost)) return 'Not enough cash'
+  if (!canAfford(s, cost)) return `Not enough cash: the course costs ${dollars(cost)}`
   spend(s, cost, 'salaries')
   e.trainingUntil = s.day + 30
   return null
 }
 
 export function headhunt(s: GameState): string | null {
-  if (!canAfford(s, HEADHUNT_COST)) return 'Not enough cash'
+  if (!canAfford(s, HEADHUNT_COST)) return `Not enough cash: a headhunter charges ${dollars(HEADHUNT_COST)}`
   spend(s, HEADHUNT_COST, 'salaries')
   refreshCandidates(s, 15)
   return null
@@ -655,6 +745,8 @@ export interface ZonePlan {
   filled: boolean
   /** Open tiles in the curved courtyard a box lies in, or 0 where it lies in none: a box across half of them or more takes them all. */
   yard: number
+  /** True when there is nothing to build because the area lies wholly outside the plot (as opposed to on land already built on). */
+  offPlot?: boolean
 }
 
 /**
@@ -666,11 +758,19 @@ export interface ZonePlan {
 export function zonePlan(site: Site, x0: number, y0: number, x1: number, y1: number, shape: Shape = 'rect', opts?: ShapeOpts): ZonePlan {
   const tiles = zoneable(site, x0, y0, x1, y1, shape, opts)
   const curve = curveFor(x0, y0, x1, y1, shape, opts)
-  if (curve) return { tiles, curve, area: tiles.length ? zoneArea(site, x0, y0, x1, y1, shape, opts) : 0, filled: false, yard: 0 }
+  const offPlot = !tiles.length && !areaTiles(x0, y0, x1, y1, shape, opts, true).some(([x, y]) => inPlot(site, x, y))
+  if (curve) return { tiles, curve, area: tiles.length ? zoneArea(site, x0, y0, x1, y1, shape, opts) : 0, filled: false, yard: 0, offPlot }
   const yard = shape === 'rect' ? courtyardFor(site, tiles) : null
   const took = yard?.whole ? yard.tiles : tiles
-  return { tiles: took, curve: null, area: took.length, filled: !!yard?.whole, yard: yard?.tiles.length ?? 0 }
+  return { tiles: took, curve: null, area: took.length, filled: !!yard?.whole, yard: yard?.tiles.length ?? 0, offPlot }
 }
+
+/** What an action answers when it is pointed at a plot the company does not have. */
+const NO_SITE = 'There is no such plot to build on'
+const OFF_PLOT = 'That is off the plot'
+const SHAPES: Shape[] = ['rect', 'round', 'ring', 'diag']
+/** True when the tiles an action names are ones a player could have pointed at: whole numbers, on the plot or within a plot's width of it. */
+const near = (site: Site, ...xy: number[]) => xy.every((v, i) => whole(v) && v >= -(i % 2 ? site.h : site.w) && v < 2 * (i % 2 ? site.h : site.w))
 
 /**
  * Builds a room on a set of open tiles, charged for: clears and sells what
@@ -682,7 +782,7 @@ function raise(s: GameState, site: Site, type: string, tiles: [number, number][]
   const start = !apart && into !== undefined ? roomOf(site, into) : undefined
   if (start?.type === type && !joined.includes(start.n)) joined.push(start.n)
   joined.sort((a, b) => a - b)
-  if (!canAfford(s, cost)) return `Not enough cash: that would cost $${cost.toLocaleString()}`
+  if (!canAfford(s, cost)) return `Not enough cash: that would cost ${dollars(cost)}`
   spend(s, cost, siteBucket(site))
   // trees, benches and anything else standing on the land are cleared and sold on
   const taken = new Set(tiles.map(([x, y]) => `${x},${y}`))
@@ -718,12 +818,14 @@ function raise(s: GameState, site: Site, type: string, tiles: [number, number][]
  */
 export function zoneRoom(s: GameState, ref: string, type: string, x0: number, y0: number, x1: number, y1: number, shape: Shape = 'rect', into?: number, opts?: ShapeOpts, apart = false): string | null {
   const site = siteOf(s, ref)
-  if (!site) return 'Nothing to build on'
-  if (!ROOMS[site.kind][type]) return 'Unknown room'
+  if (!site) return NO_SITE
+  if (!lists(ROOMS[site.kind], type)) return 'There is no such kind of room for this plot'
+  if (!SHAPES.includes(shape)) return 'A room is drawn as a box, a round, a ring or a diagonal'
+  if (!near(site, x0, y0, x1, y1)) return OFF_PLOT
   const lock = siteLocked(s, site.kind, 'room', type)
   if (lock) return lock
   const plan = zonePlan(site, x0, y0, x1, y1, shape, opts)
-  if (!plan.tiles.length) return 'That land is already built on'
+  if (!plan.tiles.length) return plan.offPlot ? OFF_PLOT : 'That land is already built on. Clear it first, or mark the room out on open ground.'
   // diagonal rooms get their stepped edges cut to 45 degrees; round ones keep their true curve
   const cuts = shape === 'diag' ? shapeCuts(areaTiles(x0, y0, x1, y1, shape)) : {}
   return raise(s, site, type, plan.tiles, roomCost(site, type, plan.area), into, apart, cuts, plan.curve)
@@ -738,8 +840,9 @@ export function zoneRoom(s: GameState, ref: string, type: string, x0: number, y0
  */
 export function fillRoom(s: GameState, ref: string, type: string, x: number, y: number, apart = false): string | null {
   const site = siteOf(s, ref)
-  if (!site) return 'Nothing to build on'
-  if (!ROOMS[site.kind][type]) return 'Unknown room'
+  if (!site) return NO_SITE
+  if (!lists(ROOMS[site.kind], type)) return 'There is no such kind of room for this plot'
+  if (!whole(x) || !whole(y) || !inPlot(site, x, y)) return OFF_PLOT
   const lock = siteLocked(s, site.kind, 'room', type)
   if (lock) return lock
   const pocket = pocketAt(site, x, y)
@@ -751,7 +854,13 @@ export function fillRoom(s: GameState, ref: string, type: string, x: number, y: 
 /** Knock down every room tile in an area. Anything inside is sold for half its price. */
 export function clearZone(s: GameState, ref: string, x0: number, y0: number, x1: number, y1: number, shape: Shape = 'rect', opts?: ShapeOpts) {
   const site = siteOf(s, ref)
-  if (!site) return
+  if (!site || !SHAPES.includes(shape)) return
+  if (shape === 'rect') {
+    // a box may be dragged as far off the plot as anyone likes: only the part on it counts
+    if (![x0, y0, x1, y1].every(num)) return
+    ;[x0, x1] = [clamp(Math.round(Math.min(x0, x1)), -1, site.w), clamp(Math.round(Math.max(x0, x1)), -1, site.w)]
+    ;[y0, y1] = [clamp(Math.round(Math.min(y0, y1)), -1, site.h), clamp(Math.round(Math.max(y0, y1)), -1, site.h)]
+  } else if (!near(site, x0, y0, x1, y1)) return
   const hit = new Set(areaTiles(x0, y0, x1, y1, shape, opts).filter(([x, y]) => gridAt(site, x, y)).map(([x, y]) => `${x},${y}`))
   if (!hit.size) return
   let back = 0
@@ -790,20 +899,26 @@ export function removeRoom(s: GameState, ref: string, room: number) {
 export function setRoomStyle(s: GameState, ref: string, room: number, style: number) {
   const site = siteOf(s, ref)
   const r = site && roomOf(site, room)
-  if (!site || !r || !ROOMS[site.kind][r.type].styles[style]) return
+  if (!site || !r || !whole(style) || !ROOMS[site.kind][r.type]?.styles[style]) return
   r.style = style
   site.rev++
 }
 
 export const EDGE_COST = { wall: 0, open: 0, glass: 120, door: 300 }
+const WALL_KINDS = 'A stretch of wall can be plain wall, glass, a door or an opening'
+const NO_WALL = 'There is no wall there: walls stand where a room meets another room or open ground'
+/** True for something that names the north or west edge of a tile on or beside the plot. */
+const isEdge = (site: Site, x: unknown, y: unknown, side: unknown) => whole(x) && whole(y) && (side === 'n' || side === 'w') && x >= 0 && y >= 0 && x <= site.w && y <= site.h
 /** Change one stretch of wall to glass, a door or an opening, or back to plain wall. */
 export function setEdge(s: GameState, ref: string, x: number, y: number, side: 'n' | 'w', kind: 'wall' | 'glass' | 'door' | 'open'): string | null {
   const site = siteOf(s, ref)
-  if (!site) return 'Nothing to build on'
-  if (!isBoundary(site, x, y, side)) return 'There is no wall there'
+  if (!site) return NO_SITE
+  if (!lists(EDGE_COST, kind)) return WALL_KINDS
+  if (!isEdge(site, x, y, side) || !isBoundary(site, x, y, side)) return NO_WALL
   if ((kind === 'door' || kind === 'open') && !doorFits(site, x, y, side)) return SHORT_WALL
+  if ((wallAt(site, x, y, side)?.kind ?? 'wall') === kind) return null
   const cost = EDGE_COST[kind]
-  if (!canAfford(s, cost)) return 'Not enough cash'
+  if (!canAfford(s, cost)) return `Not enough cash: that costs ${dollars(cost)}`
   spend(s, cost, siteBucket(site))
   site.walls = site.walls.filter((w) => !(w.x === x && w.y === y && w.side === side))
   if (kind !== 'wall') site.walls.push({ id: `w${s.nextId++}`, x, y, side, kind })
@@ -814,11 +929,13 @@ export function setEdge(s: GameState, ref: string, x: number, y: number, side: '
 /** The same for one bay of a curved wall: `curve` is its place in the site's list, `bay` the stretch (see sim/curves.ts). */
 export function setCurveEdge(s: GameState, ref: string, curve: number, bay: string, kind: 'wall' | 'glass' | 'door' | 'open'): string | null {
   const site = siteOf(s, ref)
-  if (!site) return 'Nothing to build on'
-  const c = site.curves?.[curve]
-  if (!c || !bayStands(site, curve, bay)) return 'There is no wall there'
+  if (!site) return NO_SITE
+  if (!lists(EDGE_COST, kind)) return WALL_KINDS
+  const c = whole(curve) ? site.curves?.[curve] : undefined
+  if (!c || typeof bay !== 'string' || !bayStands(site, curve, bay)) return NO_WALL
+  if ((c.walls?.[bay] ?? 'wall') === kind) return null
   const cost = EDGE_COST[kind]
-  if (!canAfford(s, cost)) return 'Not enough cash'
+  if (!canAfford(s, cost)) return `Not enough cash: that costs ${dollars(cost)}`
   spend(s, cost, siteBucket(site))
   if (kind === 'wall') {
     if (c.walls) delete c.walls[bay]
@@ -863,7 +980,9 @@ export const keepsDoors = (kind: 'wall' | 'glass' | 'door' | 'open', stretches: 
 export function setEdges(s: GameState, ref: string, run: WallRun, kind: 'wall' | 'glass' | 'door' | 'open'): RunResult {
   const out: RunResult = { done: 0, skipped: 0, short: 0, cost: 0, error: null }
   const site = siteOf(s, ref)
-  if (!site) return { ...out, error: 'Nothing to build on' }
+  if (!site) return { ...out, error: NO_SITE }
+  if (!lists(EDGE_COST, kind)) return { ...out, error: WALL_KINDS }
+  run = { edges: Array.isArray(run?.edges) ? run.edges : [], curve: whole(run?.curve) ? run.curve : undefined, bays: Array.isArray(run?.bays) ? run.bays.filter((b) => typeof b === 'string') : [] }
   const price = EDGE_COST[kind]
   let same = 0
   const keepDoors = keepsDoors(kind, (run.edges?.length ?? 0) + (run.bays?.length ?? 0))
@@ -885,8 +1004,11 @@ export function setEdges(s: GameState, ref: string, run: WallRun, kind: 'wall' |
   const way = kind === 'door' || kind === 'open'
   const curved = way && site.curves?.length ? curveTiles(site) : undefined
   let cutShort = 0
+  const done = new Set<string>()
   for (const e of run.edges ?? []) {
-    if (!isBoundary(site, e.x, e.y, e.side)) {
+    // a stretch named twice in one run is changed, and paid for, once
+    const key = `${e?.x},${e?.y},${e?.side}`
+    if (!e || !isEdge(site, e.x, e.y, e.side) || done.has(key) || !isBoundary(site, e.x, e.y, e.side)) {
       out.skipped++
       continue
     }
@@ -895,6 +1017,7 @@ export function setEdges(s: GameState, ref: string, run: WallRun, kind: 'wall' |
       cutShort++
       continue
     }
+    done.add(key)
     if (!pay(wallAt(site, e.x, e.y, e.side)?.kind ?? 'wall')) continue
     site.walls = site.walls.filter((w) => !(w.x === e.x && w.y === e.y && w.side === e.side))
     if (kind !== 'wall') site.walls.push({ id: `w${s.nextId++}`, x: e.x, y: e.y, side: e.side, kind })
@@ -910,8 +1033,8 @@ export function setEdges(s: GameState, ref: string, run: WallRun, kind: 'wall' |
     else (c.walls ??= {})[bay] = kind
   }
   if (out.done) site.rev++
-  if (out.short) out.error = out.done ? `Changed ${out.done} of ${out.done + out.short}: not enough cash for the rest` : 'Not enough cash'
-  else if (!out.done && !same) out.error = cutShort ? SHORT_WALL : 'There is no wall there'
+  if (out.short) out.error = out.done ? `Changed ${out.done} of ${out.done + out.short}: not enough cash for the rest` : `Not enough cash: each stretch costs ${dollars(price)}`
+  else if (!out.done && !same) out.error = cutShort ? SHORT_WALL : NO_WALL
   return out
 }
 
@@ -927,12 +1050,13 @@ export function lookCost(site: Site, look: { facade?: number; roof?: number; flo
 
 export function setLook(s: GameState, ref: string, look: { facade?: number; roof?: number; floors?: number }): string | null {
   const site = siteOf(s, ref)
-  if (!site) return 'Nothing to build on'
-  if (look.facade !== undefined && !FACADES[look.facade]) return 'Unknown cladding'
-  if (look.roof !== undefined && !ROOFS[look.roof]) return 'Unknown roof'
-  if (look.floors !== undefined && (look.floors < 1 || look.floors > MAX_FLOORS)) return `A building can have 1 to ${MAX_FLOORS} floors`
+  if (!site) return NO_SITE
+  if (!look || typeof look !== 'object') return 'Choose a cladding, a roof or a number of floors'
+  if (look.facade !== undefined && (!whole(look.facade) || !FACADES[look.facade])) return 'There is no such cladding'
+  if (look.roof !== undefined && (!whole(look.roof) || !ROOFS[look.roof])) return 'There is no such roof'
+  if (look.floors !== undefined && (!whole(look.floors) || look.floors < 1 || look.floors > MAX_FLOORS)) return `A building can have 1 to ${MAX_FLOORS} floors`
   const cost = lookCost(site, look)
-  if (!canAfford(s, cost)) return `Not enough cash: that would cost $${cost.toLocaleString()}`
+  if (!canAfford(s, cost)) return `Not enough cash: that would cost ${dollars(cost)}`
   spend(s, cost, siteBucket(site))
   if (look.facade !== undefined) site.facade = look.facade
   if (look.roof !== undefined) site.roof = look.roof
@@ -941,14 +1065,17 @@ export function setLook(s: GameState, ref: string, look: { facade?: number; roof
   return null
 }
 
+/** A rotation as 0 to 3 quarter turns, whatever was asked for. */
+const quarterTurns = (rot: number) => (num(rot) ? ((Math.round(rot) % 4) + 4) % 4 : 0)
+
 export function placeItem(s: GameState, ref: string, kind: string, x: number, y: number, rot: number): string | null {
   const site = siteOf(s, ref)
-  if (!site) return 'Nothing to build on'
-  const turn = ((rot % 4) + 4) % 4
+  if (!site) return NO_SITE
+  const turn = quarterTurns(rot)
   const err = canPlace(site, kind, x, y, turn) ?? siteLocked(s, site.kind, 'item', kind)
   if (err) return err
   const cost = ITEMS[site.kind][kind].cost
-  if (!canAfford(s, cost)) return 'Not enough cash'
+  if (!canAfford(s, cost)) return `Not enough cash: that costs ${dollars(cost)}`
   spend(s, cost, siteBucket(site))
   site.items.push({ id: `o${s.nextId++}`, kind, x, y, rot: turn })
   site.rev++
@@ -964,12 +1091,13 @@ export function placeItem(s: GameState, ref: string, kind: string, x: number, y:
 export function placeItems(s: GameState, ref: string, kind: string, x0: number, y0: number, x1: number, y1: number, rot: number): RunResult {
   const out: RunResult = { done: 0, skipped: 0, short: 0, cost: 0, error: null }
   const site = siteOf(s, ref)
-  if (!site) return { ...out, error: 'Nothing to build on' }
+  if (!site) return { ...out, error: NO_SITE }
+  if (!lists(ITEMS[site.kind], kind)) return { ...out, error: UNKNOWN_ITEM }
   const def = ITEMS[site.kind][kind]
-  if (!def) return { ...out, error: 'Unknown item' }
+  if (!near(site, x0, y0, x1, y1)) return { ...out, error: OFF_PLOT }
   const lock = siteLocked(s, site.kind, 'item', kind)
   if (lock) return { ...out, error: lock }
-  const turn = ((rot % 4) + 4) % 4
+  const turn = quarterTurns(rot)
   let why: string | null = null
   for (const [x, y] of rowSpots(def, x0, y0, x1, y1, turn)) {
     const err = canPlace(site, kind, x, y, turn)
@@ -985,7 +1113,7 @@ export function placeItems(s: GameState, ref: string, kind: string, x0: number, 
     }
   }
   if (out.done) site.rev++
-  if (out.short) out.error = out.done ? `Placed ${out.done} of ${out.done + out.short}: not enough cash for the rest` : 'Not enough cash'
+  if (out.short) out.error = out.done ? `Placed ${out.done} of ${out.done + out.short}: not enough cash for the rest` : `Not enough cash: each one costs ${dollars(def.cost)}`
   else if (!out.done) out.error = why
   return out
 }
@@ -994,8 +1122,8 @@ export function placeItems(s: GameState, ref: string, kind: string, x0: number, 
 export function removeItems(s: GameState, ref: string, itemIds: string[]): RunResult {
   const out: RunResult = { done: 0, skipped: 0, short: 0, cost: 0, error: null }
   const site = siteOf(s, ref)
-  if (!site) return { ...out, error: 'Nothing to build on' }
-  const ids = new Set(itemIds)
+  if (!site) return { ...out, error: NO_SITE }
+  const ids = new Set(Array.isArray(itemIds) ? itemIds : [])
   site.items = site.items.filter((it) => {
     if (!ids.has(it.id)) return true
     out.cost += (ITEMS[site.kind][it.kind]?.cost ?? 0) / 2
@@ -1037,7 +1165,7 @@ export function rotateItem(s: GameState, ref: string, itemId: string): string | 
 /** Lay a ground finish on open land. Free. */
 export function paintFloor(s: GameState, ref: string, x: number, y: number, groundId: string) {
   const site = siteOf(s, ref)
-  if (!site || !hasGround(site, x, y) || (groundId === 'water' && gridAt(site, x, y))) return
+  if (!site || !whole(x) || !whole(y) || !hasGround(site, x, y) || (groundId === 'water' && gridAt(site, x, y))) return
   if (!groundsFor(site).some((g) => g.id === groundId)) return
   // the finish the plot starts with is not stored: it is whatever is left when nothing else is laid
   if (groundId === defaultGround(site).id) delete site.floor[`${x},${y}`]
@@ -1048,7 +1176,7 @@ export function paintFloor(s: GameState, ref: string, x: number, y: number, grou
 /** Lay a ground finish over an area of open land. */
 export function paintArea(s: GameState, ref: string, x0: number, y0: number, x1: number, y1: number, shape: Shape, groundId: string, opts?: ShapeOpts) {
   const site = siteOf(s, ref)
-  if (!site || !groundsFor(site).some((g) => g.id === groundId)) return
+  if (!site || !groundsFor(site).some((g) => g.id === groundId) || !SHAPES.includes(shape) || !near(site, x0, y0, x1, y1)) return
   const lay = ([x, y]: [number, number]) => {
     if (groundId === defaultGround(site).id) delete site.floor[`${x},${y}`]
     else site.floor[`${x},${y}`] = groundId
@@ -1089,11 +1217,16 @@ function transplant(old: Site, site: Site, dx: number, dy: number) {
   }
   // curved outlines move with their rooms: the centre, and the tiles noted as squared off
   if (old.curves?.length) {
-    const shift = (key: string) => {
+    // a squared-off tile that the room has since given up may fall outside a smaller plot: it is left behind
+    const shift = (key: string): string | null => {
       const [x, y] = key.split(',').map(Number)
-      return `${x + dx},${y + dy}`
+      return inPlot(site, x + dx, y + dy) ? `${x + dx},${y + dy}` : null
     }
-    site.curves = old.curves.map((c) => ({ ...c, cx: c.cx + dx, cy: c.cy + dy, ...(c.walls ? { walls: { ...c.walls } } : {}), ...(c.square ? { square: Object.fromEntries(Object.keys(c.square).map((k) => [shift(k), 1 as const])) } : {}) }))
+    site.curves = old.curves.map((c) => {
+      const square = Object.keys(c.square ?? {}).map(shift).filter((k): k is string => k !== null)
+      const { square: _was, ...rest } = c
+      return { ...rest, cx: c.cx + dx, cy: c.cy + dy, ...(c.walls ? { walls: { ...c.walls } } : {}), ...(square.length ? { square: Object.fromEntries(square.map((k) => [k, 1 as const])) } : {}) }
+    })
   }
   site.facade = old.facade
   site.roof = old.roof
@@ -1209,7 +1342,7 @@ function layoutPlan(s: GameState, from: Site, to: Site, charge = true): LayoutQu
   const build = layoutValue(site, { facade: to.facade, roof: to.roof, floors: to.floors })
   const resale = to.items.reduce((a, it) => a + (ITEMS[to.kind][it.kind]?.cost ?? 0) / 2, 0)
   const cost = build - resale
-  const error = charge && cost > 0 && !canAfford(s, cost) ? `Not enough cash: copying that layout here costs $${Math.round(cost).toLocaleString()}` : null
+  const error = charge && cost > 0 && !canAfford(s, cost) ? `Not enough cash: copying that layout here costs ${dollars(cost)}` : null
   return { error, needs, build, resale, cost, same: false, site }
 }
 
@@ -1219,7 +1352,7 @@ const storeOf = (s: GameState, id: string) => s.stores.find((st) => st.id === id
 export function layoutQuote(s: GameState, fromId: string, toId: string): LayoutQuote {
   const from = storeOf(s, fromId)
   const to = storeOf(s, toId)
-  const none: LayoutQuote = { error: 'No such store', needs: [0, 0], build: 0, resale: 0, cost: 0, same: false }
+  const none: LayoutQuote = { error: 'There is no such store', needs: [0, 0], build: 0, resale: 0, cost: 0, same: false }
   if (!from || !to) return none
   if (from === to) return { ...none, error: 'That is this store' }
   const { site: _site, ...quote } = layoutPlan(s, from.site, to.site)
@@ -1229,7 +1362,7 @@ export function layoutQuote(s: GameState, fromId: string, toId: string): LayoutQ
 /** The same for a store not yet opened, on a bare plot of the given tier. The plot itself is charged on top. */
 export function newLayoutQuote(s: GameState, fromId: string, tier: number): LayoutQuote {
   const from = storeOf(s, fromId)
-  if (!from || !SITE_TIERS.store[tier]) return { error: 'No such store', needs: [0, 0], build: 0, resale: 0, cost: 0, same: false }
+  if (!from || !SITE_TIERS.store[tier]) return { error: 'There is no such store', needs: [0, 0], build: 0, resale: 0, cost: 0, same: false }
   const { site: _site, ...quote } = layoutPlan(s, from.site, newSite('store', tier), false)
   return quote
 }
@@ -1256,8 +1389,8 @@ export const SAME_LAYOUT = 'These two stores already have the same layout: there
 export function copyLayout(s: GameState, fromId: string, toId: string): string | null {
   const from = storeOf(s, fromId)
   const to = storeOf(s, toId)
-  if (!from || !to) return 'No such store'
-  if (from === to) return 'That is this store'
+  if (!from || !to) return 'There is no such store'
+  if (from === to) return 'That is this store: pick another one to copy'
   const plan = layoutPlan(s, from.site, to.site)
   if (plan.error || !plan.site) return plan.error ?? 'That layout cannot be copied'
   if (plan.same) return SAME_LAYOUT
@@ -1273,7 +1406,7 @@ export function copyLayout(s: GameState, fromId: string, toId: string): string |
 export function upgradeOffice(s: GameState): string | null {
   const next = SITE_TIERS.office[s.office.tier + 1]
   if (!next) return 'This is the largest plot'
-  if (!canAfford(s, next.cost)) return 'Not enough cash'
+  if (!canAfford(s, next.cost)) return `Not enough cash: the ${next.name.toLowerCase()} costs ${dollars(next.cost)}`
   spend(s, next.cost, 'overhead')
   s.office = movePlot(s.office)
   news(s, 'finance', `The company moved to a bigger plot: ${next.name}. Everything was rebuilt there as it stood.`)
@@ -1286,7 +1419,7 @@ export function buildFactory(s: GameState): string | null {
   const tier = s.factory ? s.factory.tier + 1 : 0
   const def = SITE_TIERS.factory[tier]
   if (!def) return 'This is the largest factory site'
-  if (!canAfford(s, def.cost)) return 'Not enough cash'
+  if (!canAfford(s, def.cost)) return `Not enough cash: the ${def.name.toLowerCase()} costs ${dollars(def.cost)}`
   spend(s, def.cost, 'facilities')
   s.factory = s.factory ? movePlot(s.factory) : newSite('factory', 0)
   news(s, 'finance', `${tier ? 'The factory moved to a bigger site' : 'The company bought land for its first factory'}: ${def.name}.`)
@@ -1302,7 +1435,7 @@ export function autoLine(s: GameState): string | null {
   if (!plan) return 'There is no room: the starter hall needs a clear strip 16 by 6 in the middle of the plot'
   const fresh = zoneable(site, ...plan.hall, 'rect').length
   const cost = plan.items.reduce((a, p) => a + ITEMS.factory[p.kind].cost, 0) + roomCost(site, 'hall', fresh)
-  if (!canAfford(s, cost)) return `Not enough cash: the hall and line cost $${cost.toLocaleString()}`
+  if (!canAfford(s, cost)) return `Not enough cash: the hall and line cost ${dollars(cost)}`
   if (fresh) {
     const err = zoneRoom(s, 'factory', 'hall', ...plan.hall)
     if (err) return err
@@ -1320,18 +1453,19 @@ export function autoLine(s: GameState): string | null {
  * id, charged on top of the plot at what the copy would cost to build.
  */
 export function openStore(s: GameState, tier: number, region?: string, layoutFrom?: string): string | null {
-  const def = SITE_TIERS.store[tier]
-  if (!def) return 'No such location'
+  const def = whole(tier) ? SITE_TIERS.store[tier] : undefined
+  if (!def) return 'There is no such kind of store location'
   const lock = locked(s, 'stores')
   if (lock) return lock
   const where = region ?? homeRegion(s)
-  if (!s.regions[where]?.open) return 'You do not sell in that region yet'
+  if (!isRegion(where)) return 'There is no such region'
+  if (!s.regions[where]?.open) return `You do not sell in ${regionInfo(where).name} yet. Enter the region first, under Regions.`
   const model = layoutFrom ? storeOf(s, layoutFrom) : undefined
   if (layoutFrom && !model) return 'There is no such store to copy'
   const plan = model ? layoutPlan(s, model.site, newSite('store', tier), false) : null
   if (plan && (plan.error || !plan.site)) return plan.error ?? 'That layout cannot be copied'
   const total = def.cost + (plan?.cost ?? 0)
-  if (!canAfford(s, total)) return plan ? `Not enough cash: the plot and the fit-out come to $${Math.round(total).toLocaleString()}` : 'Not enough cash'
+  if (!canAfford(s, total)) return plan ? `Not enough cash: the plot and the fit-out come to ${dollars(total)}` : `Not enough cash: a ${def.name.toLowerCase()} costs ${dollars(total)}`
   spend(s, total, 'facilities')
   const free = regionInfo(where).cities.filter((c) => !s.stores.some((st) => st.name === c))
   let site = newSite('store', tier)
@@ -1350,8 +1484,15 @@ export function openStore(s: GameState, tier: number, region?: string, layoutFro
   return null
 }
 
+/** Close a store for good. Its fittings are sold for half their price, as furniture always is; the plot and the building are given up. */
 export function closeStore(s: GameState, storeId: string) {
-  s.stores = s.stores.filter((st) => st.id !== storeId)
+  const store = storeOf(s, storeId)
+  if (!store) return
+  const back = store.site.items.reduce((a, it) => a + (ITEMS.store[it.kind]?.cost ?? 0) / 2, 0)
+  s.cash += back
+  s.cur.facilities -= back
+  s.stores = s.stores.filter((st) => st !== store)
+  news(s, 'finance', `The ${store.name} store closed.${back > 0 ? ` Its fittings were sold for ${dollars(back)}.` : ''}`)
 }
 
 export function buildVenue(s: GameState): string | null {
@@ -1360,7 +1501,7 @@ export function buildVenue(s: GameState): string | null {
   const tier = s.venue ? s.venue.tier + 1 : 0
   const def = SITE_TIERS.venue[tier]
   if (!def) return 'This is the largest venue site'
-  if (!canAfford(s, def.cost)) return 'Not enough cash'
+  if (!canAfford(s, def.cost)) return `Not enough cash: the ${def.name.toLowerCase()} costs ${dollars(def.cost)}`
   spend(s, def.cost, 'facilities')
   s.venue = s.venue ? movePlot(s.venue) : newSite('venue', 0)
   news(s, 'finance', `${tier ? 'Your venue moved to a bigger site' : 'The company bought land for a venue of its own'}: ${def.name}.`)
@@ -1384,7 +1525,7 @@ export function autoVenue(s: GameState): string | null {
   ]
   for (let row = 0; row < 3; row++) for (let col = -2; col < 2; col++) plan.push({ kind: row === 0 ? 'seats' : row === 1 ? 'seats_mid' : 'seats_high', x: cx + col * 3, y: 8 + row * 2, rot: 0 })
   const cost = plan.reduce((a, p) => a + ITEMS.venue[p.kind].cost, 0)
-  if (!canAfford(s, cost)) return `Not enough cash: the starter layout costs $${cost.toLocaleString()}`
+  if (!canAfford(s, cost)) return `Not enough cash: the starter layout costs ${dollars(cost)}`
   for (const p of plan) {
     const err = placeItem(s, 'venue', p.kind, p.x, p.y, p.rot)
     if (err) return err
@@ -1397,42 +1538,56 @@ export function autoVenue(s: GameState): string | null {
 export function lockSupply(s: GameState, cat: SupplyCat): string | null {
   const shut = locked(s, 'factory')
   if (shut) return shut
+  if (!SUPPLY_CATS.includes(cat)) return 'There is no such kind of component'
   const lock = s.supply.locks[cat]
-  if (lock && lock.until > s.day) return 'That price is already fixed'
-  if (!canAfford(s, LOCK_FEE)) return 'Not enough cash'
+  if (lock && lock.until > s.day) return `That price is already fixed until ${fmtDate(lock.until)}`
+  if (!canAfford(s, LOCK_FEE)) return `Not enough cash: a supply contract costs ${dollars(LOCK_FEE)}`
   spend(s, LOCK_FEE, 'production')
   s.supply.locks[cat] = { value: marketPrice(s.supply, cat), until: s.day + LOCK_DAYS }
   return null
 }
 
 export function startCampaign(s: GameState, channel: ChannelId, target: string, monthly: number, region?: string): string | null {
+  if (!lists(CHANNELS, channel)) return 'There is no such advertising channel'
   const lock = locked(s, 'marketing') ?? locked(s, capOfChannel(channel))
   if (lock) return lock
-  if (region && !s.regions[region]?.open) return 'You do not sell in that region yet'
+  if (region !== undefined && !isRegion(region)) return 'There is no such region'
+  if (region && !s.regions[region]?.open) return `You do not sell in ${regionInfo(region).name} yet. Enter the region first, under Regions.`
   const def = CHANNELS[channel]
-  if (monthly < def.min) return `${def.name} needs at least $${def.min.toLocaleString()} a month`
-  if (target !== 'brand' && !ownProducts(s).some((p) => p.id === target && p.status !== 'ended')) return 'Pick a device to advertise'
-  if (s.campaigns.some((c) => c.channel === channel && c.target === target && c.region === region)) return 'That campaign is already running'
-  s.campaigns.push({ id: `c${s.nextId++}`, channel, target, monthly, startedDay: s.day, spent: 0, region })
+  if (!num(monthly) || monthly < def.min) return `${def.name} needs at least $${def.min.toLocaleString('en-US')} a month`
+  if (monthly > MAX_CAMPAIGN) return `A campaign can spend at most ${dollars(MAX_CAMPAIGN)} a month`
+  if (target !== 'brand' && !ownProducts(s).some((p) => p.id === target && p.status !== 'ended')) return 'Pick a device of yours that is in development or on sale to advertise, or advertise the brand'
+  if (s.campaigns.some((c) => c.channel === channel && c.target === target && c.region === region)) return 'That campaign is already running. Change its budget instead.'
+  s.campaigns.push({ id: `c${s.nextId++}`, channel, target, monthly: Math.round(monthly), startedDay: s.day, spent: 0, region })
   return null
 }
+
+/** The most one campaign can spend in a month. */
+export const MAX_CAMPAIGN = 1e9
 
 export function stopCampaign(s: GameState, campaignId: string) {
   s.campaigns = s.campaigns.filter((c) => c.id !== campaignId)
 }
 
+/** Change what a campaign spends each month, kept within what its channel takes. */
 export function setCampaignBudget(s: GameState, campaignId: string, monthly: number) {
   const c = s.campaigns.find((x) => x.id === campaignId)
-  if (c) c.monthly = Math.max(CHANNELS[c.channel].min, monthly)
+  if (c && num(monthly)) c.monthly = clamp(Math.round(monthly), CHANNELS[c.channel].min, MAX_CAMPAIGN)
 }
 
+/** The furthest ahead a meetup or a conference can be booked, in days. */
+export const MAX_EVENT_LEAD = 720
+
 export function scheduleEvent(s: GameState, type: EventType, venue: number, productId?: string, daysAhead = 30): string | null {
+  if (!lists(EVENTS, type)) return 'There is no such kind of event'
+  if (!whole(venue)) return 'Pick a venue'
   const blocked = locked(s, 'events') ?? eventBlocked(s, type, venue, productId)
   if (blocked) return blocked
   const v = EVENTS[type].venues[venue]
-  if (!canAfford(s, v.cost)) return 'Not enough cash'
+  if (!canAfford(s, v.cost)) return `Not enough cash: the ${v.name.toLowerCase()} costs ${dollars(v.cost)}`
   const product = s.products.find((p) => p.id === productId)
-  const day = type === 'keynote' ? s.day + (product?.devDaysLeft ?? 0) : type === 'expo' ? nextFair(s.day).day : s.day + Math.max(EVENT_LEAD, Math.round(daysAhead))
+  const lead = clamp(num(daysAhead) ? Math.round(daysAhead) : 30, EVENT_LEAD, MAX_EVENT_LEAD)
+  const day = type === 'keynote' ? s.day + (product?.devDaysLeft ?? 0) : type === 'expo' ? nextFair(s.day).day : s.day + lead
   spend(s, v.cost, 'marketing')
   s.events.push({ id: `v${s.nextId++}`, type, venue, day, productId: type === 'keynote' ? productId : undefined, cost: v.cost, done: false })
   return null
@@ -1441,33 +1596,39 @@ export function scheduleEvent(s: GameState, type: EventType, venue: number, prod
 // ---------------------------------------------------------------- chips and software
 
 export function startChip(s: GameState, name: string, power: number, graphics: number, efficiency: number): string | null {
+  if (typeof name !== 'string') return 'Name the chip'
+  if (![power, graphics, efficiency].every((v) => num(v) && v >= 0 && v <= 1)) return 'Each of the three design sliders runs from 0 to 1'
   const blocked = locked(s, 'labs') ?? chipBlocked(s, name, power, graphics, efficiency)
   if (blocked) return blocked
   const gen = s.levels.chipset
   const cost = chipProjectCost(gen)
-  if (!canAfford(s, cost)) return 'Not enough cash'
+  if (!canAfford(s, cost)) return `Not enough cash: a chip project costs ${dollars(cost)}`
   spend(s, cost, 'development')
-  s.chips.push({ id: `h${s.nextId++}`, name: name.trim(), gen, power, graphics, efficiency, status: 'dev', devDaysLeft: chipProjectDays(s), quality: 1, licenceFee: 0, licenceIncome: 0 })
+  s.chips.push({ id: `h${s.nextId++}`, name: named(name), gen, power, graphics, efficiency, status: 'dev', devDaysLeft: chipProjectDays(s), quality: 1, licenceFee: 0, licenceIncome: 0 })
   return null
 }
 
 export function setLicenceFee(s: GameState, chipId: string, fee: number) {
   const c = s.chips.find((x) => x.id === chipId)
-  if (c) c.licenceFee = Math.max(0, Math.round(fee))
+  if (c && num(fee)) c.licenceFee = clamp(Math.round(fee), 0, MAX_LICENCE_FEE)
 }
+/** The most a chip licence can ask per unit. Far above anything a rival would pay. */
+export const MAX_LICENCE_FEE = 1000
 
 /** Start the first version of an in-house OS, or the next one. */
 export function startOs(s: GameState, name: string, features: string[]): string | null {
-  const blocked = locked(s, 'labs') ?? osBlocked(s, features)
+  // only features that exist, each once: a list with the same one twice asks for one
+  const wanted = [...new Set(Array.isArray(features) ? features : [])].filter((f) => OS_FEATURES.some((x) => x.id === f))
+  const blocked = locked(s, 'labs') ?? osBlocked(s, wanted)
   if (blocked) return blocked
   const first = !s.os.own
-  if (first && !name.trim()) return 'Name your operating system'
-  const all = [...new Set([...s.os.features, ...features])].filter((f) => OS_FEATURES.some((x) => x.id === f))
+  if (first && !named(name)) return 'Name your operating system'
+  const all = [...new Set([...s.os.features, ...wanted])]
   const cost = osProjectCost(first, all.length - s.os.features.length)
-  if (!canAfford(s, cost)) return 'Not enough cash'
+  if (!canAfford(s, cost)) return `Not enough cash: this version costs ${dollars(cost)}`
   spend(s, cost, 'development')
   const total = osProjectDays(s, first)
-  if (first) s.os.name = name.trim()
+  if (first) s.os.name = named(name)
   s.os.project = { daysLeft: total, total, features: all, first }
   return null
 }
@@ -1529,6 +1690,8 @@ function stepEvents(s: GameState) {
 
 function stepCampaigns(s: GameState) {
   const gain = DIFFICULTY[s.config.difficulty].awareness
+  // what the marketing team adds is the same for every campaign today: worked out once, when the first one runs
+  let skill: number | undefined
   for (const p of ownProducts(s)) for (const k of Object.keys(p.buzz)) p.buzz[k] *= 1 - BUZZ_DECAY
   for (const c of [...s.campaigns]) {
     const product = c.target === 'brand' ? undefined : s.products.find((p) => p.id === c.target)
@@ -1540,7 +1703,7 @@ function stepCampaigns(s: GameState) {
     if (!canAfford(s, daily)) continue
     spend(s, daily, 'marketing')
     c.spent += daily
-    addAwareness(s, campaignDay(s, c, daily, product) * gain, c.region)
+    addAwareness(s, campaignDay(s, c, daily, product, (skill ??= staffEffects(s).marketing)) * gain, c.region)
   }
 }
 
@@ -1576,7 +1739,9 @@ function sell(s: GameState, p: Product, c: Company, units: number, segment: stri
     else if (p.type === 'speaker') earn(s, units * SPEAKER_SERVICES, 'other')
     if (p.stock === 0) {
       p.carry = 0
-      news(s, 'alert', `${p.name} is sold out. Order more units to keep selling.`, p.id)
+      // said once for each time it runs dry: a line that sells each day's delivery by evening is still the same shortage
+      if (p.soldOut === undefined) news(s, 'alert', `${p.name} is sold out. Order more units to keep selling.`, p.id)
+      p.soldOut = p.soldOut ?? s.day
     }
   } else c.revMonth = (c.revMonth ?? 0) + income
   return units
@@ -1601,7 +1766,7 @@ function stepSales(s: GameState) {
     if (!pool.length) continue
     const demand = segmentDemand(seg, s.day) * typeDemand(seg.type) * (seg.sens > 1.9 ? Math.sqrt(economyNow(s)) : economyNow(s))
     const makers = pool.map((p) => companies.get(p.companyId)!)
-    const base = pool.map((p, i) => (p.stock <= 0 ? 0 : pull(p, makers[i], seg, s.day)))
+    const base = pool.map((p, i) => (!hasStock(p) ? 0 : pull(p, makers[i], seg, s.day)))
     const hype = pool.map((p) => launchHype(p, s.day))
     const alloc = pool.map(() => 0)
     const kept = pool.map(() => 0)
@@ -1644,6 +1809,7 @@ function stepSales(s: GameState) {
   const draw = (p: Product) => clamp(bestSegment(p, me, s.day).u, 0, 1.3) * lifecycle(s.day - p.launchDay)
 
   // ---- fans buy again, and line up for anything new
+  let refurbishing: boolean | undefined
   if (s.fans > 0 && mine.length) {
     const w = mine.map((p) => draw(p) * (s.day - p.launchDay <= 45 ? 3 : 1))
     const total = w.reduce((a, b) => a + b, 0)
@@ -1661,7 +1827,8 @@ function stepSales(s: GameState) {
         // the old device comes back as credit; refurbished, it is sold on
         spend(s, sold * p.price * TRADE_CREDIT, 'marketing')
         s.care.month.tradeIns += sold
-        if (s.care.refurb) {
+        // refurbishing stops paying when the last workshop that could do it is gone
+        if (s.care.refurb && (refurbishing ??= canRefurb(s))) {
           const back = sold * p.price * REFURB_RETURN
           earn(s, back, 'other')
           s.care.month.refurbIncome += back
@@ -1714,6 +1881,8 @@ function stepSales(s: GameState) {
     if (p.companyId !== 'player') continue
     p.satisfaction = clamp(productSatisfaction(p, me.software, supportGap, storeSupport, longUpdates) + cared - (p.recall?.state === 'open' ? 0.1 : p.recall?.state === 'ignored' ? 0.2 : 0), 0, 1)
     p.unitCost = Math.round(costNow(s, p.costParts) * 100) / 100
+    // the day ended with some left: the shortage, if there was one, is over
+    if (p.stock > 0) delete p.soldOut
     weight += p.monthUnits + 1
     mood += p.satisfaction * (p.monthUnits + 1)
     if (s.day % 7 === 0 && p.unitsSold > 0) {
@@ -1784,10 +1953,16 @@ function stepOperations(s: GameState) {
   // a Head of Operations gets a better price out of suppliers
   if (res.cost) spend(s, res.cost * execFx(s).production, 'production')
   if (res.runCost) spend(s, res.runCost, 'facilities')
-  if (res.stalled && s.day % 15 === 0) news(s, 'alert', 'Production is paused: there is not enough cash to pay for it.')
+  // said when it stops, and not again until it has gone a month without stopping: a company at the end of its
+  // credit starts and stops every few days as the takings come in, and that is one trouble, not twenty
+  if (res.stalled) {
+    const told = (s.told ??= {})
+    if (told.stalled === undefined || s.day - told.stalled > DAYS_PER_MONTH) news(s, 'alert', 'Production is paused: there is not enough cash to pay for it. It carries on by itself when there is.')
+    told.stalled = s.day
+  }
   for (const id of new Set(res.finished)) {
     const p = s.products.find((x) => x.id === id)
-    if (p && !s.orders.some((o) => o.productId === id)) news(s, 'launch', `Production run finished for ${p.name}. ${p.stock.toLocaleString()} in stock.`, id)
+    if (p && !s.orders.some((o) => o.productId === id)) news(s, 'launch', `Production run finished for ${p.name}. ${thousands(p.stock)} in stock.`, id)
   }
   if (s.factory) spend(s, upkeep(s.factory) / DAYS_PER_MONTH, 'facilities')
   if (s.venue) spend(s, upkeep(s.venue) / DAYS_PER_MONTH, 'facilities')
@@ -1899,11 +2074,16 @@ function closeMonth(s: GameState) {
 
   const alive = s.companies.filter((c) => !c.isPlayer && c.alive)
   const used = new Set(s.companies.map((c) => c.name))
-  const free = (s.config.parody ? STARTUP_NAMES : STARTUPS).filter((n) => !used.has(n))
+  const names = s.config.parody ? STARTUP_NAMES : STARTUPS
+  let free = names.filter((n) => !used.has(n))
+  // when every name has been taken (a long game in which the player keeps buying the newcomers), the next
+  // generation takes the old names with a number: the market never runs out of people willing to try
+  for (let n = 2; !free.length && n < 1000; n++) free = names.map((x) => `${x} ${n}`).filter((x) => !used.has(x))
   if (alive.length < 9 && free.length && rand(s) < 0.08) {
     const name = pick(s, free)
     const segs = [pick(s, SEGMENTS).id]
     const c = makeCompany(`r${s.nextId++}`, { name, color: pick(s, ['#b08d57', '#5a9bd4', '#9c6ade', '#58b368', '#d46a6a']), brand: 0.5, awareness: 0.25, techOffset: range(s, -0.6, 0.2), priceMult: range(s, 0.85, 1.05), software: 0, segments: segs, layout: int(s, 0, 4), palette: ['#17191d', '#d8d8dc', '#3f5870'], series: { [segs[0]]: 'Model' }, counter: 1 })
+    c.origin = name
     s.companies.push(c)
     c.nextLaunch[segs[0]] = s.day + int(s, 5, 60)
     news(s, 'rival', `A new company, ${name}, has entered the ${TYPES[segmentInfo(segs[0]).type].name.toLowerCase()} market.`)
@@ -1930,7 +2110,7 @@ function stepDay(s: GameState) {
 function reward(s: GameState, g: Goal) {
   if (g.cash) earn(s, g.cash, 'other')
   if (g.fans) s.fans += g.fans
-  const prize = [g.cash ? `${g.cash.toLocaleString()}` : '', g.fans ? `${g.fans.toLocaleString()} fans` : ''].filter(Boolean).join(' and ')
+  const prize = [g.cash ? dollars(g.cash) : '', g.fans ? `${thousands(g.fans)} fans` : ''].filter(Boolean).join(' and ')
   news(s, 'goal', `Goal reached: ${g.name}.${prize ? ` Reward: ${prize}.` : ''}`)
 }
 
@@ -1952,35 +2132,38 @@ export { CHIP_BUDGET, CONTRACT, buildCost, segmentsOf, utility }
 /** Sell a stake to a private investor. */
 export function fundingRound(s: GameState, stake: number): string | null {
   if (locked(s, 'shares')) return locked(s, 'shares')
+  if (!num(stake) || stake <= 0) return 'Choose the share of the company to sell: 2% to 30%'
   const r = raiseRound(s, stake)
   if (r.error) return r.error
   fund(s, r.cash)
-  news(s, 'finance', `${r.name} invested ${(r.cash / 1e6).toFixed(1)}M for ${(stake * 100).toFixed(0)}% of the company.`)
+  news(s, 'finance', `${r.name} invested ${millions(r.cash)} for ${(stake * 100).toFixed(0)}% of the company.`)
   return null
 }
 
 export function listCompany(s: GameState, float: number): string | null {
   if (locked(s, 'shares')) return locked(s, 'shares')
+  if (!num(float) || float <= 0) return 'Choose the share of the company to float: 5% to 40%'
   const r = goPublic(s, float)
   if (r.error) return r.error
   fund(s, r.cash)
-  news(s, 'finance', `${player(s).name} listed on the stock market, raising ${(r.cash / 1e6).toFixed(0)}M. Shares opened at ${s.stock.price.toFixed(2)}.`)
+  news(s, 'finance', `${player(s).name} listed on the stock market, raising ${millions(r.cash)}. Shares opened at $${s.stock.price.toFixed(2)}.`)
   return null
 }
 
 export function sellShares(s: GameState, pct: number): string | null {
   if (locked(s, 'shares')) return locked(s, 'shares')
+  if (!num(pct) || pct <= 0) return 'Choose how many new shares to issue: 1% to 15% of those in issue'
   const r = issueShares(s, pct)
   if (r.error) return r.error
   fund(s, r.cash)
-  news(s, 'finance', `The company sold new shares worth ${(r.cash / 1e6).toFixed(1)}M.`)
+  news(s, 'finance', `The company sold new shares worth ${millions(r.cash)}.`)
   return null
 }
 
 export function buyBackShares(s: GameState, amount: number): string | null {
   if (locked(s, 'shares')) return locked(s, 'shares')
-  if (amount <= 0) return 'Enter an amount'
-  if (!canAfford(s, amount) || s.cash < amount) return 'Buybacks must be paid from cash in hand'
+  if (!num(amount) || amount <= 0) return 'Enter an amount to spend on the buyback'
+  if (!canAfford(s, amount) || s.cash < amount) return `Buybacks must be paid from cash in hand, and there is ${dollars(Math.max(0, s.cash))}`
   const r = buyBack(s, amount)
   if (r.error) return r.error
   fund(s, -r.spent)
@@ -1988,16 +2171,19 @@ export function buyBackShares(s: GameState, amount: number): string | null {
 }
 
 export function setPayout(s: GameState, share: number) {
-  if (locked(s, 'shares')) return
+  if (locked(s, 'shares') || !num(share)) return
   s.stock.payout = clamp(share, 0, 0.5)
 }
 
 export function buyRivalStake(s: GameState, companyId: string, pct: number): string | null {
   const c = s.companies.find((x) => x.id === companyId)
-  if (!c) return 'No such company'
+  if (!c) return 'There is no such company'
   if (locked(s, 'shares')) return locked(s, 'shares')
+  if (c.isPlayer) return 'That is your own company. Buy its shares back instead.'
+  if (!c.alive) return `${c.name} is no longer in business`
+  if (!num(pct) || pct <= 0) return 'Choose how much of the company to buy'
   const take = Math.min(pct, 0.49 - stakeIn(s, companyId))
-  if (take > 0.001 && s.cash < stakePrice(c, take)) return 'Stakes must be paid from cash in hand'
+  if (take > 0.001 && s.cash < stakePrice(c, take)) return `Stakes must be paid from cash in hand: ${(take * 100).toFixed(0)}% of ${c.name} costs ${dollars(stakePrice(c, take))}`
   const r = buyStake(s, companyId, pct)
   if (r.error) return r.error
   fund(s, -r.cost)
@@ -2016,7 +2202,7 @@ export function acquire(s: GameState, companyId: string): string | null {
   if (!c || c.isPlayer || !c.alive) return 'That company cannot be bought'
   if (locked(s, 'shares')) return locked(s, 'shares')
   const price = takeoverPrice(s, c)
-  if (s.cash < price) return `A takeover must be paid from cash in hand: ${(price / 1e6).toFixed(0)}M`
+  if (s.cash < price) return `A takeover must be paid from cash in hand: ${c.name} costs ${dollars(price)}`
   fund(s, -price)
   const me = player(s)
   const theirs = rivalLevels(s, c)
@@ -2039,7 +2225,27 @@ export function acquire(s: GameState, companyId: string): string | null {
   c.acquired = true
   c.value = 0
   delete s.stock.holdings[c.id]
-  news(s, 'finance', `You bought ${c.name} for ${(price / 1e6).toFixed(0)}M.${gained ? ' Its engineers brought new know-how.' : ''}`)
+  news(s, 'finance', `You bought ${c.name} for ${millions(price)}.${gained ? ' Its engineers brought new know-how.' : ''}`)
+  return null
+}
+
+/** The longest name a company can have (the System screen's field takes as many). */
+export const MAX_COMPANY_NAME = 18
+
+/**
+ * Rename a company: the player's own, or a rival (the System screen lets the
+ * player call them what they like). Returns why not, or null. A name must be
+ * something, and no two companies may share one. Where a rival is based and
+ * how far it reaches do not change with its name.
+ */
+export function renameCompany(s: GameState, companyId: string, name: string): string | null {
+  const c = s.companies.find((x) => x.id === companyId)
+  if (!c) return 'There is no such company'
+  const to = typeof name === 'string' ? name.trim().slice(0, MAX_COMPANY_NAME) : ''
+  if (!to) return 'A company needs a name'
+  if (s.companies.some((x) => x !== c && x.name.toLowerCase() === to.toLowerCase())) return `There is already a company called ${to}`
+  c.name = to
+  if (c.isPlayer) s.config.companyName = to
   return null
 }
 
@@ -2047,10 +2253,11 @@ export function acquire(s: GameState, companyId: string): string | null {
 
 /** Start making a new kind of device. */
 export function unlockType(s: GameState, type: DeviceType): string | null {
+  if (!lists(TYPES, type)) return 'There is no such kind of device'
   const blocked = locked(s, 'research') ?? unlockBlocked(s, type)
   if (blocked) return blocked
   const cost = unlockCost(s, type)
-  if (!canAfford(s, cost)) return 'Not enough cash'
+  if (!canAfford(s, cost)) return `Not enough cash: opening the ${TYPES[type].name.toLowerCase()} line costs ${dollars(cost)}`
   spend(s, cost, 'rd')
   s.types = [...(s.types ?? []), type]
   news(s, 'research', `${player(s).name} can now design ${TYPES[type].plural.toLowerCase()}.`)
@@ -2071,7 +2278,7 @@ export function enterRegion(s: GameState, id: string): string | null {
   const blocked = locked(s, 'world') ?? entryBlocked(s, id)
   if (blocked) return blocked
   const r = regionInfo(id)
-  if (!canAfford(s, r.entry)) return 'Not enough cash'
+  if (!canAfford(s, r.entry)) return `Not enough cash: setting up in ${r.name} costs ${dollars(r.entry)}`
   spend(s, r.entry, 'overhead')
   const open = REGIONS.filter((x) => s.regions[x.id].open)
   // word travels: a brand known elsewhere does not start from nothing
@@ -2082,8 +2289,9 @@ export function enterRegion(s: GameState, id: string): string | null {
 }
 
 export function setRegionPrice(s: GameState, id: string, adj: number) {
+  if (!isRegion(id) || !num(adj) || locked(s, 'world')) return
   const st = s.regions[id]
-  if (st && !locked(s, 'world')) st.priceAdj = clamp(Math.round(adj * 100) / 100, 0.7, 1.4)
+  if (st) st.priceAdj = clamp(Math.round(adj * 100) / 100, 0.7, 1.4)
 }
 
 // ---------------------------------------------------------------- after-sales
@@ -2096,11 +2304,11 @@ export function setCare(s: GameState, patch: Partial<Pick<GameState['care'], 'wa
   if (patch.updateYears !== undefined && UPDATE_YEARS.includes(patch.updateYears)) c.updateYears = patch.updateYears
   if (patch.tradeIn !== undefined) c.tradeIn = patch.tradeIn
   if (patch.refurb !== undefined) {
-    if (patch.refurb && !s.factory && !s.stores.some((st) => storeStats(st.site).repairs > 0)) return 'Refurbishing needs a factory or a store with a repair bench'
-    c.refurb = patch.refurb
+    if (patch.refurb && !canRefurb(s)) return 'Refurbishing needs a factory or a store with a repair bench'
+    c.refurb = !!patch.refurb
   }
-  if (patch.plan !== undefined) c.plan = patch.plan
-  if (patch.planPrice !== undefined) c.planPrice = clamp(Math.round(patch.planPrice), 2, 40)
+  if (patch.plan !== undefined) c.plan = !!patch.plan
+  if (patch.planPrice !== undefined && num(patch.planPrice)) c.planPrice = clamp(Math.round(patch.planPrice), 2, 40)
   return null
 }
 
@@ -2109,12 +2317,12 @@ export function recallProduct(s: GameState, productId: string): string | null {
   const p = s.products.find((x) => x.id === productId)
   if (!p || p.recall?.state !== 'open') return 'There is no recall to decide'
   const cost = recallCost(p)
-  if (!canAfford(s, cost)) return 'Not enough cash'
+  if (!canAfford(s, cost)) return `Not enough cash: recalling ${p.name} costs ${dollars(cost)}`
   spend(s, cost, 'production')
   p.recall = { state: 'done', day: s.day, cost }
   p.defectRate = Math.min(p.defectRate, 0.01)
   player(s).brand = clamp(player(s).brand + 0.01, 0.05, 1)
-  news(s, 'alert', `${p.name} was recalled and repaired at a cost of ${cost.toLocaleString()}. Owners noticed that you did the right thing.`, p.id)
+  news(s, 'alert', `${p.name} was recalled and repaired at a cost of ${dollars(cost)}. Owners noticed that you did the right thing.`, p.id)
   return null
 }
 
@@ -2188,6 +2396,14 @@ export function migrate(input: GameState): GameState {
   const s = input as GameState & Record<string, unknown>
   // this one is checked on every load: saves of the current version were made both before and after the part existed
   for (const p of s.products ?? []) addCoverCamera(p.design)
+  // where a rival is based follows from the name it was founded under; older saves only have the name it bears now
+  for (const c of s.companies ?? []) if (!c.isPlayer && c.origin === undefined) c.origin = c.name
+  // rivals' devices used to carry a stock of a million million to say they never run out
+  for (const p of s.products ?? []) {
+    if (p.companyId === 'player' || p.unlimited) continue
+    p.unlimited = true
+    p.stock = 0
+  }
   if (s.version >= SAVE_VERSION && s.incidents && s.guide !== undefined && s.unlocks) return s
   const from = s.version ?? 0
   const max = Object.fromEntries(TRACKS.map((t) => [t, MAX_LEVEL])) as Levels
@@ -2233,7 +2449,10 @@ export function migrate(input: GameState): GameState {
     }
     for (const seg of c.segments) if (c.nextLaunch[seg] === undefined) c.nextLaunch[seg] = s.day + int(s, 5, 240)
   })
-  for (const c of s.companies) c.software = c.software ?? 0
+  for (const c of s.companies) {
+    c.software = c.software ?? 0
+    if (!c.isPlayer) c.origin = c.origin ?? c.name
+  }
 
   s.orders = s.orders ?? []
   s.supply = s.supply ?? newSupply()
@@ -2269,7 +2488,7 @@ export function migrate(input: GameState): GameState {
     st.region = st.region ?? REGIONS.find((r) => r.cities.includes(st.name))?.id ?? home
   }
   s.cash += refund
-  if (refund > 0) news(s, 'finance', `Your buildings were rebuilt as rooms. Fittings that no longer had a place were sold back for $${Math.round(refund).toLocaleString()}.`)
+  if (refund > 0) news(s, 'finance', `Your buildings were rebuilt as rooms. Fittings that no longer had a place were sold back for ${dollars(refund)}.`)
 
   // ---- the new systems start from where the company already is
   s.teams = s.teams ?? []
@@ -2285,10 +2504,8 @@ export function migrate(input: GameState): GameState {
     s.stock = newStock(Math.max(1e6, s.cash))
     s.stock.price = valuation(s) / s.stock.shares
   }
-  if (!s.goals) {
-    s.goals = {}
-    checkGoals(s)
-  }
+  const hadGoals = !!s.goals
+  s.goals = s.goals ?? {}
   s.incidents = s.incidents ?? []
   // a company that predates the guided start has no use for it
   s.guide = s.guide ?? -1
@@ -2298,9 +2515,25 @@ export function migrate(input: GameState): GameState {
     // the guided start gained steps; carry a half-finished one over to where it was
     if (s.guide >= 0) s.guide = OLD_GUIDE[s.guide] ?? -1
   }
+  // ---- version 6: the prices people expect stop climbing once technology has peaked (see priceIndex).
+  // In a company already past that day, every price on sale had climbed with the old index; they are all
+  // brought back by the same share, so each device is exactly as attractive the day after as the day before
+  if (from < 6 && s.day > PEAK_DAY) {
+    const k = priceIndex(s.day) / Math.pow(1.035, s.day / DAYS_PER_YEAR)
+    for (const p of s.products) {
+      if (p.status === 'ended') continue
+      const was = p.price
+      p.price = Math.max(1, Math.round(p.price * k))
+      for (const t of p.tiers ?? []) t.price = p.price + Math.max(1, Math.round((t.price - was) * k))
+    }
+    news(s, 'finance', `Prices across the market have settled: now that technology has matured, devices no longer get dearer every year. Every list price, yours and your rivals', was brought down by ${Math.round((1 - k) * 100)}% together, so each device is as attractive as it was.`)
+  }
   s.unlocks = s.unlocks ?? {}
   s.execSeats = s.execSeats ?? {}
   s.execPool = s.execPool ?? []
+  // goals a company from before goals had already reached are marked as reached, without their rewards.
+  // Done last: the goals look at every part of the company, and all of it has to be there first
+  if (!hadGoals) checkGoals(s)
   refreshCandidates(s)
   stepProgress(s)
   s.version = SAVE_VERSION

@@ -1,7 +1,7 @@
 // In-house technology: custom chips and the company's own operating system.
 import { DAYS_PER_YEAR, marketLevel, refScore, researchCost } from '../data/catalog'
 import { clamp, range } from './rng'
-import { chipFor } from './scoring'
+import { OWN_SILICON, chipFor } from './scoring'
 import { staffEffects } from './staff'
 import { type CustomChip, DEVICE_TYPES, type GameState, type OsState } from './types'
 
@@ -27,14 +27,44 @@ export function finishChip(s: GameState, c: CustomChip) {
   c.quality = clamp(0.9 + Math.min(0.14, 0.035 * staffEffects(s).hardware) + range(s, -0.02, 0.02), 0.88, 1.08)
 }
 
-/** Share of rival devices that would use this chip at its licence fee. */
-export function chipAdoption(s: GameState, c: CustomChip): number {
-  if (c.status !== 'ready' || c.licenceFee <= 0) return 0
-  const mine = chipFor({ customChip: c.id } as never, [c])
+/** The most of the rivals' devices that will ever carry a licensed chip. */
+export const LICENCE_CAP = 0.06
+
+/**
+ * How good a buy a chip is for a rival at its licence fee: 1 is exactly as
+ * good as the Helix of the day, more is better. A rival that licenses the
+ * design has it made at a foundry's full price: the saving the company makes
+ * on its own silicon (no supplier's margin) is not the rival's to have.
+ */
+export function licenceValue(s: GameState, c: CustomChip): number {
+  const mine = chipFor({ customChip: c.id } as never, [{ ...c, status: 'ready' }])
   const gen = Math.min(8, Math.floor(marketLevel(s.day)))
   const helix = { perf: refScore(gen), cost: 70 * Math.pow(1.12, gen) }
-  const value = mine.perf / (mine.cost + c.licenceFee) / (helix.perf / helix.cost)
-  return clamp((value - 0.95) * 1.2, 0, 0.25)
+  return mine.perf / (mine.cost / OWN_SILICON + Math.max(0, c.licenceFee)) / (helix.perf / helix.cost)
+}
+
+/** The share of rival devices a chip would win if it were the only one on offer. */
+function wouldAdopt(s: GameState, c: CustomChip): number {
+  if (c.status !== 'ready' || !(c.licenceFee > 0)) return 0
+  // rivals only change supplier for a better buy, and only so many of them ever do
+  return clamp((licenceValue(s, c) - 1) * 0.5, 0, LICENCE_CAP)
+}
+
+/**
+ * Share of rival devices that use this chip at its licence fee. A device
+ * carries one chip: where the company offers several, rivals take the one
+ * that is the best buy for them (the dearer of two equally good buys), and
+ * the others earn nothing until it is withdrawn.
+ */
+export function chipAdoption(s: GameState, c: CustomChip): number {
+  const mine = wouldAdopt(s, c)
+  if (!mine) return 0
+  for (const o of s.chips) {
+    if (o.id === c.id) continue
+    const theirs = wouldAdopt(s, o)
+    if (theirs > mine || (theirs === mine && (o.licenceFee > c.licenceFee || (o.licenceFee === c.licenceFee && o.id < c.id)))) return 0
+  }
+  return mine
 }
 
 // ---------------------------------------------------------------- operating system

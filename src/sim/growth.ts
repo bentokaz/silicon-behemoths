@@ -36,9 +36,8 @@ export const BUZZ_DECAY = 0.03
  * Daily effect of one campaign, given what it spends today.
  * Returns the awareness gained as a fraction of the audience not yet reached.
  */
-export function campaignDay(s: GameState, c: Pick<Campaign, 'channel'>, spend: number, product: Product | undefined): number {
+export function campaignDay(s: GameState, c: Pick<Campaign, 'channel'>, spend: number, product: Product | undefined, skill = staffEffects(s).marketing): number {
   const def = CHANNELS[c.channel]
-  const skill = staffEffects(s).marketing
   if (product) {
     for (const seg of segmentsOf(product.type)) {
       const gain = 1 - Math.exp((-spend * channelFit(c.channel, seg) * skill) / 330e3)
@@ -142,7 +141,8 @@ export const keynoteReach = (s: GameState, venue: number) => (venue === OWN_VENU
 
 /** Why an event cannot be booked, or null if it can. */
 export function eventBlocked(s: GameState, type: EventType, venue: number, productId?: string): string | null {
-  if (!EVENTS[type].venues[venue]) return 'Pick a venue'
+  if (!Object.hasOwn(EVENTS, type)) return 'There is no such kind of event'
+  if (!Number.isInteger(venue) || !EVENTS[type].venues[venue]) return 'Pick a venue'
   if (type === 'keynote') {
     const p = s.products.find((x) => x.id === productId)
     if (!p || p.companyId !== 'player' || p.status !== 'dev') return 'A keynote needs a device that is still in development'
@@ -177,7 +177,8 @@ export function resolveEvent(s: GameState, e: GameEvent): string {
     const wow = clamp(bestSegment(p, me, s.day).u / 1.15, 0, 1)
     const luck = rand(s)
     score = 100 * (0.45 * wow + 0.25 * Math.min(1, v.reach) + 0.15 * crew + 0.15 * luck)
-    p.hype = (score / 100) * (0.5 + 0.5 * v.reach)
+    // a full house at a venue that carries further than any hired hall still cannot make more than total hype
+    p.hype = clamp((score / 100) * (0.5 + 0.5 * v.reach), 0, 1)
     addAwareness(s, 0.05 * v.reach * (score / 100))
     e.beats = { wow, reach: v.reach, crew, luck, seats: e.venue === OWN_VENUE && s.venue ? sumOf(s.venue, 'crowd') : (VENUE_SEATS[e.venue] ?? 0) }
     s.fans += s.fans * 0.04 * (score / 100) + 3000 * v.reach * (score / 100)

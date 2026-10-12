@@ -27,6 +27,10 @@ export interface Checkpoint {
 }
 /** The most recent copy taken while the company still had money in the bank. */
 let rolling: Checkpoint | null = null
+/** A copy of a game to come back to, if it has money in the bank and money matters in it. */
+const copyOf = (g: GameState): Checkpoint | null => (g.cash >= 0 && !g.config.unlimitedMoney && !g.gameOver ? { day: g.day, json: JSON.stringify(g) } : null)
+/** True once the player has been told that autosaving is failing, so that they are told once and not every month. */
+let autosaveWarned = false
 export type Speed = 0 | 1 | 2 | 4
 /** Simulated days per real second at each speed. */
 export const DAYS_PER_SECOND: Record<Speed, number> = { 0: 0, 1: 1, 2: 3, 4: 10 }
@@ -212,6 +216,16 @@ export const useStore = create<Store>((set, get) => {
   const worthKeeping = () => get().designing && !!get().draft && get().past.length > 0
   /** Capabilities open before a step of the simulation, to tell which ones it opened. */
   const openBefore = (g: GameState) => new Set(Object.keys(g.unlocks ?? {}))
+  /** Autosave, and say so once if the browser will not take it: a player who thinks the game is being saved must know when it is not. */
+  const autosave = (g: GameState) =>
+    void saveGame(AUTOSAVE, g).then(
+      () => void (autosaveWarned = false),
+      (e: Error) => {
+        if (autosaveWarned) return
+        autosaveWarned = true
+        get().say(`Autosave is not working. ${e.message}`, 'bad')
+      },
+    )
   /** Announce whatever opened: a sound, a banner each, and a mark on any new screen. */
   const announce = (g: GameState, before: Set<string>) => {
     const opened = Object.keys(g.unlocks ?? {}).filter((id) => !before.has(id)) as CapId[]
@@ -272,13 +286,15 @@ export const useStore = create<Store>((set, get) => {
     },
     setSpeed: (speed) => set({ speed }),
     begin(cfg) {
-      rolling = null
+      const game = newGame(cfg)
+      // a copy from the first moment: a company can be spent into debt before a single day has passed
+      rolling = copyOf(game)
       forgetViews()
       clearTimeout(toastTimer)
-      set({ game: newGame(cfg), screen: 'game', tab: 'city', speed: 0, rev: 0, checkpoint: null, showing: null, ...reset })
+      set({ game, screen: 'game', tab: 'city', speed: 0, rev: 0, checkpoint: null, showing: null, ...reset })
     },
     resume(state) {
-      rolling = null
+      rolling = copyOf(state)
       forgetViews()
       clearTimeout(toastTimer)
       set({ game: state, screen: 'game', tab: 'dashboard', speed: 0, rev: 0, checkpoint: null, showing: null, ...reset })
@@ -292,10 +308,11 @@ export const useStore = create<Store>((set, get) => {
     rewind() {
       const cp = get().checkpoint
       if (!cp) return
-      rolling = null
+      const game = migrate(JSON.parse(cp.json))
+      rolling = copyOf(game)
       forgetViews()
       clearTimeout(toastTimer)
-      set({ game: migrate(JSON.parse(cp.json)), tab: 'dashboard', speed: 0, rev: get().rev + 1, showing: null, ...reset })
+      set({ game, tab: 'dashboard', speed: 0, rev: get().rev + 1, showing: null, ...reset })
     },
     watch: (showing) => set({ showing, speed: showing ? 0 : get().speed }),
 
@@ -304,6 +321,7 @@ export const useStore = create<Store>((set, get) => {
       if (!g || g.gameOver || days <= 0) return
       const lastNews = g.news[0]?.id ?? 0
       const month = Math.floor(g.day / DAYS_PER_MONTH)
+      const startDay = g.day
       const year = Math.floor(g.day / (DAYS_PER_MONTH * 12))
       // while there is money in the bank, keep a recent copy of the game: every
       // couple of days when cash is running low, less often when it is not
@@ -333,13 +351,15 @@ export const useStore = create<Store>((set, get) => {
       else if (fresh.length) sfx.notify()
       const prefs = useSettings.getState().settings
       const big = fresh.some((n) => BIG_NEWS.test(n.text))
-      if (prefs.autosave && (Math.floor(g.day / DAYS_PER_MONTH) !== month || big)) void saveGame(AUTOSAVE, g).catch(() => {})
+      if (prefs.autosave && (Math.floor(g.day / DAYS_PER_MONTH) !== month || big)) autosave(g)
       const halt = prefs.pauseOnAlert && fresh.some((n) => n.kind === 'alert')
       // a keynote that just happened plays out on screen
       const keynote = g.events.find((e) => e.done && e.type === 'keynote' && !shown.has(e.id) && e.beats)
       // the calendar turned: stop and look back on the year
       const turned = Math.floor(g.day / (DAYS_PER_MONTH * 12)) !== year && g.reports.length >= 6
-      const decision = g.incidents.some((i) => !i.done)
+      // something new needs a decision: stop once, when it arrives. It may then wait (a month, after which it settles
+      // itself), and time can go on while it does: stopping on every tick would leave the player unable to let it wait
+      const decision = g.incidents.some((i) => !i.done && i.day > startDay)
       set({ rev: get().rev + 1, speed: g.gameOver || keynote || halt || turned || decision ? 0 : get().speed, checkpoint, showing: keynote ? keynote.id : get().showing, yearEnd: turned ? START_YEAR + year : get().yearEnd })
     },
 
@@ -347,12 +367,19 @@ export const useStore = create<Store>((set, get) => {
       const g = get().game!
       const lastNews = g.news[0]?.id ?? 0
       const open = openBefore(g)
+      const solvent = g.cash >= 0
       const out = fn(g)
       // hiring, building and the like can earn a capability on the spot
       stepProgress(g)
       announce(g, open)
-      if (useSettings.getState().settings.autosave && g.news.some((n) => n.id > lastNews && BIG_NEWS.test(n.text))) void saveGame(AUTOSAVE, g).catch(() => {})
-      set({ rev: get().rev + 1 })
+      if (useSettings.getState().settings.autosave && g.news.some((n) => n.id > lastNews && BIG_NEWS.test(n.text))) autosave(g)
+      // spent into debt in one go (a plot, a factory, a takeover): the copy to come back to is the last one taken with money in the bank
+      let checkpoint = get().checkpoint
+      if (solvent && g.cash < 0 && !g.config.unlimitedMoney && rolling) {
+        checkpoint = rolling
+        void saveSnapshot(BEFORE_DEBT, JSON.parse(rolling.json)).catch(() => {})
+      }
+      set({ rev: get().rev + 1, checkpoint })
       return out
     },
 

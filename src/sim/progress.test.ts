@@ -159,10 +159,10 @@ describe('a guided company starts small', () => {
     // either of two things opens the design studio
     expect(lockTip(s, 'studio')).toBe('Design studio is not open yet. To open it: hire a designer, or put your first device on sale.')
     // care policies need all three, in order
-    expect(lockTip(s, 'carePolicy')).toBe('Care policies is not open yet. To open it: open After-sales, then reach 100,000 owners, then hire a Head of Support.')
+    expect(lockTip(s, 'carePolicy')).toBe('Care policies are not open yet. To open them: open After-sales, then reach 100,000 owners, then hire a Head of Support.')
     for (const c of CAPS) {
       const tip = lockTip(s, c.id)!
-      expect(tip.startsWith(`${c.name} is not open yet.`)).toBe(true)
+      expect(tip.startsWith(`${c.name} is not open yet.`) || tip.startsWith(`${c.name} are not open yet.`)).toBe(true)
       // every unmet requirement is named, not only the next one
       for (const r of reqsOf(s, c.id).filter((x) => !x.done)) expect(tip.toLowerCase()).toContain(r.label.toLowerCase())
     }
@@ -171,7 +171,7 @@ describe('a guided company starts small', () => {
     stepProgress(s)
     expect(has(s, 'care')).toBe(true)
     expect(lockTip(s, 'care')).toBeNull()
-    expect(lockTip(s, 'carePolicy')).toBe('Care policies is not open yet. To open it: reach 100,000 owners, then hire a Head of Support.')
+    expect(lockTip(s, 'carePolicy')).toBe('Care policies are not open yet. To open them: reach 100,000 owners, then hire a Head of Support.')
     const open = openGame()
     for (const c of CAPS) expect(lockTip(open, c.id)).toBeNull()
   })

@@ -1,7 +1,7 @@
 // Buildable sites: campuses, factories, stores and event venues share one
 // model. A site is an empty plot; the player zones rooms on it, the walls
 // follow the rooms, and each kind of room takes its own furniture.
-import { CLIP, type CurveSpec, type LiveTile, MIN_RADIUS, MIN_THICK, type Side, bayBeyond, bayStands, curveAt, curveTiles, geomOf, holeOf, onCurve, settle } from './curves'
+import { CLIP, type CurveSpec, type LiveTile, MIN_RADIUS, MIN_THICK, type Side, plotMark, bayBeyond, bayStands, curveAt, curveTiles, geomOf, holeOf, onCurve, settle } from './curves'
 import type { Corner, Role, Room, Site, SiteItem, SiteKind } from './types'
 
 export type Stage = 'in' | 'out' | 'belt' | 'smt' | 'assembly' | 'test' | 'pack'
@@ -473,8 +473,24 @@ const NO_CURVES = new Map<string, LiveTile>()
  * nowhere. Pass the site's curved tiles when asking about many edges.
  */
 export function doorFits(site: Site, x: number, y: number, side: 'n' | 'w', curved?: Map<string, LiveTile>): boolean {
-  const runs = edgeRuns(site, x, y, side, curved ?? (site.curves?.length ? undefined : NO_CURVES)).filter((r) => r.u1 - r.u0 >= CLIP)
-  return runs.length === 1 && wholeRun(runs[0])
+  return !!doorRun(site, x, y, side, curved)
+}
+/**
+ * The one whole stretch of wall on a grid edge that a door can stand in, or
+ * null. There must be floor to step onto on both sides: the corner a curved
+ * wall leaves over on its own tile belongs to whoever stands against it, but
+ * it is a sliver behind the curve and nobody can walk there, so a full metre
+ * of wall that only shuts such a corner off takes no door.
+ */
+export function doorRun(site: Site, x: number, y: number, side: 'n' | 'w', curved?: Map<string, LiveTile>): EdgeRun | null {
+  const live = curved ?? (site.curves?.length ? undefined : NO_CURVES)
+  const runs = edgeRuns(site, x, y, side, live).filter((r) => r.u1 - r.u0 >= CLIP)
+  if (runs.length !== 1 || !wholeRun(runs[0])) return null
+  const floored = (tx: number, ty: number, facing: Side) => {
+    const tile = live ? live.get(`${tx},${ty}`) : curveAt(site, tx, ty)
+    return !tile || tile.shape.sides[facing].reduce((a, [u, v]) => a + v - u, 0) >= 1 - 2 * CLIP
+  }
+  return floored(x, y, side) && (side === 'n' ? floored(x, y - 1, 's') : floored(x - 1, y, 'e')) ? runs[0] : null
 }
 /** What to tell someone who asks for a door where one cannot stand. */
 export const SHORT_WALL = 'A door needs a full metre of straight wall, and the curved wall cuts this stretch short. Put it in the curved wall itself, or on a whole stretch of straight wall.'
@@ -483,24 +499,69 @@ export const edgeIds = (site: Site, x: number, y: number, side: 'n' | 'w'): [num
 
 /** The two tiles an edge lies between: [inside tile, the one north or west of it]. */
 export const edgeSides = (x: number, y: number, side: 'n' | 'w'): [[number, number], [number, number]] => [[x, y], side === 'n' ? [x, y - 1] : [x - 1, y]]
-/** True where two different rooms (or a room and open ground) meet. */
-export function isBoundary(site: Site, x: number, y: number, side: 'n' | 'w'): boolean {
-  const [a, b] = edgeIds(site, x, y, side)
-  return a !== b
+/**
+ * True where a wall stands on a grid edge: two different rooms, or a room and
+ * open ground, meet along some stretch of it. Read from the same stretches the
+ * walls are drawn from (edgeRuns), so that a wall which is there to see is a
+ * wall here too, however a curve divides the tiles on either side.
+ */
+export function isBoundary(site: Site, x: number, y: number, side: 'n' | 'w', curved?: Map<string, LiveTile>): boolean {
+  if (!site.curves?.length) {
+    const [a, b] = edgeIds(site, x, y, side)
+    return a !== b
+  }
+  return edgeRuns(site, x, y, side, curved).some((r) => r.u1 - r.u0 >= CLIP)
 }
 export const wallAt = (site: Site, x: number, y: number, side: 'n' | 'w') => site.walls.find((w) => w.x === x && w.y === y && w.side === side)
 
-/** Rooms people can get into: those with a door or an opening somewhere on their walls. */
+/**
+ * What has been worked out about a plot, kept until the plot next changes.
+ * Which rooms have a way in, and so which furniture can be reached, is asked
+ * many times in every simulated day (once for each campaign, each store and
+ * each of the staff's effects), and with curved walls it is slow to work out.
+ * Every change to a plot moves its `rev` on; the lists of walls, furniture and
+ * curves are watched too, so that a plot changed without going through an
+ * action (a test, a migration) is never answered for from memory.
+ */
+interface Memo {
+  rev: number
+  walls: unknown
+  nWalls: number
+  items: unknown
+  nItems: number
+  curves: unknown
+  nCurves: number
+  grid: unknown
+  open?: Set<number>
+  reach?: SiteItem[]
+}
+const MEMO = new WeakMap<Site, Memo>()
+function memoOf(site: Site): Memo {
+  // the grid, the curves and the doors in curved walls are changed in place, so they are read, not just compared
+  let mark = plotMark(site)
+  for (const c of site.curves ?? []) for (const k in c.walls) mark += `,${k}${c.walls[k]}`
+  const m = MEMO.get(site)
+  if (m && m.rev === site.rev && m.grid === mark && m.walls === site.walls && m.nWalls === site.walls.length && m.items === site.items && m.nItems === site.items.length && m.curves === site.curves && m.nCurves === (site.curves?.length ?? 0)) return m
+  const fresh: Memo = { rev: site.rev, walls: site.walls, nWalls: site.walls.length, items: site.items, nItems: site.items.length, curves: site.curves, nCurves: site.curves?.length ?? 0, grid: mark }
+  MEMO.set(site, fresh)
+  return fresh
+}
+
+/** Rooms people can get into: those with a door or an opening somewhere on their walls. The set is shared: read it, do not change it. */
 export function openRooms(site: Site): Set<number> {
+  const memo = memoOf(site)
+  return (memo.open ??= findOpenRooms(site))
+}
+function findOpenRooms(site: Site): Set<number> {
   const open = new Set<number>()
   const curved = site.curves?.length ? curveTiles(site) : NO_CURVES
   for (const w of site.walls) {
     if (w.kind === 'glass') continue
     // a way in needs its whole metre of wall: a stretch a curved wall cuts short leads nowhere anyone can walk
-    const runs = edgeRuns(site, w.x, w.y, w.side, curved).filter((r) => r.u1 - r.u0 >= CLIP)
-    if (runs.length !== 1 || !wholeRun(runs[0])) continue
-    if (runs[0].a) open.add(runs[0].a)
-    if (runs[0].c) open.add(runs[0].c)
+    const run = doorRun(site, w.x, w.y, w.side, curved)
+    if (!run) continue
+    if (run.a) open.add(run.a)
+    if (run.c) open.add(run.c)
   }
   site.curves?.forEach((c, i) => {
     for (const [bay, kind] of Object.entries(c.walls ?? {})) {
@@ -532,8 +593,9 @@ export function curveFor(x0: number, y0: number, x1: number, y1: number, shape: 
   const by = Math.max(y0, y1)
   const w = bx - ax + 1
   const h = by - ay + 1
+  if (![x0, y0, x1, y1].every(Number.isFinite)) return null
   const sweep = opts.sweep === 90 || opts.sweep === 180 || opts.sweep === 270 ? opts.sweep : 360
-  const turn = (((opts.turn ?? 0) % 4) + 4) % 4
+  const turn = Number.isFinite(opts.turn) ? (((Math.round(opts.turn!) % 4) + 4) % 4) : 0
   let cx = ax + w / 2
   let cy = ay + h / 2
   let rx = w / 2
@@ -556,7 +618,7 @@ export function curveFor(x0: number, y0: number, x1: number, y1: number, shape: 
   if (Math.min(rx, ry) < MIN_RADIUS) return null
   const spec: CurveSpec = { cx, cy, rx, ry }
   if (shape === 'ring') {
-    const t = Math.max(MIN_THICK, Math.round(opts.thick ?? 4))
+    const t = Math.max(MIN_THICK, Math.round(Number.isFinite(opts.thick) ? opts.thick! : 4))
     if (holeOf({ ...spec, t })) spec.t = t
   }
   if (sweep < 360) {
@@ -662,7 +724,16 @@ export function zone(site: Site, type: string, tiles: [number, number][], into?:
     const c = cuts[`${x},${y}`]
     if (c && cutFits(site, x, y, c)) (site.cuts ??= {})[`${x},${y}`] = c
   }
-  if (curve) (site.curves ??= []).push({ room: room.n, ...curve })
+  if (curve && edge) {
+    // the curve shapes the tiles it was built with, and no others. Where its outline crosses floor the room
+    // already had, that tile stays square for good: otherwise the curved wall would appear through a
+    // finished room, furniture and all (mergeRooms does the same for rooms joined to this one later)
+    const built = new Set(free.map(([x, y]) => `${x},${y}`))
+    const square: Record<string, 1> = {}
+    for (const [key, shape] of edge) if (!built.has(key) && gridAt(site, shape.x, shape.y) === room.n) square[key] = 1
+    site.curves ??= []
+    site.curves.push({ room: room.n, ...curve, ...(Object.keys(square).length ? { square } : {}) })
+  }
   settle(site)
   site.rev++
   return { room, added: free.length }
@@ -689,8 +760,8 @@ export function autoDoor(site: Site, n: number) {
   const curved = curveTiles(site)
   // a door needs a whole metre of straight wall with the room on one side of it
   const wall = (x: number, y: number, side: 'n' | 'w', score: number) => {
-    const runs = edgeRuns(site, x, y, side, curved).filter((r) => r.u1 - r.u0 >= CLIP)
-    if (runs.length === 1 && wholeRun(runs[0]) && (runs[0].a === n || runs[0].c === n)) edges.push({ x, y, side, score })
+    const run = doorRun(site, x, y, side, curved)
+    if (run && (run.a === n || run.c === n)) edges.push({ x, y, side, score })
   }
   for (let y = 0; y < site.h; y++) {
     for (let x = 0; x < site.w; x++) {
@@ -761,6 +832,15 @@ export function touching(site: Site, type: string, tiles: [number, number][]): n
 export function mergeRooms(site: Site, keep: number, others: number[]) {
   const gone = new Set(others.filter((n) => n !== keep))
   if (!gone.size || !roomOf(site, keep)) return
+  // a curved wall of one of these rooms whose outline crosses the floor of another of them does not start
+  // shaping that floor now that they are one room: those tiles were built square, and stay square
+  for (const c of site.curves ?? []) {
+    if (c.room !== keep && !gone.has(c.room)) continue
+    for (const [key, shape] of geomOf(c).tiles) {
+      const n = gridAt(site, shape.x, shape.y)
+      if (n && n !== c.room && (n === keep || gone.has(n))) (c.square ??= {})[key] = 1
+    }
+  }
   for (let i = 0; i < site.grid.length; i++) if (gone.has(site.grid[i])) site.grid[i] = keep
   for (const c of site.curves ?? []) if (gone.has(c.room)) c.room = keep
   site.rooms = site.rooms.filter((r) => !gone.has(r.n))
@@ -786,7 +866,9 @@ export function tidy(site: Site) {
   }
   // a door or an opening goes with its wall, and also when a curved wall built beside it cuts its metre short
   const curved = site.curves?.length ? curveTiles(site) : NO_CURVES
-  site.walls = site.walls.filter((w) => isBoundary(site, w.x, w.y, w.side) && (w.kind === 'glass' || doorFits(site, w.x, w.y, w.side, curved)))
+  site.walls = site.walls.filter((w) => isBoundary(site, w.x, w.y, w.side, curved) && (w.kind === 'glass' || doorFits(site, w.x, w.y, w.side, curved)))
+  // the plot may have changed: nothing remembered about it holds any longer
+  site.rev++
 }
 
 // ---------------------------------------------------------------- courtyards
@@ -890,7 +972,7 @@ export function fillError(pocket: Pocket | null): string | null {
   if (pocket.reaches.length > 2) {
     return `That ground is not closed in: it runs out to ${pocket.reaches.length === 4 ? 'all four' : 'three'} sides of the plot, so it is the open land round the buildings and not a courtyard. Fill takes ground that buildings close in, with the edge of the plot along no more than two sides of it; mark the room out with a box instead.`
   }
-  if (pocket.tiles.length > FILL_MAX) return `That courtyard is ${pocket.tiles.length.toLocaleString()} m², too large to fill in one go (the most is ${FILL_MAX.toLocaleString()} m²). Mark the room out in parts instead.`
+  if (pocket.tiles.length > FILL_MAX) return `That courtyard is ${pocket.tiles.length.toLocaleString('en-US')} m², too large to fill in one go (the most is ${FILL_MAX.toLocaleString('en-US')} m²). Mark the room out in parts instead.`
   return null
 }
 
@@ -961,9 +1043,14 @@ export function roomNames(kind: SiteKind, def: ItemDef): string {
   return names.length > 3 ? `${names.slice(0, 3).join(', ')} and ${names.length - 3} more` : names.join(' or ')
 }
 
+/** What is said of something that is not in the list of things a plot can hold. */
+export const UNKNOWN_ITEM = 'There is no such thing to place on this kind of plot'
+
 export function canPlace(site: Site, kind: string, x: number, y: number, rot: number): string | null {
-  const def = ITEMS[site.kind][kind]
-  if (!def) return 'Unknown item'
+  // only what the list itself names: "constructor" is a property of every object, and not a piece of furniture
+  const def = typeof kind === 'string' && Object.hasOwn(ITEMS[site.kind], kind) ? ITEMS[site.kind][kind] : undefined
+  if (!def) return UNKNOWN_ITEM
+  if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(rot)) return 'It does not fit on the plot'
   if (!itemAllowed(site, kind)) return 'Trees do not grow inside a mall'
   let room = -1
   for (const [a, b] of tilesOf(def, x, y, rot)) {
@@ -983,6 +1070,10 @@ export const countItems = (site: Site, kind: string) => site.items.filter((i) =>
 
 /** Items standing in rooms people can actually reach (or outdoors). */
 export function reachable(site: Site): SiteItem[] {
+  const memo = memoOf(site)
+  return (memo.reach ??= findReachable(site))
+}
+function findReachable(site: Site): SiteItem[] {
   const open = openRooms(site)
   return site.items.filter((it) => {
     const n = gridAt(site, it.x, it.y)

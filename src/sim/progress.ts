@@ -8,7 +8,7 @@ import { homeRegion } from './regions'
 import { ITEMS, ROOMS, needsOf } from './sites'
 import { EXECS, execOf, makeExec } from './staff'
 import { trailing } from './stock'
-import { EXEC_IDS, type ExecId, type GameState, type Role, type SiteKind } from './types'
+import { EXEC_IDS, type ExecId, type GameState, type Role, type SiteKind, wasReleased } from './types'
 
 export type CapId = 'research' | 'market' | 'studio' | 'marketing' | 'execs' | 'finance' | 'events' | 'rivals' | 'care' | 'teams' | 'people' | 'massMedia' | 'shares' | 'factory' | 'carePolicy' | 'stores' | 'world' | 'venue' | 'labs'
 
@@ -63,7 +63,8 @@ export interface Capability {
 // ---------------------------------------------------------------- requirements
 
 const mine = (s: GameState) => s.products.filter((p) => p.companyId === 'player')
-const launched = (s: GameState) => mine(s).filter((p) => p.status !== 'dev').length
+// a device shelved while still in development was never put on sale, and does not count as one that was
+const launched = (s: GameState) => mine(s).filter(wasReleased).length
 const sold = (s: GameState) => s.companies[0].unitsTotal
 const doing = (s: GameState, role: Role) => s.staff.filter((e) => e.role === role && !e.exec).length
 /** Money put into research so far. */
@@ -401,10 +402,29 @@ export function ratioOf(s: GameState, id: CapId): number {
   const parts = reqsOf(s, id).map((r) => (r.need ? r.have / r.need : 1))
   return BY_ID[id].mode === 'any' ? Math.max(...parts) : parts.reduce((a, b) => a + b, 0) / parts.length
 }
-/** The requirement to point the player at: the first one not yet met. */
-export const nextReq = (s: GameState, id: CapId): ReqState | undefined => reqsOf(s, id).find((r) => !r.done)
+/** The capability that keeps the place a requirement points to shut, if any: its screen, or the executive search. */
+function shutBy(s: GameState, r: ReqState): CapId | undefined {
+  const cap = r.where?.tab ? capOfTab(r.where.tab) : undefined
+  if (cap && !has(s, cap)) return cap
+  return r.where?.view === 'execs' && !has(s, 'execs') ? 'execs' : undefined
+}
+/**
+ * The requirement to point the player at: the first one not yet met that can
+ * be worked on now. One whose screen is itself still locked is passed over
+ * for another; where every one left is behind a locked screen, the answer is
+ * what opens that screen, so "take me there" never leads to a closed door.
+ */
+export function nextReq(s: GameState, id: CapId, depth = 0): ReqState | undefined {
+  const todo = reqsOf(s, id).filter((r) => !r.done)
+  const open = todo.find((r) => !shutBy(s, r))
+  if (open || !todo.length || depth > 3) return open ?? todo[0]
+  return nextReq(s, shutBy(s, todo[0])!, depth + 1) ?? todo[0]
+}
 
 const lower = (t: string) => t.charAt(0).toLowerCase() + t.slice(1)
+/** Capabilities whose names are plural, so that sentences about them agree: 'Stores are', 'Research is'. */
+const PLURAL: CapId[] = ['events', 'rivals', 'teams', 'people', 'shares', 'carePolicy', 'stores', 'world', 'labs']
+const isAre = (id: CapId) => (PLURAL.includes(id) ? 'are' : 'is')
 /** What is still to do, in a few words: "hire a researcher or build a research lab". */
 export function needText(s: GameState, id: CapId): string {
   const c = BY_ID[id]
@@ -415,7 +435,7 @@ export function needText(s: GameState, id: CapId): string {
 /** Why the player cannot use something that belongs to a capability, or null when they can. */
 export function locked(s: GameState, id: CapId): string | null {
   if (has(s, id)) return null
-  return `${BY_ID[id].name} is not open yet: ${needText(s, id)} first.`
+  return `${BY_ID[id].name} ${isAre(id)} not open yet: ${needText(s, id)} first.`
 }
 /**
  * Everything still to do before a capability opens, as a sentence for the
@@ -428,14 +448,16 @@ export function lockTip(s: GameState, id: CapId): string | null {
   const todo = reqsOf(s, id)
     .filter((r) => !r.done)
     .map((r) => lower(r.label))
-  if (!todo.length) return `${c.name} is not open yet.`
-  return `${c.name} is not open yet. To open it: ${todo.join(c.mode === 'any' ? ', or ' : ', then ')}.`
+  if (!todo.length) return `${c.name} ${isAre(id)} not open yet.`
+  return `${c.name} ${isAre(id)} not open yet. To open ${PLURAL.includes(id) ? 'them' : 'it'}: ${todo.join(c.mode === 'any' ? ', or ' : ', then ')}.`
 }
 /** The same for a room or a piece of furniture. */
 export function siteLocked(s: GameState, kind: SiteKind, what: 'room' | 'item', id: string): string | null {
   const cap = needsOf(kind, what, id) as CapId | undefined
   if (!cap || !BY_ID[cap] || has(s, cap)) return null
   const name = (what === 'room' ? ROOMS[kind][id]?.name : ITEMS[kind][id]?.name) ?? 'That'
+  // the design studio is both a room and the capability that brings it: said once, not twice
+  if (name === BY_ID[cap].name) return `The ${lower(name)} is not open yet: ${needText(s, cap)} first.`
   return `${name} comes with ${BY_ID[cap].name}: ${needText(s, cap)} first.`
 }
 
@@ -545,8 +567,9 @@ export function stepProgress(s: GameState): CapId[] {
     if (held && (!seat || seat.vacant !== undefined)) s.execSeats[id] = { since: s.day }
     else if (!held && seat && seat.vacant === undefined) {
       seat.vacant = s.day
-      const runs = capsOfExec(id).filter((c) => has(s, c.id)).map((c) => c.name)
-      post(s, 'alert', `The ${EXECS[id].title} has gone and the seat is empty.${runs.length ? ` ${runs.join(' and ')} ${runs.length > 1 ? 'stay' : 'stays'} open.` : ''} ${EXECS[id].gap} Find a successor under Staff, Executives.`)
+      const open = capsOfExec(id).filter((c) => has(s, c.id))
+      const runs = open.map((c) => c.name)
+      post(s, 'alert', `The ${EXECS[id].title} has gone and the seat is empty.${runs.length ? ` ${runs.join(' and ')} ${runs.length > 1 || PLURAL.includes(open[0].id) ? 'stay' : 'stays'} open.` : ''} ${EXECS[id].gap} Find a successor under Staff, Executives.`)
     }
   }
   topUp(s)

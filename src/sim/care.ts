@@ -16,6 +16,9 @@ export const REFURB_RETURN = 0.045
 /** Fans upgrade this much sooner when their old device is worth something. */
 export const TRADE_PULL = 1.3
 
+/** True while the company has somewhere to refurbish traded-in devices: a factory, or a store with a repair bench. */
+export const canRefurb = (s: GameState) => !!s.factory || s.stores.some((st) => storeStats(st.site).repairs > 0)
+
 /** Repair benches across all stores. */
 export const repairBenches = (s: GameState) => s.stores.reduce((a, st) => a + storeStats(st.site).repairs, 0)
 
@@ -93,7 +96,8 @@ export function checkRecalls(s: GameState): CareNote[] {
     if (!p.recall && p.defectRate > RECALL_FAULTS && p.unitsSold >= RECALL_MIN_UNITS) {
       p.recall = { state: 'open', day: s.day, cost: recallCost(p) }
       notes.push({ productId: p.id, text: `Fault reports for ${p.name} are spreading. Decide whether to recall it.` })
-    } else if (p.recall?.state === 'open' && s.day - p.recall.day > RECALL_DEADLINE) {
+    } else if (p.recall?.state === 'open' && s.day - p.recall.day >= RECALL_DEADLINE) {
+      // on the day the screens count down to, not a month after it
       p.recall.state = 'ignored'
       me.brand = clamp(me.brand - 0.05, 0.05, 1)
       s.fans *= 0.85
