@@ -11,11 +11,14 @@ import { VARIANTS, deriveVariant, generateDesign, layoutParts } from '../rivals'
 import { type RngHolder, rand } from '../rng'
 import { evaluate, thermal, weightParts } from '../scoring'
 import { type CustomChip, DEVICE_TYPES, type DeviceDesign, type DeviceType, type Levels, type Product, SUBS, TRACKS } from '../types'
+import { designProblem } from '../validate'
 import { scan } from './invariants'
 import { ruleKey } from './play'
 
 export interface DeviceFuzzResult {
   designs: number
+  /** Designs pushed beyond the editor's range that the game would refuse to start. */
+  refused: number
   calls: number
   findings: { rule: string; detail: string; count: number; design?: string }[]
 }
@@ -30,8 +33,12 @@ export function fuzzDevices(seed: number, perType: number, wild: number): Device
   const found = new Map<string, { rule: string; detail: string; count: number; design?: string }>()
   let calls = 0
   let designs = 0
-  const flag = (text: string, d?: DeviceDesign) => {
-    const key = ruleKey(text)
+  let refused = 0
+  /** Set while a design pushed beyond what the editor offers is being judged. */
+  let beyond = false
+  const flag = (raw: string, d?: DeviceDesign) => {
+    const text = (beyond ? raw.replace(/^([a-z-]+): /, '$1-wild: ') : raw).replace(/ \((phone|tablet|watch|laptop|desktop|console|earbuds|tv|foldable|headset|speaker|handheld)\)/, '')
+    const key = ruleKey(text.replace(/ \[[a-z]+\]$/, ''))
     const f = found.get(key)
     if (f) f.count++
     else found.set(key, { rule: text.split(': ')[0], detail: text, count: 1, design: d ? JSON.stringify(d).slice(0, 4000) : undefined })
@@ -41,11 +48,13 @@ export function fuzzDevices(seed: number, perType: number, wild: number): Device
     try {
       const out = fn()
       const bad: string[] = []
-      scan(out, name, bad, 3)
+      // a helper handed a body that is not a body gives back what it was given: only what the game would accept is judged
+      if (!beyond) scan(out, name, bad, 3)
       for (const b of bad) flag(`device-${b.replace(/\[\d+\]/g, '[]')} (${d.type})`, d)
       return out
     } catch (e) {
-      flag(`device-threw: ${name} (${d.type}): ${String((e as Error)?.stack ?? e).split('\n').slice(0, 3).join(' | ').slice(0, 300)}`, d)
+      const frame = (String((e as Error)?.stack).split('\n')[1] ?? '').trim().replace(/\(.*[\\/]/, '(')
+      flag(`device-threw: ${name.replace(/ .*/, '')}: ${String((e as Error)?.message ?? e).slice(0, 90)} ${frame.slice(0, 60)} [${d.type}]`, d)
       return undefined
     }
   }
@@ -60,13 +69,13 @@ export function fuzzDevices(seed: number, perType: number, wild: number): Device
     const T = TYPES[d.type]
     const b = d.body
     const s = d.specs
-    const lim = sizeLimits(d.type, b.fold)
+
     const idx = (n: number) => (chance(w) ? odd() : int(0, Math.max(0, n - 1)))
     const dim = (lo: number, hi: number) => (chance(w) ? odd() : Math.round((lo + rnd() * (hi - lo)) * 10) / 10)
     for (let n = int(1, 8); n > 0; n--) {
       switch (int(0, 22)) {
-        case 0: b.width = dim(lim.width[0], lim.width[1]); break
-        case 1: b.height = dim(lim.height[0], lim.height[1]); break
+        case 0: b.width = dim(sizeLimits(d.type, b.fold).width[0], sizeLimits(d.type, b.fold).width[1]); break
+        case 1: b.height = dim(sizeLimits(d.type, b.fold).height[0], sizeLimits(d.type, b.fold).height[1]); break
         case 2: b.thickness = dim(2, T.maxThickness); break
         case 3: b.corner = dim(0, 40); break
         case 4: b.bezelTop = dim(0, 20); b.bezelBottom = dim(0, 20); b.bezelSide = dim(0, 12); break
@@ -84,7 +93,7 @@ export function fuzzDevices(seed: number, perType: number, wild: number): Device
         case 16: s.hinge = idx(HINGES.length); s.optics = idx(OPTICS.length); break
         case 17: b.stand = chance(w) ? 'none' : pick(STANDS).id; b.strap = chance(w) ? 'rope' : pick([...STRAPS.map((x) => x.id), ...HEAD_STRAPS.map((x) => x.id)]); break
         case 18: b.buds = pick(['stem', 'bean'] as const); b.form = pick(['column', 'orb', 'block'] as const); b.screen = chance(0.5); break
-        case 19: if (d.type === 'foldable') { b.fold = pick(['book', 'flip'] as const); b.cover = idx(FLIP_COVERS.length) } break
+        case 19: if (d.type === 'foldable') { b.fold = pick(['book', 'flip'] as const); b.cover = idx(FLIP_COVERS.length); const to = sizeLimits(d.type, b.fold); b.width = to.width[2]; b.height = to.height[2] } break
         case 20: {
           // a part of any kind this type takes, anywhere on any face it may sit on
           const kinds = kindsFor(d.type)
@@ -115,7 +124,8 @@ export function fuzzDevices(seed: number, perType: number, wild: number): Device
     if (ev) {
       const r = ev.report
       if (!(r.pct >= 0 && r.pct <= 100)) flag(`device-range: design score ${r.pct} (${d.type})`, d)
-      for (const row of r.breakdown) if (!(row.score >= -1e-9 && row.score <= row.max + 1e-9)) flag(`device-range: breakdown ${row.key} scores ${row.score} of ${row.max} (${d.type})`, d)
+      // a row with nothing to win (max 0) is a penalty, and scores zero or less
+      for (const row of r.breakdown) if (!(row.score <= row.max + 1e-9) || (row.max > 0 && row.score < -1e-9)) flag(`device-range: breakdown ${row.key} scores ${row.score} of ${row.max} (${d.type})`, d)
       for (const k of SUBS) if (!(ev.raw[k] >= 0)) flag(`device-range: raw ${k} is ${ev.raw[k]} (${d.type})`, d)
       if (strictRange) {
         if (!(ev.unitCost > 0)) flag(`device-range: unit cost ${ev.unitCost} (${d.type})`, d)
@@ -174,6 +184,8 @@ export function fuzzDevices(seed: number, perType: number, wild: number): Device
       const own = safe('evaluate', made, () => evaluate(made, lv, mLevel))
       const errors = own?.report.issues.filter((i) => i.level === 'error') ?? []
       if (errors.length) flag(`rival-design-error: a generated ${seg.id} design does not pass its own check: ${errors[0].text}`, made)
+      const refusal = designProblem(made)
+      if (refusal) flag(`design-refused: a generated ${seg.id} design is turned away: ${refusal}`, made)
       judge(made, lv, mLevel, true)
       // the simple editor's layouts
       const body = made.body
@@ -181,15 +193,24 @@ export function fuzzDevices(seed: number, perType: number, wild: number): Device
       // then pushed about within what the editor offers, and (when asked) beyond it
       const d: DeviceDesign = JSON.parse(JSON.stringify(made))
       mutate(d, lv, 0)
+      const turned = designProblem(d)
+      if (turned) flag(`design-refused: a design made of choices the editor offers is turned away: ${turned}`, d)
       judge(d, lv, mLevel, true)
       if (wild > 0) {
         const x: DeviceDesign = JSON.parse(JSON.stringify(made))
+        beyond = true
         mutate(x, lv, wild)
-        judge(x, lv, mLevel, false)
+        // a design the game would refuse to start is not one it has to be able to score
+        const problem = safe('designProblem', x, () => designProblem(x))
+        if (problem === null) {
+          beyond = false
+          judge(x, lv, mLevel, true)
+        } else refused++
+        beyond = false
       }
     }
   }
-  return { designs, calls, findings: [...found.values()] }
+  return { designs, refused, calls, findings: [...found.values()] }
 }
 
 export const DEVICE_FUZZ_TYPES: DeviceType[] = DEVICE_TYPES

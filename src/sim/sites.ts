@@ -473,8 +473,24 @@ const NO_CURVES = new Map<string, LiveTile>()
  * nowhere. Pass the site's curved tiles when asking about many edges.
  */
 export function doorFits(site: Site, x: number, y: number, side: 'n' | 'w', curved?: Map<string, LiveTile>): boolean {
-  const runs = edgeRuns(site, x, y, side, curved ?? (site.curves?.length ? undefined : NO_CURVES)).filter((r) => r.u1 - r.u0 >= CLIP)
-  return runs.length === 1 && wholeRun(runs[0])
+  return !!doorRun(site, x, y, side, curved)
+}
+/**
+ * The one whole stretch of wall on a grid edge that a door can stand in, or
+ * null. There must be floor to step onto on both sides: the corner a curved
+ * wall leaves over on its own tile belongs to whoever stands against it, but
+ * it is a sliver behind the curve and nobody can walk there, so a full metre
+ * of wall that only shuts such a corner off takes no door.
+ */
+export function doorRun(site: Site, x: number, y: number, side: 'n' | 'w', curved?: Map<string, LiveTile>): EdgeRun | null {
+  const live = curved ?? (site.curves?.length ? undefined : NO_CURVES)
+  const runs = edgeRuns(site, x, y, side, live).filter((r) => r.u1 - r.u0 >= CLIP)
+  if (runs.length !== 1 || !wholeRun(runs[0])) return null
+  const floored = (tx: number, ty: number, facing: Side) => {
+    const tile = live ? live.get(`${tx},${ty}`) : curveAt(site, tx, ty)
+    return !tile || tile.shape.sides[facing].reduce((a, [u, v]) => a + v - u, 0) >= 1 - 2 * CLIP
+  }
+  return floored(x, y, side) && (side === 'n' ? floored(x, y - 1, 's') : floored(x - 1, y, 'e')) ? runs[0] : null
 }
 /** What to tell someone who asks for a door where one cannot stand. */
 export const SHORT_WALL = 'A door needs a full metre of straight wall, and the curved wall cuts this stretch short. Put it in the curved wall itself, or on a whole stretch of straight wall.'
@@ -483,10 +499,18 @@ export const edgeIds = (site: Site, x: number, y: number, side: 'n' | 'w'): [num
 
 /** The two tiles an edge lies between: [inside tile, the one north or west of it]. */
 export const edgeSides = (x: number, y: number, side: 'n' | 'w'): [[number, number], [number, number]] => [[x, y], side === 'n' ? [x, y - 1] : [x - 1, y]]
-/** True where two different rooms (or a room and open ground) meet. */
-export function isBoundary(site: Site, x: number, y: number, side: 'n' | 'w'): boolean {
-  const [a, b] = edgeIds(site, x, y, side)
-  return a !== b
+/**
+ * True where a wall stands on a grid edge: two different rooms, or a room and
+ * open ground, meet along some stretch of it. Read from the same stretches the
+ * walls are drawn from (edgeRuns), so that a wall which is there to see is a
+ * wall here too, however a curve divides the tiles on either side.
+ */
+export function isBoundary(site: Site, x: number, y: number, side: 'n' | 'w', curved?: Map<string, LiveTile>): boolean {
+  if (!site.curves?.length) {
+    const [a, b] = edgeIds(site, x, y, side)
+    return a !== b
+  }
+  return edgeRuns(site, x, y, side, curved).some((r) => r.u1 - r.u0 >= CLIP)
 }
 export const wallAt = (site: Site, x: number, y: number, side: 'n' | 'w') => site.walls.find((w) => w.x === x && w.y === y && w.side === side)
 
@@ -497,10 +521,10 @@ export function openRooms(site: Site): Set<number> {
   for (const w of site.walls) {
     if (w.kind === 'glass') continue
     // a way in needs its whole metre of wall: a stretch a curved wall cuts short leads nowhere anyone can walk
-    const runs = edgeRuns(site, w.x, w.y, w.side, curved).filter((r) => r.u1 - r.u0 >= CLIP)
-    if (runs.length !== 1 || !wholeRun(runs[0])) continue
-    if (runs[0].a) open.add(runs[0].a)
-    if (runs[0].c) open.add(runs[0].c)
+    const run = doorRun(site, w.x, w.y, w.side, curved)
+    if (!run) continue
+    if (run.a) open.add(run.a)
+    if (run.c) open.add(run.c)
   }
   site.curves?.forEach((c, i) => {
     for (const [bay, kind] of Object.entries(c.walls ?? {})) {
@@ -663,7 +687,16 @@ export function zone(site: Site, type: string, tiles: [number, number][], into?:
     const c = cuts[`${x},${y}`]
     if (c && cutFits(site, x, y, c)) (site.cuts ??= {})[`${x},${y}`] = c
   }
-  if (curve) (site.curves ??= []).push({ room: room.n, ...curve })
+  if (curve && edge) {
+    // the curve shapes the tiles it was built with, and no others. Where its outline crosses floor the room
+    // already had, that tile stays square for good: otherwise the curved wall would appear through a
+    // finished room, furniture and all (mergeRooms does the same for rooms joined to this one later)
+    const built = new Set(free.map(([x, y]) => `${x},${y}`))
+    const square: Record<string, 1> = {}
+    for (const [key, shape] of edge) if (!built.has(key) && gridAt(site, shape.x, shape.y) === room.n) square[key] = 1
+    site.curves ??= []
+    site.curves.push({ room: room.n, ...curve, ...(Object.keys(square).length ? { square } : {}) })
+  }
   settle(site)
   site.rev++
   return { room, added: free.length }
@@ -690,8 +723,8 @@ export function autoDoor(site: Site, n: number) {
   const curved = curveTiles(site)
   // a door needs a whole metre of straight wall with the room on one side of it
   const wall = (x: number, y: number, side: 'n' | 'w', score: number) => {
-    const runs = edgeRuns(site, x, y, side, curved).filter((r) => r.u1 - r.u0 >= CLIP)
-    if (runs.length === 1 && wholeRun(runs[0]) && (runs[0].a === n || runs[0].c === n)) edges.push({ x, y, side, score })
+    const run = doorRun(site, x, y, side, curved)
+    if (run && (run.a === n || run.c === n)) edges.push({ x, y, side, score })
   }
   for (let y = 0; y < site.h; y++) {
     for (let x = 0; x < site.w; x++) {
@@ -762,6 +795,15 @@ export function touching(site: Site, type: string, tiles: [number, number][]): n
 export function mergeRooms(site: Site, keep: number, others: number[]) {
   const gone = new Set(others.filter((n) => n !== keep))
   if (!gone.size || !roomOf(site, keep)) return
+  // a curved wall of one of these rooms whose outline crosses the floor of another of them does not start
+  // shaping that floor now that they are one room: those tiles were built square, and stay square
+  for (const c of site.curves ?? []) {
+    if (c.room !== keep && !gone.has(c.room)) continue
+    for (const [key, shape] of geomOf(c).tiles) {
+      const n = gridAt(site, shape.x, shape.y)
+      if (n && n !== c.room && (n === keep || gone.has(n))) (c.square ??= {})[key] = 1
+    }
+  }
   for (let i = 0; i < site.grid.length; i++) if (gone.has(site.grid[i])) site.grid[i] = keep
   for (const c of site.curves ?? []) if (gone.has(c.room)) c.room = keep
   site.rooms = site.rooms.filter((r) => !gone.has(r.n))
@@ -787,7 +829,7 @@ export function tidy(site: Site) {
   }
   // a door or an opening goes with its wall, and also when a curved wall built beside it cuts its metre short
   const curved = site.curves?.length ? curveTiles(site) : NO_CURVES
-  site.walls = site.walls.filter((w) => isBoundary(site, w.x, w.y, w.side) && (w.kind === 'glass' || doorFits(site, w.x, w.y, w.side, curved)))
+  site.walls = site.walls.filter((w) => isBoundary(site, w.x, w.y, w.side, curved) && (w.kind === 'glass' || doorFits(site, w.x, w.y, w.side, curved)))
 }
 
 // ---------------------------------------------------------------- courtyards

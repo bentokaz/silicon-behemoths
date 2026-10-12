@@ -34,7 +34,7 @@ function findings(rows) {
   const all = new Map()
   for (const r of rows) {
     for (const f of r.findings ?? []) {
-      const key = (f.detail ?? f.rule).replace(/-?\d+(\.\d+)?(e[+-]?\d+)?/g, '#').slice(0, 150)
+      const key = (f.detail ?? f.rule).replace(/ \[[a-z]+\]$/, '').replace(/-?\d+(\.\d+)?(e[+-]?\d+)?/g, '#').slice(0, 150)
       const e = all.get(key) ?? { ...f, count: 0, runs: 0 }
       e.count += f.count ?? 1
       e.runs++

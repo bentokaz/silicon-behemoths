@@ -15,6 +15,7 @@ import { INCIDENT_WAIT, STARTUPS, economyNow, typeDemand, hasType, makeOriginal,
 import { clamp, int, pick, rand, range } from './rng'
 import { clampPart, coverScreen, isCoverCam, isFlip } from './geometry'
 import { evaluate, selfieMinDia } from './scoring'
+import { designProblem } from './validate'
 import { bayStands, curveAt, curveTiles, onCurve } from './curves'
 import { FACADES, FLOOR_COST, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, SHORT_WALL, UNKNOWN_ITEM, areaOf, areaTiles, autoDoor, builtTiles, canPlace, courtyardFor, curveFor, defaultGround, doorFits, fillError, gridAt, groundsFor, hasGround, inPlot, isBoundary, itemAllowed, itemAt, itemTiles, mergeRooms, newSite, openRooms, pocketAt, roomOf, rowSpots, shapeCuts, starterLine, storeStats, tidy, tierOf, touching, upkeep, venueStats, wallAt, zone } from './sites'
 import { capOfChannel, locked, refreshExecs, siteLocked, stepProgress } from './progress'
@@ -364,8 +365,9 @@ export const isVariantOf = (s: GameState, family: string, type: DeviceType) => o
 
 /** Start developing a device. Returns an error message, or null on success. */
 export function startProduct(s: GameState, o: LaunchOrder): string | null {
-  const type = o?.design?.type
-  if (!o?.design?.body || !o.design.specs || !Array.isArray(o.design.parts) || !lists(TYPES, type)) return 'That is not a device design'
+  const problem = designProblem(o?.design)
+  if (problem) return `That is not a device design the game can build: ${problem}. Start again from a fresh design.`
+  const type = o.design.type
   if (!hasType(s, type)) return `Your company does not make ${TYPES[type].plural.toLowerCase()} yet. Open that line under Research.`
   const ev = evaluate(o.design, s.levels, marketLevel(s.day), s.features, s.chips)
   const blocking = ev.report.issues.find((i) => i.level === 'error')
@@ -1210,11 +1212,16 @@ function transplant(old: Site, site: Site, dx: number, dy: number) {
   }
   // curved outlines move with their rooms: the centre, and the tiles noted as squared off
   if (old.curves?.length) {
-    const shift = (key: string) => {
+    // a squared-off tile that the room has since given up may fall outside a smaller plot: it is left behind
+    const shift = (key: string): string | null => {
       const [x, y] = key.split(',').map(Number)
-      return `${x + dx},${y + dy}`
+      return inPlot(site, x + dx, y + dy) ? `${x + dx},${y + dy}` : null
     }
-    site.curves = old.curves.map((c) => ({ ...c, cx: c.cx + dx, cy: c.cy + dy, ...(c.walls ? { walls: { ...c.walls } } : {}), ...(c.square ? { square: Object.fromEntries(Object.keys(c.square).map((k) => [shift(k), 1 as const])) } : {}) }))
+    site.curves = old.curves.map((c) => {
+      const square = Object.keys(c.square ?? {}).map(shift).filter((k): k is string => k !== null)
+      const { square: _was, ...rest } = c
+      return { ...rest, cx: c.cx + dx, cy: c.cy + dy, ...(c.walls ? { walls: { ...c.walls } } : {}), ...(square.length ? { square: Object.fromEntries(square.map((k) => [k, 1 as const])) } : {}) }
+    })
   }
   site.facade = old.facade
   site.roof = old.roof

@@ -23,7 +23,7 @@ export interface SiteFuzzResult {
  * can have. Money can only ever go down, apart from the half price that the
  * few things standing on the first plot fetch.
  */
-export function fuzzSites(seed: number, ops: number, wild: number, trace?: (line: string) => void): SiteFuzzResult {
+export function fuzzSites(seed: number, ops: number, wild: number, trace?: (line: string) => void, onFirst?: (p: Play, ref: string) => void): SiteFuzzResult {
   const p = new Play({ ...G.defaultConfig(), seed, startCash: 5e9, startType: 'phone' }, `sitefuzz seed=${seed} wild=${wild}`, seed)
   p.trace = trace
   const s = p.s
@@ -57,6 +57,10 @@ export function fuzzSites(seed: number, ops: number, wild: number, trace?: (line
       const value = (list: Site) => list.items.reduce((a, it) => a + (ITEMS[list.kind][it.kind]?.cost ?? 0), 0)
       const sold = (JSON.parse(before) as Site).items.reduce((a, it) => a + (ITEMS[site.kind][it.kind]?.cost ?? 0), 0) - value(now)
       if (s.cash - cash > sold / 2 + 1e-6) p.flag(`resale: ${p.trail[p.trail.length - 1].replace(/\(.*/, '')} paid back ${(s.cash - cash).toFixed(2)} for furniture worth ${sold} new`)
+    }
+    if (onFirst && p.findings.size) {
+      onFirst(p, ref)
+      break
     }
     if (n % 25 === 0) p.check(true)
   }

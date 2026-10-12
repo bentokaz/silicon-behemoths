@@ -417,6 +417,13 @@ export function clampPart(b: Body, p: PlacedPart, type: DeviceType = 'phone'): P
   const face = allowed.includes(p.face) ? p.face : (allowed[0] ?? p.face)
   const fs = faceSize(b, face, type)
   const q = { ...p, face }
+  // a field cleared in the editor, or a drag that ran off the device, can hand over something that is not a
+  // number: a part with no place goes to the middle of its face, and one with no size gets a small one
+  if (!Number.isFinite(q.x)) q.x = 0
+  if (!Number.isFinite(q.y)) q.y = 0
+  if (!Number.isFinite(q.rot)) q.rot = 0
+  if (!Number.isFinite(q.w) || q.w <= 0) q.w = 2
+  if (!Number.isFinite(q.h) || q.h <= 0) q.h = 2
   if (isEdge(face, type)) {
     // a part on an edge can never be taller than the edge is thick
     const room = Math.max(0.8, fs.h - 1.2)
