@@ -371,6 +371,8 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
     const nightGlass = full && glow > 0.05
     const glassFor = (room?: Room) => (nightGlass && room && dark?.has(room.n) ? 'glassoff' : 'glass')
     const upperGlass = (room: Room | undefined, seed: number, storey: number) => (nightGlass && upperLit(room, seed, storey) === 'pane' ? 'glassoff' : 'glass')
+    /** The floor plates seen through it glow with the storeys' own light, except over a room that has gone dark. */
+    const plateFor = (room?: Room) => (plateKey === 'plate' && room && dark?.has(room.n) ? 'wall' : plateKey)
     /** Upper floors seen through a glass wall are lit from within at night. */
     const plateKey = full && glow > 0.05 && facade.kind === 'glass' ? 'plate' : 'wall'
     const postH = full ? top + 0.345 : H + 0.035
@@ -661,7 +663,7 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
               glazedStrip(f, t0, t1, y0 + 0.3, y1, upperGlass(room, seed, fl))
               strip('trim', f, t0, t1, -half, half, y0, y0 + 0.3, 'oi', POST)
               // the edge of the floor plate, seen through the glass below the band
-              strip(plateKey, f, t0, t1, -half, -0.02, y0 - 0.2, y0, 'o', '#cfccc5')
+              strip(plateFor(room), f, t0, t1, -half, -0.02, y0 - 0.2, y0, 'o', '#cfccc5')
             } else {
               clad(f, t0, t1, y0, y1, seed + fl * 11)
               strip('wall', f, t0, t1, -half, 0, y0, y1, 'i', '#d9d6cf')
@@ -795,6 +797,7 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
       for (let y = 0; y < site.h; y++) {
         for (let x = 0; x < site.w; x++) {
           if (!site.grid[y * site.w + x]) continue
+          const plate = plateFor(rooms.get(site.grid[y * site.w + x]))
           const cx = ox + x + 0.5
           const cz = oz + y + 0.5
           const sh = 0.94 + hash(x * 7 + y * 13) * 0.1
@@ -815,14 +818,14 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
               b.poly('wall', pts, roofY, roof.color, sh)
               b.poly('wall', pts, roofY - 0.12, roof.color, sh, false)
               for (let f = 1; f < site.floors; f++) {
-                b.poly(plateKey, pts, f * STOREY - 0.1, '#cfccc5', 1)
-                b.poly(plateKey, pts, f * STOREY - 0.3, '#cfccc5', 1, false)
+                b.poly(plate, pts, f * STOREY - 0.1, '#cfccc5', 1)
+                b.poly(plate, pts, f * STOREY - 0.3, '#cfccc5', 1, false)
               }
             }
             continue
           }
           b.box('wall', cx, roofY - 0.06, cz, 1, 0.12, 1, roof.color, sh)
-          for (let f = 1; f < site.floors; f++) b.box(plateKey, cx, f * STOREY - 0.2, cz, 1, 0.2, 1, '#cfccc5', 1)
+          for (let f = 1; f < site.floors; f++) b.box(plate, cx, f * STOREY - 0.2, cz, 1, 0.2, 1, '#cfccc5', 1)
           const r = hash(x * 91 + y * 57)
           const inner = gridAt(site, x - 1, y) && gridAt(site, x + 1, y) && gridAt(site, x, y - 1) && gridAt(site, x, y + 1)
           if (!inner) continue
@@ -837,7 +840,8 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
             b.box('trim', cx, roofY + 0.72, cz, 0.6, 0.04, 0.6, '#3a3d42')
           } else if ((roof.id === 'white' || roof.id === 'gravel') && r < 0.02) {
             b.box('trim', cx, roofY + 0.06, cz, 0.9, 0.12, 0.9, '#8a8f95')
-            b.box(litKey, cx, roofY + 0.13, cz, 0.78, 0.02, 0.78, '#27353f')
+            // a skylight glows only while someone is in the room under it
+            b.box(litFor(rooms.get(site.grid[y * site.w + x])), cx, roofY + 0.13, cz, 0.78, 0.02, 0.78, '#27353f')
           }
         }
       }

@@ -4,7 +4,7 @@
 import { useFrame } from '@react-three/fiber'
 import { useRef } from 'react'
 import type * as THREE from 'three'
-import { B, C, CHARCOAL, DARK, type PersonLook, Person, S, STEEL, Tree, WHITE, hash } from './kit'
+import { B, Baked, C, CHARCOAL, DARK, type PersonLook, Person, S, STEEL, Tree, WHITE, hash } from './kit'
 
 export interface FactoryCtx {
   /** True when this item is on a working line that has orders. */
@@ -92,12 +92,43 @@ function Dock({ c, out }: { c: FactoryCtx; out: boolean }) {
   )
 }
 
-/** A lorry about 7.5 m long: cab toward +Z, box trailer behind. Parked in the yard, or driven up to a dock. */
-export function Lorry({ seed }: { seed: number }) {
+/** Where a lorry's wheels are: x of each side, z of each axle (the first is the one that steers), and their radius. */
+export const LORRY_WHEELS = { x: [-0.95, 0.95], z: [3.0, -0.6, -1.7, -2.8], r: 0.48 }
+
+/** One wheel of a lorry, lying along X: tyre, rim and a hub with a bar across it, so that it can be seen to turn. */
+function LorryWheel({ side }: { side: number }) {
+  return (
+    <>
+      <C p={[0, 0, 0]} r={[0.48, 0.48]} h={0.3} c="#15171a" seg={16} rot={[0, 0, Math.PI / 2]} />
+      <C p={[side * 0.152, 0, 0]} r={[0.27, 0.27]} h={0.012} c="#8d9299" seg={14} rot={[0, 0, Math.PI / 2]} cast={false} />
+      <B p={[side * 0.16, 0, 0]} s={[0.012, 0.42, 0.11]} c="#3a3d42" r={0} cast={false} />
+      <B p={[side * 0.16, 0, 0]} s={[0.012, 0.11, 0.42]} c="#3a3d42" r={0} cast={false} />
+    </>
+  )
+}
+
+/** A wheel on its own, for a lorry on the move: the view turns and steers it. */
+export function LiveWheel({ side }: { side: number }) {
+  return (
+    <Baked sig={`wheel${side}`}>
+      <LorryWheel side={side} />
+    </Baked>
+  )
+}
+
+/** A lorry about 7.5 m long: cab toward +Z, box trailer behind. Parked in the yard, or driven up to a dock (then without its wheels, which are drawn turning). */
+export function Lorry({ seed, wheels = true }: { seed: number; wheels?: boolean }) {
   const paint = ['#c9553d', '#2f5d8a', '#3f7d4d'][seed % 3]
   return (
     <>
-      {[-0.95, 0.95].map((x) => [3.0, -0.6, -1.7, -2.8].map((z) => <C key={`${x}${z}`} p={[x, 0.48, z]} r={[0.48, 0.48]} h={0.3} c="#15171a" seg={16} rot={[0, 0, Math.PI / 2]} />))}
+      {wheels &&
+        LORRY_WHEELS.x.map((x) =>
+          LORRY_WHEELS.z.map((z) => (
+            <group key={`${x}${z}`} position={[x, LORRY_WHEELS.r, z]}>
+              <LorryWheel side={Math.sign(x)} />
+            </group>
+          )),
+        )}
       <B p={[0, 0.72, -0.3]} s={[2.0, 0.24, 6.6]} c="#2b2d31" r={0.02} rough={0.7} />
       <B p={[0, 2.2, -1.0]} s={[2.4, 2.7, 5.4]} c="#e4e6e8" r={0.03} rough={0.6} />
       <B p={[1.206, 2.3, -1.0]} s={[0.012, 0.9, 3.4]} c={paint} r={0} cast={false} />

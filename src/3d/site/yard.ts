@@ -2,8 +2,10 @@
 // from the road into a bay. A lorry comes along the road past the plot, up
 // the drive, through the yard by a route that keeps clear of the buildings,
 // the trees and whatever else stands there, pulls up past its bay and backs
-// into it. It is all worked out once per layout, for looks alone.
-import { ITEMS, itemTiles } from '../../sim/sites'
+// into it. It keeps to the road, the drive and the hard standing of the yard:
+// lawn and gravel are crossed only where the player has left no paved way. It
+// is all worked out once per layout, for looks alone.
+import { ITEMS, groundAt, itemTiles } from '../../sim/sites'
 import type { Site, SiteItem } from '../../sim/types'
 import { type ItemFrame, frameOf } from './spots'
 
@@ -16,8 +18,16 @@ const AXLE = 2.3
 /** Half the length of a bay, from where the lorry stands to its open end. */
 const BAY_HALF = 4
 const TURN = 3.8
-/** Tiles of open ground round a factory plot before the neighbouring sheds begin. */
-const APRON = 10
+/**
+   Tiles of open ground round a factory plot that a lorry may use when the drive does not lead where it has to go:
+   beside the plot, and behind it. The neighbouring sheds stand a lorry's width further back than this (see env.tsx:
+   the nearest wall is 8.5 m from the side of the plot and 11.5 m from the back of it).
+ */
+export const APRON = { side: 6, back: 10 }
+/** How much longer a metre of each kind of ground counts for when a route is chosen. Anything not listed is hard standing. */
+const SOFT: Record<string, number> = { grass: 8, meadow: 9, gravel: 2, deck: 6, tile: 3 }
+/** The same for the verge round the plot, when it has to be used at all. */
+const VERGE = 14
 
 export interface Manoeuvre {
   /** The marked truck bay this uses, if there is one for the dock. */
@@ -29,8 +39,13 @@ export interface Manoeuvre {
   arrive: Pt[]
   /** From where it stands, out through the mouth of the bay and round to that stopping point: driven backwards to get in. Empty if the lorry has to nose in instead. */
   back: Pt[]
-  /** Driven forwards from where it stands to far along the road. Empty if it has to back out the way it came. */
+  /** Driven forwards from where it stands (or from the end of `swing`) to far along the road. Empty if it has to back out the way it came. */
   leave: Pt[]
+  /**
+   * For a lorry that nosed in: backwards out of the bay and round a quarter turn, tail first, to where it can drive
+   * off forwards. The lorry points back along this route as it follows it. Empty if there is no room to turn.
+   */
+  swing: Pt[]
 }
 
 export interface YardPlan {
@@ -47,16 +62,20 @@ interface Grid {
   ok: Uint8Array
   /** 1 where it also has room to swing: routes keep to these where they can, so a long vehicle does not clip a corner as it turns. */
   wide: Uint8Array
+  /** How long a metre driven through each cell counts for: 1 on road and hard standing, more on soft ground. */
+  weight: Float32Array
   x(cell: number): number
   z(cell: number): number
   at(x: number, z: number): number
 }
 
-function buildGrid(site: Site, free: Set<string>): Grid {
+/** `loose` lets the lorry onto the verge round the plot, for layouts the drive does not serve. */
+function buildGrid(site: Site, free: Set<string>, loose: boolean): Grid {
   const { w, h } = site
   const gw = w + RING * 2
   const gh = h + RING * 2
   const open = new Uint8Array(gw * gh)
+  const weight = new Float32Array(gw * gh).fill(1)
   const defs = ITEMS[site.kind]
   const blocked = new Uint8Array(w * h)
   for (const it of site.items) {
@@ -69,13 +88,16 @@ function buildGrid(site: Site, free: Set<string>): Grid {
       const x = gx - RING
       const y = gy - RING
       let ok: boolean
-      if (x >= 0 && y >= 0 && x < w && y < h) ok = !site.grid[y * w + x] && !blocked[y * w + x] && site.floor[`${x},${y}`] !== 'water'
-      else {
-        // off the plot: the open apron round it (the nearest sheds stand further back), the drive in the middle of the south side, and the road
-        const beyond = Math.max(-x, x - (w - 1), -y, y - (h - 1))
+      if (x >= 0 && y >= 0 && x < w && y < h) {
+        ok = !site.grid[y * w + x] && !blocked[y * w + x] && site.floor[`${x},${y}`] !== 'water'
+        weight[gy * gw + gx] = SOFT[groundAt(site, x, y).id] ?? 1
+      } else {
+        // off the plot: the road, and the drive up from it in the middle of the south side. The pavement and the
+        // verge beyond it are not for lorries, unless nothing else serves
         const road = y >= h + 3 && y <= h + 10
         const drive = y >= h && Math.abs(x + 0.5 - w / 2) <= 3
-        ok = beyond <= APRON || road || drive
+        ok = road || drive || (loose && Math.max(-x, x - (w - 1)) <= APRON.side && -y <= APRON.back && y < h + 3)
+        if (!road && !drive) weight[gy * gw + gx] = VERGE
       }
       open[gy * gw + gx] = ok ? 1 : 0
     }
@@ -102,6 +124,7 @@ function buildGrid(site: Site, free: Set<string>): Grid {
     gh,
     ok,
     wide,
+    weight,
     x: (c) => (c % gw) - RING - w / 2 + 0.5,
     z: (c) => Math.floor(c / gw) - RING - h / 2 + 0.5,
     at: (x, z) => {
@@ -127,6 +150,18 @@ function clearLine(g: Grid, a: Pt, b: Pt, mask: Uint8Array = g.ok): boolean {
   return true
 }
 
+/** What a straight run from one point to another counts for: its length, weighted by the ground it crosses. */
+function lineCost(g: Grid, a: Pt, b: Pt): number {
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1])
+  const n = Math.max(1, Math.ceil(len / 0.4))
+  let sum = 0
+  for (let i = 0; i < n; i++) {
+    const c = g.at(a[0] + ((b[0] - a[0]) * (i + 0.5)) / n, a[1] + ((b[1] - a[1]) * (i + 0.5)) / n)
+    sum += c >= 0 ? g.weight[c] : VERGE
+  }
+  return (sum / n) * len
+}
+
 /** The nearest cell a lorry can be in to a point, within a few tiles. */
 function nearestClear(g: Grid, x: number, z: number, mask: Uint8Array = g.ok): number {
   let best = -1
@@ -147,11 +182,15 @@ function nearestClear(g: Grid, x: number, z: number, mask: Uint8Array = g.ok): n
 
 /** A way for a lorry from one point to another, as a few straight runs, or null if there is none. */
 function drive(g: Grid, from: Pt, to: Pt): Pt[] | null {
-  // with room to spare where there is a way that has it; otherwise as tight as a lorry can go
-  return search(g, from, to, g.wide) ?? search(g, from, to, g.ok)
+  // with room to spare where there is a way that has it, unless that means going a long way round or over soft ground
+  // when a tighter way keeps to the hard standing; otherwise as tight as a lorry can go
+  const roomy = search(g, from, to, g.wide)
+  const tight = search(g, from, to, g.ok)
+  if (!roomy || !tight) return (roomy ?? tight)?.pts ?? null
+  return roomy.cost <= tight.cost * 1.2 + 2 ? roomy.pts : tight.pts
 }
 
-function search(g: Grid, from: Pt, to: Pt, mask: Uint8Array): Pt[] | null {
+function search(g: Grid, from: Pt, to: Pt, mask: Uint8Array): { pts: Pt[]; cost: number } | null {
   const a = nearestClear(g, from[0], from[1], mask)
   const b = nearestClear(g, to[0], to[1], mask)
   if (a < 0 || b < 0) return null
@@ -192,7 +231,7 @@ function search(g: Grid, from: Pt, to: Pt, mask: Uint8Array): Pt[] | null {
         const j = y * g.gw + x
         if (!mask[j] || done[j]) continue
         if (dx && dy && (!mask[cy * g.gw + x] || !mask[y * g.gw + cx])) continue
-        const ng = cost[c] + (dx && dy ? 1.4142 : 1)
+        const ng = cost[c] + (dx && dy ? 1.4142 : 1) * (g.weight[c] + g.weight[j]) * 0.5
         if (ng < cost[j]) {
           cost[j] = ng
           prev[j] = c
@@ -206,16 +245,16 @@ function search(g: Grid, from: Pt, to: Pt, mask: Uint8Array): Pt[] | null {
   for (let c = b; c >= 0; c = prev[c]) cells.push(c)
   cells.reverse()
   const pts: Pt[] = cells.map((c) => [g.x(c), g.z(c)])
-  // pull the route tight: keep only the corners it has to turn at
+  // pull the route tight: keep only the corners it has to turn at, and never cut a corner across softer ground than the way found
   const out: Pt[] = [pts[0]]
   let i = 0
   while (i < pts.length - 1) {
     let j = pts.length - 1
-    while (j > i + 1 && !clearLine(g, pts[i], pts[j], mask)) j--
+    while (j > i + 1 && (!clearLine(g, pts[i], pts[j], mask) || lineCost(g, pts[i], pts[j]) > (cost[cells[j]] - cost[cells[i]]) * 1.04 + 0.5)) j--
     out.push(pts[j])
     i = j
   }
-  return out
+  return { pts: out, cost: cost[b] }
 }
 
 /** Rounds the corners of a route so a long vehicle swings through them. */
@@ -316,13 +355,44 @@ function manoeuvre(site: Site, g: Grid, bay: BayDef): Manoeuvre | null {
     if (!route) continue
     const exit = drive(g, at(mouth + 1.5, 0, side), from)
     if (!exit) continue
-    return { truck: bay.truck, park: bay.park, out: bay.out, arrive: [beyond(sign), ...soften([...route, q0, q1], 3)], back: [bay.park, at(mouth, 0, side), ...arc, q1], leave: [bay.park, ...soften([at(mouth + 1.5, 0, side), ...exit]), far] }
+    return { truck: bay.truck, park: bay.park, out: bay.out, arrive: [beyond(sign), ...soften([...route, q0, q1], 3)], back: [bay.park, at(mouth, 0, side), ...arc, q1], leave: [bay.park, ...soften([at(mouth + 1.5, 0, side), ...exit]), far], swing: [] }
   }
-  // no room to swing round: nose in along the bay, and back out the way it came
+  // no room to pull across the front of the bay: nose in along it
   const front = at(mouth + 1.5, 0, 1)
   const route = clearAt(g, front[0], front[1]) ? drive(g, from, front) : null
-  if (route) return { truck: bay.truck, park: bay.park, out: [-ox, -oz], arrive: [far, ...soften([...route, front]), at(0.2, 0, 1)], back: [], leave: [] }
-  return null
+  if (!route) return null
+  const nosed = { truck: bay.truck, park: bay.park, out: [-ox, -oz] as Pt, arrive: [far, ...soften([...route, front]), at(0.2, 0, 1)], back: [] as Pt[] }
+  // getting out again: back out and round a quarter turn to one side, tail first, then away forwards (a three-point turn)
+  const lane = mouth + TURN
+  for (const side of [1, -1]) {
+    const arc: Pt[] = []
+    for (let k = 0; k <= 8; k++) {
+      const t = (k / 8) * (Math.PI / 2)
+      arc.push(at(mouth + TURN * Math.sin(t), TURN - TURN * Math.cos(t), side))
+    }
+    const tail = at(lane, TURN + 2.4, side)
+    const nose = at(lane, -0.6, side)
+    if (!clearLine(g, nose, at(lane, TURN + 2.4 + 3.6, side)) || arc.slice(3).some((p) => !clearAt(g, p[0], p[1]))) continue
+    const exit = drive(g, nose, from)
+    if (!exit) continue
+    return { ...nosed, swing: [at(0.2, 0, 1), at(mouth, 0, side), ...arc, tail], leave: [tail, ...soften([nose, ...exit]), far] }
+  }
+  // no room for that either: back out the way it came
+  return { ...nosed, leave: [], swing: [] }
+}
+
+/** How good a way of serving a bay is: backing in is best, nosing in and turning round on the way out next, backing all the way out last. */
+const grade = (m: Manoeuvre | null) => (!m ? 3 : m.back.length ? 0 : m.swing.length ? 1 : 2)
+
+/**
+ * The best way to serve a bay. Off the plot a lorry keeps to the road and the drive; it takes to the verge only where
+ * that lets it back up to the dock, tail first, as it should, when the yard alone leaves it no way to.
+ */
+function serve(site: Site, free: Set<string>, bay: BayDef): Manoeuvre | null {
+  const strict = manoeuvre(site, buildGrid(site, free, false), bay)
+  if (grade(strict) === 0) return strict
+  const loose = manoeuvre(site, buildGrid(site, free, true), bay)
+  return grade(loose) < grade(strict) ? loose : strict
 }
 
 /** Works out how each shipping dock's lorry comes and goes. `docks` are the docks with a line behind them. */
@@ -348,12 +418,12 @@ export function planYard(site: Site, docks: SiteItem[]): YardPlan {
     let move: Manoeuvre | null = null
     if (truck) {
       // every other bay's parked lorry is in the way; this one's own bay is not
-      const g = buildGrid(site, new Set([truck.id]))
+      const g = buildGrid(site, new Set([truck.id]), true)
       const tf = frameOf(site, truck)
       // a bay is open at whichever end has room to drive up to it: the cab end if both do
       const front: Pt = [tf.sin, tf.cos]
       const openEnd = (d: Pt) => clearAt(g, tf.cx + d[0] * (BAY_HALF + 2), tf.cz + d[1] * (BAY_HALF + 2))
-      move = manoeuvre(site, g, { truck, park: [tf.cx, tf.cz], out: openEnd(front) || !openEnd([-front[0], -front[1]]) ? front : [-front[0], -front[1]] })
+      move = serve(site, new Set([truck.id]), { truck, park: [tf.cx, tf.cz], out: openEnd(front) || !openEnd([-front[0], -front[1]]) ? front : [-front[0], -front[1]] })
       if (move) {
         used.add(truck.id)
         plan.managed.add(truck.id)
@@ -364,7 +434,7 @@ export function planYard(site: Site, docks: SiteItem[]): YardPlan {
       const bay = wallBay(site, f)
       const [ox, oz] = bay.out
       const away: Pt = [bay.park[0] + ox * 46, bay.park[1] + oz * 46]
-      move = manoeuvre(site, buildGrid(site, new Set()), bay) ?? { park: bay.park, out: bay.out, arrive: [], back: [bay.park, away], leave: [bay.park, away] }
+      move = serve(site, new Set(), bay) ?? { park: bay.park, out: bay.out, arrive: [], back: [bay.park, away], leave: [bay.park, away], swing: [] }
     }
     plan.docks.set(dock.id, move)
   }
