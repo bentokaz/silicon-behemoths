@@ -10,14 +10,17 @@ export default defineConfig({
   define: { __BUILD__: JSON.stringify(new Date().toISOString().slice(0, 10)) },
   server: { port: 5183, strictPort: true },
   build: {
-    // the big libraries go in files of their own: they download side by side and stay cached between updates
+    // the big libraries go in files of their own: they download side by side and stay cached between updates.
+    // A group takes what it names and whatever that needs, so the order matters: React is claimed first, for the
+    // file the menu needs. Left to the 3D group (which also needs React), it rode along in the 1.4 MB 3D file, and
+    // the menu could not show until all of that had come down.
     rolldownOptions: {
       output: {
-        advancedChunks: {
+        codeSplitting: {
           groups: [
-            { name: 'three', test: /node_modules[\\/](three|@react-three|three-stdlib|postprocessing|n8ao|maath|troika|meshline|camera-controls|detect-gpu|stats-gl|suspend-react|its-fine)/ },
-            { name: 'charts', test: /node_modules[\\/](recharts|d3-|victory-vendor|decimal\.js|react-smooth|recharts-scale)/ },
-            { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler|zustand|use-sync-external-store)[\\/]/ },
+            { name: 'react', priority: 30, test: /node_modules[\\/](react|react-dom|scheduler|zustand|use-sync-external-store)[\\/]/ },
+            { name: 'charts', priority: 20, test: /node_modules[\\/](recharts|d3-|victory-vendor|decimal\.js|react-smooth|recharts-scale)/ },
+            { name: 'three', priority: 10, test: /node_modules[\\/](three|@react-three|three-stdlib|postprocessing|n8ao|maath|troika|meshline|camera-controls|detect-gpu|stats-gl|suspend-react|its-fine)/ },
           ],
         },
       },

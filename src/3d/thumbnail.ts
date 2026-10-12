@@ -3,6 +3,7 @@
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import type { DeviceDesign, DeviceType } from '../sim/types'
+import { webglAvailable } from './SafeCanvas'
 import { buildDevice, deviceFrame, disposeDevice, setFold } from './buildDevice'
 
 const W = 180
@@ -11,6 +12,15 @@ let renderer: THREE.WebGLRenderer | null = null
 let scene: THREE.Scene
 let camera: THREE.PerspectiveCamera
 const cache = new Map<string, string>()
+/**
+ * Pictures kept. A long game has several hundred devices on its lists, its
+ * own and its rivals'; with fewer kept than a list shows, scrolling it would
+ * draw the same ones over and over.
+ */
+const KEEP = 800
+/** When drawing last failed for want of 3D graphics: it is not tried again for a while, so a list of 300 does not fail 300 times. */
+let failedAt = -Infinity
+const RETRY_MS = 15000
 
 /**
  * Where the camera stands for each type, as a direction. Phones, tablets and
@@ -31,6 +41,8 @@ const ANGLES: Partial<Record<DeviceType, [number, number, number]>> = {
 const BACK: [number, number, number] = [-0.36, 0.12, -0.92]
 
 function setup() {
+  renderer?.dispose()
+  renderer = null
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true })
   renderer.setSize(W, H)
   renderer.setPixelRatio(2)
@@ -51,8 +63,11 @@ function setup() {
 export function deviceThumbnail(key: string, design: DeviceDesign, logo?: string): string {
   const hit = cache.get(key)
   if (hit) return hit
+  if (performance.now() - failedAt < RETRY_MS) return ''
   try {
-    if (!renderer) setup()
+    if (!webglAvailable()) throw new Error('no WebGL')
+    // the browser takes a picture away from a page that has too many, or when the graphics driver restarts: start again
+    if (!renderer || renderer.getContext().isContextLost()) setup()
     // small screen artwork is plenty at this size
     const device = buildDevice(design, null, logo, -1, 0.4)
     // a foldable is shown part-way open, like a book, so that it does not pass for a tablet
@@ -71,10 +86,13 @@ export function deviceThumbnail(key: string, design: DeviceDesign, logo?: string
     const url = renderer!.domElement.toDataURL('image/png')
     scene.remove(device)
     disposeDevice(device)
+    // a picture taken as the context went is blank: it is not kept, and the next one starts afresh
+    if (renderer!.getContext().isContextLost()) return ''
     cache.set(key, url)
-    if (cache.size > 300) cache.delete(cache.keys().next().value!)
+    if (cache.size > KEEP) cache.delete(cache.keys().next().value!)
     return url
   } catch {
+    failedAt = performance.now()
     return ''
   }
 }

@@ -2,7 +2,7 @@
 // of rival companies, the port, the research park and the exchange, and the
 // player's own sites standing on their plots. Everything static is merged
 // into a handful of meshes; only what changes is rebuilt.
-import { useEffect, useMemo } from 'react'
+import { memo, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { ITEMS, gridAt } from '../../sim/sites'
 import type { GameState, Site } from '../../sim/types'
@@ -451,7 +451,7 @@ function buildOutdoors(site: Site): { meshes: THREE.Mesh[]; trees: [number, numb
  * One of the company's own sites on its plot: its real footprint, cladding and height, and what stands in its grounds.
  * `scale` draws it smaller than life, for a store that shares its plot with others.
  */
-export function SiteModel({ site, x, z, lights, scale = 1 }: { site: Site; x: number; z: number; lights: boolean; scale?: number }) {
+export const SiteModel = memo(function SiteModel({ site, x, z, lights, scale = 1 }: { site: Site; /** The site's own count of changes: a site is altered in place, so this is what says it is different. */ rev: number; x: number; z: number; lights: boolean; scale?: number }) {
   const kerb = useBatch(() => {
     const b = new Batch()
     const w = site.w
@@ -473,7 +473,7 @@ export function SiteModel({ site, x, z, lights, scale = 1 }: { site: Site; x: nu
       {outdoors.trees.length > 0 && <Trees at={outdoors.trees} />}
     </group>
   )
-}
+})
 
 /** Everything standing in the city, apart from the company's own sites and what moves. */
 export function CityModel({ g, all, list, mats, lights, color, accent }: { g: GameState; all: District[]; list: Place[]; mats: CityMats; lights: boolean; color: string; accent: string }) {

@@ -179,7 +179,7 @@ export function DeviceView(props: Props) {
   return (
     <SafeCanvas
       what="device view"
-      shadows={S.shadows > 0}
+      shadows={S.shadows > 0 ? 'percentage' : false}
       dpr={[1, S.dpr]}
       camera={{ fov: 26, near: 5 * k, far: 6000 * k, position: [dir[0] * dist, dir[1] * dist, dir[2] * dist] }}
       gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.05 }}

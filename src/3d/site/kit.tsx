@@ -142,6 +142,32 @@ function surface(side: THREE.Side, glass = false): THREE.Material {
 }
 
 const still = () => {}
+
+/** Wakes whatever an earlier merge put to rest under `root`: its parts may have moved since. */
+export function wake(root: THREE.Object3D) {
+  root.traverse((o) => {
+    if (!o.userData.rested) return
+    delete o.userData.rested
+    delete (o as { updateMatrixWorld?: unknown }).updateMatrixWorld
+    o.visible = true
+  })
+}
+
+/**
+ * Puts to rest every branch under `root` that has nothing left to draw or to
+ * move now that the meshes in `merged` are drawn elsewhere, so the renderer
+ * does not walk thousands of unseen parts on every frame.
+ */
+export function rest(root: THREE.Object3D, merged: Set<THREE.Object3D>) {
+  const quiet: THREE.Object3D[] = []
+  settle(root, merged, quiet, true)
+  for (const o of quiet) {
+    o.userData.rested = true
+    o.visible = false
+    o.updateMatrixWorld = still
+  }
+}
+
 /** True for a part of the tree with nothing left in it to draw or move once its meshes are merged. */
 function settle(o: THREE.Object3D, merged: Set<THREE.Object3D>, out: THREE.Object3D[], top: boolean): boolean {
   let all = merged.has(o) || o.type === 'Group' || o.type === 'Object3D'
@@ -175,13 +201,7 @@ export function Baked({ sig, children }: { sig: string | number; children: React
   useLayoutEffect(() => {
     const root = src.current
     if (!root) return
-    // wake whatever the last merge put to rest: its parts may have moved since
-    root.traverse((o) => {
-      if (!o.userData.rested) return
-      delete o.userData.rested
-      delete (o as { updateMatrixWorld?: unknown }).updateMatrixWorld
-      o.visible = true
-    })
+    wake(root)
     root.updateWorldMatrix(true, true)
     const inv = new THREE.Matrix4().copy(root.matrixWorld).invert()
     const groups = new Map<string, { material: THREE.Material; parts: BakePart[]; cast: boolean }>()
@@ -205,13 +225,7 @@ export function Baked({ sig, children }: { sig: string | number; children: React
       mesh.visible = false
       done.add(mesh)
     })
-    const quiet: THREE.Object3D[] = []
-    settle(root, done, quiet, true)
-    for (const o of quiet) {
-      o.userData.rested = true
-      o.visible = false
-      o.updateMatrixWorld = still
-    }
+    rest(root, done)
     const meshes: THREE.Mesh[] = []
     for (const g of groups.values()) {
       const a = pack(g.parts)

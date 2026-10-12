@@ -11,10 +11,11 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { GameState } from '../sim/types'
 import { QUALITY, useSettings } from '../store/settings'
 import { themeColor } from '../store/theme'
-import { CameraKeys } from './SiteView'
+import { CameraKeys } from './SiteScene'
 import { type District, type Place, QUEUE, type Route, type Traffic, along } from './city/plan'
 import { type CityMats, CityModel, PLOT_Y, SiteModel, cityMats } from './city/scene'
 import { hash } from './site/kit'
+import { Merged } from './site/merge'
 
 export type Sky = 'auto' | 'day' | 'dusk' | 'night'
 
@@ -353,7 +354,18 @@ const tagHeight = (p: Place) => p.h + (6 + (OWN.includes(p.kind) && p.site ? 5 :
  */
 function TagProjector({ list, tags }: { list: Place[]; tags: RefObject<Map<string, HTMLDivElement>> }) {
   const v = useMemo(() => new THREE.Vector3(), [])
+  /** The view the tags were last placed for: while the camera has not moved, they are where they belong. */
+  const placed = useRef({ list: null as Place[] | null, view: new THREE.Matrix4(), lens: new THREE.Matrix4(), w: 0, h: 0, shown: 0 })
   useFrame(({ camera, size }) => {
+    const was = placed.current
+    const shown = tags.current.size
+    if (was.list === list && was.w === size.width && was.h === size.height && was.shown === shown && was.view.equals(camera.matrixWorldInverse) && was.lens.equals(camera.projectionMatrix)) return
+    was.list = list
+    was.w = size.width
+    was.h = size.height
+    was.shown = shown
+    was.view.copy(camera.matrixWorldInverse)
+    was.lens.copy(camera.projectionMatrix)
     for (const p of list) {
       const el = tags.current.get(p.id)
       if (!el) continue
@@ -394,11 +406,21 @@ export function CityView({ g, all, list, traffic, sky, speed, names, hover, onHo
   const me = g.companies[0]
   const hovered = list.find((p) => p.id === hover)
   const sites = list.filter((p) => p.site)
+  const siteGroups = useMemo(() => {
+    const by = new Map<string, Place[]>()
+    for (const p of list) {
+      if (!p.site) continue
+      const group = by.get(p.region)
+      if (group) group.push(p)
+      else by.set(p.region, [p])
+    }
+    return [...by]
+  }, [list])
   const pins = useMemo(() => list.filter((p) => OWN.includes(p.kind) && p.site), [list])
   const sig = `${sites.map((p) => `${p.id}${p.site!.rev}${p.x}${p.z}`).join('|')}|${list.length}|${all.map((d) => (d.open ? 1 : 0)).join('')}`
   return (
     <div className="relative h-full w-full">
-    <SafeCanvas what="city view" shadows={Q.shadows > 0} dpr={[1, Q.dpr]} camera={{ fov: 32, near: 5, far: 5200, position: HOME_CAMERA }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, powerPreference: 'high-performance' }} style={{ cursor: hovered ? 'pointer' : 'grab' }}>
+    <SafeCanvas what="city view" shadows={Q.shadows > 0 ? 'percentage' : false} dpr={[1, Q.dpr]} camera={{ fov: 32, near: 5, far: 5200, position: HOME_CAMERA }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, powerPreference: 'high-performance' }} style={{ cursor: hovered ? 'pointer' : 'grab' }}>
       <color attach="background" args={['#a8c8e4']} />
       <fog attach="fog" args={['#a8c8e4', 1000, 3600]} />
       <Environment resolution={128} frames={1} environmentIntensity={0.35}>
@@ -407,8 +429,13 @@ export function CityView({ g, all, list, traffic, sky, speed, names, hover, onHo
         <Lightformer form="rect" intensity={1.4} color="#cfe0ff" position={[-8, 2, 0]} scale={[4, 6, 1]} target={[0, 0, 0]} />
       </Environment>
       <CityModel g={g} all={all} list={list} mats={mats} lights={lights} color={me.color} accent={accent} />
-      {sites.map((p) => (
-        <SiteModel key={p.id} site={p.site!} x={p.x} z={p.z} lights={lights} scale={p.scale} />
+      {/* the company's own buildings, joined district by district: two hundred shops are a dozen meshes, not sixteen hundred */}
+      {siteGroups.map(([region, group]) => (
+        <Merged key={region} sig={`${group.map((p) => `${p.id}:${p.site!.rev}:${p.x}:${p.z}:${p.scale ?? 1}`).join('|')}|${lights}`}>
+          {group.map((p) => (
+            <SiteModel key={p.id} site={p.site!} rev={p.site!.rev} x={p.x} z={p.z} lights={lights} scale={p.scale} />
+          ))}
+        </Merged>
       ))}
       <Daylight sky={sky} speed={speed} startDay={g.day} mats={mats} shadows={Q.shadows} sig={`${sig}${lights}`} onLights={setLights} />
       <Movers traffic={traffic} speed={speed} color={me.color} pins={pins} />
@@ -417,6 +444,8 @@ export function CityView({ g, all, list, traffic, sky, speed, names, hover, onHo
       {list.map((p) => (
         <mesh
           key={p.id}
+          // found by the pointer, never drawn
+          visible={false}
           position={[p.x, p.h / 2, p.z]}
           onPointerOver={(e) => {
             e.stopPropagation()
@@ -430,7 +459,7 @@ export function CityView({ g, all, list, traffic, sky, speed, names, hover, onHo
           }}
         >
           <boxGeometry args={[p.w, p.h, p.d]} />
-          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+          <meshBasicMaterial />
         </mesh>
       ))}
       {hovered && (
