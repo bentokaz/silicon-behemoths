@@ -1506,7 +1506,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
   const touches = useMemo(() => ({ ONE: dragTool ? (-1 as THREE.TOUCH) : THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN }), [dragTool])
   const shadowSig = `${site.rev}|${standing.rev}|${dropping.size}|${mood}|${mode}|${seated.length}|${liveSeats.size}|${day > 0 ? Math.floor(day / 30) : 0}|${show ? show.crowd.toFixed(1) + show.cheer : ''}|${glowKey}`
   return (
-    <SafeCanvas what={site.kind === 'office' ? 'campus view' : `${site.kind} view`} adaptive={prefs.quality !== 'high'} shadows={Q.shadows > 0 ? 'percentage' : false} dpr={[0.5, Q.dpr]} camera={{ fov: 30, near, far, position: home }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: dark ? 1.25 : 1, powerPreference: 'high-performance' }}>
+    <SafeCanvas what={site.kind === 'office' ? 'campus view' : `${site.kind} view`} adaptive shadows={Q.shadows > 0 ? 'percentage' : false} dpr={[0.5, Q.dpr]} camera={{ fov: 30, near, far, position: home }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: dark ? 1.25 : 1, powerPreference: 'high-performance' }}>
       <color attach="background" args={[sky]} />
       <fog attach="fog" args={[sky, span * 3 + 80, far * 0.9]} />
       <hemisphereLight args={[dark ? '#6a7fa8' : '#fff4e6', dark ? '#14161c' : '#4a4338', (M.hemi + (dark ? 0.35 : 0)) * (houseDown ? 0.42 : 1)]} />

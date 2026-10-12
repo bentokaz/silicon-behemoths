@@ -423,7 +423,7 @@ export function CityView({ g, all, list, traffic, sky, speed, names, hover, onHo
   const sig = `${sites.map((p) => `${p.id}${p.site!.rev}${p.x}${p.z}`).join('|')}|${list.length}|${all.map((d) => (d.open ? 1 : 0)).join('')}`
   return (
     <div className="relative h-full w-full">
-    <SafeCanvas what="city view" adaptive={prefs.quality !== 'high'} shadows={Q.shadows > 0 ? 'percentage' : false} dpr={[0.5, Q.dpr]} camera={{ fov: 32, near: 5, far: 5200, position: HOME_CAMERA }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, powerPreference: 'high-performance' }} style={{ cursor: hovered ? 'pointer' : 'grab' }}>
+    <SafeCanvas what="city view" adaptive shadows={Q.shadows > 0 ? 'percentage' : false} dpr={[0.5, Q.dpr]} camera={{ fov: 32, near: 5, far: 5200, position: HOME_CAMERA }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, powerPreference: 'high-performance' }} style={{ cursor: hovered ? 'pointer' : 'grab' }}>
       <color attach="background" args={['#a8c8e4']} />
       <fog attach="fog" args={['#a8c8e4', 1000, 3600]} />
       <Environment resolution={128} frames={1} environmentIntensity={0.35}>

@@ -9,7 +9,7 @@ import { Canvas, type CanvasProps, useFrame, useThree } from '@react-three/fiber
 import { Component, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type * as THREE from 'three'
 import { useSettings } from '../store/settings'
-import { Meter, Pace, fence, lostCopy, sharpness, sweep } from './canvasHelp'
+import { Meter, Pace, fence, isSoftwareRenderer, lostCopy, sharpness, sweep } from './canvasHelp'
 
 let known: boolean | null = null
 /** Whether this browser can draw 3D at all. Asked once; asked again only after it has said no. */
@@ -179,8 +179,18 @@ interface Pose {
  * the browser is ready to draw again. A view rebuilt after a loss is given the
  * camera it had, so the player is looking at the same thing when it returns.
  */
-function ContextWatch({ onLost, onBack, onReady, pose }: { onLost: () => void; onBack: () => void; onReady: () => void; pose: { current: Pose | null } }) {
+function ContextWatch({ onLost, onBack, onReady, onSoftware, pose }: { onLost: () => void; onBack: () => void; onReady: () => void; onSoftware: () => void; pose: { current: Pose | null } }) {
   const gl = useThree((s) => s.gl)
+  useEffect(() => {
+    try {
+      const ctx = gl.getContext()
+      const info = ctx.getExtension('WEBGL_debug_renderer_info')
+      const name = String(info ? ctx.getParameter(info.UNMASKED_RENDERER_WEBGL) : ctx.getParameter(ctx.RENDERER))
+      if (isSoftwareRenderer(name)) onSoftware()
+    } catch {
+      /* a browser that will not say is taken at its word */
+    }
+  }, [gl, onSoftware])
   const camera = useThree((s) => s.camera)
   const controls = useThree((s) => s.controls) as unknown as { target: THREE.Vector3; update: () => void } | null
   useEffect(() => onReady(), [onReady])
@@ -370,6 +380,8 @@ export function StrainWatch() {
 
 /** How long a lost picture is waited for before the view is rebuilt from scratch. */
 const REBUILD_AFTER_MS = 2500
+/** Set once the player has put the note about software drawing away: it is not shown again this visit. */
+let softwareTold = false
 /** How long a view that has room on screen may take to start before it is called a failure. */
 const START_WITHIN_MS = 6000
 
@@ -390,6 +402,11 @@ export function SafeCanvas({ children, dpr, what = '3D view', adaptive = false, 
     setAttempt((n) => n + 1)
   }, [])
   const pose = useRef<Pose | null>(null)
+  // a browser drawing 3D on the processor alone manages a frame or two a second, whatever the settings: say why
+  const [software, setSoftware] = useState(false)
+  const onSoftware = useCallback(() => {
+    if (!softwareTold) setSoftware(true)
+  }, [])
   const onLost = useCallback(() => setLost(true), [])
   // the browser can draw again. What was drawn into textures before the loss (the surroundings that light every
   // surface, the shadows) is gone for good, so the view is not patched up: it is built again, whole
@@ -453,7 +470,7 @@ export function SafeCanvas({ children, dpr, what = '3D view', adaptive = false, 
         <SceneGuard key={attempt} onError={setBroke}>
           <Canvas dpr={ratio} {...rest}>
             <Release />
-            <ContextWatch onLost={onLost} onBack={onBack} onReady={onReady} pose={pose} />
+            <ContextWatch onLost={onLost} onBack={onBack} onReady={onReady} onSoftware={onSoftware} pose={pose} />
             <DensityWatch dpr={dpr} adaptive={adaptive} onRatio={setRatio} />
             {children}
           </Canvas>
@@ -464,6 +481,23 @@ export function SafeCanvas({ children, dpr, what = '3D view', adaptive = false, 
           <p className="text-fg">{copy.broke}</p>
           <p className="num break-words text-[10px] text-faint">{broke.message.slice(0, 200)}</p>
         </Notice>
+      )}
+      {software && !broke && !lost && (
+        <div className="absolute inset-x-0 bottom-0 z-[4] flex items-start gap-3 border-t border-warn bg-panel/95 px-3 py-2 text-[11px] leading-snug text-warn" role="status">
+          <span className="min-w-0 flex-1">
+            This browser is drawing 3D without the graphics card, so the {what} will be slow whatever the quality setting. Turn on hardware acceleration in the browser's settings and restart it, or try another browser. The rest of the game is not affected.
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              softwareTold = true
+              setSoftware(false)
+            }}
+            className="shrink-0 border border-warn px-2 py-[2px] uppercase tracking-wider hover:bg-warn/10"
+          >
+            Hide
+          </button>
+        </div>
       )}
       {lost && !broke && (
         <Notice title={copy.lostTitle} action="Bring it back now" onAction={retry}>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LEAST_SHARP, MAX_STEP, Meter, Pace, fence, lostCopy, sharpness, stepOf, sweep } from './canvasHelp'
+import { LEAST_SHARP, MAX_STEP, Meter, Pace, isSoftwareRenderer, fence, lostCopy, sharpness, stepOf, sweep } from './canvasHelp'
 
 describe('stepOf', () => {
   it('passes an ordinary frame through and cuts a long pause down to one step', () => {
@@ -112,11 +112,40 @@ describe('sharpness', () => {
 describe('Meter', () => {
   it('gives the average of each stretch of frames, leaving out the start and any pause', () => {
     const m = new Meter(4, 1)
-    expect(m.frame(1)).toBeNull()
+    expect(m.frame(30)).toBeNull()
     expect(m.frame(0.2)).toBeNull()
     expect([m.frame(0.01), m.frame(0.02), m.frame(30), m.frame(0.03)]).toEqual([null, null, null, null])
     expect(m.frame(0.04)).toBeCloseTo(0.025, 6)
     expect(m.frame(0.01)).toBeNull()
+  })
+})
+
+describe('a very slow computer', () => {
+  it('is measured within seconds, not after a hundred of its frames', () => {
+    const m = new Meter()
+    let out: number | null = null
+    let frames = 0
+    while (out === null && frames < 60) {
+      out = m.frame(0.6)
+      frames++
+    }
+    expect(out).toBeCloseTo(0.6, 6)
+    expect(frames).toBeLessThan(12)
+  })
+  it('is told apart from a tab that was away', () => {
+    const m = new Meter(4, 0)
+    expect([m.frame(0.01), m.frame(45), m.frame(0.01), m.frame(0.01)]).toEqual([null, null, null, null])
+    expect(m.frame(0.01)).toBeCloseTo(0.01, 6)
+  })
+})
+
+describe('isSoftwareRenderer', () => {
+  it('knows the names browsers give to drawing without a graphics card', () => {
+    expect(isSoftwareRenderer('ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)), SwiftShader driver)')).toBe(true)
+    expect(isSoftwareRenderer('llvmpipe (LLVM 15.0.7, 256 bits)')).toBe(true)
+    expect(isSoftwareRenderer('ANGLE (Microsoft, Microsoft Basic Render Driver Direct3D11)')).toBe(true)
+    expect(isSoftwareRenderer('ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)')).toBe(false)
+    expect(isSoftwareRenderer('Apple M2')).toBe(false)
   })
 })
 

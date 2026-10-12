@@ -90,28 +90,43 @@ export function sharpness(now: number, averageFrame: number): number {
   return now
 }
 
-/** Adds up frame times and gives their average once a stretch of them is over. Pauses and the first frames after starting are left out. */
+/**
+ * Adds up frame times and gives their average once a stretch of them is over:
+ * so many frames, or a few seconds if the frames are so slow that that comes
+ * first (a computer drawing two frames a second must not wait a minute to be
+ * noticed). Pauses, and the first moments after starting, are left out.
+ */
 export class Meter {
   private n = 0
   private sum = 0
+  private warmed = 0
   constructor(
     private window = 120,
     private warm = 45,
+    private seconds = 3,
   ) {}
   frame(dt: number): number | null {
-    if (!(dt > 0) || dt > 0.25) return null
+    // longer than this is the tab having been away, not a slow frame
+    if (!(dt > 0) || dt > 2) return null
     if (this.warm > 0) {
       this.warm--
+      this.warmed += dt
+      if (this.warmed < 1.5) return null
+      this.warm = 0
       return null
     }
     this.sum += dt
-    if (++this.n < this.window) return null
+    this.n++
+    if (this.n < this.window && (this.sum < this.seconds || this.n < 4)) return null
     const average = this.sum / this.n
     this.n = 0
     this.sum = 0
     return average
   }
 }
+
+/** True for the name of a renderer that draws on the processor alone, with no graphics card behind it. */
+export const isSoftwareRenderer = (name: string) => /swiftshader|llvmpipe|software|softpipe|basic render/i.test(name)
 
 /** What the player is told when a 3D view cannot be shown. `what` names the view, e.g. "campus view". */
 export function lostCopy(what: string) {
