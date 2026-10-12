@@ -969,7 +969,7 @@ export function fillError(pocket: Pocket | null): string | null {
   if (pocket.reaches.length > 2) {
     return `That ground is not closed in: it runs out to ${pocket.reaches.length === 4 ? 'all four' : 'three'} sides of the plot, so it is the open land round the buildings and not a courtyard. Fill takes ground that buildings close in, with the edge of the plot along no more than two sides of it; mark the room out with a box instead.`
   }
-  if (pocket.tiles.length > FILL_MAX) return `That courtyard is ${pocket.tiles.length.toLocaleString()} m², too large to fill in one go (the most is ${FILL_MAX.toLocaleString()} m²). Mark the room out in parts instead.`
+  if (pocket.tiles.length > FILL_MAX) return `That courtyard is ${pocket.tiles.length.toLocaleString('en-US')} m², too large to fill in one go (the most is ${FILL_MAX.toLocaleString('en-US')} m²). Mark the room out in parts instead.`
   return null
 }
 

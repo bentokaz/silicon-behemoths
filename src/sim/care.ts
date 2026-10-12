@@ -96,7 +96,8 @@ export function checkRecalls(s: GameState): CareNote[] {
     if (!p.recall && p.defectRate > RECALL_FAULTS && p.unitsSold >= RECALL_MIN_UNITS) {
       p.recall = { state: 'open', day: s.day, cost: recallCost(p) }
       notes.push({ productId: p.id, text: `Fault reports for ${p.name} are spreading. Decide whether to recall it.` })
-    } else if (p.recall?.state === 'open' && s.day - p.recall.day > RECALL_DEADLINE) {
+    } else if (p.recall?.state === 'open' && s.day - p.recall.day >= RECALL_DEADLINE) {
+      // on the day the screens count down to, not a month after it
       p.recall.state = 'ignored'
       me.brand = clamp(me.brand - 0.05, 0.05, 1)
       s.fans *= 0.85

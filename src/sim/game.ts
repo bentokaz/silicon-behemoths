@@ -21,7 +21,7 @@ import { FACADES, FLOOR_COST, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, type 
 import { capOfChannel, locked, refreshExecs, siteLocked, stepProgress } from './progress'
 import { EXECS, HEADHUNT_COST, HOURS, TEAM_SPAN, dropFromTeams, execFx, inTraining, monthlySalaries, monthlyStaff, newPolicy, perksCost, refreshCandidates, staffEffects, stepStaff, trainingCost } from './staff'
 import { CHIP_BUDGET, OS_FEATURES, chipAdoption, chipBlocked, chipProjectCost, chipProjectDays, finishChip, newOs, osBlocked, osProjectCost, osProjectDays, osShipQuality, servicesPerMonth, softwareBonus } from './tech'
-import { type ChannelId, type Company, type Corner, type CostKey, type DeviceDesign, type DeviceType, type Difficulty, type EventType, type GameConfig, type GameState, type Levels, type MonthReport, type NewsItem, type Product, type ProductionOrder, type SegmentId, type Site, type SiteKind, type StaffPolicy, type StorageTier, SUPPLY_CATS, type SupplyCat, TRACKS, type Track, monthCosts, wasReleased } from './types'
+import { type ChannelId, type Company, type Corner, type CostKey, type DeviceDesign, type DeviceType, type Difficulty, type EventType, type GameConfig, type GameState, type Levels, type MonthReport, type NewsItem, type Product, type ProductionOrder, type SegmentId, type Site, type SiteKind, type StaffPolicy, type StorageTier, SUPPLY_CATS, type SupplyCat, TRACKS, type Track, dollars, millions, monthCosts, thousands, wasReleased } from './types'
 
 export const SAVE_VERSION = 6
 export const RETAIL_CUT = 0.15
@@ -43,8 +43,7 @@ export const MAX_NAME = 40
 export const MAX_PRICE = 10e6
 /** The most units one production order can ask for. */
 export const MAX_ORDER = 100e6
-/** A dollar amount as text. Written out the same way on every machine, so that the news of a saved game reads the same wherever it is loaded. */
-export const dollars = (v: number) => `$${Math.round(v).toLocaleString('en-US')}`
+export { dollars }
 /** True for the id of one of the world's regions. */
 const isRegion = (id: unknown): id is string => typeof id === 'string' && REGIONS.some((r) => r.id === id)
 /** Games licence income a console maker books for each console sold. */
@@ -303,7 +302,7 @@ export function newGame(cfg: GameConfig): GameState {
   player(s).awareness = worldAwareness(s)
   refreshCandidates(s)
   stepProgress(s)
-  news(s, 'finance', `${cfg.companyName} is founded with ${cfg.unlimitedMoney ? 'unlimited funds' : '$' + (cfg.startCash / 1e6).toFixed(1) + 'M'}.`)
+  news(s, 'finance', `${cfg.companyName} is founded with ${cfg.unlimitedMoney ? 'unlimited funds' : millions(cfg.startCash)}.`)
   return s
 }
 
@@ -782,7 +781,7 @@ function raise(s: GameState, site: Site, type: string, tiles: [number, number][]
   const start = !apart && into !== undefined ? roomOf(site, into) : undefined
   if (start?.type === type && !joined.includes(start.n)) joined.push(start.n)
   joined.sort((a, b) => a - b)
-  if (!canAfford(s, cost)) return `Not enough cash: that would cost $${cost.toLocaleString()}`
+  if (!canAfford(s, cost)) return `Not enough cash: that would cost ${dollars(cost)}`
   spend(s, cost, siteBucket(site))
   // trees, benches and anything else standing on the land are cleared and sold on
   const taken = new Set(tiles.map(([x, y]) => `${x},${y}`))
@@ -1342,7 +1341,7 @@ function layoutPlan(s: GameState, from: Site, to: Site, charge = true): LayoutQu
   const build = layoutValue(site, { facade: to.facade, roof: to.roof, floors: to.floors })
   const resale = to.items.reduce((a, it) => a + (ITEMS[to.kind][it.kind]?.cost ?? 0) / 2, 0)
   const cost = build - resale
-  const error = charge && cost > 0 && !canAfford(s, cost) ? `Not enough cash: copying that layout here costs $${Math.round(cost).toLocaleString()}` : null
+  const error = charge && cost > 0 && !canAfford(s, cost) ? `Not enough cash: copying that layout here costs ${dollars(cost)}` : null
   return { error, needs, build, resale, cost, same: false, site }
 }
 
@@ -1435,7 +1434,7 @@ export function autoLine(s: GameState): string | null {
   if (!plan) return 'There is no room: the starter hall needs a clear strip 16 by 6 in the middle of the plot'
   const fresh = zoneable(site, ...plan.hall, 'rect').length
   const cost = plan.items.reduce((a, p) => a + ITEMS.factory[p.kind].cost, 0) + roomCost(site, 'hall', fresh)
-  if (!canAfford(s, cost)) return `Not enough cash: the hall and line cost $${cost.toLocaleString()}`
+  if (!canAfford(s, cost)) return `Not enough cash: the hall and line cost ${dollars(cost)}`
   if (fresh) {
     const err = zoneRoom(s, 'factory', 'hall', ...plan.hall)
     if (err) return err
@@ -1484,8 +1483,15 @@ export function openStore(s: GameState, tier: number, region?: string, layoutFro
   return null
 }
 
+/** Close a store for good. Its fittings are sold for half their price, as furniture always is; the plot and the building are given up. */
 export function closeStore(s: GameState, storeId: string) {
-  s.stores = s.stores.filter((st) => st.id !== storeId)
+  const store = storeOf(s, storeId)
+  if (!store) return
+  const back = store.site.items.reduce((a, it) => a + (ITEMS.store[it.kind]?.cost ?? 0) / 2, 0)
+  s.cash += back
+  s.cur.facilities -= back
+  s.stores = s.stores.filter((st) => st !== store)
+  news(s, 'finance', `The ${store.name} store closed.${back > 0 ? ` Its fittings were sold for ${dollars(back)}.` : ''}`)
 }
 
 export function buildVenue(s: GameState): string | null {
@@ -1518,7 +1524,7 @@ export function autoVenue(s: GameState): string | null {
   ]
   for (let row = 0; row < 3; row++) for (let col = -2; col < 2; col++) plan.push({ kind: row === 0 ? 'seats' : row === 1 ? 'seats_mid' : 'seats_high', x: cx + col * 3, y: 8 + row * 2, rot: 0 })
   const cost = plan.reduce((a, p) => a + ITEMS.venue[p.kind].cost, 0)
-  if (!canAfford(s, cost)) return `Not enough cash: the starter layout costs $${cost.toLocaleString()}`
+  if (!canAfford(s, cost)) return `Not enough cash: the starter layout costs ${dollars(cost)}`
   for (const p of plan) {
     const err = placeItem(s, 'venue', p.kind, p.x, p.y, p.rot)
     if (err) return err
@@ -1945,7 +1951,7 @@ function stepOperations(s: GameState) {
   if (res.stalled && s.day % 15 === 0) news(s, 'alert', 'Production is paused: there is not enough cash to pay for it.')
   for (const id of new Set(res.finished)) {
     const p = s.products.find((x) => x.id === id)
-    if (p && !s.orders.some((o) => o.productId === id)) news(s, 'launch', `Production run finished for ${p.name}. ${p.stock.toLocaleString()} in stock.`, id)
+    if (p && !s.orders.some((o) => o.productId === id)) news(s, 'launch', `Production run finished for ${p.name}. ${thousands(p.stock)} in stock.`, id)
   }
   if (s.factory) spend(s, upkeep(s.factory) / DAYS_PER_MONTH, 'facilities')
   if (s.venue) spend(s, upkeep(s.venue) / DAYS_PER_MONTH, 'facilities')
@@ -2089,7 +2095,7 @@ function stepDay(s: GameState) {
 function reward(s: GameState, g: Goal) {
   if (g.cash) earn(s, g.cash, 'other')
   if (g.fans) s.fans += g.fans
-  const prize = [g.cash ? `${g.cash.toLocaleString()}` : '', g.fans ? `${g.fans.toLocaleString()} fans` : ''].filter(Boolean).join(' and ')
+  const prize = [g.cash ? dollars(g.cash) : '', g.fans ? `${thousands(g.fans)} fans` : ''].filter(Boolean).join(' and ')
   news(s, 'goal', `Goal reached: ${g.name}.${prize ? ` Reward: ${prize}.` : ''}`)
 }
 
@@ -2115,7 +2121,7 @@ export function fundingRound(s: GameState, stake: number): string | null {
   const r = raiseRound(s, stake)
   if (r.error) return r.error
   fund(s, r.cash)
-  news(s, 'finance', `${r.name} invested ${(r.cash / 1e6).toFixed(1)}M for ${(stake * 100).toFixed(0)}% of the company.`)
+  news(s, 'finance', `${r.name} invested ${millions(r.cash)} for ${(stake * 100).toFixed(0)}% of the company.`)
   return null
 }
 
@@ -2125,7 +2131,7 @@ export function listCompany(s: GameState, float: number): string | null {
   const r = goPublic(s, float)
   if (r.error) return r.error
   fund(s, r.cash)
-  news(s, 'finance', `${player(s).name} listed on the stock market, raising ${(r.cash / 1e6).toFixed(0)}M. Shares opened at ${s.stock.price.toFixed(2)}.`)
+  news(s, 'finance', `${player(s).name} listed on the stock market, raising ${millions(r.cash)}. Shares opened at $${s.stock.price.toFixed(2)}.`)
   return null
 }
 
@@ -2135,7 +2141,7 @@ export function sellShares(s: GameState, pct: number): string | null {
   const r = issueShares(s, pct)
   if (r.error) return r.error
   fund(s, r.cash)
-  news(s, 'finance', `The company sold new shares worth ${(r.cash / 1e6).toFixed(1)}M.`)
+  news(s, 'finance', `The company sold new shares worth ${millions(r.cash)}.`)
   return null
 }
 
@@ -2204,7 +2210,27 @@ export function acquire(s: GameState, companyId: string): string | null {
   c.acquired = true
   c.value = 0
   delete s.stock.holdings[c.id]
-  news(s, 'finance', `You bought ${c.name} for ${(price / 1e6).toFixed(0)}M.${gained ? ' Its engineers brought new know-how.' : ''}`)
+  news(s, 'finance', `You bought ${c.name} for ${millions(price)}.${gained ? ' Its engineers brought new know-how.' : ''}`)
+  return null
+}
+
+/** The longest name a company can have (the System screen's field takes as many). */
+export const MAX_COMPANY_NAME = 18
+
+/**
+ * Rename a company: the player's own, or a rival (the System screen lets the
+ * player call them what they like). Returns why not, or null. A name must be
+ * something, and no two companies may share one. Where a rival is based and
+ * how far it reaches do not change with its name.
+ */
+export function renameCompany(s: GameState, companyId: string, name: string): string | null {
+  const c = s.companies.find((x) => x.id === companyId)
+  if (!c) return 'There is no such company'
+  const to = typeof name === 'string' ? name.trim().slice(0, MAX_COMPANY_NAME) : ''
+  if (!to) return 'A company needs a name'
+  if (s.companies.some((x) => x !== c && x.name.toLowerCase() === to.toLowerCase())) return `There is already a company called ${to}`
+  c.name = to
+  if (c.isPlayer) s.config.companyName = to
   return null
 }
 
@@ -2281,7 +2307,7 @@ export function recallProduct(s: GameState, productId: string): string | null {
   p.recall = { state: 'done', day: s.day, cost }
   p.defectRate = Math.min(p.defectRate, 0.01)
   player(s).brand = clamp(player(s).brand + 0.01, 0.05, 1)
-  news(s, 'alert', `${p.name} was recalled and repaired at a cost of ${cost.toLocaleString()}. Owners noticed that you did the right thing.`, p.id)
+  news(s, 'alert', `${p.name} was recalled and repaired at a cost of ${dollars(cost)}. Owners noticed that you did the right thing.`, p.id)
   return null
 }
 
@@ -2441,7 +2467,7 @@ export function migrate(input: GameState): GameState {
     st.region = st.region ?? REGIONS.find((r) => r.cities.includes(st.name))?.id ?? home
   }
   s.cash += refund
-  if (refund > 0) news(s, 'finance', `Your buildings were rebuilt as rooms. Fittings that no longer had a place were sold back for $${Math.round(refund).toLocaleString()}.`)
+  if (refund > 0) news(s, 'finance', `Your buildings were rebuilt as rooms. Fittings that no longer had a place were sold back for ${dollars(refund)}.`)
 
   // ---- the new systems start from where the company already is
   s.teams = s.teams ?? []

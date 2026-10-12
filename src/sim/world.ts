@@ -159,7 +159,7 @@ export const INCIDENTS: Record<string, IncidentDef> = {
     title: 'A patent claim',
     weight: 2,
     when: (s) => me(s).unitsTotal > 50e3,
-    text: (s) => `A holding company says your devices infringe one of its patents and wants $${Math.round(revenue(s) * 0.25).toLocaleString()}.`,
+    text: (s) => `A holding company says your devices infringe one of its patents and wants $${Math.round(revenue(s) * 0.25).toLocaleString('en-US')}.`,
     choices: (s) => [
       { label: 'Settle', note: 'Pay and move on.', cost: Math.round(revenue(s) * 0.25) },
       { label: 'Fight it', note: 'Lawyers cost a third of that. You win about two times in three; lose and you pay double.', cost: Math.round(revenue(s) * 0.08) },
@@ -187,7 +187,7 @@ export const INCIDENTS: Record<string, IncidentDef> = {
     choices: (s, i) => {
       const e = s.staff.find((x) => x.id === i.staffId)
       return [
-        { label: 'Match the offer', note: `Their salary rises to $${Math.round((e?.salary ?? 0) * 1.33).toLocaleString()} a month, and they are delighted.` },
+        { label: 'Match the offer', note: `Their salary rises to $${Math.round((e?.salary ?? 0) * 1.33).toLocaleString('en-US')} a month, and they are delighted.` },
         { label: 'Let them go', note: 'You lose them. The team notices.' },
       ]
     },

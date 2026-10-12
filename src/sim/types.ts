@@ -230,6 +230,13 @@ export interface Product {
   segUnits: Record<string, number>
 }
 
+/** A dollar amount as text. Written out the same way on every machine, so that the news of a saved game reads the same wherever it is loaded. */
+export const dollars = (v: number) => `${v < 0 ? '-' : ''}$${Math.abs(Math.round(v)).toLocaleString('en-US')}`
+/** A count as text, with thousands separators, the same on every machine. */
+export const thousands = (v: number) => Math.round(v).toLocaleString('en-US')
+/** A large dollar amount in millions or billions: $3.2M, $1.4B. */
+export const millions = (v: number) => (Math.abs(v) >= 999.5e6 ? `${v < 0 ? '-' : ''}$${(Math.abs(v) / 1e9).toFixed(Math.abs(v) >= 9.95e9 ? 0 : 1)}B` : `${v < 0 ? '-' : ''}$${(Math.abs(v) / 1e6).toFixed(Math.abs(v) >= 9.95e6 ? 0 : 1)}M`)
+
 /** A device that has been on sale at some time (and may since have been discontinued), as opposed to one still in development or shelved before it shipped. */
 export const wasReleased = (p: Pick<Product, 'status' | 'reviews'>) => p.status === 'sale' || (p.status === 'ended' && p.reviews.length > 0)
 

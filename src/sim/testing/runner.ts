@@ -57,6 +57,9 @@ export interface RunResult {
   /** Where the time went: simulating, checking the rules, and inside the actions. */
   spent: { tick: number; check: number; act: number }
   stores: number
+  /** Where the money came from: sales and everything else over the months still on the books (twenty years at most), chip licences and services over the whole game. */
+  income: { revenue: number; other: number; licence: number; services: number; funding: number }
+  founder: number
   hash: string
   tally: Tally
   findings: Finding[]
@@ -108,7 +111,7 @@ export function runGame(spec: RunSpec, trace?: (line: string) => void): RunResul
     persona.month(p, m)
     p.check(true)
     maxCash = Math.max(maxCash, p.s.cash)
-    if ([12, 60, 120, 360].includes(m + 1)) cash[`y${(m + 1) / 12}`] = p.s.cash
+    if ([12, 60, 120, 360, 600, 1200].includes(m + 1)) cash[`y${(m + 1) / 12}`] = p.s.cash
     if (spec.reloadEvery && (m + 1) % spec.reloadEvery === 0) {
       try {
         p.s = migrate(JSON.parse(JSON.stringify(p.s)))
@@ -150,6 +153,8 @@ export function runGame(spec: RunSpec, trace?: (line: string) => void): RunResul
     wallMs: performance.now() - started,
     spent: { tick: Math.round(p.tickMs), check: Math.round(p.checkMs), act: Math.round(p.actMs) },
     stores: s.stores.length,
+    income: { revenue: s.reports.reduce((a, r) => a + r.revenue, 0), other: s.reports.reduce((a, r) => a + r.other, 0), licence: s.chips.reduce((a, c) => a + c.licenceIncome, 0), services: s.os.servicesIncome, funding: s.reports.reduce((a, r) => a + r.funding, 0) },
+    founder: s.stock.founder / s.stock.shares,
     hash: hashOf(canon(s)),
     tally: p.tally,
     findings: [...p.findings.values()],
@@ -193,7 +198,11 @@ export function planSoak(count: number, yearsCap = 1000): RunSpec[] {
     const difficulty = DIFFS[Math.floor(i / (PERSONA_NAMES.length * STARTS.length)) % DIFFS.length]
     const progression = PROGS[Math.floor(i / (PERSONA_NAMES.length * STARTS.length * DIFFS.length)) % PROGS.length]
     const roll = mix(i, 8)
-    const years = Math.min(yearsCap, roll < 0.15 ? 1 : roll < 0.6 ? 10 : roll < 0.9 ? 30 : 100 + Math.floor(mix(i, 9) * 30))
+    // a century of a persona that acts every day, or that ends up with thousands of devices, takes an hour to play:
+    // most of those stop at forty years, and one in four goes the whole way
+    const heavy = ['monkey', 'tameMonkey', 'adversary', 'reckless', 'builder', 'spammer'].includes(persona)
+    const century = heavy && mix(i, 13) > 0.25 ? 40 : 100 + Math.floor(mix(i, 9) * 30)
+    const years = Math.min(yearsCap, roll < 0.15 ? 1 : roll < 0.6 ? 10 : roll < 0.9 ? 30 : century)
     const spec: RunSpec = { id: i, persona, years, cfg: configFor(i, start, difficulty, progression) }
     // long games must keep running whatever the persona does, or they would never see year 100
     if (years >= 100) spec.cfg.unlimitedMoney = mix(i, 10) < 0.7 || spec.cfg.unlimitedMoney

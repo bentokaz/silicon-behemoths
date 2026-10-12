@@ -19,10 +19,12 @@ import { PERSONAS } from './testing/personas'
 import { Play } from './testing/play'
 import { ALL_PERSONAS, canon, runGame } from './testing/runner'
 import { fuzzSites } from './testing/sitefuzz'
-import { DEVICE_TYPES, type DeviceType, type GameState } from './types'
+import { LICENCE_CAP, chipAdoption, licenceValue } from './tech'
+import { type CustomChip, DEVICE_TYPES, type DeviceType, type GameState } from './types'
 import { designProblem } from './validate'
 import { MIN_FOUNDER, RAISE_GAP, founderStake, raiseBlocked } from './stock'
 import { INCIDENTS, PEAK_DAY, priceIndex, rollIncident, settleIncident } from './world'
+import { RECALL_DEADLINE } from './care'
 
 const game = (over: Partial<Parameters<typeof G.newGame>[0]> = {}) => G.newGame({ ...G.defaultConfig(), startCash: 500e6, ...over })
 const sound = (s: GameState) => expect(checkState(s)).toEqual([])
@@ -322,7 +324,13 @@ describe('the world', () => {
     const c = s.companies[3]
     const home = homeOf(c)
     const reach = REGIONS.map((r) => rivalReach(c, r.id))
-    c.name = 'Something Else'
+    expect(G.renameCompany(s, c.id, '   ')).toBe('A company needs a name')
+    expect(G.renameCompany(s, c.id, s.companies[4].name.toUpperCase())).toMatch(/already a company called/)
+    expect(G.renameCompany(s, 'nope', 'X')).toBe('There is no such company')
+    expect(G.renameCompany(s, c.id, '  Something Else  ')).toBeNull()
+    expect(c.name).toBe('Something Else')
+    expect(G.renameCompany(s, 'player', 'A name much longer than a company name may be')).toBeNull()
+    expect([s.companies[0].name, s.config.companyName]).toEqual(['A name much longer', 'A name much longer'])
     expect(homeOf(c)).toBe(home)
     expect(REGIONS.map((r) => rivalReach(c, r.id))).toEqual(reach)
     // a save from before rivals remembered their first name takes the name they bear when it is loaded
@@ -433,6 +441,38 @@ describe('money that comes from nowhere', () => {
     expect(checkState(s, { offBooks: gift })).toEqual([])
   })
 
+  it('licenses one chip to each rival device, however many chips are on offer', () => {
+    const { s } = selling()
+    const chip = (id: string, fee: number, power = 1, graphics = 1, efficiency = 0): CustomChip => ({ id, name: id, gen: s.levels.chipset, power, graphics, efficiency, status: 'ready', devDaysLeft: 0, quality: 1.05, licenceFee: fee, licenceIncome: 0 })
+    s.chips = [chip('h1', 6)]
+    const alone = chipAdoption(s, s.chips[0])
+    expect(alone).toBeGreaterThan(0.01)
+    expect(alone).toBeLessThanOrEqual(LICENCE_CAP)
+    // four of the same on offer win no more devices than one does
+    s.chips = [chip('h1', 6), chip('h2', 6), chip('h3', 6), chip('h4', 6)]
+    expect(s.chips.map((c) => chipAdoption(s, c))).toEqual([alone, 0, 0, 0])
+    // a dearer one is a worse buy and loses to the cheaper; priced out of reach it wins nothing even alone
+    s.chips = [chip('h1', 9), chip('h2', 6)]
+    expect(s.chips.map((c) => chipAdoption(s, c) > 0)).toEqual([false, true])
+    s.chips = [chip('h1', 40)]
+    expect(chipAdoption(s, s.chips[0])).toBe(0)
+    expect(licenceValue(s, s.chips[0])).toBeLessThan(1)
+    // not offered, or not finished: nothing
+    s.chips = [chip('h1', 0), { ...chip('h2', 6), status: 'dev' }]
+    expect(s.chips.map((c) => chipAdoption(s, c))).toEqual([0, 0])
+    // a year of licensing six chips earns what one would: a few dimes for each device the rivals sell
+    s.chips = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].map((id) => chip(id, 6))
+    const before = s.reports.length
+    G.tick(s, 360)
+    const year = s.reports.slice(before)
+    const rivals = s.shareHistory.slice(-12).reduce((a, m) => a + Object.entries(m.units).reduce((x, [id, v]) => x + (id === 'player' ? 0 : v), 0), 0)
+    const earned = s.chips.reduce((a, c) => a + c.licenceIncome, 0)
+    expect(year).toHaveLength(12)
+    expect(earned).toBeGreaterThan(0)
+    expect(earned).toBeLessThanOrEqual(rivals * LICENCE_CAP * 6 * 1.001)
+    expect(s.chips.filter((c) => c.licenceIncome > 0)).toHaveLength(1)
+  })
+
   it('lets the prices people expect climb while technology does, and no longer', () => {
     expect(priceIndex(0)).toBe(1)
     expect(priceIndex(360)).toBeCloseTo(1.035, 10)
@@ -472,5 +512,52 @@ describe('money that comes from nowhere', () => {
     const prices = early.products.map((p) => p.price)
     early.version = 5
     expect(G.migrate(early).products.map((p) => p.price)).toEqual(prices)
+  })
+})
+
+describe('days, months and deadlines', () => {
+  it('closes each month on its last day and dates it rightly', () => {
+    const s = game()
+    expect(G.fmtDate(s.day)).toBe('01 Jan 2026')
+    G.tick(s, 29)
+    expect([G.fmtDate(s.day), s.reports.length, s.cur.month]).toEqual(['30 Jan 2026', 0, 0])
+    G.tick(s, 1)
+    expect([G.fmtDate(s.day), s.reports.length, s.reports[0].month, s.cur.month]).toEqual(['01 Feb 2026', 1, 0, 1])
+    G.tick(s, 330)
+    expect([G.fmtDate(s.day), s.reports.length, G.monthLabel(s.reports[11].month), G.dateOf(s.day)]).toEqual(['01 Jan 2027', 12, 'Dec 26', { year: 2027, month: 0, dom: 1 }])
+    expect(G.monthLabel(-1)).toBe('Dec 25')
+    sound(s)
+  })
+
+  it('lets a recall wait as long as the screens say, and not a month longer', () => {
+    const { s, p } = selling()
+    p.defectRate = 0.09
+    p.unitsSold = 50000
+    G.tick(s, 30 - (s.day % 30))
+    expect(p.recall?.state).toBe('open')
+    const opened = p.recall!.day
+    G.tick(s, RECALL_DEADLINE - 30)
+    expect(p.recall!.state).toBe('open')
+    // the day the count of days left reaches nought
+    G.tick(s, 30)
+    expect(s.day - opened).toBe(RECALL_DEADLINE)
+    expect(p.recall!.state).toBe('ignored')
+    expect(G.recallProduct(s, p.id)).toBe('There is no recall to decide')
+  })
+
+  it('sells the fittings of a store that is closed, for half their price', () => {
+    const s = game()
+    expect(G.openStore(s, 1)).toBeNull()
+    const store = s.stores[0]
+    expect(G.placeItem(s, `store:${store.id}`, 'demo', 5, 5, 0)).toBeNull()
+    const worth = store.site.items.reduce((a, it) => a + ITEMS.store[it.kind].cost, 0)
+    const before = s.cash
+    G.closeStore(s, store.id)
+    expect(s.stores).toEqual([])
+    expect(s.cash - before).toBe(worth / 2)
+    expect(s.news[0].text).toBe(`The ${store.name} store closed. Its fittings were sold for $${(worth / 2).toLocaleString('en-US')}.`)
+    G.closeStore(s, store.id)
+    expect(s.cash - before).toBe(worth / 2)
+    sound(s)
   })
 })
