@@ -1,10 +1,11 @@
 // 3D view of a buildable site: the land around it, the rooms and walls, what
 // stands in them, the people who use them, and the cursor for building.
 import { Environment, Html, Lightformer, OrbitControls } from '@react-three/drei'
-import { Canvas, type ThreeEvent, useFrame, useThree } from '@react-three/fiber'
+import { type ThreeEvent, useFrame, useThree } from '@react-three/fiber'
 import { EffectComposer, N8AO } from '@react-three/postprocessing'
 import { type ReactNode, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
+import { AutoTurn, CameraFence, SafeCanvas } from './SafeCanvas'
 import { type Pt, bayRun, bayStands, curveTiles, nearestBay } from '../sim/curves'
 import { EDGE_COST, keepsDoors, zonePlan } from '../sim/game'
 import type { FactoryLife, OfficeLife, StoreLife, VenueLife } from '../sim/life'
@@ -258,7 +259,14 @@ function StaticShadows({ sig }: { sig: string }) {
 }
 
 /** Keyboard camera: slide, turn and zoom with the keys set under System. */
-export function CameraKeys({ span, home }: { span: number; home: [number, number, number] }) {
+const keyOffset = new THREE.Vector3()
+const keyForward = new THREE.Vector3()
+const keyRight = new THREE.Vector3()
+const keyMove = new THREE.Vector3()
+const UP = new THREE.Vector3(0, 1, 0)
+const GROUND: [number, number, number] = [0, 0.5, 0]
+
+export function CameraKeys({ span, home, aim = GROUND }: { span: number; home: [number, number, number]; aim?: [number, number, number] }) {
   const camera = useThree((s) => s.camera)
   const controls = useThree((s) => s.controls) as unknown as { target: THREE.Vector3; update: () => void } | null
   const held = useRef(new Set<string>())
@@ -269,7 +277,7 @@ export function CameraKeys({ span, home }: { span: number; home: [number, number
       held.current.add(e.code)
       if (isHeld(new Set([e.code]), 'camHome') && controls) {
         camera.position.set(...home)
-        controls.target.set(0, 0.5, 0)
+        controls.target.set(...aim)
         controls.update()
       }
     }
@@ -283,17 +291,17 @@ export function CameraKeys({ span, home }: { span: number; home: [number, number
       window.removeEventListener('keyup', up)
       window.removeEventListener('blur', clear)
     }
-  }, [camera, controls, home])
+  }, [camera, controls, home, aim])
   useFrame((_, dt) => {
     const h = held.current
     if (!h.size || !controls) return
     const speed = useSettings.getState().settings.cameraSpeed
     const step = Math.min(0.05, dt)
-    const offset = camera.position.clone().sub(controls.target)
+    const offset = keyOffset.copy(camera.position).sub(controls.target)
     const dist = offset.length()
-    const forward = new THREE.Vector3(-offset.x, 0, -offset.z).normalize()
-    const right = new THREE.Vector3(-forward.z, 0, forward.x)
-    const move = new THREE.Vector3()
+    const forward = keyForward.set(-offset.x, 0, -offset.z).normalize()
+    const right = keyRight.set(-forward.z, 0, forward.x)
+    const move = keyMove.set(0, 0, 0)
     if (isHeld(h, 'camForward')) move.add(forward)
     if (isHeld(h, 'camBack')) move.sub(forward)
     if (isHeld(h, 'camRight')) move.add(right)
@@ -306,7 +314,7 @@ export function CameraKeys({ span, home }: { span: number; home: [number, number
       controls.target.z = THREE.MathUtils.clamp(controls.target.z, -span, span)
     }
     const turn = (isHeld(h, 'camTurnLeft') ? 1 : 0) - (isHeld(h, 'camTurnRight') ? 1 : 0)
-    if (turn) offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), turn * 1.6 * step * speed)
+    if (turn) offset.applyAxisAngle(UP, turn * 1.6 * step * speed)
     const zoom = (isHeld(h, 'camOut') ? 1 : 0) - (isHeld(h, 'camIn') ? 1 : 0)
     if (zoom) offset.multiplyScalar(1 + zoom * 1.4 * step * speed)
     camera.position.copy(controls.target).add(offset)
@@ -1490,12 +1498,14 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
   const reach = Math.max(14, span * 0.8)
   const height = mode === 'full' ? site.floors * STOREY : 0
   const home = useMemo<[number, number, number]>(() => [span * 0.75, span * 0.95 + height, span * 1.2 + 6], [span, height])
+  /** What the camera looks at when a site opens, and again when it is recentred. */
+  const aim = useMemo<[number, number, number]>(() => [0, height * 0.35 + 0.5, 0], [height])
   // with a tool that paints as it is dragged, the left button is the tool's: the middle one turns the view instead
   const mouseButtons = useMemo(() => ({ LEFT: dragTool ? (-1 as THREE.MOUSE) : THREE.MOUSE.ROTATE, MIDDLE: dragTool ? THREE.MOUSE.ROTATE : THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN }), [dragTool])
   const touches = useMemo(() => ({ ONE: dragTool ? (-1 as THREE.TOUCH) : THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN }), [dragTool])
   const shadowSig = `${site.rev}|${standing.rev}|${dropping.size}|${mood}|${mode}|${seated.length}|${liveSeats.size}|${day > 0 ? Math.floor(day / 30) : 0}|${show ? show.crowd.toFixed(1) + show.cheer : ''}|${glowKey}`
   return (
-    <Canvas shadows={Q.shadows > 0} dpr={[1, Q.dpr]} camera={{ fov: 30, near, far, position: home }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: dark ? 1.25 : 1, powerPreference: 'high-performance' }}>
+    <SafeCanvas what={site.kind === 'office' ? 'campus view' : `${site.kind} view`} shadows={Q.shadows > 0} dpr={[1, Q.dpr]} camera={{ fov: 30, near, far, position: home }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: dark ? 1.25 : 1, powerPreference: 'high-performance' }}>
       <color attach="background" args={[sky]} />
       <fog attach="fog" args={[sky, span * 3 + 80, far * 0.9]} />
       <hemisphereLight args={[dark ? '#6a7fa8' : '#fff4e6', dark ? '#14161c' : '#4a4338', (M.hemi + (dark ? 0.35 : 0)) * (houseDown ? 0.42 : 1)]} />
@@ -1674,8 +1684,10 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
           <N8AO halfRes aoRadius={0.8} distanceFalloff={1} intensity={mood === 'night' ? 1.2 : 2} quality="medium" />
         </EffectComposer>
       )}
-      {!autoRotate && <CameraKeys span={span} home={home} />}
-      <OrbitControls makeDefault target={[0, height * 0.35 + 0.5, 0]} minDistance={near * 6} maxDistance={span * 3 + 40} maxPolarAngle={Math.PI * 0.485} enablePan screenSpacePanning={false} panSpeed={1.3 * prefs.cameraSpeed} rotateSpeed={0.9 * prefs.cameraSpeed} zoomSpeed={1.2 * prefs.cameraSpeed} zoomToCursor={prefs.zoomToPointer} enableDamping dampingFactor={0.2} autoRotate={autoRotate} autoRotateSpeed={0.5} mouseButtons={mouseButtons} touches={touches} />
-    </Canvas>
+      {!autoRotate && <CameraKeys span={span} home={home} aim={aim} />}
+      {autoRotate && <AutoTurn speed={3} />}
+      <CameraFence span={span} top={height + 6} />
+      <OrbitControls makeDefault target={aim} minDistance={near * 6} maxDistance={span * 3 + 40} maxPolarAngle={Math.PI * 0.485} enablePan screenSpacePanning={false} panSpeed={1.3 * prefs.cameraSpeed} rotateSpeed={0.9 * prefs.cameraSpeed} zoomSpeed={1.2 * prefs.cameraSpeed} zoomToCursor={prefs.zoomToPointer} enableDamping dampingFactor={0.2} mouseButtons={mouseButtons} touches={touches} />
+    </SafeCanvas>
   )
 }

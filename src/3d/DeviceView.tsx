@@ -1,12 +1,14 @@
 // The 3D studio: an isolated canvas that shows one device under a three-point
 // lighting rig. Used read-only in the dashboard and interactively in the designer.
 import { Environment, Html, Lightformer, OrbitControls } from '@react-three/drei'
-import { Canvas, type ThreeEvent, useFrame, useThree } from '@react-three/fiber'
+import { type ThreeEvent, useFrame, useThree } from '@react-three/fiber'
 import { EffectComposer, N8AO } from '@react-three/postprocessing'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { TYPES } from '../data/devices'
 import type { DeviceDesign, DeviceType } from '../sim/types'
+import { type Quality, useSettings } from '../store/settings'
+import { AutoTurn, SafeCanvas, StrainWatch, useStrain } from './SafeCanvas'
 import { layoutInternals, weightShares } from '../sim/internals'
 import { LiveDevice, type TearInfo } from './LiveDevice'
 import { buildDevice, deviceFrame, disposeDevice } from './buildDevice'
@@ -37,6 +39,16 @@ const DESK_VIEWS: Partial<Record<DeviceType, Views>> = {
 const viewDir = (d: DeviceDesign, v: ViewName) => (DESK_VIEWS[d.type] ?? VIEWS)[v]
 /** What the fourth view button shows for a device type. */
 export const fourthView = (type: DeviceType): string => (type === 'laptop' || type === 'console' || type === 'headset' || type === 'speaker' ? 'top' : type === 'desktop' || type === 'tv' ? 'under' : 'bottom')
+/**
+ * What the studio spends at each quality setting. One device is little to draw; the cost of this view is the
+ * shading laid over it, which on a laptop's built-in graphics is most of a frame.
+ */
+const STUDIO: Record<Quality, { dpr: number; shadows: number; ao: 'off' | 'spare' | 'full' }> = {
+  low: { dpr: 1, shadows: 0, ao: 'off' },
+  // the contact shading is kept at the middle setting for as long as the computer keeps up with it
+  medium: { dpr: 1.5, shadows: 2048, ao: 'spare' },
+  high: { dpr: 2, shadows: 2048, ao: 'full' },
+}
 /** Camera distance per unit of device radius, for a 26 degree lens. */
 const FRAMING = 5.3
 
@@ -161,10 +173,14 @@ export function DeviceView(props: Props) {
   const floorY = -bottom - (desk ? 0.3 * Math.min(k, 1) : 8 * k)
   // the wide, flat back of a screen or a lid faces away from every lamp, so it gets a fill of its own
   const backFill = design.type === 'tv' || design.type === 'desktop' ? 1.1 : design.type === 'laptop' ? 0.7 : 0
+  const S = STUDIO[useSettings((s) => s.settings.quality)]
+  const strained = useStrain()
+  const ao = S.ao === 'full' || (S.ao === 'spare' && !strained)
   return (
-    <Canvas
-      shadows
-      dpr={[1, 2]}
+    <SafeCanvas
+      what="device view"
+      shadows={S.shadows > 0}
+      dpr={[1, S.dpr]}
       camera={{ fov: 26, near: 5 * k, far: 6000 * k, position: [dir[0] * dist, dir[1] * dist, dir[2] * dist] }}
       gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.05 }}
       // the teardown cuts an opening in a cover where it is drawn (see teardown.ts)
@@ -179,8 +195,8 @@ export function DeviceView(props: Props) {
         color="#ffe3c2"
         intensity={1.9 * sun}
         position={[220 * k, 320 * k, 380 * k]}
-        castShadow
-        shadow-mapSize={[2048, 2048]}
+        castShadow={S.shadows > 0}
+        shadow-mapSize={[S.shadows || 512, S.shadows || 512]}
         shadow-bias={-0.0004}
         shadow-normalBias={0.4 * k}
         shadow-camera-left={-170 * k}
@@ -213,12 +229,16 @@ export function DeviceView(props: Props) {
         <meshLambertMaterial color="#1b1f25" />
       </mesh>
 
-      <EffectComposer multisampling={4}>
-        <N8AO aoRadius={9 * k} distanceFalloff={1} intensity={2.2} quality="medium" />
-      </EffectComposer>
+      {ao && (
+        <EffectComposer multisampling={4}>
+          <N8AO halfRes={S.ao === 'spare'} aoRadius={9 * k} distanceFalloff={1} intensity={2.2} quality={S.ao === 'spare' ? 'performance' : 'medium'} />
+        </EffectComposer>
+      )}
+      {ao && S.ao === 'spare' && <StrainWatch />}
 
-      <OrbitControls makeDefault enablePan={false} minDistance={dist * 0.3} maxDistance={dist * 2.4} autoRotate={props.autoRotate} autoRotateSpeed={0.9} />
+      <OrbitControls makeDefault enablePan={false} minDistance={dist * 0.3} maxDistance={dist * 2.4} />
+      {props.autoRotate && <AutoTurn speed={5.4} />}
       <Rig dir={dir} dist={dist} nonce={props.viewNonce ?? 0} />
-    </Canvas>
+    </SafeCanvas>
   )
 }

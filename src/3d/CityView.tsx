@@ -3,7 +3,8 @@
 // night as the game runs, lorries and ships carry what is made, and every
 // building can be pointed at and entered.
 import { Environment, Lightformer, OrbitControls } from '@react-three/drei'
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
+import { CameraFence, SafeCanvas } from './SafeCanvas'
 import { type RefObject, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
@@ -43,6 +44,10 @@ interface Props {
 }
 
 export const HOME_CAMERA: [number, number, number] = [0, 250, 400]
+/** What the camera looks at when the city opens, and when it is recentred. */
+const HOME_AIM: [number, number, number] = [0, 0, -10]
+/** How far from the middle the camera's aim may be taken: past the outermost islands, and no further. */
+const CITY_SPAN = 460
 const OWN: Place['kind'][] = ['office', 'factory', 'venue', 'store']
 const smooth = (a: number, b: number, x: number) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)))
@@ -319,8 +324,9 @@ function Rig({ focus }: { focus: Focus | null }) {
   })
   return (
     <>
-      <CameraKeys span={460} home={HOME_CAMERA} />
-      <OrbitControls makeDefault target={[0, 0, -10]} minDistance={28} maxDistance={1300} maxPolarAngle={Math.PI * 0.47} enablePan screenSpacePanning={false} panSpeed={1.2 * prefs.cameraSpeed} rotateSpeed={0.8 * prefs.cameraSpeed} zoomSpeed={1.2 * prefs.cameraSpeed} zoomToCursor={prefs.zoomToPointer} enableDamping dampingFactor={0.2} />
+      <CameraKeys span={CITY_SPAN} home={HOME_CAMERA} aim={HOME_AIM} />
+      <CameraFence span={CITY_SPAN} top={120} />
+      <OrbitControls makeDefault target={HOME_AIM} minDistance={28} maxDistance={1300} maxPolarAngle={Math.PI * 0.47} enablePan screenSpacePanning={false} panSpeed={1.2 * prefs.cameraSpeed} rotateSpeed={0.8 * prefs.cameraSpeed} zoomSpeed={1.2 * prefs.cameraSpeed} zoomToCursor={prefs.zoomToPointer} enableDamping dampingFactor={0.2} />
     </>
   )
 }
@@ -392,7 +398,7 @@ export function CityView({ g, all, list, traffic, sky, speed, names, hover, onHo
   const sig = `${sites.map((p) => `${p.id}${p.site!.rev}${p.x}${p.z}`).join('|')}|${list.length}|${all.map((d) => (d.open ? 1 : 0)).join('')}`
   return (
     <div className="relative h-full w-full">
-    <Canvas shadows={Q.shadows > 0} dpr={[1, Q.dpr]} camera={{ fov: 32, near: 5, far: 5200, position: HOME_CAMERA }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, powerPreference: 'high-performance' }} style={{ cursor: hovered ? 'pointer' : 'grab' }}>
+    <SafeCanvas what="city view" shadows={Q.shadows > 0} dpr={[1, Q.dpr]} camera={{ fov: 32, near: 5, far: 5200, position: HOME_CAMERA }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, powerPreference: 'high-performance' }} style={{ cursor: hovered ? 'pointer' : 'grab' }}>
       <color attach="background" args={['#a8c8e4']} />
       <fog attach="fog" args={['#a8c8e4', 1000, 3600]} />
       <Environment resolution={128} frames={1} environmentIntensity={0.35}>
@@ -440,7 +446,7 @@ export function CityView({ g, all, list, traffic, sky, speed, names, hover, onHo
       <TagProjector list={list} tags={tags} />
       <Rig focus={focus} />
       {import.meta.env.DEV && <DevHandle />}
-    </Canvas>
+    </SafeCanvas>
       {/* name tags, laid over the view. Rivals and billboards carry their own names, so theirs show only under the pointer */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         {list.map((p) => {
