@@ -181,7 +181,7 @@ export function DeviceView(props: Props) {
     <SafeCanvas
       what="device view"
       shadows={S.shadows > 0 ? 'percentage' : false}
-      dpr={[1, S.dpr]}
+      dpr={[0.5, S.dpr]}
       camera={{ fov: 26, near: 5 * k, far: 6000 * k, position: [dir[0] * dist, dir[1] * dist, dir[2] * dist] }}
       gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.05 }}
       // the teardown cuts an opening in a cover where it is drawn (see teardown.ts)

@@ -9,7 +9,7 @@ import { Canvas, type CanvasProps, useFrame, useThree } from '@react-three/fiber
 import { Component, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type * as THREE from 'three'
 import { useSettings } from '../store/settings'
-import { Pace, fence, lostCopy, sweep } from './canvasHelp'
+import { Meter, Pace, fence, lostCopy, sharpness, sweep } from './canvasHelp'
 
 let known: boolean | null = null
 /** Whether this browser can draw 3D at all. Asked once; asked again only after it has said no. */
@@ -215,11 +215,10 @@ function ContextWatch({ onLost, onBack, onReady, pose }: { onLost: () => void; o
  * many pixels to draw when it is made; dragged to a screen of another
  * density, or with the page zoomed, it has to be told to work it out again.
  */
-function DensityWatch({ dpr }: { dpr: CanvasProps['dpr'] }) {
-  const setDpr = useThree((s) => s.setDpr)
-  const low = Array.isArray(dpr) ? dpr[0] : (dpr ?? 1)
-  const high = Array.isArray(dpr) ? dpr[1] : (dpr ?? 1)
+function DensityWatch({ dpr, adaptive, onRatio }: { dpr: CanvasProps['dpr']; adaptive: boolean; onRatio: (ratio: number) => void }) {
+  const apply = useCallback(() => onRatio(ratioFor(dpr, adaptive)), [onRatio, dpr, adaptive])
   useEffect(() => {
+    apply()
     if (typeof window.matchMedia !== 'function') return
     let query: MediaQueryList | null = null
     const watch = () => {
@@ -228,14 +227,53 @@ function DensityWatch({ dpr }: { dpr: CanvasProps['dpr'] }) {
       query.addEventListener('change', changed)
     }
     const changed = () => {
-      setDpr([low, high])
+      apply()
       watch()
     }
     watch()
     return () => query?.removeEventListener('change', changed)
-  }, [setDpr, low, high])
+  }, [apply])
+  // a window made much smaller (or bigger) is a different amount of work: what was learned for the old size is dropped
+  const area = useThree((s) => s.size.width * s.size.height)
+  const learnedAt = useRef(area)
+  useEffect(() => {
+    if (!adaptive || sharp.now === 1 || Math.abs(area - learnedAt.current) < learnedAt.current * 0.2) return
+    learnedAt.current = area
+    sharp.now = 1
+    apply()
+  }, [area, adaptive, apply])
+  // a computer that cannot keep up at full sharpness is given a slightly softer picture rather than a slow one
+  const meter = useMemo(() => new Meter(), [])
+  useFrame((_, dt) => {
+    if (!adaptive || document.hidden) return
+    const average = meter.frame(dt)
+    if (average === null) return
+    const next = sharpness(sharp.now, average)
+    if (next === sharp.now) return
+    sharp.now = next
+    learnedAt.current = area
+    apply()
+  })
   return null
 }
+
+/**
+ * How sharply the views that adapt are being drawn, 0.6 to 1. It is learned
+ * once and kept from one view to the next, so that each building opened does
+ * not start sharp and slow and work its way down again; a change of quality
+ * setting starts it afresh.
+ */
+const sharp = { now: 1 }
+/** Pixels drawn per pixel of page: the screen's own density, held within the range a view asks for, less whatever has been given up for speed. */
+function ratioFor(dpr: CanvasProps['dpr'], adaptive: boolean): number {
+  const low = Array.isArray(dpr) ? dpr[0] : (dpr ?? 1)
+  const high = Array.isArray(dpr) ? dpr[1] : (dpr ?? 1)
+  const full = Math.min(high, Math.max(low, (typeof window !== 'undefined' && window.devicePixelRatio) || 1))
+  return +(adaptive ? full * sharp.now : full).toFixed(3)
+}
+useSettings.subscribe((now, was) => {
+  if (now.settings.quality !== was.settings.quality) sharp.now = 1
+})
 
 /**
  * Slowly circles the camera round what it looks at, a set number of degrees
@@ -335,8 +373,11 @@ const REBUILD_AFTER_MS = 2500
 /** How long a view that has room on screen may take to start before it is called a failure. */
 const START_WITHIN_MS = 6000
 
-export function SafeCanvas({ children, dpr, what = '3D view', ...rest }: CanvasProps & { what?: string }) {
+export function SafeCanvas({ children, dpr, what = '3D view', adaptive = false, ...rest }: CanvasProps & { what?: string; /** Draw a little less sharply when frames run long, rather than slowly. */ adaptive?: boolean }) {
   const [able, setAble] = useState(() => webglAvailable())
+  // the canvas is told one figure, and told again when it changes: left to work it out itself, it would go back to full
+  // sharpness every time the view around it was drawn again
+  const [ratio, setRatio] = useState(() => ratioFor(dpr, adaptive))
   const [attempt, setAttempt] = useState(0)
   const [lost, setLost] = useState(false)
   const [broke, setBroke] = useState<Error | null>(null)
@@ -410,10 +451,10 @@ export function SafeCanvas({ children, dpr, what = '3D view', ...rest }: CanvasP
     <div ref={box} className="relative h-full w-full" data-3d={broke ? 'broken' : lost ? 'lost' : 'ok'} onContextMenu={(e) => e.preventDefault()}>
       {!broke && (
         <SceneGuard key={attempt} onError={setBroke}>
-          <Canvas dpr={dpr} {...rest}>
+          <Canvas dpr={ratio} {...rest}>
             <Release />
             <ContextWatch onLost={onLost} onBack={onBack} onReady={onReady} pose={pose} />
-            <DensityWatch dpr={dpr} />
+            <DensityWatch dpr={dpr} adaptive={adaptive} onRatio={setRatio} />
             {children}
           </Canvas>
         </SceneGuard>

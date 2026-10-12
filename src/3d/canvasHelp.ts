@@ -73,6 +73,46 @@ export class Pace {
   }
 }
 
+/** The least of the full picture a view is ever drawn at when the computer cannot keep up. */
+export const LEAST_SHARP = 0.6
+
+/**
+ * How sharply to draw, as a share of full sharpness, given how the last
+ * stretch of frames went. A stretch that ran long (under about 46 frames a
+ * second) takes a step down; one that ran with plenty to spare takes a step
+ * back up. In between it is left alone, so the picture does not flicker
+ * between two sizes.
+ */
+export function sharpness(now: number, averageFrame: number): number {
+  if (averageFrame > 0.0215) return Math.max(LEAST_SHARP, +(now * 0.85).toFixed(3))
+  // a step sharper is at worst 1.4 times the pixels: it is taken only when even that would still be comfortable
+  if (averageFrame < 0.013 && now < 1) return Math.min(1, +(now / 0.85).toFixed(3))
+  return now
+}
+
+/** Adds up frame times and gives their average once a stretch of them is over. Pauses and the first frames after starting are left out. */
+export class Meter {
+  private n = 0
+  private sum = 0
+  constructor(
+    private window = 120,
+    private warm = 45,
+  ) {}
+  frame(dt: number): number | null {
+    if (!(dt > 0) || dt > 0.25) return null
+    if (this.warm > 0) {
+      this.warm--
+      return null
+    }
+    this.sum += dt
+    if (++this.n < this.window) return null
+    const average = this.sum / this.n
+    this.n = 0
+    this.sum = 0
+    return average
+  }
+}
+
 /** What the player is told when a 3D view cannot be shown. `what` names the view, e.g. "campus view". */
 export function lostCopy(what: string) {
   return {

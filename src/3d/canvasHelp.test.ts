@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_STEP, Pace, fence, lostCopy, stepOf, sweep } from './canvasHelp'
+import { LEAST_SHARP, MAX_STEP, Meter, Pace, fence, lostCopy, sharpness, stepOf, sweep } from './canvasHelp'
 
 describe('stepOf', () => {
   it('passes an ordinary frame through and cuts a long pause down to one step', () => {
@@ -84,6 +84,39 @@ describe('Pace', () => {
     expect(feed(pace, 1 / 60, 60)).toBe(false)
     expect(pace.frame(30)).toBe(false)
     expect(feed(pace, 1 / 60, 300)).toBe(false)
+  })
+})
+
+describe('sharpness', () => {
+  it('steps down while frames run long, and never below the least', () => {
+    let s = 1
+    const seen = []
+    for (let i = 0; i < 8; i++) seen.push((s = sharpness(s, 1 / 30)))
+    expect(seen[0]).toBe(0.85)
+    expect(seen[1]).toBeCloseTo(0.722, 2)
+    expect(Math.min(...seen)).toBe(LEAST_SHARP)
+  })
+  it('holds where it is at an ordinary pace, so the picture does not flicker between two sizes', () => {
+    expect(sharpness(0.85, 1 / 60)).toBe(0.85)
+    expect(sharpness(1, 1 / 60)).toBe(1)
+    expect(sharpness(0.85, 1 / 50)).toBe(0.85)
+    expect(sharpness(0.85, 0.0135)).toBe(0.85)
+  })
+  it('steps back up only with plenty to spare, and never past full', () => {
+    expect(sharpness(0.722, 1 / 144)).toBeCloseTo(0.85, 2)
+    expect(sharpness(0.85, 1 / 144)).toBe(1)
+    expect(sharpness(1, 1 / 144)).toBe(1)
+  })
+})
+
+describe('Meter', () => {
+  it('gives the average of each stretch of frames, leaving out the start and any pause', () => {
+    const m = new Meter(4, 1)
+    expect(m.frame(1)).toBeNull()
+    expect(m.frame(0.2)).toBeNull()
+    expect([m.frame(0.01), m.frame(0.02), m.frame(30), m.frame(0.03)]).toEqual([null, null, null, null])
+    expect(m.frame(0.04)).toBeCloseTo(0.025, 6)
+    expect(m.frame(0.01)).toBeNull()
   })
 })
 
