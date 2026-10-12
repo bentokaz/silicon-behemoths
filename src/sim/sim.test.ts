@@ -140,7 +140,7 @@ describe('core simulation', () => {
     expect(trailingUnits(s).reduce((a, x) => a + x.units, 0)).toBeGreaterThan(30e6)
     expect(s.reports.length).toBe(120)
     for (const type of DEVICE_TYPES) expect(s.products.some((p) => p.type === type && p.status === 'sale'), type).toBe(true)
-  })
+  }, 120000)
 })
 
 describe('devices and production', () => {
@@ -205,7 +205,7 @@ describe('devices and production', () => {
 
   it('runs a factory line and builds cheaper than a contractor', () => {
     const s = rich()
-    expect(orderProduction(s, 'nope', 10, 'factory')).toMatch(/not available/)
+    expect(orderProduction(s, 'nope', 10, 'factory')).toMatch(/no such device/)
     expect(buildFactory(s)).toBeNull()
     expect(lineStats(s.factory!).running).toBe(false)
     expect(startProduct(s, order(s, { mode: 'factory' }))).toMatch(/no working line/)

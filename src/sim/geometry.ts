@@ -417,6 +417,13 @@ export function clampPart(b: Body, p: PlacedPart, type: DeviceType = 'phone'): P
   const face = allowed.includes(p.face) ? p.face : (allowed[0] ?? p.face)
   const fs = faceSize(b, face, type)
   const q = { ...p, face }
+  // a field cleared in the editor, or a drag that ran off the device, can hand over something that is not a
+  // number: a part with no place goes to the middle of its face, and one with no size gets a small one
+  if (!Number.isFinite(q.x)) q.x = 0
+  if (!Number.isFinite(q.y)) q.y = 0
+  if (!Number.isFinite(q.rot)) q.rot = 0
+  if (!Number.isFinite(q.w) || q.w <= 0) q.w = 2
+  if (!Number.isFinite(q.h) || q.h <= 0) q.h = 2
   if (isEdge(face, type)) {
     // a part on an edge can never be taller than the edge is thick
     const room = Math.max(0.8, fs.h - 1.2)
@@ -426,7 +433,15 @@ export function clampPart(b: Body, p: PlacedPart, type: DeviceType = 'phone'): P
     q.rot = 0
   }
   const inset = faceInset(b, face, type)
-  const e = partExtent(q)
+  let e = partExtent(q)
+  // a part bigger than the face it sits on is made to fit: it is drawn, scored and paid for at the size it really is
+  const fit = Math.min(1, Math.max(0.5, fs.w - 2 * inset.x) / e.w, Math.max(0.5, fs.h - 2 * inset.y) / e.h)
+  if (fit < 1) {
+    q.w = Math.floor(q.w * fit * 100) / 100
+    q.h = Math.floor(q.h * fit * 100) / 100
+    if (q.r !== undefined) q.r = Math.min(q.r, q.w / 2, q.h / 2)
+    e = partExtent(q)
+  }
   let maxX = Math.max(0, fs.w / 2 - inset.x - e.w / 2)
   const maxY = Math.max(0, fs.h / 2 - inset.y - e.h / 2)
   if (type === 'handheld') {
@@ -466,6 +481,18 @@ export function clampPart(b: Body, p: PlacedPart, type: DeviceType = 'phone'): P
     const above = k.y + k.h / 2 + e.h / 2
     const below = k.y - k.h / 2 - e.h / 2
     q.y = above <= maxY && (above - q.y <= q.y - below || below < -maxY) ? above : Math.max(below, -maxY)
+  }
+  if ((type === 'phone' || type === 'tablet') && (face === 'front' || face === 'back')) {
+    // the corners of the slab are rounded: a part pushed into one slides in along the diagonal until it is inside the outline
+    const r = Math.min(b.corner, fs.w / 2, fs.h / 2)
+    const dx = Math.abs(q.x) + e.w / 2 - (fs.w / 2 - r)
+    const dy = Math.abs(q.y) + e.h / 2 - (fs.h / 2 - r)
+    const d = Math.hypot(dx, dy)
+    if (dx > 0 && dy > 0 && d > r) {
+      const k = r / d
+      q.x -= Math.sign(q.x) * Math.min(Math.abs(q.x), dx * (1 - k))
+      q.y -= Math.sign(q.y) * Math.min(Math.abs(q.y), dy * (1 - k))
+    }
   }
   return q
 }

@@ -348,7 +348,7 @@ export function monthlyStaff(s: GameState): StaffNote[] {
     const gap = e.traits.includes('ambitious') ? 1.06 : 1.12
     if (market > e.salary * gap && s.day - e.hiredDay > 120 && s.day >= (e.raiseAfter ?? 0)) {
       e.ask = Math.round(market / 50) * 50
-      notes.push({ text: `${e.name} is asking for a raise to $${e.ask.toLocaleString()} a month.` })
+      notes.push({ text: `${e.name} is asking for a raise to $${e.ask.toLocaleString('en-US')} a month.` })
     }
   }
   return notes

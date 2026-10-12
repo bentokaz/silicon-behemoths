@@ -47,9 +47,10 @@ const hashStr = (v: string) => {
 }
 
 /** Where a rival is based. Fixed for a given company. */
-export function homeOf(c: Pick<Company, 'id' | 'name' | 'home'>): string {
+export function homeOf(c: Pick<Company, 'id' | 'name' | 'home' | 'origin'>): string {
   if (c.home) return c.home
-  const v = hashStr(c.name)
+  // from the name it was founded under: a company the player renames stays where it is
+  const v = hashStr(c.origin ?? c.name)
   let acc = 0
   for (const r of REGIONS) {
     acc += r.share
@@ -60,11 +61,12 @@ export function homeOf(c: Pick<Company, 'id' | 'name' | 'home'>): string {
 
 const reachCache = new Map<string, number>()
 /** How present a rival is in a region, 0-1. Strongest at home, patchy elsewhere. */
-export function rivalReach(c: Pick<Company, 'id' | 'name' | 'home'>, region: string): number {
-  const key = c.name + '|' + (c.home ?? '') + '|' + region
+export function rivalReach(c: Pick<Company, 'id' | 'name' | 'home' | 'origin'>, region: string): number {
+  const name = c.origin ?? c.name
+  const key = name + '|' + (c.home ?? '') + '|' + region
   let out = reachCache.get(key)
   if (out === undefined) {
-    const v = hashStr(c.name + region)
+    const v = hashStr(name + region)
     out = homeOf(c) === region ? 1 : v < 0.08 ? 0.25 : 0.7 + 0.3 * v
     reachCache.set(key, out)
   }

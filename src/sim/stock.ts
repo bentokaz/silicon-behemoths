@@ -137,8 +137,25 @@ export function roundQuote(s: GameState, stake: number): { cash: number; name: s
   return { cash: Math.round(((v * stake) / (1 - stake)) * mult), name: BACKERS[i][0], kind: BACKERS[i][1], shares }
 }
 
+/**
+ * The least of the company its founder must still hold after selling shares.
+ * Without a floor, a company could sell a third of itself twice a year for
+ * ever: money from nowhere, and a share count that grows without end.
+ */
+export const MIN_FOUNDER = 0.1
+/** The founder's share of the company once this many new shares are in issue. */
+const stakeAfter = (s: GameState, newShares: number) => s.stock.founder / (s.stock.shares + newShares)
+/** Why new shares cannot be sold because of what they would leave the founder, or null. */
+function diluted(s: GameState, newShares: number): string | null {
+  const left = stakeAfter(s, newShares)
+  if (left >= MIN_FOUNDER) return null
+  return `Investors want the founder to keep at least ${MIN_FOUNDER * 100}% of the company. You hold ${(founderStake(s) * 100).toFixed(1)}%, and this would leave you ${(left * 100).toFixed(1)}%. Sell less, or buy shares back first.`
+}
+
 export function raiseBlocked(s: GameState): string | null {
   if (s.stock.listed) return 'The company is listed; issue shares on the market instead'
+  // the smallest round there is would already take the founder below the floor
+  if (stakeAfter(s, Math.round((s.stock.shares * 0.02) / 0.98)) < MIN_FOUNDER) return diluted(s, Math.round((s.stock.shares * 0.02) / 0.98))
   if (s.day - s.stock.lastRaise < RAISE_GAP) return `Investors want to see progress first: ${RAISE_GAP - (s.day - s.stock.lastRaise)} days until the next round`
   return null
 }
@@ -149,6 +166,8 @@ export function raiseRound(s: GameState, stake: number): { error?: string; cash:
   if (blocked) return { error: blocked, cash: 0, name: '' }
   const pct = clamp(stake, 0.02, 0.3)
   const q = roundQuote(s, pct)
+  const thin = diluted(s, q.shares)
+  if (thin) return { error: thin, cash: 0, name: '' }
   s.stock.shares += q.shares
   s.stock.investors.push({ name: q.name, kind: q.kind, shares: q.shares, paid: q.cash, day: s.day })
   s.stock.lastRaise = s.day
@@ -157,7 +176,7 @@ export function raiseRound(s: GameState, stake: number): { error?: string; cash:
 }
 
 export function ipoBlocked(s: GameState): string | null {
-  if (s.stock.listed) return 'Already listed'
+  if (s.stock.listed) return 'The company is already listed on the stock market'
   if (valuation(s) < IPO_MIN_VALUE) return `The company must be worth $${IPO_MIN_VALUE / 1e6}M to list`
   if (s.reports.length < 12) return 'The market wants to see a full year of accounts'
   return null
@@ -171,6 +190,8 @@ export function goPublic(s: GameState, float: number): { error?: string; cash: n
   const k = s.stock
   const price = valuation(s) / k.shares
   const shares = Math.round((k.shares * pct) / (1 - pct))
+  const thin = diluted(s, shares)
+  if (thin) return { error: thin, cash: 0 }
   // banks and lawyers take 6%
   const cash = Math.round(shares * price * 0.94)
   k.shares += shares
@@ -193,6 +214,8 @@ export function issueShares(s: GameState, pct: number): { error?: string; cash: 
   if (blocked) return { error: blocked, cash: 0 }
   const k = s.stock
   const shares = Math.round(k.shares * clamp(pct, 0.01, 0.15))
+  const thin = diluted(s, shares)
+  if (thin) return { error: thin, cash: 0 }
   const cash = Math.round(shares * k.price * 0.93)
   k.shares += shares
   k.lastRaise = s.day

@@ -69,6 +69,9 @@ export interface ChipSpec {
   watts: number
 }
 
+/** What a chip of the company's own costs it to make, as a share of what a supplier would charge for the same silicon. */
+export const OWN_SILICON = 0.7
+
 /** The chip a design uses: one of the company's own, or an off-the-shelf Helix. */
 export function chipFor(s: Specs, chips?: CustomChip[]): ChipSpec {
   const own = s.customChip ? chips?.find((c) => c.id === s.customChip && c.status === 'ready') : undefined
@@ -80,7 +83,7 @@ export function chipFor(s: Specs, chips?: CustomChip[]): ChipSpec {
       perf: refScore(own.gen) * (0.86 + 0.12 * own.power + 0.06 * own.graphics) * own.quality,
       eff: (1 + 0.08 * own.gen) * (0.85 + 0.35 * own.efficiency) * own.quality,
       // no supplier margin, but a bigger design costs more silicon
-      cost: 70 * Math.pow(1.12, own.gen) * (0.45 + 0.35 * own.power + 0.2 * own.graphics + 0.1 * own.efficiency) * 0.7,
+      cost: 70 * Math.pow(1.12, own.gen) * (0.45 + 0.35 * own.power + 0.2 * own.graphics + 0.1 * own.efficiency) * OWN_SILICON,
       watts: 15 + 28 * own.power + 12 * own.graphics - 10 * own.efficiency,
     }
   }
