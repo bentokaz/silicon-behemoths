@@ -73,6 +73,7 @@ function Campaigns() {
           tone="primary"
           icon="play"
           className="mt-3 h-9 w-full"
+          data-coach-target="campaign"
           onClick={() => {
             const err = act((s) => startCampaign(s, channel, target, budget, region === 'all' ? undefined : region))
             if (err) say(err, 'bad')
@@ -451,7 +452,7 @@ function LayoutPicker({ store, onClose }: { store: Store; onClose: () => void })
               <Mini label="Plot" icon="plot" value={`${s.site.w} x ${s.site.h} m`} />
               <Mini label="Layout" icon="rooms" value={q.needs[0] ? `${q.needs[0]} x ${q.needs[1]} m` : 'none'} tone={fits ? 'text-fg' : 'text-neg'} />
               <Mini label="Worth" icon="cash" value={money(layoutValue(s.site), 0)} />
-              <Mini label="To copy here" icon="receipt" value={!fits ? 'no room' : q.same ? 'same already' : copyCost(q.cost)} tone={!fits ? 'text-neg' : q.same ? 'text-dim' : q.error ? 'text-warn' : 'text-fg'} />
+              <Mini label="To copy here" icon="receipt" value={!fits ? 'no room' : q.same ? 'the same' : copyCost(q.cost)} tone={!fits ? 'text-neg' : q.same ? 'text-dim' : q.error ? 'text-warn' : 'text-fg'} />
             </div>
             {q.error && <div className={`mt-1 text-[10px] leading-snug ${fits ? 'text-warn' : 'text-neg'}`}>{q.error}</div>}
           </button>

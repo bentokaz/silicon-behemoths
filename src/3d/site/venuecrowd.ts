@@ -7,7 +7,7 @@
 // All of it follows the site's clock and none of it is saved.
 import { Act, Body, Crowd, Kind, Mode, Tool, rnd } from './crowd'
 import type { Nav } from './nav'
-import { Pose, type Spot, USE, seatRank } from './spots'
+import { Pose, RISER, type Spot, USE, frameOf, frameX, frameZ, seatAisles, seatRank } from './spots'
 import type { Site } from '../../sim/types'
 
 export interface Programme {
@@ -22,7 +22,7 @@ export interface Programme {
 export type Phase = 'closed' | 'crew' | 'rehearsal' | 'doors' | 'show' | 'ovation' | 'out'
 
 /** The run of a show day, in hours on the site clock. */
-export const SHOW = { crewIn: 7.6, rehearse: 10, rehearseEnd: 11.4, doors: 12.6, start: 14, ovation: 15.6, end: 15.8, cleared: 16.8, crewOut: 18.4 }
+export const SHOW = { crewIn: 7.6, rehearse: 10, rehearseEnd: 11.4, doors: 12, start: 14, ovation: 15.6, end: 15.8, cleared: 16.8, crewOut: 18.4 }
 /** Moments in the show that get a round of applause, in hours after it starts, and how long each lasts. */
 const BEATS = [0.28, 0.62, 0.96, 1.28]
 const BEAT_LEN = 0.075
@@ -81,10 +81,16 @@ export class VenueCrowd extends Crowd {
   private rank = new Map<string, number>()
   /** How many seats, in that order, have been given to someone so far. */
   private given = 0
+  // a house arriving spreads across the whole open front of the grounds
+  protected spread = 5
   private hostSpots: Spot[] = []
   private aisles: number[] = []
   private seq = 0
   private guestIn = 0
+  /** Hours before the start by which the last guest has to be through the gate to reach a seat in time: longer on big grounds. */
+  private lead = 0.4
+  /** How many of the seats given out so far went to someone who walks in. */
+  private walked = 0
   private sold = 0
 
   setSite(site: Site, nav: Nav, spots: Spot[]) {
@@ -101,6 +107,33 @@ export class VenueCrowd extends Crowd {
     this.aisles = []
     for (let i = 0; i < nav.reach.length; i++) if (nav.reach[i] && !this.keepOff(i) && (rooms.has(site.grid[i]) || (!site.grid[i] && this.byStage(i)))) this.aisles.push(i)
     for (const key of [...this.reserved]) if (!this.byKey.has(key)) this.reserved.delete(key)
+    // how long the walk from the gate to the seats is, with the climb and the shuffle along the row on top
+    if (nav.entry >= 0 && this.seats.length) {
+      let far = 0
+      for (const seat of this.seats) far = Math.max(far, Math.abs(seat.x - nav.cx(nav.entry)) + Math.abs(seat.z - nav.cz(nav.entry)))
+      this.lead = Math.max(0.4, ((far * 1.3) / 1.45 + 26) / 45)
+    }
+    // the steps down the open sides of raised seating stand on the edge of the aisle beside it: walkers keep off that edge
+    this.shy.clear()
+    for (const item of site.items) {
+      if (!(RISER[item.kind] > 0)) continue
+      const open = seatAisles(site, item)
+      const f = frameOf(site, item)
+      for (const dir of [-1, 1]) {
+        if (!(open & (dir < 0 ? 1 : 2))) continue
+        // which edge of the aisle's tiles faces the block
+        const dx = Math.round(-dir * f.cos)
+        const dz = Math.round(dir * f.sin)
+        const bit = dx < 0 ? 1 : dx > 0 ? 2 : dz < 0 ? 4 : 8
+        for (const lz of [-1.5, -0.5, 0.5]) {
+          const t = nav.tileAt(frameX(f, dir * 2, lz), frameZ(f, dir * 2, lz))
+          if (t >= 0 && (lz > -1 || nav.walk[t])) this.shy.set(t, (this.shy.get(t) ?? 0) | bit)
+        }
+      }
+    }
+    // an aisle one tile wide between two banks has steps down both sides and no room to keep off both: there people
+    // walk down the middle of what is left, as they would
+    for (const [t, bits] of [...this.shy]) if ((bits & 3) === 3 || (bits & 12) === 12) this.shy.delete(t)
   }
 
   /** Open ground within a few tiles of the stage or the seating, for venues with no hall round them. */
@@ -153,7 +186,7 @@ export class VenueCrowd extends Crowd {
     this.manFronts([])
   }
 
-  protected frontHours(hour: number): boolean {
+  frontHours(hour: number): boolean {
     return this.programme.live || (this.programme.booked && hour >= SHOW.doors - 0.5 && hour < SHOW.cleared)
   }
 
@@ -214,15 +247,19 @@ export class VenueCrowd extends Crowd {
     while (this.given < target && this.given < this.order.length) {
       const seat = this.order[this.given++]
       if (seat.taken || this.reserved.has(seat.key)) continue
-      const walks = live < this.walkers && rnd(this.given * 5.3 + 0.7) < share && (placed || this.guestIn <= 0)
+      // the walkers are a steady share of the house: whenever they have fallen behind it, and the gate is free, the next one walks
+      const walks = live < this.walkers && this.walked < this.given * share && (placed || this.guestIn <= 0)
       if (walks) {
-        if (!placed) this.guestIn = this.programme.live ? 0.2 : 0.3
+        this.walked++
+        // as often as it takes for all of them to be let in while the doors are open, within what the gate can pass
+        if (!placed) this.guestIn = Math.max(this.guestIn, -0.4) + (this.programme.live ? 0.2 : Math.max(0.14, Math.min(0.3, ((SHOW.start - SHOW.doors - this.lead) * 45 * 0.9) / Math.max(1, Math.min(this.walkers, this.sold)))))
         this.spawnGuest(placed, seat)
         live++
       } else this.seated.add(seat.key)
     }
     // on the way out the back rows go first: the walkers among them get up when their seat is taken back
     while (this.given > target && this.given > 0) this.seated.delete(this.order[--this.given].key)
+    if (!this.given) this.walked = 0
   }
 
   protected after(step: number, hour: number, day: number) {
@@ -236,7 +273,7 @@ export class VenueCrowd extends Crowd {
     const seats = this.seats.length
     let want = 0
     // the last guests are let in a while before the start, so that everyone has reached their seat when it does
-    if (phase === 'doors') want = p.draw * Math.min(1, (hour - SHOW.doors) / (SHOW.start - SHOW.doors - 0.4))
+    if (phase === 'doors') want = p.draw * Math.min(1, (hour - SHOW.doors) / Math.max(0.3, SHOW.start - SHOW.doors - this.lead))
     else if (phase === 'show' || phase === 'ovation') want = p.draw
     else if (phase === 'out') want = p.draw * Math.max(0, 1 - (hour - SHOW.end) / 0.55)
     // the house fills and empties smoothly even when the switch is thrown mid-day

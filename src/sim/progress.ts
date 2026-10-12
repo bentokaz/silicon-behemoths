@@ -465,11 +465,20 @@ export const nearTabs = (s: GameState, count = 3): CapId[] =>
     .sort((a, b) => a.stage - b.stage || b.ratio - a.ratio)
     .slice(0, count)
     .map((c) => c.id)
-/** The locked capabilities closest to opening. */
+/**
+ * The locked capabilities closest to opening. Among those within reach (at
+ * the stage the company has come to, or already half done whatever their
+ * stage) the furthest along comes first, and the earlier stage first between
+ * two equally far along. The ones out of reach follow in the order of their
+ * stages: a little progress on something hours away (a few people abroad have
+ * heard of you on the first day) is not nearness. The navigation keeps its
+ * own order, by stage, so that its entries do not swap places as the figures
+ * move.
+ */
 export const nextCaps = (s: GameState, count = 3) =>
   lockedCaps(s)
-    .map((c) => ({ cap: c, ratio: ratioOf(s, c.id) }))
-    .sort((a, b) => a.cap.stage - b.cap.stage || b.ratio - a.ratio)
+    .map((c) => ({ cap: c, ratio: ratioOf(s, c.id), near: isNear(s, c.id) }))
+    .sort((a, b) => Number(b.near) - Number(a.near) || (a.near ? b.ratio - a.ratio || a.cap.stage - b.cap.stage : a.cap.stage - b.cap.stage || b.ratio - a.ratio))
     .slice(0, count)
 
 // ---------------------------------------------------------------- executives

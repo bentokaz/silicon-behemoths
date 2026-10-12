@@ -372,15 +372,16 @@ export function RoomLights({ site, crowd, mood, lamps, busy, onDark, gain = 1 }:
 // ---------------------------------------------------------------- stages
 
 /** How strongly the stage is lit in each light, and the house lights with and without a show on. */
-const STAGE_WASH: Record<Mood, number> = { day: 40, dusk: 170, night: 250 }
+const STAGE_WASH: Record<Mood, number> = { day: 150, dusk: 170, night: 250 }
 const HOUSE: Record<Mood, { up: number; down: number }> = { day: { up: 0, down: 0 }, dusk: { up: 26, down: 7 }, night: { up: 60, down: 11 } }
 
 /**
  * The light on a venue. The stage has a wash of its own from the front, so whoever is on it reads clearly; the
  * seating has house lights, which go down while a show is on. Nothing here lights the grounds: after dark they are
- * left to the lamp posts.
+ * left to the lamp posts. `down` says the hall's own lights are down for a show indoors by day: then the stage and
+ * the seats are lit as they would be at dusk.
  */
-export function StageLights({ site, mood, show }: { site: Site; mood: Mood; show: boolean }) {
+export function StageLights({ site, mood, show, down = false }: { site: Site; mood: Mood; show: boolean; down?: boolean }) {
   const plan = useMemo(() => {
     const stage = site.items.find((i) => i.kind === 'stage')
     const seats = site.items.filter((i) => i.kind.startsWith('seats'))
@@ -411,7 +412,9 @@ export function StageLights({ site, mood, show }: { site: Site; mood: Mood; show
     [],
   )
   useEffect(() => () => spots.forEach((s) => s.dispose()), [spots])
-  const wash = STAGE_WASH[mood] * (show ? 1 : 0.45)
+  const as: Mood = down && mood === 'day' ? 'dusk' : mood
+  // with nothing on, the stage is lit only once the daylight goes; for a show it is lit whatever the hour
+  const wash = show ? STAGE_WASH[as] : as === 'day' ? 0 : STAGE_WASH[as] * 0.45
   spots.forEach((s, k) => {
     s.intensity = plan.stage ? wash : 0
     if (!plan.stage) return
@@ -419,7 +422,7 @@ export function StageLights({ site, mood, show }: { site: Site; mood: Mood; show
     s.target.position.set(plan.stage.at[0], 1.6, plan.stage.at[1])
     s.target.updateMatrixWorld()
   })
-  const house = show ? HOUSE[mood].down : HOUSE[mood].up
+  const house = show ? HOUSE[as].down : HOUSE[as].up
   return (
     <>
       {spots.map((s, k) => (
@@ -429,6 +432,81 @@ export function StageLights({ site, mood, show }: { site: Site; mood: Mood; show
         </group>
       ))}
       {plan.house && house > 0 && <pointLight position={[plan.house[0], 7.5, plan.house[1]]} color="#ffe6c8" intensity={house} distance={34} decay={1.5} />}
+    </>
+  )
+}
+
+// ---------------------------------------------------------------- front desks
+
+/** A card on a reception counter that says so when nobody is on the desk in working hours: whoever looks after it has stepped out. */
+export function FrontSigns({ site, crowd }: { site: Site; crowd: Crowd }) {
+  const desks = useMemo(() => site.items.filter((i) => i.kind === 'reception'), [site, site.rev]) // eslint-disable-line react-hooks/exhaustive-deps
+  const texture = useMemo(() => {
+    const cv = document.createElement('canvas')
+    cv.width = 256
+    cv.height = 128
+    const ctx = cv.getContext('2d')
+    if (ctx) {
+      ctx.fillStyle = '#f4f1ea'
+      ctx.fillRect(0, 0, 256, 128)
+      ctx.strokeStyle = '#2c3036'
+      ctx.lineWidth = 6
+      ctx.strokeRect(8, 8, 240, 112)
+      ctx.fillStyle = '#2c3036'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.font = '700 36px system-ui, sans-serif'
+      ctx.fillText('BACK SOON', 128, 68)
+    }
+    const t = new THREE.CanvasTexture(cv)
+    t.colorSpace = THREE.SRGBColorSpace
+    return t
+  }, [])
+  useEffect(() => () => texture.dispose(), [texture])
+  const cards = useRef<(THREE.Group | null)[]>([])
+  const next = useRef(0)
+  useTick((dt) => {
+    next.current -= dt
+    if (next.current > 0) return
+    next.current = 0.25
+    const hour = ((crowd.now % 24) + 24) % 24
+    desks.forEach((item, i) => {
+      const card = cards.current[i]
+      if (!card) return
+      const desk = crowd.fronts.find((s) => s.item.id === item.id)
+      card.visible = !!desk && crowd.frontHours(hour) && !crowd.frontManned(desk)
+    })
+  }, 8)
+  return (
+    <>
+      {desks.map((item, i) => {
+        const f = frameOf(site, item)
+        return (
+          <group
+            key={item.id}
+            ref={(g) => {
+              cards.current[i] = g
+            }}
+            visible={false}
+            position={[frameX(f, -0.5, 0.02), 1.142, frameZ(f, -0.5, 0.02)]}
+            rotation-y={f.a}
+          >
+            {/* a folded card standing on the counter, its face toward whoever walks up */}
+            <mesh position={[0, 0.075, 0.03]} rotation-x={-0.28} userData={{ live: true }}>
+              <boxGeometry args={[0.3, 0.16, 0.008]} />
+              <meshStandardMaterial color="#f4f1ea" roughness={0.8} />
+            </mesh>
+            <mesh position={[0, 0.076, 0.0355]} rotation-x={-0.28} userData={{ live: true }}>
+              <planeGeometry args={[0.29, 0.15]} />
+              <meshBasicMaterial map={texture} toneMapped={false} />
+            </mesh>
+            <mesh position={[0, 0.075, -0.03]} rotation-x={0.28} userData={{ live: true }}>
+              <boxGeometry args={[0.3, 0.16, 0.008]} />
+              <meshStandardMaterial color="#f4f1ea" roughness={0.8} />
+            </mesh>
+          </group>
+        )
+      })}
     </>
   )
 }

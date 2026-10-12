@@ -344,7 +344,7 @@ export function Staff() {
                 A team with a lead gets more done: the lead gives up part of their own work to lift everyone else, by more the more skilled they are. One lead can look after {TEAM_SPAN} people. Once the company passes {TEAM_SPAN} people, anyone without a lead works at 90%. Teams also need somewhere to meet: one place at a meeting table for every two members.
               </div>
               <div className="flex shrink-0 gap-1">
-                <Btn small icon="sort" onClick={() => (act((s) => autoTeams(s)), sfx.confirm(), say('Everyone was sorted into teams by role.'))} disabled={g.staff.length < 2}>
+                <Btn small icon="sort" data-coach-target="teams" onClick={() => (act((s) => autoTeams(s)), sfx.confirm(), say('Everyone was sorted into teams by role.'))} disabled={g.staff.length < 2}>
                   Organise by role
                 </Btn>
                 <Btn small tone="primary" icon="plus" onClick={() => act((s) => createTeam(s, ''))}>
@@ -459,6 +459,7 @@ export function Staff() {
                       small
                       tone="primary"
                       icon="hire"
+                      data-coach-target={`hire hire-${e.role}`}
                       onClick={() => {
                         const err = act((s) => hire(s, e.id))
                         if (err) say(err, 'bad')

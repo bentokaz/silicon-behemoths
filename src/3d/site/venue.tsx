@@ -26,6 +26,8 @@ export interface VenueCtx {
   products: Product[]
   /** Seating: which sides are open to an aisle (1 left, 2 right), where a raised block has steps. */
   aisles?: number
+  /** The people here are drawn by the view, walking about. */
+  live?: boolean
 }
 
 export { STAGE_H }
@@ -76,9 +78,13 @@ function SeatBlock({ h, c }: { h: number; c: VenueCtx }) {
 }
 
 /** A beam of light swinging from a lamp. Live: never baked. */
-function Beam({ p, color, phase }: { p: [number, number, number]; color: string; phase: number }) {
+function Beam({ p, color, phase, day }: { p: [number, number, number]; color: string; phase: number; day: boolean }) {
   const ref = useRef<THREE.Group>(null)
-  const material = useMemo(() => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.1, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }), [color])
+  // light added to a bright sky does not show: by day the beam is a pale haze in the air instead
+  const material = useMemo(
+    () => new THREE.MeshBasicMaterial({ color: day ? '#fffaf0' : color, transparent: true, opacity: day ? 0.2 : 0.1, depthWrite: false, blending: day ? THREE.NormalBlending : THREE.AdditiveBlending, side: THREE.DoubleSide }),
+    [color, day],
+  )
   useFrame(({ clock }) => {
     if (!ref.current) return
     const t = clock.elapsedTime * 0.6 + phase
@@ -105,6 +111,11 @@ export function VenueItem({ kind, c }: { kind: string; c: VenueCtx }) {
           {/* two steps up at stage left; the stage itself is the third */}
           <B p={[-2.45, 0.15, 1.77]} s={[0.9, 0.3, 0.3]} c="#23252a" r={0.008} rough={0.6} />
           <B p={[-2.45, 0.3, 1.47]} s={[0.9, 0.6, 0.3]} c="#23252a" r={0.008} rough={0.6} />
+          {/* black drapes at the back corners and a skirt along the back: something dark behind whoever is speaking, whatever the light */}
+          {[-2.72, 2.72].map((x) => (
+            <B key={x} p={[x, STAGE_H + 1.5, -1.84]} s={[0.5, 3.0, 0.22]} c="#0e0f11" r={0.01} rough={0.95} />
+          ))}
+          <B p={[0, STAGE_H + 0.35, -1.9]} s={[5.9, 0.7, 0.1]} c="#0e0f11" r={0.01} rough={0.95} />
           {/* lectern */}
           <B p={[2.0, STAGE_H + 0.5, 0.7]} s={[0.5, 1.0, 0.4]} c={WALNUT} r={0.02} rough={0.35} />
           <B p={[2.0, STAGE_H + 1.03, 0.68]} s={[0.56, 0.04, 0.46]} c={WALNUT} r={0.01} rot={[-0.2, 0, 0]} cast={false} />
@@ -150,7 +161,7 @@ export function VenueItem({ kind, c }: { kind: string; c: VenueCtx }) {
             <group key={x}>
               <B p={[x, 6.36, 0.4]} s={[0.2, 0.28, 0.24]} c="#15171a" r={0.03} />
               <C p={[x, 6.24, 0.53]} r={[0.09, 0.09]} h={0.03} c="#ffffff" glow={['#ffd9a8', '#a8d0ff'][(i + c.seed) % 2]} glowPower={(c.show ? 3 : 0.6) * (0.5 + c.glow)} seg={12} rot={[0.9, 0, 0]} cast={false} />
-              {c.show && <Beam p={[x, 6.24, 0.53]} color={['#ffd9a8', '#a8d0ff'][(i + c.seed) % 2]} phase={c.seed + i * 2.1} />}
+              {c.show && <Beam p={[x, 6.24, 0.53]} color={['#ffd9a8', '#a8d0ff'][(i + c.seed) % 2]} phase={c.seed + i * 2.1} day={c.glow < 1} />}
             </group>
           ))}
         </>
@@ -197,5 +208,5 @@ export function VenueItem({ kind, c }: { kind: string; c: VenueCtx }) {
     case 'demo':
       return <DisplayTable products={c.products} seed={c.seed} />
   }
-  return <OfficeItem kind={kind} c={{ glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed }} />
+  return <OfficeItem kind={kind} c={{ glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, live: c.live }} />
 }

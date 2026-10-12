@@ -3,9 +3,12 @@
 // each machine of a working line, someone at every control desk and
 // inspection bench, a supervisor who walks the line with a clipboard, and a
 // hand with a pallet truck who takes cartons from the store to the shipping
-// dock. They come in for the morning, break for lunch in the crew room if
-// there is one, and go home at the end of the day. A line with no orders
-// keeps a skeleton crew. None of it is saved or read by the game.
+// dock. The game's line makes devices round the clock while it has orders, so
+// a working line has two shifts: the day shift comes in for the morning and
+// breaks for lunch in the crew room if there is one, and the night shift
+// takes over from them in the evening and hands back at dawn. A line with no
+// orders stands idle: a skeleton crew by day and nobody at night. None of it
+// is saved or read by the game.
 import type { Site } from '../../sim/types'
 import { Act, Body, Crowd, Kind, Mode, Tool, rnd } from './crowd'
 import type { Nav } from './nav'
@@ -14,8 +17,10 @@ import { Pose, type Spot, USE } from './spots'
 /** What each of them is there to do. */
 export const Job = { Operator: 0, Supervisor: 1, Hauler: 2 } as const
 
-/** The working day, in hours on the site clock: when the first of the shift come in, and when the last have gone. */
-export const SHIFT = { start: 6.7, end: 17.4 }
+/** The two shifts, in hours on the site clock: when the first of the day shift come in, and when the last of them have gone and the night shift has the floor. */
+export const SHIFT = { start: 6.7, end: 18.8 }
+/** Which shift someone works. */
+export const Crew = { Day: 0, Night: 1 } as const
 /** Machines a line worker stands at, and the desks of the control room. */
 const LINE_KINDS = new Set(['smt', 'robot', 'manual', 'test', 'pack'])
 const VESTS = ['#e0a030', '#d98a2b', '#e6b23a']
@@ -80,7 +85,7 @@ export class FactoryCrowd extends Crowd {
     this.rounds = [...stops]
     const docks = this.drops.length && this.picks.length ? this.drops.length : 0
     const want = rosterFor(this.stations.length, docks, this.running, this.cap)
-    const key = `${want.operators}|${want.supervisors}|${want.haulers}|${this.stations.map((s) => s.key).join(',')}`
+    const key = `${this.running}|${want.operators}|${want.supervisors}|${want.haulers}|${this.stations.map((s) => s.key).join(',')}`
     if (key === this.rosterKey) return
     this.rosterKey = key
     const keep = new Set<string>()
@@ -103,9 +108,17 @@ export class FactoryCrowd extends Crowd {
       this.version++
       return b
     }
-    for (let k = 0; k < want.operators; k++) cast(`op${k}`, Job.Operator, k).station = this.stations[k]
-    for (let k = 0; k < want.supervisors; k++) cast(`sup${k}`, Job.Supervisor, k)
-    for (let k = 0; k < want.haulers; k++) cast(`haul${k}`, Job.Hauler, k).station = this.drops[k % this.drops.length]
+    // a line with orders runs through the night, and has a night shift of the same size to run it
+    for (const crew of this.running ? [Crew.Day, Crew.Night] : [Crew.Day]) {
+      const tag = crew === Crew.Night ? 'n' : ''
+      const seat = (b: Body, station: Spot | null) => {
+        b.station = station
+        b.crew = crew
+      }
+      for (let k = 0; k < want.operators; k++) seat(cast(`${tag}op${k}`, Job.Operator, k + crew * 37), this.stations[k])
+      for (let k = 0; k < want.supervisors; k++) seat(cast(`${tag}sup${k}`, Job.Supervisor, k + crew * 37), null)
+      for (let k = 0; k < want.haulers; k++) seat(cast(`${tag}haul${k}`, Job.Hauler, k + crew * 37), this.drops[k % this.drops.length])
+    }
     // anyone the line no longer needs finishes what they are doing and goes home
     for (const b of this.bodies) {
       if (b.kind !== Kind.Hand || b.quit || keep.has(b.id)) continue
@@ -119,15 +132,23 @@ export class FactoryCrowd extends Crowd {
     if (b.schedDay === day) return
     b.schedDay = day
     const r = (k: number) => rnd(b.seed * 5.71 + day * 2.9 + k * 13.1)
+    if (b.crew === Crew.Night) {
+      // in before the day shift has all gone, and out as the morning's people arrive
+      b.sched[0] = SHIFT.end - 0.6 + r(1) * 0.45
+      b.sched[1] = SHIFT.start + 0.1 + r(2) * 0.45
+      b.sched[2] = b.sched[3] = 99
+      return
+    }
     b.sched[0] = SHIFT.start + r(1) * 0.55
-    b.sched[1] = SHIFT.end - 0.65 + r(2) * 0.6
+    b.sched[1] = SHIFT.end - 0.6 + r(2) * 0.6
     b.sched[2] = 11.5 + r(3) * 1.3
     b.sched[3] = b.sched[2] + 0.45
   }
 
   private onShift(b: Body, hour: number, day: number): boolean {
     this.shiftHours(b, day)
-    return !b.quit && hour >= b.sched[0] && hour < b.sched[1]
+    if (b.quit) return false
+    return b.crew === Crew.Night ? hour >= b.sched[0] || hour < b.sched[1] : hour >= b.sched[0] && hour < b.sched[1]
   }
 
   /** Where someone should be right now, if it is a spot: their station, or a seat in the crew room at lunch. */

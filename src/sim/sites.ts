@@ -621,8 +621,11 @@ export function shapeCuts(tiles: [number, number][]): Record<string, Corner> {
 
 /**
  * A cut only stands where the two sides it opens face open ground: open land,
- * or a tile of curved wall that is mostly cut away along that side, so the
- * slant and the curve can stand corner to corner.
+ * or a tile of curved wall that leaves some of that side open, so the slant
+ * and the curve stand corner to corner. Where the curved room's floor runs
+ * along part of the side, the grid edge walls that part off like any other;
+ * only a side that is floor from end to end (see `contact`, which then does
+ * not count the side as open either) squares the slant off.
  */
 function cutFits(site: Site, x: number, y: number, c: Corner): boolean {
   const dy = c[0] === 'n' ? -1 : 1
@@ -630,7 +633,7 @@ function cutFits(site: Site, x: number, y: number, c: Corner): boolean {
   const clear = (nx: number, ny: number, facing: Side) => {
     if (!gridAt(site, nx, ny)) return true
     const live = site.curves?.length ? curveAt(site, nx, ny) : undefined
-    return !!live && live.shape.sides[facing].reduce((a, [u, v]) => a + v - u, 0) <= 0.5
+    return !!live && live.shape.sides[facing].reduce((a, [u, v]) => a + v - u, 0) <= 0.98
   }
   return clear(x, y + dy, dy < 0 ? 's' : 'n') && clear(x + dx, y, dx > 0 ? 'w' : 'e')
 }
@@ -788,38 +791,47 @@ export function tidy(site: Site) {
 
 // ---------------------------------------------------------------- courtyards
 
-/** A stretch of open ground shut in by buildings, or one that runs out to the edge of the plot. */
+/** A stretch of open ground and what closes it in: buildings, and perhaps the edge of the plot. */
 export interface Pocket {
   /** The open tiles in it. */
   tiles: [number, number][]
-  /** False where it reaches the edge of the plot, so nothing closes it in. */
+  /** True where walls stand all the way round; false where the edge of the plot closes some of it. */
   enclosed: boolean
   /** Tiles of curved wall, keyed "x,y", whose left-over corners are part of it. */
   curved: string[]
+  /** Metres of its outline that are wall: straight, slanted and curved. */
+  walls: number
+  /** Metres of its outline that are the edge of the plot. */
+  rim: number
+  /** Which of the plot's four sides it reaches. */
+  reaches: Side[]
 }
 
 /** Largest courtyard, in tiles, that is filled in one go. */
 export const FILL_MAX = 2500
 /** Share of a curved courtyard a box must cover before the room takes the whole of it. */
-export const FILL_SHARE = 0.75
+export const FILL_SHARE = 0.5
 const WAYS: [Side, Side, number, number][] = [['n', 's', 0, -1], ['s', 'n', 0, 1], ['e', 'w', 1, 0], ['w', 'e', -1, 0]]
 
 /**
  * The open ground joined to a tile: every open tile that can be reached from
- * it without crossing a wall. Ground carries on through the open half of a
+ * it without crossing a wall, with how much of its outline is wall and how
+ * much is the edge of the plot. Ground carries on through the open half of a
  * slanted tile and through the corner a curved wall leaves over. Null if the
  * tile is not open ground. Pass the site's curved tiles when asking often.
  */
 export function pocketAt(site: Site, x: number, y: number, curved: Map<string, LiveTile> = curveTiles(site)): Pocket | null {
   if (!inPlot(site, x, y) || gridAt(site, x, y)) return null
-  const out: Pocket = { tiles: [], enclosed: true, curved: [] }
+  const out: Pocket = { tiles: [], enclosed: true, curved: [], walls: 0, rim: 0, reaches: [] }
   const seen = new Uint8Array(site.w * site.h)
-  /** True where ground shows through a side of a built tile. */
-  const opens = (tx: number, ty: number, side: Side): boolean => {
+  /** How much of one side of a built tile ground shows through, in metres. */
+  const open = (tx: number, ty: number, side: Side): number => {
     const cut = cutAt(site, tx, ty)
-    if (cut) return cut.includes(side)
+    if (cut) return cut.includes(side) ? 1 : 0
     const live = curved.get(`${tx},${ty}`)
-    return !!live && !live.beyond && live.shape.sides[side].reduce((a, [u, v]) => a - (v - u), 1) > 0.02
+    if (!live || live.beyond) return 0
+    const gap = live.shape.sides[side].reduce((a, [u, v]) => a - (v - u), 1)
+    return gap > 0.02 ? gap : 0
   }
   const queue = [y * site.w + x]
   seen[queue[0]] = 1
@@ -829,17 +841,31 @@ export function pocketAt(site: Site, x: number, y: number, curved: Map<string, L
     const ty = (i / site.w) | 0
     const ground = !site.grid[i]
     if (ground) out.tiles.push([tx, ty])
-    else if (curved.has(`${tx},${ty}`)) out.curved.push(`${tx},${ty}`)
+    else {
+      // the open part of a built tile: the slanted or curved wall across it is part of the outline
+      const live = curved.get(`${tx},${ty}`)
+      if (live) {
+        out.curved.push(`${tx},${ty}`)
+        const facets = geomOf(site.curves![live.curve]).facets
+        for (const p of live.shape.pieces) out.walls += (p.t1 - p.t0) * facets[p.facet].len
+      } else out.walls += Math.SQRT2
+    }
     for (const [side, far, dx, dy] of WAYS) {
-      if (!ground && !opens(tx, ty, side)) continue
+      const here = ground ? 1 : open(tx, ty, side)
+      if (!here) continue
       const nx = tx + dx
       const ny = ty + dy
       if (!inPlot(site, nx, ny)) {
         out.enclosed = false
+        out.rim += here
+        if (!out.reaches.includes(side)) out.reaches.push(side)
         continue
       }
       const j = ny * site.w + nx
-      if (seen[j] || (site.grid[j] && !opens(nx, ny, far))) continue
+      const there = site.grid[j] ? open(nx, ny, far) : 1
+      // whatever of this side the ground does not carry on through is straight wall
+      out.walls += Math.max(0, here - there)
+      if (!there || seen[j]) continue
       seen[j] = 1
       queue.push(j)
     }
@@ -847,30 +873,49 @@ export function pocketAt(site: Site, x: number, y: number, curved: Map<string, L
   // the same courtyard comes out the same wherever in it the asking started
   out.tiles.sort((a, b) => a[1] - b[1] || a[0] - b[0])
   out.curved.sort()
+  out.reaches.sort()
   return out
 }
 
-/** Why a stretch of open ground cannot be filled with a room in one go, or null if it can. */
+/**
+ * Why a stretch of open ground cannot be filled with a room in one go, or
+ * null if it can. The edge of the plot may close some of it: a yard against
+ * one side of the plot, in a corner of it, or running from one side to the
+ * other between buildings. Ground that reaches three or four sides of the
+ * plot is the open land round the buildings, not a courtyard: buildings
+ * stand along at most one side of it.
+ */
 export function fillError(pocket: Pocket | null): string | null {
   if (!pocket) return 'That land is already built on'
-  if (!pocket.enclosed) return 'That ground is not closed in: it runs out to the edge of the plot. Fill needs walls all the way round; mark the room out with a box instead.'
+  if (pocket.reaches.length > 2) {
+    return `That ground is not closed in: it runs out to ${pocket.reaches.length === 4 ? 'all four' : 'three'} sides of the plot, so it is the open land round the buildings and not a courtyard. Fill takes ground that buildings close in, with the edge of the plot along no more than two sides of it; mark the room out with a box instead.`
+  }
   if (pocket.tiles.length > FILL_MAX) return `That courtyard is ${pocket.tiles.length.toLocaleString()} m², too large to fill in one go (the most is ${FILL_MAX.toLocaleString()} m²). Mark the room out in parts instead.`
   return null
 }
 
+/** The curved courtyard a box was drawn in, and whether the box covers enough of it to take it all. */
+export interface Courtyard {
+  /** Every open tile of the courtyard. */
+  tiles: [number, number][]
+  /** True when the box covers half of it or more (and not already all of it), so the room takes the whole courtyard. */
+  whole: boolean
+}
+
 /**
- * The whole courtyard, when the open tiles of a box all lie in one courtyard
- * that a curved wall closes in and cover most of it. A box drawn across a
- * round courtyard would otherwise leave thin slivers of open ground between
- * its straight sides and the curve. Null when the box should stay a box.
+ * The courtyard a box lies in, when all its open tiles are in one courtyard
+ * that a curved wall helps close in. A box across half or more of it takes
+ * the whole courtyard (`whole`): its straight sides would otherwise leave
+ * thin slivers of open ground against the curve. Null where the box is not
+ * inside such a courtyard, and for one too large or too open to fill.
  */
-export function courtyardFor(site: Site, tiles: [number, number][]): [number, number][] | null {
+export function courtyardFor(site: Site, tiles: [number, number][]): Courtyard | null {
   if (!tiles.length || !site.curves?.length) return null
   const pocket = pocketAt(site, tiles[0][0], tiles[0][1])
-  if (!pocket || !pocket.enclosed || !pocket.curved.length || pocket.tiles.length > FILL_MAX) return null
-  if (tiles.length >= pocket.tiles.length || tiles.length < pocket.tiles.length * FILL_SHARE) return null
+  if (!pocket || !pocket.curved.length || fillError(pocket)) return null
   const within = new Set(pocket.tiles.map(([px, py]) => `${px},${py}`))
-  return tiles.every(([tx, ty]) => within.has(`${tx},${ty}`)) ? pocket.tiles : null
+  if (!tiles.every(([tx, ty]) => within.has(`${tx},${ty}`))) return null
+  return { tiles: pocket.tiles, whole: tiles.length < pocket.tiles.length && tiles.length >= pocket.tiles.length * FILL_SHARE }
 }
 
 /** Tiles an item covers, given its anchor tile and rotation. */

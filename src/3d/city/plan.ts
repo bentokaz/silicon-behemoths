@@ -37,11 +37,12 @@ export interface Place {
   campaign?: Campaign
   /** Days since the plot was bought or enlarged, while builders are still on it. */
   building?: number
-  /** How much smaller than life the site is drawn: under 1 for a store on a shared plot. */
+  /** How much smaller than life the site is drawn: under 1 for every store of a district whose blocks are full. */
   scale?: number
-  /** The high-street plot a store stands on, as "x,z", which several stores may share. */
-  lot?: string
-  /** One of many on a shared plot: its name shows only under the pointer, so the street is not buried in tags. */
+  /** For a store: how far the open ground in front of its door reaches, and which row it is in (0 fronts the street). */
+  front?: number
+  row?: number
+  /** A store with others close by: its name shows only under the pointer, so the street is not buried in tags. */
   crowded?: boolean
 }
 
@@ -82,11 +83,8 @@ export const LOTS = {
 } satisfies Record<string, Lot>
 /** Tower plots downtown, in the order they fill up. */
 export const TOWER_SLOTS: [number, number][] = [-6, -68, 94, -102, 128, -136, 162, -170].map((x) => [x, -11])
-/** Shop plots along the high street, in the order they fill up. */
-export const SHOP_SLOTS: [number, number][] = [-44, -68, -94, -120, -146, -172, -10, 16, 42, 90, 116, 142, 168].map((x) => [x, 38])
-export const SHOP_LOT = { w: 24, d: 24 }
-/** Most stores one shop plot is divided between: four rows of four. */
-export const SHOP_SHARE = 16
+/** Where the neighbours' shops stand along the high street until the company's own stores take the ground: the middle of each. */
+export const SHOP_SLOTS: [number, number][] = [-44, -68, -94, -120, -146, -172, -10, 16, 42, 90, 116, 142, 168].map((x) => [x, 43.6])
 
 /**
  * The ground a store needs beyond its own plot, at life size: a kerb and a
@@ -94,8 +92,38 @@ export const SHOP_SHARE = 16
  * forms there on a launch day.
  */
 export const SHOP_ROOM = { side: 1.6, back: 0.6, front: 2.8 }
+/**
+ * How much ground a building hides behind it for each metre of its height,
+ * seen from where the camera usually stands (see HOME_CAMERA in CityView,
+ * and the three-quarter view it flies to): a little under a metre and a half.
+ */
+export const SIGHT = 1.5
+/** How far out from a shopfront its queue reaches: the lane in front of a back row is kept clear of the roofline ahead by this much more. */
+const QUEUE_REACH = 2.6
+/** The smallest a district's stores are ever drawn. Any that still do not fit at that are left off the map. */
+export const SHOP_MIN_SCALE = 0.25
 
-type Footprint = Pick<Site, 'w' | 'h'>
+/** A strip of ground that shops stand on: between two cross streets, with its front on the street to the south of it. */
+export interface ShopBlock {
+  x0: number
+  x1: number
+  /** Its back, to the north, and its front: the kerb of the street its shops face. */
+  z0: number
+  z1: number
+  /** Where along the front its first store stands; the rest spread out from there. */
+  from: number
+}
+
+/** The high street's three blocks: west of the cross streets, between them, and east. Each fills from the end nearest the middle of town. */
+export const SHOP_BLOCKS: ShopBlock[] = [
+  { x0: -188, x1: -34, z0: 20.5, z1: 53.4, from: -34 },
+  { x0: -22, x1: 66, z0: 20.5, z1: 53.4, from: -22 },
+  { x0: 78, x1: 188, z0: 20.5, z1: 53.4, from: 78 },
+]
+
+type Footprint = Pick<Site, 'w' | 'h'> & { floors?: number }
+/** How high a store's walls stand. */
+const tall = (site: Footprint) => (site.floors ?? 1) * 3 + 0.5
 
 export interface ShopLot {
   x: number
@@ -103,103 +131,127 @@ export interface ShopLot {
   /** Width and depth of the ground this store has to itself. */
   w: number
   d: number
-  /** How much smaller than life it is drawn: 1 with room to spare, and the same for every store on one plot. */
+  /** How much smaller than life it is drawn: 1 unless the district is full, and the same for every store in the district. */
   scale: number
-  /** The plot it is on, as "x,z", and how many stores share that plot. */
-  lot: string
-  shared: number
+  /** Which block of the district it is on, and which row there: 0 fronts the street, the rest a lane behind. */
+  block: number
+  row: number
+  /** How far the open ground in front of its door reaches: the pavement of the street, or its row's lane. */
+  front: number
 }
 
 interface ShopRow {
-  /** Indexes of the stores in the row, from the west. */
+  /** Indexes of the stores in the row, and where each one's middle is along it. */
   at: number[]
-  width: number
-  depth: number
+  xs: number[]
+  /** How far the row has spread east and west of where it started. */
+  east: number
+  west: number
+  /** Its deepest and its tallest building, at life size. */
+  deep: number
+  high: number
 }
 
-/** A plot's stores set out in rows from the street back at a given scale, in the order they opened; null if they do not fit. */
-function shopRows(sites: Footprint[], s: number): ShopRow[] | null {
-  const rows: ShopRow[] = []
-  let depth = 0
-  for (let i = 0; i < sites.length; i++) {
-    const cw = (sites[i].w + SHOP_ROOM.side) * s
-    const cd = (sites[i].h + SHOP_ROOM.back + SHOP_ROOM.front) * s
-    if (cw > SHOP_LOT.w + 1e-9) return null
-    let row = rows[rows.length - 1]
-    if (!row || row.width + cw > SHOP_LOT.w + 1e-9) rows.push((row = { at: [], width: 0, depth: 0 }))
-    row.at.push(i)
-    row.width += cw
-    if (cd > row.depth) {
-      depth += cd - row.depth
-      row.depth = cd
+/** The lane in front of the row behind this one: wide enough that this row's roofline does not hide the queue standing in it. */
+const laneBehind = (high: number) => Math.max(SHOP_ROOM.front, high * SIGHT + QUEUE_REACH - SHOP_ROOM.back)
+/** How deep a block's rows come to, at life size. */
+const rowsDepth = (rows: { deep: number; high: number }[]) => rows.reduce((a, r, i) => a + (i ? laneBehind(rows[i - 1].high) : SHOP_ROOM.front) + r.deep + SHOP_ROOM.back, 0)
+
+/**
+ * A district's stores set out at a given scale, in the order they opened.
+ * Each takes the first place that has room for it: along the street front of
+ * each block in turn, and only then in a row behind, which has a lane of its
+ * own. A store never moves to make room for a later one. Returns the rows of
+ * each block, and which stores found no room.
+ */
+function setOut(blocks: ShopBlock[], sites: Footprint[], s: number): { rows: ShopRow[][]; left: number[] } {
+  const rows: ShopRow[][] = blocks.map(() => [])
+  const left: number[] = []
+  sites.forEach((site, i) => {
+    const cw = (site.w + SHOP_ROOM.side) * s
+    const high = tall(site)
+    const most = Math.max(...rows.map((r) => r.length))
+    for (let r = 0; r <= most; r++) {
+      for (let b = 0; b < blocks.length; b++) {
+        const block = blocks[b]
+        const mine = rows[b]
+        if (r > mine.length) continue
+        const row = mine[r] ?? { at: [], xs: [], east: 0, west: 0, deep: 0, high: 0 }
+        // does the block still have the depth, with this store in the row?
+        const trial = mine.map((x) => ({ deep: x.deep, high: x.high }))
+        trial[r] = { deep: Math.max(row.deep, site.h), high: Math.max(row.high, high) }
+        if (rowsDepth(trial) * s > block.z1 - block.z0 + 1e-9) continue
+        // and the row the width, on whichever side of its start has had less built on it?
+        const east = block.from + row.east + cw <= block.x1 + 1e-9
+        const west = block.from - row.west - cw >= block.x0 - 1e-9
+        if (!east && !west) continue
+        const side = east && (!west || row.east <= row.west) ? 1 : -1
+        row.at.push(i)
+        row.xs.push(block.from + side * ((side > 0 ? row.east : row.west) + cw / 2))
+        if (side > 0) row.east += cw
+        else row.west += cw
+        row.deep = trial[r].deep
+        row.high = trial[r].high
+        mine[r] = row
+        return
+      }
     }
-    if (depth > SHOP_LOT.d + 1e-9) return null
-  }
-  return rows
+    left.push(i)
+  })
+  return { rows, left }
 }
 
 /**
- * The scale at which every store on a shared plot is drawn: life size if
- * they all fit, otherwise the largest that lets them. One scale to a plot,
- * so neighbours on it, and the people queueing outside them, stay in
- * proportion to one another.
+ * The scale at which every store in a district is drawn: life size while
+ * they all fit its blocks, otherwise the largest that lets them, and never
+ * under SHOP_MIN_SCALE. One scale to a district, so every store on a street,
+ * and the people queueing outside it, are in proportion to the neighbours.
  */
-export function plotScale(sites: Footprint[]): number {
-  if (shopRows(sites, 1)) return 1
-  let lo = 0
+export function districtScale(blocks: ShopBlock[], sites: Footprint[]): number {
+  const fits = (s: number) => !setOut(blocks, sites, s).left.length
+  if (fits(1)) return 1
+  let lo = SHOP_MIN_SCALE
   let hi = 1
-  for (let i = 0; i < 24; i++) {
+  if (!fits(lo)) return lo
+  for (let i = 0; i < 20; i++) {
     const mid = (lo + hi) / 2
-    if (shopRows(sites, mid)) lo = mid
+    if (fits(mid)) lo = mid
     else hi = mid
   }
-  return Math.floor(lo * 1000) / 1000
+  // rounded down, and then down again if a rounder number happens not to pack
+  let s = Math.floor(lo * 1000) / 1000
+  while (s > SHOP_MIN_SCALE && !fits(s)) s = Math.round(s * 1000 - 1) / 1000
+  return Math.max(SHOP_MIN_SCALE, s)
 }
 
 /**
- * Where each of a district's stores stands, given the size of each one's
- * site. The first stores take a plot each, in the middle of it. Once every
- * plot has one, the next go round again and share, up to sixteen to a plot.
- * A shared plot is set out in rows from the street back, in the order the
- * stores opened, every store on it at the same scale (see `plotScale`):
- * two or four mall units, or a pair of high-street shops, share a plot at
- * or near life size, and only a plot that is really crowded shrinks. With
- * thirteen plots that is room for 208 stores at home and 192 on an island;
- * any beyond that are left off the map.
+ * Where each of a district's stores stands, given each one's site. Stores
+ * stand shoulder to shoulder along the street front of the district's
+ * blocks, doors to the south, in the order they opened. When the fronts are
+ * full, the next go in a row behind, across a lane of their own that is wide
+ * enough for their queue to be seen over the roofs in front. Every store in
+ * the district is drawn at one scale (see `districtScale`): life size until
+ * the blocks are full, which at home is 29 mall units to a row and two rows
+ * of them, 21 high-street shops with as many mall units behind, or thirteen
+ * flagship stores.
  */
-export function shopLots(slots: [number, number][], sites: Footprint[]): (ShopLot | null)[] {
+export function shopLots(blocks: ShopBlock[], sites: Footprint[]): (ShopLot | null)[] {
   const out: (ShopLot | null)[] = sites.map(() => null)
-  slots.forEach(([sx, sz], i) => {
-    // the stores on this plot, in the order they opened
-    const on: number[] = []
-    for (let j = i; j < sites.length && on.length < SHOP_SHARE; j += slots.length) on.push(j)
-    if (!on.length) return
-    const lot = `${sx},${sz}`
-    if (on.length === 1) {
-      const site = sites[on[0]]
-      out[on[0]] = { x: sx, z: sz, w: SHOP_LOT.w, d: SHOP_LOT.d, scale: Math.min(1, (SHOP_LOT.w - 1.2) / site.w, (SHOP_LOT.d - 1.2) / site.h), lot, shared: 1 }
-      return
-    }
-    const mine = on.map((j) => sites[j])
-    const scale = plotScale(mine)
-    const rows = shopRows(mine, scale) ?? []
-    // what is left over is shared out: between the stores of a row, and between the rows
-    const spare = (SHOP_LOT.d - rows.reduce((a, r) => a + r.depth, 0)) / Math.max(1, rows.length)
-    let front = sz + SHOP_LOT.d / 2
-    for (const row of rows) {
-      const gap = (SHOP_LOT.w - row.width) / row.at.length
-      let west = sx - SHOP_LOT.w / 2
-      for (const k of row.at) {
-        const site = mine[k]
-        const w = (site.w + SHOP_ROOM.side) * scale + gap
+  const scale = districtScale(blocks, sites)
+  const { rows } = setOut(blocks, sites, scale)
+  rows.forEach((mine, b) => {
+    // the line each row's shopfronts stand on, going back from the street
+    let wall = blocks[b].z1
+    mine.forEach((row, r) => {
+      const front = (r ? laneBehind(mine[r - 1].high) : SHOP_ROOM.front) * scale
+      wall -= front
+      row.at.forEach((i, k) => {
+        const site = sites[i]
         // its own ground is taken evenly round it, so the queue's strip in front is common ground
-        const d = (site.h + SHOP_ROOM.back * 2) * scale + spare
-        // every store in a row stands the same way back from the front of it, so their doors and queues line up
-        out[on[k]] = { x: west + w / 2, z: front - spare / 2 - (SHOP_ROOM.front + site.h / 2) * scale, w, d, scale, lot, shared: on.length }
-        west += w
-      }
-      front -= row.depth + spare
-    }
+        out[i] = { x: row.xs[k], z: wall - (site.h / 2) * scale, w: (site.w + SHOP_ROOM.side) * scale, d: (site.h + SHOP_ROOM.back * 2) * scale, scale, block: b, row: r, front }
+      })
+      wall -= (row.deep + SHOP_ROOM.back) * scale
+    })
   })
   return out
 }
@@ -213,9 +265,14 @@ export const PIER = { x: 120, z0: 122, z1: 172 }
 export const ISLAND = { w: 160, d: 112 }
 const ISLAND_AT: [number, number][] = [[-330, -30], [-245, -300], [0, -355], [245, -300], [330, -30]]
 const ISLAND_TOWERS = [0, -32, 32, -64, 64]
-const ISLAND_SHOPS: [number, number][] = [2, 36].flatMap((z) => [-13, 13, -39, 39, -65, 65].map((x): [number, number] => [x, z]))
 /** Streets across each island, as offsets north or south of its middle: [where, how wide]. */
 export const ISLAND_STREETS: [number, number][] = [[-19, 6], [19.5, 6]]
+/** An island's two shop blocks, as offsets from its middle: between its streets, and between the southern street and the quay. Each fills from the middle outwards. */
+const ISLAND_BLOCKS: ShopBlock[] = [
+  { x0: -76, x1: 76, z0: -15.8, z1: 16.2, from: 0 },
+  { x0: -76, x1: 76, z0: 22.8, z1: 50.6, from: 0 },
+]
+const ISLAND_SHOPS: [number, number][] = ISLAND_BLOCKS.flatMap((b) => [-13, 13, -39, 39, -65, 65].map((x): [number, number] => [x, b.z1 - SHOP_ROOM.front - 7]))
 
 export interface District {
   region: RegionDef
@@ -228,7 +285,17 @@ export interface District {
   dock: [number, number]
   berth: [number, number]
   towers: [number, number][]
+  /** Where the neighbours' shops stand until the company's stores take the ground, and the blocks those stores are set out on. */
   shops: [number, number][]
+  blocks: ShopBlock[]
+}
+
+/** Half the width and depth of a neighbour's shop, with a little room round it. */
+const FILLER = { w: 10, d: 7.5 }
+/** The neighbours' shops still standing in a district: those whose ground none of the company's stores has taken. */
+export function fillers(d: District, list: Place[]): [number, number][] {
+  const stores = list.filter((p) => p.kind === 'store' && p.region === d.region.id)
+  return d.shops.filter(([x, z]) => !stores.some((p) => Math.abs(p.x - x) < FILLER.w + p.w / 2 && p.z - p.d / 2 < z + FILLER.d && p.z + p.d / 2 + (p.front ?? 0) > z - FILLER.d))
 }
 
 /** Every region as a district: home in the middle, the others on islands round the bay. */
@@ -237,7 +304,7 @@ export function districts(g: GameState): District[] {
   let k = 0
   return REGIONS.map((region) => {
     const open = !!g.regions[region.id]?.open
-    if (region.id === home) return { region, home: true, open, x: 0, z: 0, dock: [PIER.x, PIER.z0], berth: [PIER.x + 8, PIER.z1 - 12], towers: TOWER_SLOTS, shops: SHOP_SLOTS }
+    if (region.id === home) return { region, home: true, open, x: 0, z: 0, dock: [PIER.x, PIER.z0], berth: [PIER.x + 8, PIER.z1 - 12], towers: TOWER_SLOTS, shops: SHOP_SLOTS, blocks: SHOP_BLOCKS }
     const [x, z] = ISLAND_AT[k++ % ISLAND_AT.length]
     // the pier is on whichever shore looks toward home
     const side = Math.abs(x) > Math.abs(z) ? ([x > 0 ? -1 : 1, 0] as const) : ([0, 1] as const)
@@ -252,6 +319,7 @@ export function districts(g: GameState): District[] {
       berth: [dock[0] + side[0] * 30 + side[1] * 8, dock[1] + side[1] * 30 + side[0] * 8],
       towers: ISLAND_TOWERS.map((tx): [number, number] => [x + tx, z - 38]),
       shops: ISLAND_SHOPS.map(([sx, sz]): [number, number] => [x + sx, z + sz]),
+      blocks: ISLAND_BLOCKS.map((b) => ({ x0: x + b.x0, x1: x + b.x1, z0: z + b.z0, z1: z + b.z1, from: x + b.from })),
     }
   })
 }
@@ -343,7 +411,9 @@ export function places(g: GameState): Place[] {
   // ---- stores, each in its own region's high street
   const districtOf = (store: Store) => all.find((x) => x.region.id === store.region) ?? home
   const lots = new Map<string, (ShopLot | null)[]>()
-  for (const d of all) lots.set(d.region.id, shopLots(d.shops, g.stores.filter((s) => districtOf(s) === d).map((s) => s.site)))
+  for (const d of all) lots.set(d.region.id, shopLots(d.blocks, g.stores.filter((s) => districtOf(s) === d).map((s) => s.site)))
+  /** Whether a store has another close enough that their name tags, and a crane over one of them, would be in each other's way. */
+  const near = (a: ShopLot, region: string) => (lots.get(region) ?? []).some((b) => b && b !== a && Math.abs(a.x - b.x) < (a.w + b.w) / 2 + 8 && Math.abs(a.z - b.z) < (a.d + b.d) / 2 + 12)
   const taken = new Map<string, number>()
   for (const store of g.stores) {
     const d = districtOf(store)
@@ -364,8 +434,9 @@ export function places(g: GameState): Place[] {
       d: slot.d,
       h: (store.site.floors * 3 + 5) * scale,
       scale,
-      lot: slot.lot,
-      crowded: slot.shared > 1,
+      front: slot.front,
+      row: slot.row,
+      crowded: near(slot, d.region.id),
       region: d.region.id,
       warn: st.open ? undefined : st.problem,
       site: store.site,
@@ -492,11 +563,11 @@ export interface Queue {
 /** Most people in one queue, two abreast, and how far apart they stand along it. */
 export const QUEUE = { people: 26, pitch: 0.95, head: 3 }
 
-/** The queue outside a store on a launch day. Alone on its plot it runs to its full length; on a shared plot it stops at the store's own corner, short of the neighbour's. */
+/** The queue outside a store on a launch day: along its own front, from just east of the door back to the corner of its ground, short of the neighbour's. */
 export function queueOf(p: Place): Queue {
   const scale = p.scale ?? 1
   const site = p.site
-  const pairs = p.crowded && site ? Math.floor((QUEUE.head + site.w / 2 + 0.6) / QUEUE.pitch) + 1 : QUEUE.people / 2
+  const pairs = site ? Math.floor((QUEUE.head + p.w / 2 / scale - 0.5) / QUEUE.pitch) + 1 : QUEUE.people / 2
   return { x: p.x, z: p.z + (site ? site.h / 2 + 1.5 : 8) * scale, scale, people: Math.min(QUEUE.people, pairs * 2) }
 }
 

@@ -24,6 +24,14 @@ const TURN = 3.8
    the nearest wall is 8.5 m from the side of the plot and 11.5 m from the back of it).
  */
 export const APRON = { side: 6, back: 10 }
+/**
+ * How far from the middle of the road a lorry drives: in its own lane, on the right, clear of the cars that stand at
+ * the kerb of an industrial estate (see env.tsx: the road is 9 m wide, the cars 3.6 m from its middle).
+ */
+export const LANE = 1.45
+/** How far off the plot the middle of the road is. */
+const ROAD_OUT = 7
+
 /** How much longer a metre of each kind of ground counts for when a route is chosen. Anything not listed is hard standing. */
 const SOFT: Record<string, number> = { grass: 8, meadow: 9, gravel: 2, deck: 6, tile: 3 }
 /** The same for the verge round the plot, when it has to be used at all. */
@@ -283,6 +291,54 @@ function soften(pts: Pt[], radius = 2.2): Pt[] {
   return out
 }
 
+const QUARTER = Array.from({ length: 9 }, (_, k) => (k / 8) * (Math.PI / 2))
+
+/**
+ * Along the road in the right lane and round into the drive, to its top. A lorry coming from the west (`sign` -1) is
+ * in the far lane and turns left across the road; one from the east is in the near lane and swings wide to the right,
+ * so that neither cuts the kerb at the mouth of the drive.
+ */
+function turnIn(site: Site, sign: number): Pt[] {
+  const hh = site.h / 2
+  const left = sign < 0
+  const zl = hh + ROAD_OUT + (left ? LANE : -LANE)
+  const r = left ? 5 : 4
+  const xin = left ? 1.0 : -1.2
+  const cx = left ? xin - r : xin + r
+  const cz = zl - r
+  return [[sign * (site.w / 2 + 70), zl], ...QUARTER.map((t): Pt => [cx + (left ? 1 : -1) * r * Math.sin(t), cz + r * Math.cos(t)]), [xin, hh - 0.5]]
+}
+
+/** From the top of the drive down it and round into the right lane for the end of the road it is making for, and away. */
+function turnOut(site: Site, near: number): Pt[] {
+  const hh = site.h / 2
+  const left = near > 0
+  const zl = hh + ROAD_OUT + (left ? LANE : -LANE)
+  const r = left ? 5 : 4
+  const xout = left ? -1.0 : 1.2
+  const cx = left ? xout + r : xout - r
+  const cz = zl - r
+  return [[xout, hh - 0.5], ...QUARTER.map((t): Pt => [cx + (left ? -1 : 1) * r * Math.cos(t), cz + r * Math.sin(t)]), [near * (site.w / 2 + 70), zl]]
+}
+
+/** The whole way in from far along the road to a point in the yard and on through `tail`; null if the drive does not lead there. */
+function inbound(g: Grid, site: Site, sign: number, tail: Pt[], radius?: number): Pt[] | null {
+  const head = turnIn(site, sign)
+  const top = head[head.length - 1]
+  // something standing at the top of the drive: it does not serve
+  if (!clearAt(g, top[0], top[1] - 1) || !clearAt(g, top[0], top[1] + 1)) return null
+  const route = drive(g, [top[0], top[1] - 1], tail[0])
+  return route ? [...head, ...soften([...route, ...tail], radius)] : null
+}
+
+/** The whole way out from a point in the yard (through `lead` first) to far along the road; null if the drive cannot be reached. */
+function outbound(g: Grid, site: Site, near: number, lead: Pt[]): Pt[] | null {
+  const tail = turnOut(site, near)
+  if (!clearAt(g, tail[0][0], tail[0][1] - 1) || !clearAt(g, tail[0][0], tail[0][1] + 1)) return null
+  const route = drive(g, lead[lead.length - 1], [tail[0][0], tail[0][1] - 1])
+  return route ? [...soften([...lead, ...route]), ...tail] : null
+}
+
 interface BayDef {
   truck?: SiteItem
   park: Pt
@@ -351,17 +407,31 @@ function manoeuvre(site: Site, g: Grid, bay: BayDef): Manoeuvre | null {
     // it comes from the end of the road that lets it pull across the bay without turning back on itself
     const heading = -oz * side
     const sign = heading > 0.3 ? -1 : heading < -0.3 ? 1 : near
-    const route = drive(g, end(sign), q0)
-    if (!route) continue
-    const exit = drive(g, at(mouth + 1.5, 0, side), from)
-    if (!exit) continue
-    return { truck: bay.truck, park: bay.park, out: bay.out, arrive: [beyond(sign), ...soften([...route, q0, q1], 3)], back: [bay.park, at(mouth, 0, side), ...arc, q1], leave: [bay.park, ...soften([at(mouth + 1.5, 0, side), ...exit]), far], swing: [] }
+    // by the drive, in its lane; or, where the drive does not serve, straight off the road as best it can
+    let arrive = inbound(g, site, sign, [q0, q1], 3)
+    if (!arrive) {
+      const route = drive(g, end(sign), q0)
+      if (!route) continue
+      arrive = [beyond(sign), ...soften([...route, q0, q1], 3)]
+    }
+    let leave = outbound(g, site, near, [at(mouth + 1.5, 0, side)])
+    if (!leave) {
+      const exit = drive(g, at(mouth + 1.5, 0, side), from)
+      if (!exit) continue
+      leave = [...soften([at(mouth + 1.5, 0, side), ...exit]), far]
+    }
+    return { truck: bay.truck, park: bay.park, out: bay.out, arrive, back: [bay.park, at(mouth, 0, side), ...arc, q1], leave: [bay.park, ...leave], swing: [] }
   }
   // no room to pull across the front of the bay: nose in along it
   const front = at(mouth + 1.5, 0, 1)
-  const route = clearAt(g, front[0], front[1]) ? drive(g, from, front) : null
-  if (!route) return null
-  const nosed = { truck: bay.truck, park: bay.park, out: [-ox, -oz] as Pt, arrive: [far, ...soften([...route, front]), at(0.2, 0, 1)], back: [] as Pt[] }
+  if (!clearAt(g, front[0], front[1])) return null
+  let way = inbound(g, site, near, [front])
+  if (!way) {
+    const route = drive(g, from, front)
+    if (!route) return null
+    way = [far, ...soften([...route, front])]
+  }
+  const nosed = { truck: bay.truck, park: bay.park, out: [-ox, -oz] as Pt, arrive: [...way, at(0.2, 0, 1)], back: [] as Pt[] }
   // getting out again: back out and round a quarter turn to one side, tail first, then away forwards (a three-point turn)
   const lane = mouth + TURN
   for (const side of [1, -1]) {
@@ -373,9 +443,13 @@ function manoeuvre(site: Site, g: Grid, bay: BayDef): Manoeuvre | null {
     const tail = at(lane, TURN + 2.4, side)
     const nose = at(lane, -0.6, side)
     if (!clearLine(g, nose, at(lane, TURN + 2.4 + 3.6, side)) || arc.slice(3).some((p) => !clearAt(g, p[0], p[1]))) continue
-    const exit = drive(g, nose, from)
-    if (!exit) continue
-    return { ...nosed, swing: [at(0.2, 0, 1), at(mouth, 0, side), ...arc, tail], leave: [tail, ...soften([nose, ...exit]), far] }
+    let leave = outbound(g, site, near, [nose])
+    if (!leave) {
+      const exit = drive(g, nose, from)
+      if (!exit) continue
+      leave = [...soften([nose, ...exit]), far]
+    }
+    return { ...nosed, swing: [at(0.2, 0, 1), at(mouth, 0, side), ...arc, tail], leave: [tail, ...leave] }
   }
   // no room for that either: back out the way it came
   return { ...nosed, leave: [], swing: [] }

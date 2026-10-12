@@ -473,7 +473,7 @@ function Seat({ g, id }: { g: GameState; id: ExecId }) {
                     </span>
                   </span>
                 </span>
-                <Btn small tone="primary" icon="hire" onClick={() => hireOne(e)}>
+                <Btn small tone="primary" icon="hire" data-coach-target={`exec exec-${id}`} onClick={() => hireOne(e)}>
                   Hire
                 </Btn>
               </div>

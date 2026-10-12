@@ -242,10 +242,10 @@ export function Dashboard() {
         </Panel>
       )}
 
-      <Panel title="Your devices" icon="devices" right={<Btn small tone="primary" icon="plus" onClick={() => openDesigner()}>New device</Btn>} className="col-span-8" bodyClass="overflow-auto">
+      <Panel title="Your devices" icon="devices" right={<Btn small tone="primary" icon="plus" data-coach-target="new-device" onClick={() => openDesigner()}>New device</Btn>} className="col-span-8" bodyClass="overflow-auto">
         {products.length === 0 ? (
           <Empty icon="devices" text="Design your first device to enter the market. Fourteen rivals are already selling.">
-            <Btn tone="primary" icon="plus" className="h-11 px-8 text-sm" onClick={() => openDesigner()}>
+            <Btn tone="primary" icon="plus" className="h-11 px-8 text-sm" data-coach-target="new-device always" onClick={() => openDesigner()}>
               Design your first device
             </Btn>
           </Empty>
@@ -330,7 +330,7 @@ function ProductTable({ g, rows, compact = false, showMaker = false, winRate }: 
         {rows.map((p) => {
           const c = companyOf(g, p.companyId)
           return (
-            <tr key={p.id} className={`row cursor-pointer ${inspect === p.id ? 'bg-accent/5' : ''}`} onClick={() => focus(p.id)}>
+            <tr key={p.id} data-coach-target={c.isPlayer ? 'device' : undefined} className={`row cursor-pointer ${inspect === p.id ? 'bg-accent/5' : ''}`} onClick={() => focus(p.id)}>
               <td className="w-10 !p-0">
                 <Thumb product={p} className="h-10 w-9" />
               </td>
@@ -384,13 +384,13 @@ export function Products() {
           fit
         />
         <div className="relative shrink-0">
-          <Btn tone="primary" icon="plus" className="px-5" onClick={() => setPicking(!picking)}>
+          <Btn tone="primary" icon="plus" className="px-5" data-coach-target="new-device" onClick={() => setPicking(!picking)}>
             New device
           </Btn>
           {picking && (
             <>
               <div className="fixed inset-0 z-20" onClick={() => setPicking(false)} />
-              <div className="absolute right-0 top-full z-30 mt-1 w-64 border border-line2 bg-panel">
+              <div data-coach-target="new-device" className="absolute right-0 top-full z-30 mt-1 w-64 border border-line2 bg-panel">
                 <div className="label border-b border-line px-2 py-1 text-faint">What will it be?</div>
                 {DEVICE_TYPES.map((t) => {
                   const open = hasType(g, t)

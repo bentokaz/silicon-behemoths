@@ -3,7 +3,7 @@ import { autoLine, buildFactory, defaultConfig, newGame, placeItem, zoneRoom } f
 import { lineStats } from '../../sim/sites'
 import type { Site } from '../../sim/types'
 import { Kind, Mode, Tool } from './crowd'
-import { FactoryCrowd, Job, SHIFT, rosterFor } from './factorycrowd'
+import { Crew, FactoryCrowd, Job, SHIFT, rosterFor } from './factorycrowd'
 import { buildNav } from './nav'
 import { buildSpots } from './spots'
 
@@ -31,7 +31,7 @@ function shift(site: Site, running: boolean, cap = 24) {
   return { crowd, nav }
 }
 
-const hands = (crowd: FactoryCrowd, job?: number) => crowd.bodies.filter((b) => b.kind === Kind.Hand && !b.quit && (job === undefined || b.job === job))
+const hands = (crowd: FactoryCrowd, job?: number, crew: number = Crew.Day) => crowd.bodies.filter((b) => b.kind === Kind.Hand && !b.quit && b.crew === crew && (job === undefined || b.job === job))
 const run = (crowd: FactoryCrowd, from: number, to: number, each?: (t: number) => void) => {
   for (let t = from; t < to; t += 1 / 30 / 45) {
     crowd.step(1 / 30, 1, t)
@@ -55,22 +55,29 @@ describe('a factory shift', () => {
     // each operator has a machine of the line to themselves
     const at = hands(crowd, Job.Operator).map((b) => b.station!.item.id)
     expect(new Set(at).size).toBe(machines)
-    // the orders dry up: most of them are sent home
+    // the line makes devices round the clock while it has orders, so there is a night shift of the same size
+    expect(hands(crowd, Job.Operator, Crew.Night).length).toBe(machines)
+    expect(hands(crowd, Job.Hauler, Crew.Night).length).toBe(1)
+    // the orders dry up: most of the day shift is sent home, and nobody works nights
     crowd.setLine(lineStats(site).linked, false, 24)
     expect(hands(crowd, Job.Operator).length).toBe(Math.ceil(machines / 3))
     expect(hands(crowd, Job.Hauler).length).toBe(0)
+    expect(hands(crowd, undefined, Crew.Night).length).toBe(0)
   })
 
   it('comes in for the morning, works the line, moves cartons to the dock and goes home', () => {
     const site = plant()
     const { crowd, nav } = shift(site, true)
-    // before the shift nobody is in
+    // before the day shift nobody of it is in: the night shift has the floor
     run(crowd, 5.5, 6)
-    expect(crowd.bodies.every((b) => b.mode === Mode.Off)).toBe(true)
+    expect(hands(crowd).every((b) => b.mode === Mode.Off)).toBe(true)
+    expect(hands(crowd, Job.Operator, Crew.Night).every((b) => b.mode === Mode.Do && b.spot === b.station)).toBe(true)
     let arriving = 0
     run(crowd, 6, 8.5, () => {
-      arriving = Math.max(arriving, crowd.bodies.filter((b) => b.mode === Mode.In || b.mode === Mode.Walk).length)
+      arriving = Math.max(arriving, hands(crowd).filter((b) => b.mode === Mode.In || b.mode === Mode.Walk).length)
     })
+    // the night shift has handed over and gone home
+    expect(hands(crowd, undefined, Crew.Night).every((b) => b.mode === Mode.Off)).toBe(true)
     // they walked in rather than appearing, and every operator is at their own machine
     expect(arriving).toBeGreaterThan(1)
     for (const b of hands(crowd, Job.Operator)) {
@@ -107,12 +114,50 @@ describe('a factory shift', () => {
       atTable = Math.max(atTable, crowd.bodies.filter((b) => b.spot?.item.kind === 'canteen').length)
     })
     expect(atTable).toBeGreaterThan(0)
-    // and by the evening everyone has gone
-    run(crowd, 13.5, SHIFT.end + 1.2)
-    expect(crowd.bodies.every((b) => b.mode === Mode.Off)).toBe(true)
-    crowd.headcount(heads)
-    expect(heads.get(hall) ?? 0).toBe(0)
+    // by the evening the day shift has gone and the night shift is at the machines: the line never stands unattended
+    let unattended = 0
+    run(crowd, 13.5, SHIFT.end + 1.2, () => {
+      crowd.headcount(heads)
+      if (!(heads.get(hall) ?? 0)) unattended++
+    })
+    expect(unattended).toBe(0)
+    expect(hands(crowd).every((b) => b.mode === Mode.Off)).toBe(true)
+    expect(hands(crowd, Job.Operator, Crew.Night).every((b) => b.mode === Mode.Do && b.spot === b.station)).toBe(true)
     expect(crowd.ghosts).toBe(0)
+  })
+
+  it('stands empty at night when the line has no orders', () => {
+    const site = plant()
+    const { crowd } = shift(site, false)
+    run(crowd, 9, 10)
+    expect(hands(crowd).filter((b) => b.mode !== Mode.Off).length).toBeGreaterThan(0)
+    run(crowd, 10, SHIFT.end + 1.2)
+    expect(crowd.bodies.every((b) => b.mode === Mode.Off)).toBe(true)
+    const heads = new Map<number, number>()
+    crowd.headcount(heads)
+    expect([...heads.values()].reduce((a, n) => a + n, 0)).toBe(0)
+  })
+
+  it('stands people where they can be walked to: at the back of a machine whose front is boxed in', () => {
+    const s = newGame({ ...defaultConfig(), unlimitedMoney: true, seed: 3 })
+    for (let i = 0; i < 2; i++) expect(buildFactory(s)).toBeNull()
+    expect(autoLine(s)).toBeNull()
+    const site = s.factory!
+    const before = buildSpots(site, buildNav(site))
+    const smt = site.items.find((i) => i.kind === 'smt')!
+    const front = before.find((sp) => sp.item === smt)!
+    expect(front.z).toBeGreaterThan(smt.y - site.h / 2 + 0.5)
+    // pallets along the whole front of the board line
+    for (let x = smt.x - 1; x <= smt.x + 3; x++) placeItem(s, 'factory', 'pallets', x, smt.y + 1, 0)
+    const nav = buildNav(site)
+    const after = buildSpots(site, nav).find((sp) => sp.item === smt)!
+    expect(after.access).toBeGreaterThanOrEqual(0)
+    expect(Math.floor(after.access / site.w)).toBe(smt.y - 1)
+    expect(after.z).toBeLessThan(smt.y - site.h / 2 + 0.5)
+    // and the pallet truck stops short of the dock: its forks reach 1.28 m ahead of whoever pushes it
+    const dock = site.items.find((i) => i.kind === 'dock_out')!
+    const drop = before.find((sp) => sp.item === dock)!
+    expect(drop.z - (dock.y - site.h / 2 + 0.5)).toBeGreaterThan(1.28 + 0.5)
   })
 
   it('finds the shift already at work on a first look in the middle of the day', () => {

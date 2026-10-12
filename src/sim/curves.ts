@@ -562,29 +562,42 @@ function candidate(site: Plot, x: number, y: number): Found | undefined {
 }
 
 interface Contact {
-  /** The other room that owns the corner the curve leaves over here: the one standing against most of it. 0 for none. */
-  room: number
-  /** Open ground (or the edge of the plot) lies against the far side. */
-  ground: boolean
+  /**
+   * Who the corner the curve leaves over here goes to, by what stands directly
+   * against it: a room, 0 for open ground, or null where nothing but more of
+   * the same curved wall does.
+   */
+  owner: number | null
   /** Tiles of the same curved wall whose own left-over part joins this one's, and the length of edge they share. */
   curved: [number, number, number][]
   /** The tile cannot keep its curve: its own room's floor stands against the far side of it. */
   clash: boolean
 }
 
+/** Two holds on a corner this close in length, in metres, count as equal. */
+const EVEN = 1e-6
+
 /**
  * What a tile's curved edge has on its far side, read from the tiles next to
- * it. Where two different rooms stand against the one corner, the room with
- * the longer hold on it takes it (the lower number if they tie): the straight
- * wall between that corner and the other room is drawn by the grid edge, like
- * any other wall between two rooms.
+ * it. Where several stand against the one corner (two rooms, or a room and
+ * open ground) it goes to the one with the longest hold on it, which leaves
+ * the least straight wall to build: the wall between that corner and the
+ * others is drawn by the grid edge, like any other wall. Two that hold it
+ * equally from sides that meet at a corner are settled by the wall already
+ * dividing them beyond that corner, which then carries straight on to the
+ * curve instead of turning along the other side; failing that a room comes
+ * before open ground, and the lower number first.
  */
 function contact(site: Plot, curve: number, shape: TileShape): Contact {
   const c = site.curves![curve]
-  const out: Contact = { room: 0, ground: false, curved: [], clash: false }
-  /** Metres of this tile's open edge that each other room stands against. */
-  const held = new Map<number, number>()
-  const hold = (n: number, len: number) => held.set(n, (held.get(n) ?? 0) + len)
+  const out: Contact = { owner: null, curved: [], clash: false }
+  /** Metres of this tile's open edge that each room (0 for open ground) stands against, and through which sides. */
+  const held = new Map<number, { len: number; sides: [number, number][] }>()
+  const hold = (n: number, len: number, dx: number, dy: number) => {
+    const h = held.get(n)
+    if (h) (h.len += len), h.sides.push([dx, dy])
+    else held.set(n, { len, sides: [[dx, dy]] })
+  }
   let sides = 0
   let shut = 0
   for (const [side, far, dx, dy] of SIDES) {
@@ -593,16 +606,12 @@ function contact(site: Plot, curve: number, shape: TileShape): Contact {
     const nx = shape.x + dx
     const ny = shape.y + dy
     const n = at(site, nx, ny)
-    if (!n) {
-      out.ground = true
-      continue
-    }
-    // the half a slanted wall cuts away is open ground like any other
-    if (site.cuts?.[`${nx},${ny}`]?.includes(far)) {
-      out.ground = true
-      continue
-    }
     const open = gaps(shape.sides[side])
+    // open land, the edge of the plot, and the half a slanted wall cuts away are all open ground
+    if (!n || site.cuts?.[`${nx},${ny}`]?.includes(far)) {
+      hold(0, spanLength(open), dx, dy)
+      continue
+    }
     const other = candidate(site, nx, ny)
     if (other && (n === c.room || !other.squared)) {
       // more curved wall. Floor of its own room along what is cut away here cannot be walled off from itself;
@@ -610,50 +619,84 @@ function contact(site: Plot, curve: number, shape: TileShape): Contact {
       const floor = overlap(open, other.shape.sides[far])
       if (floor > 0.02) {
         if (n === c.room) out.clash = true
-        else hold(n, floor)
+        else hold(n, floor, dx, dy)
         continue
       }
       const shared = overlap(open, gaps(other.shape.sides[far]))
       if (other.curve === curve && !other.squared && shared > 0.02) out.curved.push([nx, ny, shared])
-      else if (n !== c.room) out.ground = true
+      else if (n !== c.room) hold(0, shared, dx, dy)
       else if (other.squared) shut++
       continue
     }
     // the room's own floor: the curve cannot stand between a room and itself
     if (n === c.room) out.clash = true
-    else hold(n, spanLength(open))
+    else hold(n, spanLength(open), dx, dy)
   }
   // every open side faces a squared-off tile of its own room: the corner the curve leaves is a pocket in the floor
   if (sides && shut === sides) out.clash = true
   let most = 0
-  for (const [n, len] of held) {
-    if (len > most + 1e-9 || (Math.abs(len - most) <= 1e-9 && n < out.room)) {
-      out.room = n
-      most = Math.max(most, len)
+  for (const [n, h] of [...held].sort((p, q) => p[0] - q[0])) {
+    if (out.owner === null || h.len > most + EVEN || (out.owner === 0 && h.len >= most - EVEN)) out.owner = n
+    most = Math.max(most, h.len)
+  }
+  // two with an equal hold, one on each of two sides that meet: look at the tile across the corner between them.
+  // If it belongs with one of the two, the wall that divides them out there runs along the other one's side of
+  // this corner, and the corner goes to that other so the wall carries straight on
+  const even = [...held].filter(([, h]) => h.len >= most - EVEN)
+  if (even.length === 2 && even[0][1].sides.length === 1 && even[1][1].sides.length === 1) {
+    const [[p, { sides: [[px, py]] }], [q, { sides: [[qx, qy]] }]] = even
+    if (px * qx + py * qy === 0) {
+      const across = at(site, shape.x + px + qx, shape.y + py + qy)
+      if (across === q) out.owner = p
+      else if (across === p) out.owner = q
     }
   }
   return out
 }
 
-/** The room beyond the curve on one tile. A room standing against it comes before open ground. */
+/** How far along a run of left-over corners to look for something standing against one of them. */
+const CHAIN = 12
+
+/**
+ * The room beyond the curve on one tile, or 0 for open ground. A corner with
+ * nothing against it but more of the same curved wall belongs with its
+ * neighbours': with the nearest corner along the wall that something does
+ * stand against, however many tiles away, and where two are equally near,
+ * with the one reached through the longer shared edge (the grid edge walls it
+ * off from the other). Open ground anywhere among the nearest makes it ground.
+ */
 function beyondOf(site: Plot, curve: number, shape: TileShape): number {
   const here = contact(site, curve, shape)
   if (here.clash) return 0
-  if (here.room || here.ground) return here.room
-  // only more of the same wall on every open side: the left-over corner belongs with its neighbours'.
-  // Where they disagree it goes with the one it shares more edge with, and the grid edge walls it off from the other
-  let room = 0
-  let most = 0
-  for (const [nx, ny, shared] of here.curved) {
-    const other = geomOf(site.curves![curve]).tiles.get(`${nx},${ny}`)
-    const next = other ? contact(site, curve, other) : null
-    if (!next || next.clash || !next.room) return 0
-    if (!room || shared > most + 1e-9 || (Math.abs(shared - most) <= 1e-9 && next.room < room)) {
-      room = next.room
-      most = shared
+  if (here.owner !== null) return here.owner
+  const tiles = geomOf(site.curves![curve]).tiles
+  const seen = new Set([`${shape.x},${shape.y}`])
+  /** The corners reached so far, each with the edge the first step toward it shares with this tile. */
+  let ring = here.curved.map(([nx, ny, shared]) => ({ key: `${nx},${ny}`, shared }))
+  for (let depth = 0; depth < CHAIN && ring.length; depth++) {
+    for (const r of ring) seen.add(r.key)
+    const next: typeof ring = []
+    let room = 0
+    let most = 0
+    let found = false
+    for (const r of ring) {
+      const other = tiles.get(r.key)
+      const far = other ? contact(site, curve, other) : null
+      if (!far || far.clash || far.owner === 0) return 0
+      if (far.owner === null) {
+        for (const [nx, ny] of far.curved) if (!seen.has(`${nx},${ny}`)) next.push({ key: `${nx},${ny}`, shared: r.shared })
+        continue
+      }
+      if (!found || r.shared > most + 1e-9 || (Math.abs(r.shared - most) <= 1e-9 && far.owner < room)) {
+        room = far.owner
+        most = Math.max(most, r.shared)
+      }
+      found = true
     }
+    if (found) return room
+    ring = next
   }
-  return room
+  return 0
 }
 
 /** The curved edge running through a tile, if it has one. */

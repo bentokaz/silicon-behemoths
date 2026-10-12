@@ -17,19 +17,31 @@ export const MOODS: Record<Mood, { sky: string; ground: number; sun: number; sun
 type Env = TierDef['env']
 
 const GROUND: Record<Env, string> = { suburb: '#587f45', estate: '#6d7075', park: '#5a8447', valley: '#638b4b', industrial: '#70736f', mall: '#2b2a28', street: '#4a4d52', plaza: '#b3aea2' }
-/** What shows above and beyond the walls of a mall, where the sky would be out of doors: the dim upper reaches of the building. */
-export const INDOOR_SKY: Record<Mood, string> = { day: '#8d887e', dusk: '#6b6259', night: '#2a2826' }
+/** What shows above and beyond the walls of a mall, where the sky would be out of doors: the dim upper reaches of the building, and after dark the night beyond its roof light. */
+export const INDOOR_SKY: Record<Mood, string> = { day: '#8d887e', dusk: '#5f5650', night: '#1c1d23' }
 /** True for surroundings that are indoors, where there is no sky, weather or traffic. */
 export const isIndoor = (env: Env) => env === 'mall'
 /**
- * The light indoors. Under a roof the hour hardly shows: by day the roof
- * light does the work, and as it goes the hall's own lamps come up, warmer
- * and a little lower, from straight overhead. It never gets dark in there.
+ * The light indoors. By day the roof light does the work. As it goes the
+ * hall's own lamps come up, and by night they are all there is: plainly
+ * warmer and lower than daylight, an evening in a place that is still open,
+ * with the shop signs and the shopfronts brighter than the hall around them.
+ * The light keeps much the same slant at every hour, so the walls of the
+ * hall are lit as well as its floor. It never gets dark in there.
  */
 export const INDOOR_MOODS: typeof MOODS = {
   day: { ...MOODS.day, sky: INDOOR_SKY.day, sunDir: [0.4, 1, 0.4] },
-  dusk: { sky: INDOOR_SKY.dusk, ground: 0.94, sun: 1.75, sunColor: '#ffe9cf', sunDir: [0.3, 1, 0.36], hemi: 0.62, glow: 1.25 },
-  night: { sky: INDOOR_SKY.night, ground: 0.8, sun: 1.3, sunColor: '#ffdfb8', sunDir: [0.24, 1, 0.32], hemi: 0.56, glow: 1.6 },
+  dusk: { sky: INDOOR_SKY.dusk, ground: 0.9, sun: 1.5, sunColor: '#ffdcb4', sunDir: [0.37, 1, 0.41], hemi: 0.5, glow: 1.25 },
+  night: { sky: INDOOR_SKY.night, ground: 0.72, sun: 0.82, sunColor: '#ffbd7e', sunDir: [0.34, 1, 0.42], hemi: 0.4, glow: 1.6 },
+}
+/** How bright the hall's lit glass and lamps are, and whether its shop signs are lit, at each hour. */
+const INDOOR_GLOW: Record<Mood, { lit: number; signs: number }> = { day: { lit: 0.5, signs: 0 }, dusk: { lit: 1.2, signs: 0.8 }, night: { lit: 1.7, signs: 1 } }
+const signs = new Map<number, THREE.Material>()
+/** The material of a lit shop sign: its own colour, glowing, whatever the light around it. */
+function signLit(level: number): THREE.Material {
+  let m = signs.get(level)
+  if (!m) signs.set(level, (m = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(level, level, level), toneMapped: false })))
+  return m
 }
 /** The light a site stands in: the hour's own out of doors, the hall's indoors. */
 export const moodOf = (env: Env, mood: Mood) => (isIndoor(env) ? INDOOR_MOODS[mood] : MOODS[mood])
@@ -91,7 +103,7 @@ const DECK = 5.2
  * and a glazed roof over the concourse. Everything near the camera's usual
  * place (south and east) is kept low or set back, so the unit stays in view.
  */
-function mall(b: Batch, w: number, h: number, dim: (hex: string) => string) {
+function mall(b: Batch, w: number, h: number, dim: (hex: string) => string, mood: Mood) {
   const hw = w / 2
   const hh = h / 2
   const front = hh
@@ -104,13 +116,30 @@ function mall(b: Batch, w: number, h: number, dim: (hex: string) => string) {
   /** The roof's steelwork is painted pale, so that seen from above it is a light tracery rather than bars across the view. */
   const frame = '#b9bdc2'
 
-  // ---- the concourse floor: large polished tiles in two tones, a pale band down the middle under the roof light,
-  // and a dark inlay along each row of shopfronts
+  // columns stand along the near side of the concourse only, and clear of the unit: opposite, they would be
+  // between the camera and the shop. The hall's lamps hang from the trusses they carry
+  const top = 13.2
+  const cols: number[] = []
+  for (let x = hw + 4.7; x < reach - 2; x += 9) cols.push(x, -x)
+  const hung = [front + 3.6, across - 3.6]
+  /** How much of a lamp's pool of light falls on a spot of the floor, once the roof light has gone: 0 to 1. */
+  const pool = (x: number, z: number) => {
+    let best = 0
+    for (const lx of cols) for (const lz of hung) best = Math.max(best, 1 - Math.hypot(x - lx, z - lz) / 6.5)
+    return best * best * (3 - 2 * best)
+  }
+  const lamplight = mood === 'night' ? 0.34 : mood === 'dusk' ? 0.12 : 0
+
+  // ---- the concourse floor: large polished tiles in two tones and a dark inlay along each row of shopfronts. By
+  // day there is a pale band down the middle under the roof light; by night the roof light is dark, and the floor
+  // is brightest under each of the hall's lamps instead
   const tone = ['#d9d3c6', '#cfc8ba']
+  const band = mood === 'day' ? '#e6e1d6' : mood === 'dusk' ? '#dcd6ca' : null
   for (let x = -reach; x < reach; x += 2) {
     for (let z = front; z < across; z += 2) {
       const mid = z >= front + 4 && z < front + 8
-      b.quad('floor3', x, z, Math.min(reach, x + 2), Math.min(across, z + 2), -0.02, dim(mid ? '#e6e1d6' : tone[(Math.round(x / 2) + Math.round(z / 2)) & 1]), 0.97 + hash(x * 13 + z * 7) * 0.05)
+      const chequer = tone[(Math.round(x / 2) + Math.round(z / 2)) & 1]
+      b.quad('floor3', x, z, Math.min(reach, x + 2), Math.min(across, z + 2), -0.02, dim(mid && band ? band : chequer), (0.97 + hash(x * 13 + z * 7) * 0.05) * (1 + lamplight * pool(x + 1, z + 1)))
     }
   }
   for (const z of [front + 0.5, across - 0.5]) b.quad('floor3', -reach, z - 0.12, reach, z + 0.12, -0.015, dim('#4a4640'))
@@ -124,7 +153,7 @@ function mall(b: Batch, w: number, h: number, dim: (hex: string) => string) {
     b.box('wall', cx, DECK / 2, cz, bw, DECK, z1 - z0, UNIT_WALLS[seed % UNIT_WALLS.length], 0.96 + hash(seed) * 0.06)
     const fz = face > 0 ? z1 + 0.03 : z0 - 0.03
     b.box('lit', cx, 1.75, fz, bw - 1.1, 3.1, 0.06, '#27353f')
-    b.box('trim', cx, 3.85, fz + face * 0.05, bw - 0.5, 0.8, 0.16, SIGNS[seed % SIGNS.length])
+    b.box('sign', cx, 3.85, fz + face * 0.05, bw - 0.5, 0.8, 0.16, SIGNS[seed % SIGNS.length])
     b.box('trim', cx, 0.1, fz, bw - 1.1, 0.2, 0.1, steel)
     // mullions and a door frame
     for (const u of [0.25, 0.5, 0.75]) b.box('trim', x0 + bw * u, 1.75, fz + face * 0.02, 0.07, 3.1, 0.08, steel)
@@ -138,7 +167,7 @@ function mall(b: Batch, w: number, h: number, dim: (hex: string) => string) {
     b.box('wall', cx, (DECK + top) / 2, (z0 + z1) / 2, x1 - x0, top - DECK, z1 - z0, UNIT_WALLS[(seed + 2) % UNIT_WALLS.length], 0.94 + hash(seed + 5) * 0.06)
     const fz = face > 0 ? z1 + 0.03 : z0 - 0.03
     b.box('lit', cx, DECK + 1.7, fz, x1 - x0 - 1.2, 2.8, 0.06, '#27353f')
-    b.box('trim', cx, DECK + 3.6, fz + face * 0.05, x1 - x0 - 0.6, 0.7, 0.14, SIGNS[(seed + 3) % SIGNS.length])
+    b.box('sign', cx, DECK + 3.6, fz + face * 0.05, x1 - x0 - 0.6, 0.7, 0.14, SIGNS[(seed + 3) % SIGNS.length])
     b.box('trim', cx, DECK + 0.12, fz, x1 - x0 - 1.2, 0.2, 0.1, steel)
     for (const u of [0.2, 0.4, 0.6, 0.8]) b.box('trim', x0 + (x1 - x0) * u, DECK + 1.7, fz + face * 0.02, 0.07, 2.8, 0.08, steel)
   }
@@ -198,7 +227,7 @@ function mall(b: Batch, w: number, h: number, dim: (hex: string) => string) {
     const bw = x1 - x
     const sign = SIGNS[seed++ % SIGNS.length]
     b.box('lit', cx, DECK + 1.5, end - 0.43, bw - 1.4, 2.4, 0.06, '#27353f')
-    b.box('trim', cx, DECK + 3.05, end - 0.46, bw - 0.8, 0.5, 0.12, sign)
+    b.box('sign', cx, DECK + 3.05, end - 0.46, bw - 0.8, 0.5, 0.12, sign)
     b.box('trim', cx, DECK + 0.12, end - 0.44, bw - 1.4, 0.2, 0.1, steel)
     for (const u of [0.2, 0.4, 0.6, 0.8]) b.box('trim', x + bw * u, DECK + 1.5, end - 0.47, 0.07, 2.4, 0.08, steel)
     // seen from across the hall these fronts have their backs to the view: each shop is told by the canopy
@@ -241,13 +270,8 @@ function mall(b: Batch, w: number, h: number, dim: (hex: string) => string) {
   b.quad('floor8', -reach - 0.8, out + 4.6, reach + 0.8, out + 4.9, -0.035, dim('#8c877c'))
 
   // ---- the hall itself: end walls, and a glazed roof over the concourse carried on columns
-  const top = 13.2
   for (const sx of [-1, 1]) b.box('wall', sx * (reach + 0.4), top / 2, (back + end) / 2, 0.8, top, end - back + 0.8, '#c4bfb5')
   b.box('wall', 0, top / 2, back - 0.4, reach * 2 + 1.6, top, 0.8, '#c4bfb5')
-  // columns stand along the far side of the concourse only, and clear of the unit: on the near side they would
-  // be between the camera and the shop
-  const cols: number[] = []
-  for (let x = hw + 4.7; x < reach - 2; x += 9) cols.push(x, -x)
   for (const x of cols) {
     b.box('wall', x, top / 2, front + 0.5, 0.5, top, 0.5, '#e9e6e0')
     b.box('trim', x, 0.25, front + 0.5, 0.7, 0.5, 0.7, '#8c857a')
@@ -297,7 +321,7 @@ function mall(b: Batch, w: number, h: number, dim: (hex: string) => string) {
   for (const dx of [-1.4, 1.4]) for (const dz of [-1.4, 1.4]) b.box('trim', kx + dx, 1.4, mid + dz, 0.08, 2.8, 0.08, steel)
   b.box('wall', kx, 2.9, mid, 3.4, 0.2, 3.4, '#2c3036')
   b.box('lit', kx, 2.62, mid + 1.72, 3.2, 0.36, 0.05, '#27353f')
-  b.box('trim', kx, 2.62, mid - 1.72, 3.2, 0.36, 0.05, SIGNS[4])
+  b.box('sign', kx, 2.62, mid - 1.72, 3.2, 0.36, 0.05, SIGNS[4])
   // an escalator up to the gallery opposite, drawn as stepped flights between glass sides
   const ex = hw + 14
   for (let i = 0; i < 13; i++) b.box('trim', ex + i * 0.75, 0.2 + i * 0.4, across - 2, 0.8, 0.4, 1.6, i % 2 ? '#4a4d52' : '#5a5e63')
@@ -339,7 +363,7 @@ function mall(b: Batch, w: number, h: number, dim: (hex: string) => string) {
   }
   // ---- the hall's own lamps: a pair hung from each truss over the concourse
   for (const x of cols) {
-    for (const z of [front + 3.6, across - 3.6]) {
+    for (const z of hung) {
       b.box('trim', x, top - 0.55, z, 0.04, 1.1, 0.04, frame)
       b.box('trim', x, top - 1.13, z, 1.5, 0.08, 0.5, frame)
       b.box('lit', x, top - 1.19, z, 1.36, 0.05, 0.38, '#27353f')
@@ -410,7 +434,9 @@ function build(env: Env, w: number, h: number, mood: Mood): Layout {
     for (let i = 0; i < 9; i++) {
       const x = -far * 0.5 + i * (far / 9) + hash(i * 3) * 8
       if (Math.abs(x) < 6) continue
-      cars.push({ x, z: rz + (i % 2 ? 2.2 : -2.2), rot: i % 2 ? Math.PI / 2 : -Math.PI / 2, seed: i * 7 + w })
+      // on an industrial estate the cars stand at the kerb, leaving both lanes to the lorries (see yard.ts)
+      const off = env === 'industrial' ? 3.6 : 2.2
+      cars.push({ x, z: rz + (i % 2 ? off : -off), rot: i % 2 ? Math.PI / 2 : -Math.PI / 2, seed: i * 7 + w })
     }
   }
 
@@ -486,10 +512,13 @@ function build(env: Env, w: number, h: number, mood: Mood): Layout {
     for (const sx of [-1, 1]) for (let i = 0; i < 3; i++) block(b, sx * (hw + 34), -hh + i * 26, 20, 20, 10 + Math.floor(hash(i + sx * 9) * 12), ['#bfc6cc', '#d9d6cf', '#9fb0bd'][i], i + 30 + sx, lit)
     for (let i = 0; i < 10; i++) for (const sx of [-1, 1]) trees.push([sx * (hw + 6 + (i % 2) * 5), -hh - 10 + i * ((h + 12) / 10), 1.8])
   } else if (env === 'mall') {
-    mall(b, w, h, dimHex)
+    mall(b, w, h, dimHex, mood)
   }
 
-  return { meshes: b.build((k) => surface(k, k === 'lit' ? (env === 'mall' ? (mood === 'day' ? 0.5 : 0.9) : Math.round(M.glow * 5) / 10) : 0)), trees, cars }
+  const hall = INDOOR_GLOW[mood]
+  // a shop sign in the mall is a painted band by day and lit from within once the lamps are on
+  const sign = () => (hall.signs ? { material: signLit(hall.signs), cast: false } : surface('trim'))
+  return { meshes: b.build((k) => (k === 'sign' ? sign() : surface(k, k === 'lit' ? (indoor ? hall.lit : Math.round(M.glow * 5) / 10) : 0))), trees, cars }
 }
 
 export function Environs({ env, w, h, mood }: { env: Env; w: number; h: number; mood: Mood }) {

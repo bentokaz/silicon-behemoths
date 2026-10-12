@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { autoVenue, buildVenue, defaultConfig, newGame, zoneRoom } from '../../sim/game'
+import { autoVenue, buildVenue, defaultConfig, newGame, placeItem, zoneRoom } from '../../sim/game'
 import { venueLife } from '../../sim/life'
 import { hiredVenue, venueStats } from '../../sim/sites'
 import { curveTiles } from '../../sim/curves'
@@ -160,6 +160,68 @@ describe('a venue on a show day', () => {
     }
     // a raised row is reached by the steps: more than one point on the way up
     expect(crowd.seats.filter((seat) => seat.y > 0.6).every((seat) => seat.via!.length >= 9)).toBe(true)
+  })
+
+  it('seats a big house on big grounds before the show starts, with banks side by side, close together and turned', () => {
+    for (const turned of [false, true]) {
+      const s = newGame({ ...defaultConfig(), unlimitedMoney: true, seed: 4 })
+      for (let i = 0; i < 3; i++) expect(buildVenue(s)).toBeNull()
+      const site = s.venue!
+      const cx = Math.floor(site.w / 2)
+      const tiers = ['seats', 'seats_mid', 'seats_high']
+      if (!turned) {
+        expect(autoVenue(s)).toBeNull()
+        // two more banks, each one tile from the middle one: the aisles between have steps down both sides
+        for (let row = 0; row < 3; row++) for (const x of [cx + 7, cx + 10, cx - 13, cx - 10]) expect(placeItem(s, 'venue', tiers[row], x, 8 + row * 2, 0)).toBeNull()
+      } else {
+        // everything a quarter turn round: the stage on the east side, the banks rising toward the west
+        expect(placeItem(s, 'venue', 'stage', cx + 8, 10, 1)).toBeNull()
+        for (let row = 0; row < 3; row++) for (const y of [6, 9, 13, 16]) expect(placeItem(s, 'venue', tiers[row], cx + 2 - row * 2, y, 1)).toBeNull()
+      }
+      const { crowd, nav } = house(site, true, 0.9)
+      crowd.walkers = turned ? 100 : 180
+      // every seat can be walked to, and a raised one is reached by the steps: never by a hop up from the aisle
+      for (const seat of crowd.seats) {
+        expect(seat.access).toBeGreaterThanOrEqual(0)
+        expect(nav.reach[seat.access]).toBe(1)
+        const via = seat.via!
+        expect(via[1]).toBe(0)
+        for (let k = 4; k < via.length; k += 3) {
+          expect(via[k]).toBeGreaterThanOrEqual(via[k - 3])
+          expect(via[k] - via[k - 3]).toBeLessThanOrEqual(0.51)
+        }
+      }
+      // no one tile at the foot of the steps has a whole side of the house coming through it
+      const feet = new Map<number, number>()
+      for (const seat of crowd.seats) if (seat.y > 0) feet.set(seat.access, (feet.get(seat.access) ?? 0) + 1)
+      expect(feet.size).toBeGreaterThanOrEqual(4)
+      let walkers = 0
+      let closest = Infinity
+      run(crowd, SHOW.doors - 0.1, SHOW.start, () => {
+        walkers = Math.max(walkers, crowd.bodies.filter((b) => b.kind === Kind.Guest).length)
+        // people on the same steps or in the same row keep their distance from whoever is ahead of them
+        for (const a of crowd.bodies) {
+          if (a.mode !== Mode.Enter || !a.striding || a.speed <= 0) continue
+          for (const b of crowd.bodies) {
+            if (b === a || b.mode !== Mode.Enter || !b.striding) continue
+            const dx = b.x - a.x
+            const dz = b.z - a.z
+            if (Math.abs(b.y - a.y) < 0.3 && dx * a.hx + dz * a.hz > 0.1 && a.hx * b.hx + a.hz * b.hz > 0.5) closest = Math.min(closest, Math.hypot(dx, dz))
+          }
+        }
+      })
+      expect(walkers).toBe(turned ? 100 : 180)
+      const guests = crowd.bodies.filter((b) => b.kind === Kind.Guest)
+      expect(guests.filter((b) => b.spot === b.seat).length).toBe(guests.length)
+      expect(closest).toBeGreaterThan(0.25)
+      expect(crowd.ghosts).toBe(0)
+      // and they all get out again
+      run(crowd, SHOW.start, SHOW.cleared + 0.8, (t) => {
+        if (Math.round(t * 2700) % 540 === 0 && t > SHOW.end) console.log('OUT', turned, t.toFixed(2), crowd.phase, crowd.bodies.filter((b) => b.kind === Kind.Guest).length, crowd.bodies.filter((b) => b.kind === Kind.Guest && b.spot === b.seat).length, crowd.house.toFixed(2), JSON.stringify(crowd.bodies.filter((b) => b.kind === Kind.Guest).slice(0, 6).map((b) => [b.mode, b.striding, +(b.x + site.w / 2).toFixed(1), +(b.z + site.h / 2).toFixed(1), +b.y.toFixed(2), +b.speed.toFixed(1), +b.wayAt.toFixed(1), +b.wayLen.toFixed(1), b.stage])))
+      })
+      expect(crowd.bodies.filter((b) => b.kind === Kind.Guest).length).toBe(0)
+      expect(crowd.ghosts).toBe(0)
+    }
   })
 
   it('has only a small crew about on an ordinary day', () => {

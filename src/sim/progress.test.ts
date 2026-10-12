@@ -41,7 +41,7 @@ import {
 import { GOALS, nextGoals } from './goals'
 import { bestSegment } from './market'
 import { pendingUnits } from './ops'
-import { CAPS, type CapId, capOfTab, execAvailable, frontier, has, isNear, lockTip, locked, nearTabs, needText, openEverything, ratioOf, reqsOf, stepProgress, vacantSeats } from './progress'
+import { CAPS, type CapId, capOfTab, execAvailable, frontier, has, isNear, lockTip, locked, nearTabs, needText, nextCaps, openEverything, ratioOf, reqsOf, stepProgress, vacantSeats } from './progress'
 import { evaluate } from './scoring'
 import { EXECS, execFx, execOf, marketPay, salaryFor, staffEffects } from './staff'
 import { type Difficulty, EXEC_IDS, type ExecId, type GameState, ROLES, type Role, monthCosts } from './types'
@@ -225,6 +225,58 @@ describe('a guided company starts small', () => {
     expect(zoneRoom(b, 'office', 'lab', 0, 0, 3, 1)).toBeNull()
     expect(stepProgress(b)).toEqual(['research'])
     expect(stepProgress(b)).toEqual([])
+  })
+
+  // The card on a lab bench starts research. It cannot be reached while Research is locked,
+  // because a bench only stands in a research lab and a lab opens Research the moment it is built.
+  it('cannot have a lab bench, or a lab screen, while Research is locked', () => {
+    const s = guidedGame()
+    const benches = () => s.office.items.filter((i) => i.kind === 'bench').length
+    expect(s.office.rooms.some((r) => r.type === 'lab')).toBe(false)
+    expect(benches()).toBe(0)
+    // nowhere on the starting plot takes a bench
+    for (let y = 0; y < s.office.h; y++) for (let x = 0; x < s.office.w; x++) for (let rot = 0; rot < 4; rot++) expect(placeItem(s, 'office', 'bench', x, y, rot)).toBeTruthy()
+    expect(benches()).toBe(0)
+    expect(s.cash).toBe(DIFFICULTY.normal.startCash)
+    expect(has(s, 'research')).toBe(false)
+    // the lab comes first, and the look the store takes after every action opens Research with it
+    expect(zoneRoom(s, 'office', 'lab', 0, 0, 3, 1)).toBeNull()
+    stepProgress(s)
+    expect(has(s, 'research')).toBe(true)
+    const spot = [0, 1, 2].find((x) => !placeItem(s, 'office', 'bench', x, 0, 0))
+    expect(spot).toBeDefined()
+    expect(benches()).toBe(1)
+    // The one way round it is a save edited by hand: a lab and a bench, and the record of what is open emptied.
+    // A save of today's version is loaded as it is, so Research stays locked until the first action or the
+    // first day that passes, and for that long the bench can be clicked. The card shows the lock for that case.
+    const save = migrate({ ...(JSON.parse(JSON.stringify(s)) as GameState), unlocks: {} })
+    expect(save.office.items.some((i) => i.kind === 'bench')).toBe(true)
+    expect(has(save, 'research')).toBe(false)
+    expect(toggleResearch(save, 'chipset')).toContain('Research')
+    stepProgress(save)
+    expect(has(save, 'research')).toBe(true)
+    // and once open it stays open, with the lab or without it
+    s.office.rooms = s.office.rooms.filter((r) => r.type !== 'lab')
+    stepProgress(s)
+    expect(has(s, 'research')).toBe(true)
+  })
+
+  it('lists what opens next by how near it is, not by its stage alone', () => {
+    const s = guidedGame()
+    const next = () => nextCaps(s).map((x) => x.cap.id)
+    // nothing has moved: the first stage, in its own order
+    expect(next()).toEqual(['research', 'market', 'studio'])
+    // a little progress on something far off does not put it first
+    s.regions[player(s).home!].awareness = 0.1
+    expect(ratioOf(s, 'world')).toBeGreaterThan(0)
+    expect(isNear(s, 'world')).toBe(false)
+    expect(next()).toEqual(['research', 'market', 'studio'])
+    // but something of a later stage that is most of the way there comes before a first-stage one not begun
+    s.companies[0].unitsTotal = 8000
+    expect(ratioOf(s, 'rivals')).toBeCloseTo(0.8)
+    expect(next()).toEqual(['rivals', 'events', 'research'])
+    // the navigation keeps to the stages
+    expect(nearTabs(s)).toEqual(['research', 'market', 'marketing'])
   })
 
   it('opens the recall screen with the recall, whatever else is true', () => {

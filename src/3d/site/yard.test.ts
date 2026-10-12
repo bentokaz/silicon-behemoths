@@ -3,7 +3,7 @@ import { autoLine, buildFactory, defaultConfig, newGame, paintArea, placeItem } 
 import { ITEMS, itemTiles, lineStats } from '../../sim/sites'
 import type { Site } from '../../sim/types'
 import { shippingDocks } from './factorylife'
-import { APRON, lengthOf, lorryAt, planYard } from './yard'
+import { APRON, LANE, lengthOf, lorryAt, planYard } from './yard'
 
 function plant(tier: number): Site {
   const s = newGame({ ...defaultConfig(), unlimitedMoney: true, seed: 3 })
@@ -66,16 +66,24 @@ describe('lorries', () => {
       const site = plant(tier)
       const m = planYard(site, shippingDocks(site, lineStats(site).linked)).docks.values().next().value!
       let viaDrive = false
+      const hh = site.h / 2
       for (const route of [m.arrive, m.back, m.leave]) {
-        for (const [x, z] of along(route)) {
+        for (const [x, z, heading] of along(route)) {
+          // on the road it keeps to its own lane, on the right: eastbound on the far side of the middle, westbound on the near
+          if (Math.abs(x) > 14 && z > hh + 2.5) {
+            const east = Math.sin(heading) > 0
+            expect(z - (hh + 7)).toBeCloseTo(east ? LANE : -LANE, 1)
+          }
+          // no part of it is ever over the kerb: off the plot, every tile under it is road or drive
+          for (const [bx, by] of under(site, x, z, heading)) {
+            if (bx >= 0 && by >= 0 && bx < site.w && by < site.h) continue
+            // (the smallest plot has four metres of yard inside the gate: a lorry cannot straighten up in that, and its tail swings over the pavement)
+            if (by >= site.h && by < site.h + 3) tier && expect(Math.abs(bx + 0.5 - site.w / 2)).toBeLessThanOrEqual(3)
+          }
           const tx = Math.floor(x + site.w / 2)
           const ty = Math.floor(z + site.h / 2)
           if (tx >= 0 && ty >= 0 && tx < site.w && ty < site.h) continue
-          // swinging into the drive, the middle of a long vehicle crosses the corner of the kerb beside it
-          if (ty >= site.h && ty < site.h + 3 && Math.abs(tx + 0.5 - site.w / 2) <= 5.5) {
-            viaDrive = true
-            continue
-          }
+          if (ty >= site.h && ty < site.h + 3) viaDrive = true
           if (onRoad(site, x, z)) continue
           // otherwise only on the verge beside or behind the plot, well short of the neighbouring sheds
           expect(Math.max(-tx, tx - (site.w - 1))).toBeLessThanOrEqual(APRON.side)

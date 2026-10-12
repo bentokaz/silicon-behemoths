@@ -1136,7 +1136,7 @@ function Workbench() {
 
                 <div className="label mb-1 mt-3 text-faint">Launch marketing</div>
                 <Slider label="One-off launch budget" value={marketing} min={0} max={20e6} step={50e3} format={(v) => money(v)} onChange={setMarketing} />
-                <Choice label="Launch keynote" value={keynote} options={[{ value: -1, label: 'None' }, ...EVENTS.keynote.venues.map((v, i) => ({ value: i, label: `${v.name} (${money(v.cost, 1)})`, locked: !has(g, 'events') || (i === 3 && !hasStage(g)) }))]} onChange={setKeynote} />
+                <Choice label="Launch keynote" value={keynote} lockNote={lockTip(g, 'events') ?? (hasStage(g) ? null : `Your own venue: ${lockTip(g, 'venue') ?? (g.venue ? 'it needs a stage before it can hold a keynote.' : 'build one first, on the Venue screen.')}`)} options={[{ value: -1, label: 'None' }, ...EVENTS.keynote.venues.map((v, i) => ({ value: i, label: `${v.name} (${money(v.cost, 1)})`, locked: !has(g, 'events') || (i === 3 && !hasStage(g)) }))]} onChange={setKeynote} />
               </div>
               <div className="p-3">
                 <div className="label mb-1 text-faint">First production run</div>

@@ -36,7 +36,7 @@ const FORE = 0.22
 const THIGH_L = 0.42
 const SHIN_L = 0.405
 /** Share of a stride a foot spends on the ground: a little over half, so both are down as the weight changes over. */
-const STANCE = 0.56
+const WALK_STANCE = 0.56
 /** How far a planted foot can be from the hip before the hip has to come down. */
 const REACH = 0.812
 const FOOT_F = [0, 0]
@@ -259,12 +259,15 @@ function pose(m: Meshes, i: number, b: Body, dt: number): boolean {
   const p = b.seed
   let stance = 0.08
   let splayed = false
-  if (c[AMP] > 0.02) {
-    const a = c[AMP]
+  // on a treadmill the same gait runs on the spot: a longer, quicker stride with both feet off the belt between steps
+  const run = !walking && b.mode === Mode.Do && b.pose === Pose.Run
+  if (c[AMP] > 0.02 || run) {
+    const a = run ? 1 : c[AMP]
+    const STANCE = run ? 0.4 : WALK_STANCE
     // ---- the gait: each foot is planted while it bears weight and swung through while it does not, and the hip and
     // knee follow from where the foot is. The step is as long as the ground covered, so a planted foot stays put.
-    const S = b.stride
-    const u = t / (Math.PI * 2)
+    const S = run ? 0.84 : b.stride
+    const u = run ? t * 1.4 : t / (Math.PI * 2)
     let low = 0.86
     for (let leg = 0; leg < 2; leg++) {
       let ph = u + leg * 0.5
@@ -283,7 +286,7 @@ function pose(m: Meshes, i: number, b: Body, dt: number): boolean {
         const k = (ph - STANCE) / (1 - STANCE)
         FOOT_DOWN[leg] = 0
         f = S * STANCE * (2 * (k * k * (3 - 2 * k)) - 1)
-        lift = 0.035 + 0.1 * Math.sin(Math.PI * Math.pow(k, 0.8)) * Math.min(1, S / 0.5)
+        lift = 0.035 + (run ? 0.24 : 0.1) * Math.sin(Math.PI * Math.pow(k, 0.8)) * Math.min(1, S / 0.5)
       }
       FOOT_F[leg] = f * a
       FOOT_UP[leg] = lift * a
@@ -310,13 +313,17 @@ function pose(m: Meshes, i: number, b: Body, dt: number): boolean {
         kneeL += (knee - kneeL) * a
       }
     }
-    bob = -drop
+    bob = -drop + (run ? 0.035 * Math.abs(Math.sin(u * Math.PI * 2)) : 0)
     stance = 0.08 - 0.012 * a
     lean += 0.025 * a * Math.min(1, b.speed / 1.6)
     // how far forward the left foot is, -1 to 1: the arms swing against the legs, less on a short step
-    const s = Math.cos(t)
+    const s = Math.cos(u * Math.PI * 2)
     const swing = sideways ? 0 : Math.min(1, S / 0.7)
-    if (!arms) {
+    if (run) {
+      // elbows stay bent as the pose has them; the arms pump from the shoulder
+      shL -= 0.55 * s
+      shR += 0.55 * s
+    } else if (!arms) {
       // the elbow closes a little as the hand comes forward
       const one = prop === Prop.Bag || prop === Prop.Cup || prop === Prop.Broom
       shL -= 0.34 * s * a * swing
@@ -360,17 +367,6 @@ function pose(m: Meshes, i: number, b: Body, dt: number): boolean {
         elR += 0.2 * Math.sin(t * 2.6 + p)
         head += 0.08 * Math.sin(t * 0.6 + p)
         break
-      case Pose.Run: {
-        const s = Math.sin(t * 9.5)
-        thighL += 0.6 * s
-        thighR -= 0.6 * s
-        kneeL += Math.max(0, Math.sin(t * 9.5 + 2.2)) * 1.05
-        kneeR += Math.max(0, Math.sin(t * 9.5 + 2.2 + Math.PI)) * 1.05
-        shL -= 0.6 * s
-        shR += 0.6 * s
-        bob = Math.abs(Math.cos(t * 9.5)) * 0.05
-        break
-      }
       case Pose.Stretch: {
         // arms sweep up overhead and down to the sides, with a slow bend forward at the bottom
         const s = Math.sin(t * 0.9 + p)
