@@ -41,7 +41,7 @@
   --color-line2: #303b48;
   --color-fg: #d9dfe7;
   --color-dim: #808b98;
-  --color-faint: #4c5662;
+  --color-faint: #56616e;
   --color-accent: #36c5d6;
 }
 [data-theme='rose'] {
@@ -204,6 +204,21 @@ table.grid-table td {
   padding: 4px 8px;
   border-bottom: 1px solid var(--color-line);
   white-space: nowrap;
+}
+/* a table with less room than it wants draws tighter before it scrolls sideways */
+.tight table.grid-table th,
+.tight table.grid-table td {
+  padding-left: 4px;
+  padding-right: 4px;
+}
+.tight table.grid-table th {
+  letter-spacing: 0.02em;
+}
+/* and its longer names are cut short there; the cell's tooltip has them in full */
+.tight table.grid-table td.clip {
+  max-width: 9.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 table.grid-table tr.row:hover td {
   background: var(--color-hover);

@@ -61,7 +61,7 @@ function Raise() {
           <div className="text-[11px] leading-snug text-dim">
             List on the stock market. You raise a lot at once, your shares get a price every day, and you can buy stakes in rivals. Needs a valuation of {money(IPO_MIN_VALUE, 0)} and a year of accounts.
           </div>
-          <Slider label="Share of the company to float" icon="pie" value={float} min={0.05} max={0.4} step={0.01} format={(x) => pct(x, 0)} onChange={setFloat} disabled={!!ipo} />
+          <Slider label="Share of the company to float" icon="pie" value={float} min={0.05} max={0.4} step={0.01} format={(x) => pct(x, 0)} onChange={setFloat} disabled={!!ipo} hint={ipo ?? undefined} />
           <div className="grid grid-cols-2 gap-1">
             <Mini label="Would raise about" icon="cash" value={big(((v * float) / (1 - float)) * 0.94)} tone="text-pos" />
             <Mini label="You would hold" icon="pie" value={pct((k.founder / k.shares) * (1 - float))} />

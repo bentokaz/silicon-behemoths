@@ -255,7 +255,7 @@ export function Dashboard() {
       </Panel>
       <Panel title={`Goals / ${stage.name}`} icon="goals" right={<Btn small tone="ghost" onClick={() => setTab('goals')}>All {stage.done}/{stage.total}</Btn>} className="col-span-4" bodyClass="overflow-y-auto px-2 py-1">
         {goals.map(({ goal, progress }) => (
-          <button key={goal.id} onClick={() => setTab('goals')} className="block w-full py-[3px] text-left">
+          <button key={goal.id} onClick={() => setTab("goals")} title={`${goal.name}: ${goal.note}`} className="block w-full py-[3px] text-left">
             <div className="flex items-baseline justify-between gap-2">
               <span className="truncate text-[11px] text-fg">{goal.name}</span>
               <span className="truncate text-[10px] text-faint">{goal.note}</span>
@@ -291,6 +291,8 @@ export function Dashboard() {
 function ProductTable({ g, rows, compact = false, showMaker = false, winRate }: { g: GameState; rows: Product[]; compact?: boolean; showMaker?: boolean; winRate?: Map<string, number> }) {
   const inspect = useStore((s) => s.inspect)
   const { focus } = useStore.getState()
+  // what is in the warehouse is only known, and only matters, for the company's own devices
+  const showStock = !showMaker && rows.some((p) => p.companyId === 'player')
   return (
     <table className="grid-table">
       <thead>
@@ -303,7 +305,7 @@ function ProductTable({ g, rows, compact = false, showMaker = false, winRate }: 
           <Th iconClass="@max-[720px]:hidden" icon="tag" r>
             Price
           </Th>
-          {!showMaker && (
+          {showStock && (
             <Th iconClass="@max-[720px]:hidden" icon="warehouse" r>
               Stock
             </Th>
@@ -334,7 +336,7 @@ function ProductTable({ g, rows, compact = false, showMaker = false, winRate }: 
               <td className="w-10 !p-0">
                 <Thumb product={p} className="h-10 w-9" />
               </td>
-              <td className={inspect === p.id ? 'text-accent' : 'text-fg'}>
+              <td className={`clip ${inspect === p.id ? 'text-accent' : 'text-fg'}`} title={p.name}>
                 {p.name}
                 {!compact && (
                   <span className="ml-2 text-faint" title={TYPES[p.type].name}>
@@ -348,9 +350,13 @@ function ProductTable({ g, rows, compact = false, showMaker = false, winRate }: 
                   {statusText(p)}
                 </Tag>
               </td>
-              {!compact && <td className="text-dim">{p.segment ? segmentInfo(p.segment).name : '--'}</td>}
+              {!compact && (
+                <td className="clip text-dim" title={p.segment ? segmentInfo(p.segment).name : undefined}>
+                  {p.segment ? segmentInfo(p.segment).name : "--"}
+                </td>
+              )}
               <td className="num r text-fg">{money(p.price)}</td>
-              {!showMaker && <td className={`num r ${p.stock <= 0 && p.status === 'sale' ? 'text-neg' : 'text-dim'}`}>{num(p.stock)}</td>}
+              {showStock && <td className={`num r ${p.stock <= 0 && p.status === 'sale' ? 'text-neg' : 'text-dim'}`}>{num(p.stock)}</td>}
               <td className="num r text-dim">{num(showMaker ? (p.history.at(-1) ?? p.monthUnits) : p.unitsSold)}</td>
               <td className="num r text-fg">{p.reviewAvg ? p.reviewAvg.toFixed(1) : '--'}</td>
               {!compact && <td className="num r text-dim">{Math.round(p.designPct)}</td>}
@@ -522,8 +528,8 @@ export function Rivals() {
                   {c.isPlayer
                     ? '--'
                     : types(c.segments).map((t) => (
-                        <span key={t} title={TYPES[t].plural} className="mr-[6px] inline-block">
-                          <Icon name={typeIcon(t)} size={14} className="inline-block" style={{ verticalAlign: -3 }} />
+                        <span key={t} title={TYPES[t].plural} className="mr-[3px] inline-block">
+                          <Icon name={typeIcon(t)} size={13} className="inline-block" style={{ verticalAlign: -3 }} />
                         </span>
                       ))}
                 </td>
@@ -582,10 +588,10 @@ export function Finance() {
         <Kpi label="Costs, 12 months" icon="receipt" value={money(costs)} />
         <Kpi label="Profit, 12 months" icon={income - costs >= 0 ? 'trendUp' : 'trendDown'} value={money(income - costs)} tone={income - costs >= 0 ? 'pos' : 'neg'} sub={`unsold stock at cost ${money(stockValue, 1)}`} />
       </div>
-      <div className="grid shrink-0 grid-cols-8 gap-1">
-        <Mini label="Shares and stakes, 12 mo" icon="shares" value={money(year.reduce((a, r) => a + (r.funding ?? 0), 0), 1)} />
+      <div className="grid shrink-0 grid-cols-9 gap-1">
+        <Mini label="Shares, stakes" title="Raised from shares and stakes, last 12 months" icon="shares" value={money(year.reduce((a, r) => a + (r.funding ?? 0), 0), 1)} />
         {COST_KEYS.map((k) => (
-          <Mini key={k} label={`${COST_LABELS[k]}, 12 mo`} icon={COST_ICON[k]} value={money(year.reduce((a, r) => a + r[k], 0), 1)} />
+          <Mini key={k} label={COST_LABELS[k]} title={`${COST_LABELS[k]}, last 12 months`} icon={COST_ICON[k]} value={money(year.reduce((a, r) => a + r[k], 0), 1)} />
         ))}
       </div>
       <Panel title="Income, costs and cash, last 36 months" icon="chart" className="h-56 shrink-0">

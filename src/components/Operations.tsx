@@ -11,13 +11,13 @@ import { SUPPLY_CATS } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { SiteBuilder } from './SiteBuilder'
 import { Icon, type IconName, supplyIcon, typeIcon } from './icons'
-import { Btn, Empty, Fold, IconBtn, Kpi, Lead, Meter, Mini, Panel, Tabs, Tag, Th, money, num, pct } from './ui'
+import { Btn, ConfirmIconBtn, Empty, Fold, Kpi, Lead, Meter, Mini, Panel, Tabs, Tag, Th, money, num, pct, pressable, useKept } from './ui'
 
 type View = 'floor' | 'orders' | 'supply'
 
 function Orders() {
   const g = useGame()
-  const { act, focus } = useStore.getState()
+  const { act, focus, say } = useStore.getState()
   const line = factoryLine(g)
   if (!g.orders.length) return <Empty icon="package" text="No production runs are in progress. Open a device and order a run from its Manage tab, or set one up when you launch." />
   return (
@@ -50,7 +50,7 @@ function Orders() {
           const waiting = o.mode === 'contract' ? Math.max(0, CONTRACT.leadDays - (g.day - o.placedDay)) : 0
           const stalled = o.mode === 'factory' && !line?.running
           return (
-            <tr key={o.id} className="row cursor-pointer" onClick={() => focus(p.id)}>
+            <tr key={o.id} className="row cursor-pointer" {...pressable(() => focus(p.id))}>
               <td className="text-fg">
                 <Lead icon={typeIcon(p.type)} size={12} />
                 {p.name}
@@ -69,7 +69,7 @@ function Orders() {
               <td className="num r text-dim">{money(orderLeft(o) * each, 1)}</td>
               <td>{stalled ? <Tag tone="neg" icon="alert">line down</Tag> : waiting ? <Tag tone="warn" icon="hourglass">starts in {waiting}d</Tag> : <Tag tone="pos" icon="build">building</Tag>}</td>
               <td className="r">
-                <IconBtn icon="close" tone="ghost" title="Cancel the units not yet built" onClick={(e) => (e.stopPropagation(), act((s) => cancelOrder(s, o.id)))} />
+                <ConfirmIconBtn icon="close" title="Cancel the units not yet built" onClick={(e) => (e.stopPropagation(), act((s) => cancelOrder(s, o.id)), say(`The rest of the ${p.name} run is cancelled.`))} onKeyDown={(e) => e.stopPropagation()} />
               </td>
             </tr>
           )
@@ -142,7 +142,7 @@ function Supply() {
 export function FactoryScreen() {
   const g = useGame()
   const { act, say } = useStore.getState()
-  const [view, setView] = useState<View>(g.factory ? 'floor' : 'orders')
+  const [view, setView] = useKept<View>('factory:view', () => (g.factory ? 'floor' : 'orders'))
   const line = factoryLine(g)
   const next = SITE_TIERS.factory[g.factory ? g.factory.tier + 1 : 0]
   const factoryOrders = g.orders.filter((o) => o.mode === 'factory')

@@ -86,7 +86,7 @@ function Campaigns() {
           Start campaign at {money(budget, 1)} / month
         </Btn>
       </Panel>
-      <Panel title={`Running campaigns (${g.campaigns.length})`} icon="marketing" bodyClass="overflow-auto">
+      <Panel title={`Running campaigns (${g.campaigns.length})`} icon="marketing" bodyClass="@container overflow-auto">
         {g.campaigns.length === 0 ? (
           <Empty icon="marketing" text="Nothing is running. Brand campaigns raise awareness of the company; product campaigns build interest in one device with the segments a channel reaches." />
         ) : (
@@ -95,9 +95,9 @@ function Campaigns() {
               <tr>
                 <th>Channel</th>
                 <th>Advertising</th>
-                <th className="w-44">Monthly budget</th>
-                <th className="r">Spent</th>
-                <th className="w-24">Interest</th>
+                <th className="w-36">Monthly budget</th>
+                <th className="r @max-[500px]:hidden">Spent</th>
+                <th className="w-16">Interest</th>
                 <th />
               </tr>
             </thead>
@@ -123,11 +123,11 @@ function Campaigns() {
                     </td>
                     <td>
                       <div className="flex items-center gap-2">
-                        <input type="range" aria-label={`Monthly budget of the ${CHANNELS[c.channel].name} campaign`} className="flex-1" min={CHANNELS[c.channel].min} max={Math.max(5e6, CHANNELS[c.channel].min * 10)} step={10e3} value={c.monthly} onChange={(e) => act((s) => setCampaignBudget(s, c.id, Number(e.target.value)))} />
+                        <input type="range" aria-label={`Monthly budget of the ${CHANNELS[c.channel].name} campaign`} className="min-w-12 flex-1" min={CHANNELS[c.channel].min} max={Math.max(5e6, CHANNELS[c.channel].min * 10)} step={10e3} value={c.monthly} onChange={(e) => act((s) => setCampaignBudget(s, c.id, Number(e.target.value)))} />
                         <span className="num w-14 text-right text-[11px] text-fg">{money(c.monthly, 1)}</span>
                       </div>
                     </td>
-                    <td className="num r text-dim">{money(c.spent, 1)}</td>
+                    <td className="num r text-dim @max-[500px]:hidden">{money(c.spent, 1)}</td>
                     <td>{p ? <Meter value={buzz} tone={buzz > 0.5 ? 'pos' : 'accent'} /> : <span className="text-[10px] text-faint">brand only</span>}</td>
                     <td className="r">
                       <IconBtn icon="stop" tone="ghost" title="Stop this campaign" onClick={() => (act((s) => stopCampaign(s, c.id)), say(`${CHANNELS[c.channel].name} campaign stopped.`))} />

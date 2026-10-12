@@ -428,7 +428,9 @@ function Seat({ g, id }: { g: GameState; id: ExecId }) {
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-fg">{def.title}</span>
-          <span className="block truncate text-[10px] text-dim">{def.effect}</span>
+          <span className="block truncate text-[10px] text-dim" title={def.effect}>
+            {def.effect}
+          </span>
         </span>
         <span className="flex shrink-0 flex-wrap justify-end gap-1">
           {runs.map((c) => (

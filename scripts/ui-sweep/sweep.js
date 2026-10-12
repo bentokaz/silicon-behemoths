@@ -41,6 +41,10 @@ function note(kind, what, extra) {
   if (S.seen.has(key)) return
   S.seen.add(key)
   S.log.push({ kind, what, where: S.ctx, ...(extra ? { extra } : {}) })
+  // kept through a reload of the page, which editing any source file causes
+  try {
+    sessionStorage.setItem('sweep-log', JSON.stringify(S.log.slice(-2000)))
+  } catch {}
 }
 
 function install() {
@@ -218,6 +222,7 @@ const SEEDS = {
     st().begin(cfg({ startType: 'phone', progression: 'open', startCash: 60e6 }))
     const log = []
     st().act((g) => {
+      g.guide = -1
       hireSome(g, log, 8)
       launch(g, log, 'phone', 'Sweep One')
     })
@@ -237,6 +242,7 @@ const SEEDS = {
     const log = []
     const types = Object.keys(G().starterDesign ? { phone: 1, tablet: 1, watch: 1, laptop: 1, desktop: 1, console: 1, earbuds: 1, tv: 1, foldable: 1, headset: 1, speaker: 1, handheld: 1 } : {})
     st().act((g) => {
+      g.guide = -1
       for (let i = 0; i < 3; i++) tryAll(g, log, 'upgradeOffice', () => G().upgradeOffice(g))
       hireSome(g, log, 40)
       tryAll(g, log, 'autoTeams', () => G().autoTeams(g))
@@ -267,7 +273,7 @@ const SEEDS = {
           tryAll(g, log, 'stake', () => G().buyRivalStake(g, rival.id, 0.05))
           const p = mine(g).find((x) => x.status === 'sale')
           if (p) tryAll(g, log, 'factory order', () => G().orderProduction(g, p.id, 20000, 'factory'))
-          tryAll(g, log, 'chip', () => G().startChip(g, 'Sweep S1', 3, 3, 3))
+          tryAll(g, log, 'chip', () => G().startChip(g, 'Sweep S1', 0.5, 0.4, 0.5))
           tryAll(g, log, 'os', () => G().startOs(g, 'SweepOS', []))
         }
         // settle decisions so the clock keeps going, except at the very end
@@ -313,7 +319,7 @@ const SEEDS = {
   sandbox() {
     st().begin(cfg({ startType: 'all', progression: 'open', unlimitedMoney: true }))
     const log = []
-    st().act((g) => (hireSome(g, log, 5), launch(g, log, 'laptop', 'Sweep Book')))
+    st().act((g) => ((g.guide = -1), hireSome(g, log, 5), launch(g, log, 'laptop', 'Sweep Book')))
     st().advance(60)
     return log
   },
@@ -337,18 +343,23 @@ async function seed(name, { tab, rebuild } = {}) {
   const snap = snapshots[name]
   const fb = (S.feedback ??= (await import('/src/store/trouble.ts')).useFeedback)
   fb.setState({ form: null, ask: null, flagged: false })
+  // all in one go, so the screen wanted is the only one drawn
   st().resume(G().migrate(JSON.parse(snap.json)))
   W.sb.setState({ yearEnd: snap.yearEnd, checkpoint: snap.checkpoint })
-  if (tab) st().setTab(tab)
-  await settle(60)
+  if (typeof tab === 'function') tab()
+  else if (tab) st().setTab(tab)
+  // the game's frame is on screen once the lazily loaded parts are in
+  for (let i = 0; i < 200 && !document.querySelector('[data-chrome=top]'); i++) await sleep(15)
+  await settle(20)
   return snap.log
 }
 
 // ------------------------------------------------------------------ what is on the page
 
-const INTERACTIVE = 'button, a[href], input, select, textarea, summary, [role=button], [role=tab], [tabindex]:not([tabindex="-1"])'
+const INTERACTIVE = 'button, a[href], input, select, textarea, summary, [role=button], [role=tab], [tabindex]:not([tabindex="-1"]):not(svg):not([role=dialog]):not(aside)'
 const isShown = (el) => {
-  if (!el.isConnected) return false
+  // (no boxes at all: it, or something above it, is not displayed)
+  if (!el.isConnected || el.getClientRects().length === 0) return false
   const cs = getComputedStyle(el)
   if (cs.display === 'none' || cs.visibility !== 'visible') return false
   for (let p = el; p; p = p.parentElement) if (p.getAttribute?.('aria-hidden') === 'true' || p.hasAttribute?.('inert')) return false
@@ -377,7 +388,7 @@ function regionOf(el) {
   return el.closest('nav') ? 'nav' : el.closest('#root > div > div > header') ? 'top bar' : ''
 }
 /** The frame around every screen: top bar, navigation, news feed. Crawled once, as its own stop. */
-const inChrome = (el) => !!el.closest('nav') || !!el.closest('#root > div > div > header') || (!!el.closest('aside') && !el.closest('main') && /^Feed/i.test(textOf(el.closest('aside'))))
+const inChrome = (el) => !!el.closest('[data-chrome]')
 function describe(el) {
   const tag = el.tagName.toLowerCase() + (el.type && el.tagName === 'INPUT' ? `[${el.type}]` : '')
   return `${tag} "${nameOf(el)}"${regionOf(el) ? ` in ${regionOf(el)}` : ''}`
@@ -499,7 +510,9 @@ function audit(label, { colours = true } = {}) {
       if (top && top !== el && !el.contains(top) && !top.contains(el)) {
         const other = top.closest(INTERACTIVE)
         const label = el.closest('label')
-        if (other && other !== el && !(label && label.contains(top)) && !el.contains(other)) note('control-covered', `${d} is under ${describe(other)}`)
+        // a dialog or a drawer is meant to lie over what is behind it
+        const over = other?.closest('[role=dialog], [role=alertdialog]')
+        if (other && other !== el && !(label && label.contains(top)) && !el.contains(other) && !(over && !over.contains(el))) note('control-covered', `${d} is under ${describe(other)}`)
       }
     }
     if (r.width < 16 && r.height < 16 && !['INPUT'].includes(el.tagName)) note('tiny-target', `${d} is ${Math.round(r.width)}x${Math.round(r.height)}`)
@@ -521,12 +534,12 @@ function audit(label, { colours = true } = {}) {
     const sy = scrolls(el, 'y')
     const sx = scrolls(el, 'x')
     if (sy && el.scrollHeight - el.clientHeight > 0 && el.scrollHeight - el.clientHeight <= 3) note('one-pixel-scroll', `${regionOf(el) || el.className?.toString().slice(0, 40)} scrolls ${el.scrollHeight - el.clientHeight}px down`)
-    if (sx && el.scrollWidth - el.clientWidth > 0 && el.tagName !== 'PRE') note('sideways-scroll', `${regionOf(el) || el.className?.toString().slice(0, 40)} scrolls ${el.scrollWidth - el.clientWidth}px sideways: "${textOf(el).slice(0, 40)}"`)
+    if (sx && el.scrollWidth - el.clientWidth > 0 && el.tagName !== 'PRE' && !/TECHNOLOGY TREE/i.test(regionOf(el))) note('sideways-scroll', `${regionOf(el) || el.className?.toString().slice(0, 40)} scrolls ${el.scrollWidth - el.clientWidth}px sideways: "${textOf(el).slice(0, 40)}"`)
     // text
     const ownText = Array.from(el.childNodes).filter((n) => n.nodeType === 3).map((n) => n.textContent).join('').trim()
     if (!ownText) continue
     if (RAW.test(ownText) && !el.closest('pre, textarea')) note('raw-value', `"${ownText.slice(0, 60)}" in ${regionOf(el)}`)
-    if (EMOJI.test(ownText)) note('emoji', `"${ownText.slice(0, 40)}"`)
+    if (EMOJI.test(ownText) && !el.closest('textarea, pre')) note('emoji', `"${ownText.slice(0, 40)}"`)
     if (/\d{7,}/.test(ownText.replace(/[\d,]*\.\d+/g, '')) && !el.closest('pre, textarea') && !/seed/i.test(textOf(el.parentElement ?? el))) note('unformatted-number', `"${ownText.slice(0, 50)}" in ${regionOf(el)}`)
     // cut off: by its own box, or by a parent that hides what runs over
     const cut = el.scrollWidth > el.clientWidth + 1 && cs.overflowX !== 'visible' && !sx
@@ -717,7 +730,13 @@ async function crawl(name, setup, { depth = 2, path = [], skip, budget = { left:
   const base = gameStamp()
   const baseUi = uiStamp()
   let dirty = false
+  // rows of one table all do the same thing: two of them are enough
+  const rowsSeen = {}
   for (const { sig } of mine) {
+    if (/^tr /.test(sig)) {
+      const table = sig.replace(/"[^"]*"/, '').replace(/ #\d+$/, '')
+      if ((rowsSeen[table] = (rowsSeen[table] ?? 0) + 1) > 2) continue
+    }
     if (budget.left-- <= 0) return note('budget-spent', label)
     if (skip?.(sig)) continue
     if (dirty) {
@@ -747,8 +766,15 @@ async function crawl(name, setup, { depth = 2, path = [], skip, budget = { left:
       if (fields) await probeField(el, label)
     } else {
       const before = stamp()
+      const nameBefore = nameOf(el) + el.getAttribute('title')
       click(el)
       await settle()
+      // a button that asks to be pressed again (something that cannot be undone) is pressed again
+      if (el.isConnected && nameOf(el) + el.getAttribute('title') !== nameBefore && /!bg-neg/.test(el.className)) {
+        S.counters.confirms = (S.counters.confirms ?? 0) + 1
+        click(el)
+        await settle()
+      }
       if (stamp() === before && gameStamp() === base) note('dead-control', `${sig} at ${label}`)
       audit()
     }
@@ -779,7 +805,7 @@ const THEMES = ['ember', 'volt', 'ice', 'rose']
 /** Every stop of a state: each screen, the designer in both modes, a product and a person card. */
 function stopsOf(state) {
   const stops = []
-  const at = (name, after) => stops.push({ name: `${state}/${name}`, setup: async () => (await seed(state), await after?.(), await settle(['city', 'office', 'factory', 'stores', 'venue'].includes(name) || name.startsWith('designer') ? 150 : 25)) })
+  const at = (name, after) => stops.push({ name: `${state}/${name}`, setup: async () => (await seed(state, { tab: after }), await settle(['city', 'office', 'factory', 'stores', 'venue'].includes(name) || name.startsWith('designer') ? 150 : 15)) })
   if (state === 'bankrupt') return at('gameover'), stops
   stops.push({ name: `${state}/chrome`, scope: 'chrome', depth: 0, setup: async () => (await seed(state), await settle(60)) })
   for (const tab of TABS) at(tab, () => st().setTab(tab))
@@ -955,9 +981,20 @@ function report(filter, from = 0) {
 function reset() {
   S.log.length = 0
   S.seen.clear()
+  try {
+    sessionStorage.removeItem('sweep-log')
+  } catch {}
+}
+/** Findings from before the page was last reloaded. */
+function earlier() {
+  try {
+    return JSON.parse(sessionStorage.getItem('sweep-log') ?? '[]').map((e) => `[${e.kind}] ${e.what}  @ ${e.where}`)
+  } catch {
+    return []
+  }
 }
 
 S.done ??= []
-Object.assign(S, { run, install, seed, SEEDS, snapshots, audit, auditRows, auditColours, crawl, crawlState, lookState, hotkeys, soak, vitals, summary, report, reset, click, key, setValue, listControls, describe, stopsOf, settle, TABS, THEMES, START_TYPES })
+Object.assign(S, { earlier, run, install, seed, SEEDS, snapshots, audit, auditRows, auditColours, crawl, crawlState, lookState, hotkeys, soak, vitals, summary, report, reset, click, key, setValue, listControls, describe, stopsOf, settle, TABS, THEMES, START_TYPES })
 install()
 export default S

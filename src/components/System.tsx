@@ -14,6 +14,16 @@ import { Btn, ConfirmBtn, ConfirmIconBtn, NameInput, Panel, Row, TextInput, Th, 
 import { FeedbackLinks } from './Safety'
 import { KeysPanel, SavesBeyond, SettingsPanel } from './Settings'
 
+/** When a save was made, short enough for a narrow table: the time if it was today, otherwise the day. The tooltip has both. */
+function savedWhen(at: number): string {
+  const d = new Date(at)
+  if (!Number.isFinite(d.getTime())) return '--'
+  const today = new Date()
+  const sameDay = d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate()
+  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  return sameDay ? `today ${time}` : `${d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: d.getFullYear() === today.getFullYear() ? undefined : 'numeric' })} ${time}`
+}
+
 /** Why a save could not be opened, in words that say what to do. */
 const loadError = (e: unknown) => {
   const text = e instanceof Error ? e.message : String(e)
@@ -64,7 +74,9 @@ export function SaveList({ onChange, nonce = 0, inGame = false }: { onChange?: (
             <td>{s.company}</td>
             <td className="num">{fmtDate(s.day)}</td>
             <td className="num r">{money(s.cash)}</td>
-            <td className="num text-dim">{new Date(s.savedAt).toLocaleString()}</td>
+            <td className="num text-dim" title={new Date(s.savedAt).toLocaleString()}>
+              {savedWhen(s.savedAt)}
+            </td>
             <td className="r">
               {inGame ? (
                 <ConfirmBtn small tone="default" icon="load" confirm="Leave this game?" title="Loading leaves the company you are running. Anything since its last save is lost." onClick={() => load(s.slot)}>

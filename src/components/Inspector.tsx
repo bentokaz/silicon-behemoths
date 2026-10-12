@@ -1,6 +1,6 @@
 // The slide-over product inspector: 3D model, key numbers, and tabs for
 // details that are only shown when asked for.
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { DeviceView, type ViewName } from '../3d/DeviceView'
 import { deviceThumbnail } from '../3d/thumbnail'
@@ -109,14 +109,68 @@ export function specLines(d: DeviceDesign, diag: number, g?: GameState): [string
   return lines
 }
 
+// Thumbnails are drawn one at a time, between frames, and only for rows that
+// are on screen: a table of sixty rivals no longer holds the page up while
+// every one of them is rendered.
+const drawn = new Map<string, string>()
+const waiting: (() => void)[] = []
+let pumping = false
+function pump() {
+  const job = waiting.shift()
+  if (!job) return void (pumping = false)
+  job()
+  window.setTimeout(pump, 0)
+}
+function later(job: () => void): () => void {
+  waiting.push(job)
+  if (!pumping) (pumping = true), window.setTimeout(pump, 0)
+  return () => {
+    const i = waiting.indexOf(job)
+    if (i >= 0) waiting.splice(i, 1)
+  }
+}
+/**
+ * What makes one thumbnail different from another. Product ids start again in
+ * every game, so the id alone would show a device from the last game loaded;
+ * the logo is part of it so that changing the logo redraws the devices that carry it.
+ */
+export const thumbKey = (p: Product, logo?: string) => `${p.id}|${p.companyId}|${p.name}|${p.launchDay}|${p.design.body.width}x${p.design.body.height}x${p.design.body.thickness}|${p.design.body.backColor}|${p.design.parts.length}|${logo ? `${logo.length}${logo.slice(-12)}` : ''}`
+
 export function Thumb({ product, className = '' }: { product: Product; className?: string }) {
-  const [src, setSrc] = useState('')
   const logo = useStore((s) => (s.game ? player(s.game).logo : undefined))
+  const key = thumbKey(product, logo)
+  const [src, setSrc] = useState(() => drawn.get(key) ?? '')
+  const box = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    const id = window.setTimeout(() => setSrc(deviceThumbnail(product.id, product.design, logo)), 0)
-    return () => window.clearTimeout(id)
-  }, [product.id, product.design, logo])
-  return src ? <img src={src} alt="" draggable={false} className={`object-contain ${className}`} /> : <div className={className} />
+    const hit = drawn.get(key)
+    if (hit !== undefined) return setSrc(hit)
+    setSrc('')
+    const el = box.current
+    if (!el) return
+    let cancel = () => {}
+    const draw = () => {
+      cancel = later(() => {
+        const url = deviceThumbnail(key, product.design, logo)
+        drawn.set(key, url)
+        if (drawn.size > 400) drawn.delete(drawn.keys().next().value!)
+        setSrc(url)
+      })
+    }
+    // only what is in view, or about to be, is worth drawing
+    if (typeof IntersectionObserver === 'undefined') return draw(), () => cancel()
+    const seen = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((e) => e.isIntersecting)) return
+        seen.disconnect()
+        draw()
+      },
+      { rootMargin: '240px' },
+    )
+    seen.observe(el)
+    return () => (seen.disconnect(), cancel())
+    // the design of a device does not change once it exists: the key says everything that can
+  }, [key]) // eslint-disable-line react-hooks/exhaustive-deps
+  return src ? <img src={src} alt="" draggable={false} className={`object-contain ${className}`} /> : <div ref={box} className={className} />
 }
 
 export const statusTone = (p: Product) => (p.status === 'sale' ? (p.stock <= 0 && p.companyId === 'player' ? 'neg' : 'pos') : p.status === 'dev' ? 'warn' : 'dim') as 'neg' | 'pos' | 'warn' | 'dim'

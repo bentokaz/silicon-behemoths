@@ -139,20 +139,21 @@ function useHotkeys() {
       const tag = el.tagName
       // function keys are never typing, and left to the browser they reload or search the page
       const fn = /^F\d+$/.test(e.code)
-      if ((tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || el.isContentEditable) && !fn) return
+      const typing = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || el.isContentEditable
+      if (typing && !fn) return
       const st = useStore.getState()
       if (!st.game) return
       const action = actionFor(e, ['Game', 'Screens'])
       if (!action) return
       if (fn) e.preventDefault()
-      // saving is always allowed while there is a game to save: in the designer, behind a dialog, during a keynote
-      if (action === 'save' && !st.game.gameOver) {
+      // saving is always allowed while there is a game to save: in a field, in the designer, behind a dialog, during a keynote
+      if (action === 'save' && !st.game.gameOver && (fn || !typing)) {
         e.preventDefault()
         if (!e.repeat) quickSave()
         return
       }
-      // nothing else runs behind a dialog that is waiting for an answer, or once the game is over
-      if (st.designing || st.showing || st.game.gameOver || st.yearEnd !== null || modalOpen()) return
+      // nothing else runs while typing, behind a dialog that is waiting for an answer, or once the game is over
+      if (typing || st.designing || st.showing || st.game.gameOver || st.yearEnd !== null || modalOpen()) return
       // someone moving through the controls with Tab presses them with Space and Enter: that press is theirs
       if ((e.code === 'Space' || e.code === 'Enter') && (tag === 'BUTTON' || tag === 'A' || tag === 'SUMMARY') && el.matches(':focus-visible')) return
       e.preventDefault()
@@ -299,7 +300,7 @@ export function Shell() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-10 shrink-0 items-stretch border-b border-line bg-panel">
+      <header data-chrome="top" className="flex h-10 shrink-0 items-stretch border-b border-line bg-panel">
         <div className={`flex ${railW} shrink-0 items-center border-r border-line px-3`}>
           <span className="truncate text-[11px] font-semibold tracking-[0.2em] text-fg">{railOpen ? <>SILICON<span className="text-accent">/</span>BEHEMOTHS</> : <>S<span className="text-accent">/</span>B</>}</span>
         </div>
@@ -346,7 +347,7 @@ export function Shell() {
       {!g.gameOver && !showing && <UnlockBanner />}
 
       <div className="flex min-h-0 flex-1">
-        <nav className={`flex ${railW} shrink-0 flex-col border-r border-line bg-panel`}>
+        <nav data-chrome="nav" aria-label="Screens" className={`flex ${railW} shrink-0 flex-col border-r border-line bg-panel`}>
           <div className="border-b border-line p-2">
             <button
               onClick={() => openDesigner()}
@@ -422,7 +423,7 @@ export function Shell() {
         </main>
 
         {showFeed && (
-          <aside className="flex w-[236px] shrink-0 flex-col border-l border-line bg-panel">
+          <aside data-chrome="feed" aria-label="News feed" className="flex w-[236px] shrink-0 flex-col border-l border-line bg-panel">
             <div className="flex h-8 shrink-0 items-center justify-between border-b border-line px-2">
               <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-fg">Feed</span>
               <button className="num text-[10px] text-faint hover:text-fg" onClick={toggleFeed}>

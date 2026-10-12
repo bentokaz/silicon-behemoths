@@ -132,11 +132,41 @@ export function useKeptScroll(key: string | undefined) {
   return ref
 }
 
+/**
+ * Whether a table has less room than it wants. A panel that is short of
+ * width draws its table tighter (see `.tight` in index.css) before it lets
+ * it scroll sideways, and loosens it again when there is room.
+ */
+function useTight(ref: RefObject<HTMLElement | null>): boolean {
+  const [tight, setTight] = useState(false)
+  // the width the table wanted when it was last drawn loose
+  const need = useRef(0)
+  const check = useCallback(() => {
+    const el = ref.current
+    if (!el) return
+    if (!el.querySelector(':scope table.grid-table')) return setTight(false)
+    if (!el.classList.contains('tight')) need.current = el.scrollWidth
+    setTight(need.current > el.clientWidth + 1)
+  }, [ref])
+  // when the panel changes size
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const watch = new ResizeObserver(check)
+    watch.observe(el)
+    return () => watch.disconnect()
+  }, [ref, check])
+  // and whenever what is in it is drawn again: more rows, another view
+  useLayoutEffect(check)
+  return tight
+}
+
 /** True when the player has asked their system for less motion. */
 export const reducedMotion = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 export function Panel({ title, icon, right, children, className = '', bodyClass = '', keep }: { title?: ReactNode; icon?: IconName; right?: ReactNode; children: ReactNode; className?: string; bodyClass?: string; /** A name for the body's scroll position, so it is found where it was left. */ keep?: string }) {
   const body = useKeptScroll(keep)
+  const tight = useTight(body)
   return (
     <section className={`flex min-h-0 flex-col border border-line bg-panel ${className}`}>
       {title !== undefined && (
@@ -149,7 +179,7 @@ export function Panel({ title, icon, right, children, className = '', bodyClass 
           {right}
         </header>
       )}
-      <div ref={body} className={`min-h-0 flex-1 ${bodyClass}`}>
+      <div ref={body} className={`min-h-0 flex-1 ${bodyClass} ${tight ? 'tight' : ''}`}>
         {children}
       </div>
     </section>
@@ -626,9 +656,9 @@ export function Kpi({ label, icon, value, sub, tone }: { label: string; icon?: I
 }
 
 /** A small supporting figure, visually quieter than a Kpi. */
-export function Mini({ label, icon, value, tone }: { label: string; icon?: IconName; value: ReactNode; tone?: string }) {
+export function Mini({ label, icon, value, tone, title }: { label: string; icon?: IconName; value: ReactNode; tone?: string; /** Said on hover when the label is a short form. */ title?: string }) {
   return (
-    <div className="border border-line px-2 py-1">
+    <div className="border border-line px-2 py-1" title={title}>
       <FitLabel icon={icon} label={label} size={10} className="gap-1 text-[9px] uppercase tracking-[0.12em] text-faint" />
       <div className={`num text-xs ${tone ?? 'text-dim'}`}>{value}</div>
     </div>

@@ -989,7 +989,9 @@ function Workbench() {
             ].map(([k, v, tone]) => (
               <div key={k} className="bg-panel px-2 py-[6px]">
                 <div className="text-[9px] uppercase tracking-[0.12em] text-faint">{k}</div>
-                <div className={`num truncate text-sm font-semibold ${tone}`}>{v}</div>
+                <div className={`num truncate text-sm font-semibold ${tone}`} title={String(v)}>
+                  {v}
+                </div>
               </div>
             ))}
           </div>

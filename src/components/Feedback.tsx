@@ -57,7 +57,7 @@ function Ask() {
       <div className="flex items-center gap-2 border-b border-line px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">
         <Icon name="review" size={14} />
         <span className="flex-1">{q.title}</span>
-        <button className="text-faint hover:text-fg" onClick={() => dismiss()} title="Close" aria-label="Close">
+        <button className="-mr-1 flex h-6 w-6 items-center justify-center text-faint hover:text-fg" onClick={() => dismiss()} title="Close (Esc)" aria-label="Close">
           <Icon name="close" size={13} />
         </button>
       </div>
@@ -111,7 +111,7 @@ function Form() {
         <div className="flex items-center gap-2 border-b border-line px-4 py-3 text-[12px] font-semibold uppercase tracking-[0.14em] text-fg">
           <Icon name="review" size={15} className="text-accent" />
           <span className="flex-1">Tell us about it</span>
-          <button className="text-faint hover:text-fg" onClick={close} title="Close (Esc)" aria-label="Close">
+          <button className="-mr-1 flex h-6 w-6 items-center justify-center text-faint hover:text-fg" onClick={close} title="Close (Esc)" aria-label="Close">
             <Icon name="close" size={14} />
           </button>
         </div>

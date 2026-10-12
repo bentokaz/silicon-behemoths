@@ -16,7 +16,7 @@ import { TRACKS } from '../sim/types'
 import { type Tab, useGame, useStore } from '../store/game'
 import { ExecShortlist, lockProps } from './Progress'
 import { Icon, type IconName } from './icons'
-import { Btn, Meter, Row, Tag, money, num, pct } from './ui'
+import { Btn, Meter, Row, Tag, money, num, pct, useLayer } from './ui'
 
 const TITLES: Record<Target['kind'], { title: string; icon: IconName }> = {
   research: { title: 'Research', icon: 'research' },
@@ -50,6 +50,8 @@ function Frame({ target, close, children, more, title }: { target: Target; close
   const cap = more ? (more.cap ?? capOfTab(more.tab)) : undefined
   const tip = cap ? lockTip(g, cap) : null
   const stop = (e: { stopPropagation: () => void }) => e.stopPropagation()
+  // Esc puts the card away, and only the card
+  useLayer(true, close)
   return (
     <div className="w-[264px] border border-line2 bg-panel/95 text-left" onPointerDown={stop} onPointerUp={stop} onClick={stop} onWheel={stop} onContextMenu={stop}>
       <div className="flex h-7 items-center justify-between border-b border-line px-2">
@@ -57,7 +59,7 @@ function Frame({ target, close, children, more, title }: { target: Target; close
           <Icon name={t.icon} size={13} className="text-accent" />
           {title ?? t.title}
         </span>
-        <button className="flex h-5 w-5 items-center justify-center text-faint hover:text-fg" onClick={close} title="Close">
+        <button className="flex h-6 w-6 items-center justify-center text-faint hover:text-fg" onClick={close} title="Close (Esc)" aria-label="Close">
           <Icon name="close" size={11} />
         </button>
       </div>

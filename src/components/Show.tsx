@@ -14,7 +14,8 @@ import { hiredVenue, sumOf } from '../sim/sites'
 import { type Product, SUBS } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import type { IconName } from './icons'
-import { Btn, Head, IconBtn, Lead, Meter, money } from './ui'
+import { thumbKey } from './Inspector'
+import { Btn, Head, IconBtn, Lead, Meter, int, money, reducedMotion, useLayer } from './ui'
 
 type Phase = 'doors' | 'welcome' | 'reveal' | 'specs' | 'price' | 'verdict'
 const TIMELINE: [Phase, number][] = [
@@ -65,7 +66,7 @@ function drawScreen(g: CanvasRenderingContext2D, phase: Phase, company: string, 
     points.forEach((s, i) => text(s, 230 + i * 130, 82))
   } else {
     text(p.name, 150, 60, '#b9bdc2', 400)
-    text(`$${p.price.toLocaleString()}`, SH / 2 + 10, 240)
+    text(`$${int(p.price)}`, SH / 2 + 10, 240)
     text('ON SALE TODAY', SH - 120, 44, color, 400)
   }
 }
@@ -94,34 +95,48 @@ export function LaunchShow({ eventId }: { eventId: string }) {
   const points = useMemo(() => (p ? strengths(p, e?.day ?? g.day) : []), [p, e?.day, g.day])
   const score = e?.score ?? 0
 
-  // the device's portrait for the big screen
+  // the device's portrait for the big screen; the screen is drawn again once it has loaded
+  const [portrait, setPortrait] = useState(0)
   useEffect(() => {
     if (!p) return
-    const url = deviceThumbnail(`${p.id}:show`, p.design, me.logo)
+    let live = true
+    const url = deviceThumbnail(`${thumbKey(p, me.logo)}:show`, p.design, me.logo)
     if (!url) return
     const img = new Image()
     img.onload = () => {
+      if (!live) return
       image.current = img
-      setRun((r) => r)
+      setPortrait((n) => n + 1)
     }
     img.src = url
+    return () => void (live = false)
   }, [p, me.logo])
 
-  // run of show
+  // run of show: one timer per beat, all of them dropped when the show is skipped or closed
+  const timers = useRef<number[]>([])
+  const stopShow = () => {
+    timers.current.forEach((t) => window.clearTimeout(t))
+    timers.current = []
+  }
   useEffect(() => {
     setPhase('doors')
-    const timers = TIMELINE.map(([ph, at]) =>
+    timers.current = TIMELINE.map(([ph, at]) =>
       window.setTimeout(() => {
         setPhase(ph)
         if (ph === 'welcome') sfx.hush()
-        if (ph === 'reveal') (sfx.drum(), window.setTimeout(sfx.launch, 350))
+        if (ph === 'reveal') (sfx.drum(), timers.current.push(window.setTimeout(sfx.launch, 350)))
         if (ph === 'specs' && score >= 40) sfx.applause(1.6, 0.5)
         if (ph === 'price') sfx.applause(4, score >= 85 ? 1.6 : score >= 60 ? 1.1 : score >= 40 ? 0.6 : 0.25)
         if (ph === 'verdict') (score >= 50 ? sfx.goal : sfx.alert)()
       }, at * 1000),
     )
-    return () => timers.forEach((t) => window.clearTimeout(t))
+    return stopShow
   }, [run, score])
+  /** Straight to the result: the beats still to come must not pull the show back. */
+  const skip = () => (stopShow(), setPhase('verdict'))
+  // Esc skips to the result, and from the result closes the show; nothing behind it takes keys
+  const box = useRef<HTMLDivElement>(null)
+  useLayer(!!e && !!p && !!e.beats, () => (phase === 'verdict' ? watch(null) : skip()), { modal: true, box })
 
   useEffect(() => {
     if (!p) return
@@ -129,7 +144,7 @@ export function LaunchShow({ eventId }: { eventId: string }) {
     if (!ctx) return
     drawScreen(ctx, phase, me.name, me.color, p, image.current, points)
     tex.needsUpdate = true
-  }, [phase, p, me.name, me.color, points, tex, run])
+  }, [phase, p, me.name, me.color, points, tex, run, portrait])
 
   useEffect(() => {
     if (!e || !p || !e.beats) watch(null)
@@ -142,11 +157,11 @@ export function LaunchShow({ eventId }: { eventId: string }) {
   const show: ShowState = { crowd: phase === 'doors' ? fill * 0.55 : fill, cheer: cheering, screen: tex, presenter: phase !== 'doors' }
   const venue = EVENTS.keynote.venues[e.venue].name
   const caption: Record<Phase, [string, string]> = {
-    doors: [`${venue}, ${fmtDate(e.day)}`, seats ? `${Math.round(seats * fill).toLocaleString()} people are taking their seats.` : 'Cameras are rolling. The stream is about to start.'],
+    doors: [`${venue}, ${fmtDate(e.day)}`, seats ? `${int(seats * fill)} people are taking their seats.` : 'Cameras are rolling. The stream is about to start.'],
     welcome: ['The lights go down', `${me.name} takes the stage.`],
     reveal: [p.name, 'Here it is.'],
     specs: ['What it does best', points.join('. ') + '.'],
-    price: [`$${p.price.toLocaleString()}`, cheering ? 'The room is on its feet.' : score >= 30 ? 'Polite applause.' : 'An awkward silence.'],
+    price: [`$${int(p.price)}`, cheering ? 'The room is on its feet.' : score >= 30 ? 'Polite applause.' : 'An awkward silence.'],
     verdict: [`Score ${score}`, e.summary ?? ''],
   }
   const parts: [string, number, string, IconName][] = [
@@ -156,9 +171,9 @@ export function LaunchShow({ eventId }: { eventId: string }) {
     ['On the night', b.luck, 'Demos work, or they do not.', 'dice'],
   ]
   return (
-    <div className="absolute inset-0 z-40 bg-carbon">
+    <div ref={box} role="dialog" aria-label={`Launch keynote: ${p.name}`} className="absolute inset-0 z-40 bg-carbon outline-none">
       <div className="absolute inset-0">
-        <SiteView key={`${eventId}-${run}`} site={site} mode="cut" mood="night" tool={null} company={me.name} color={me.color} logo={me.logo} products={[p]} show={show} autoRotate={phase !== 'verdict'} />
+        <SiteView key={`${eventId}-${run}`} site={site} mode="cut" mood="night" tool={null} company={me.name} color={me.color} logo={me.logo} products={[p]} show={show} autoRotate={phase !== 'verdict' && !reducedMotion()} />
       </div>
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between p-3">
         <div className="flex items-center gap-2 border border-line2 bg-panel/90 px-3 py-[6px]">
@@ -170,11 +185,11 @@ export function LaunchShow({ eventId }: { eventId: string }) {
         </div>
         <div className="pointer-events-auto flex gap-1">
           {phase !== 'verdict' && (
-            <Btn small icon="fast" onClick={() => setPhase('verdict')}>
+            <Btn small icon="fast" title="Skip to the result (Esc)" onClick={skip}>
               Skip to the result
             </Btn>
           )}
-          <IconBtn icon="close" title="Close the keynote" onClick={() => watch(null)} />
+          <IconBtn icon="close" title="Close the keynote" onClick={() => (stopShow(), watch(null))} />
         </div>
       </div>
       {phase !== 'verdict' && (
@@ -184,7 +199,7 @@ export function LaunchShow({ eventId }: { eventId: string }) {
         </div>
       )}
       {phase === 'verdict' && (
-        <div className="absolute bottom-6 left-6 w-[400px] border border-line2 bg-panel/95 p-4">
+        <div className="absolute bottom-6 left-6 max-h-[calc(100%-5rem)] w-[400px] max-w-[calc(100%-3rem)] overflow-y-auto border border-line2 bg-panel/95 p-4">
           <div className="flex items-end justify-between">
             <div>
               <Head icon="mic" className="text-faint">
@@ -231,7 +246,7 @@ export function LaunchShow({ eventId }: { eventId: string }) {
             <Btn className="flex-1" onClick={() => (watch(null), focus(p.id))}>
               See the device
             </Btn>
-            <Btn tone="primary" className="flex-1" onClick={() => watch(null)}>
+            <Btn tone="primary" className="flex-1" autoFocus onClick={() => watch(null)}>
               Continue
             </Btn>
           </div>

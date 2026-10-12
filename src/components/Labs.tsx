@@ -9,7 +9,7 @@ import { CHIP_BUDGET, OS_FEATURES, OS_FEATURES_PER_VERSION, STOCK_OS, chipAdopti
 import type { CustomChip } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { Icon, type IconName } from './icons'
-import { Btn, Empty, Kpi, Lead, Meter, Mini, Panel, Row, Slider, Tabs, Tag, TextInput, money, pct } from './ui'
+import { Btn, Empty, Kpi, Lead, Meter, Mini, Panel, Row, Slider, Tabs, Tag, TextInput, int, money, pct, useKept } from './ui'
 
 /** The icon for each operating-system feature. */
 const FEATURE_ICON: Record<string, IconName> = { fluid: 'swap', privacy: 'lock', assistant: 'mic', gaming: 'gamepad', continuity: 'social', updates: 'refresh', store: 'bag', pro: 'briefcase' }
@@ -74,7 +74,8 @@ function Chips() {
             tone="primary"
             icon="play"
             className="mt-3 h-9 w-full"
-            disabled={busy || used > CHIP_BUDGET + 1e-6}
+            disabled={busy || used > CHIP_BUDGET + 1e-6 || !name.trim()}
+            title={busy ? "Wait for the chip in development to finish" : used > CHIP_BUDGET + 1e-6 ? "The design is over its silicon budget: lower one of the three sliders" : !name.trim() ? "Give the chip a name" : undefined}
             onClick={() => {
               const err = act((s) => startChip(s, name, power, graphics, efficiency))
               if (err) say(err, 'bad')
@@ -146,7 +147,7 @@ function Software() {
         <Kpi label="Your devices run" icon="os" value={os.own ? `${os.name} ${os.version}` : STOCK_OS} sub={os.own ? 'your own operating system' : 'the stock system everyone licenses'} tone={os.own ? 'accent' : undefined} />
         <Kpi label="Quality" icon="medal" value={os.own ? Math.round(os.quality) : Math.round(industry)} sub={`buyers expect ${Math.round(industry)} today, and more each year`} tone={os.own ? (os.quality >= industry ? 'pos' : 'neg') : undefined} />
         <Kpi label="Effect on device appeal" icon="heart" value={`${bonus >= 0 ? '+' : ''}${pct(bonus)}`} tone={bonus > 0 ? 'pos' : bonus < 0 ? 'neg' : undefined} sub="applies to everything you sell" />
-        <Kpi label="Services income" icon="coins" value={`${money(servicesPerMonth(g), 1)} / mo`} sub={os.features.includes('store') ? `from ${Math.round(g.owners).toLocaleString()} owners` : 'needs an app store'} />
+        <Kpi label="Services income" icon="coins" value={`${money(servicesPerMonth(g), 1)} / mo`} sub={os.features.includes('store') ? `from ${int(g.owners)} owners` : 'needs an app store'} />
       </div>
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,6fr)_minmax(0,5fr)] gap-2">
         <Panel title={first ? 'Features for version 1' : `Features for version ${os.version + 1}`} icon="feed" bodyClass="overflow-y-auto">
@@ -217,7 +218,8 @@ function Software() {
                   tone="primary"
                   icon="play"
                   className="mt-3 h-9 w-full"
-                  disabled={fresh.length > OS_FEATURES_PER_VERSION}
+                  disabled={fresh.length > OS_FEATURES_PER_VERSION || (first && !name.trim())}
+                  title={fresh.length > OS_FEATURES_PER_VERSION ? `A version can add ${OS_FEATURES_PER_VERSION} new features at most: untick some` : first && !name.trim() ? "Give the system a name" : undefined}
                   onClick={() => {
                     const err = act((s) => startOs(s, name, picked))
                     if (err) say(err, 'bad')
@@ -238,7 +240,7 @@ function Software() {
 
 export function LabsScreen() {
   const g = useGame()
-  const [view, setView] = useState<'chips' | 'os'>('chips')
+  const [view, setView] = useKept<'chips' | 'os'>('labs:view', 'chips')
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-2">
       <Tabs value={view} onChange={setView} options={[{ value: 'chips', label: 'Chips', icon: 'chip', badge: g.chips.length || undefined }, { value: 'os', label: 'Operating system', icon: 'os', badge: g.os.own ? `v${g.os.version}` : undefined }]} />

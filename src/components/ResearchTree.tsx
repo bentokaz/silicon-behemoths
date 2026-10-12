@@ -8,7 +8,7 @@ import { staffEffects } from '../sim/staff'
 import { type GameState, TRACKS, type Track } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { Icon, trackIcon } from './icons'
-import { Btn, IconBtn, Lead, Meter, Panel, Row, Slider, money } from './ui'
+import { Btn, IconBtn, Lead, Meter, Panel, Row, Slider, money, useKept } from './ui'
 
 const LABEL_W = 132
 const COL_W = 150
@@ -36,7 +36,7 @@ function trunkState(g: GameState, t: Track, level: number): 'owned' | 'next' | '
 export function Research() {
   const g = useGame()
   const { act, say } = useStore.getState()
-  const [sel, setSel] = useState<Sel>({ kind: 'trunk', track: 'display', level: Math.min(MAX_LEVEL, g.levels.display + 1) })
+  const [sel, setSel] = useKept<Sel>('research:node', () => ({ kind: 'trunk', track: 'display', level: Math.min(MAX_LEVEL, g.levels.display + 1) }))
   const industry = marketLevel(g.day)
   const fx = staffEffects(g)
   const perItem = g.activeResearch.length ? (g.rdBudget * g.config.researchSpeed * fx.research) / g.activeResearch.length : 0
@@ -112,7 +112,7 @@ export function Research() {
 
   return (
     <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_320px] gap-2 p-2">
-      <Panel title="Technology tree" icon="research" right={<span className="label">click a node to inspect it</span>} bodyClass="overflow-auto">
+      <Panel title="Technology tree" icon="research" right={<span className="label">click a node to inspect it</span>} bodyClass="overflow-auto" keep="research:tree">
         <div className="relative" style={{ width, height }}>
           <svg width={width} height={height} className="absolute inset-0">
             {/* where the leading rivals are */}
@@ -200,7 +200,7 @@ export function Research() {
           <div className="mt-1 text-[11px] leading-snug text-dim">{detail.note}</div>
           <div className="mt-2">
             <Row icon="cash" k="Cost" v={detail.cost ? money(detail.cost) : 'starting tech'} />
-            {!detail.item.done && detail.startable && <Row icon="coins" k="Invested" v={`${money(progress)} (${Math.round((progress / detail.cost) * 100)}%)`} />}
+            {!detail.item.done && detail.startable && <Row icon="coins" k="Invested" v={`${money(progress)} (${detail.cost > 0 ? Math.round((progress / detail.cost) * 100) : 0}%)`} />}
             {eta > 0 && <Row icon="hourglass" k="Finishes in about" v={`${eta} days`} />}
           </div>
           {detail.item.done ? (
@@ -209,7 +209,7 @@ export function Research() {
               OWNED
             </div>
           ) : (
-            <Btn tone={active ? 'default' : 'primary'} icon={active ? 'stop' : detail.startable && detail.item.available ? 'play' : 'lock'} className="mt-2 h-9 w-full" data-coach-target="research" disabled={!active && !(detail.startable && detail.item.available)} onClick={() => toggle(detail.id)}>
+            <Btn tone={active ? 'default' : 'primary'} icon={active ? 'stop' : detail.startable && detail.item.available ? 'play' : 'lock'} className="mt-2 h-9 w-full" data-coach-target="research" disabled={!active && !(detail.startable && detail.item.available)} title={!active && !(detail.startable && detail.item.available) ? detail.note : undefined} onClick={() => toggle(detail.id)}>
               {active ? 'Stop researching' : detail.startable && detail.item.available ? 'Start research' : 'Locked'}
             </Btn>
           )}
