@@ -1,6 +1,6 @@
 // The slide-over product inspector: 3D model, key numbers, and tabs for
 // details that are only shown when asked for.
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { DeviceView, type ViewName } from '../3d/DeviceView'
 import { deviceThumbnail } from '../3d/thumbnail'
@@ -16,7 +16,8 @@ import { batteryLabel, chargeWatts, chipFor, foldedThickness, panelName } from '
 import { type DeviceDesign, type DeviceType, type GameState, type Product, type ProductionOrder, SUBS, SUPPLY_CATS } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { Icon, type IconName, supplyIcon, typeIcon } from './icons'
-import { Btn, Drawer, Head, Lead, Meter, Mini, NumInput, Row, Tabs, Tag, chart, money, num, pct } from './ui'
+import { MAX_PRICE, MAX_RUN } from './format'
+import { Btn, ConfirmBtn, Drawer, Head, Lead, Meter, Mini, NumInput, Row, Tabs, Tag, chart, money, num, pct, reducedMotion } from './ui'
 
 /** Where to look from when a device is opened up: at the side that comes off. */
 const TEAR_VIEW: Partial<Record<DeviceType, ViewName>> = { laptop: 'front', console: 'front', earbuds: 'front', headset: 'front', speaker: 'front' }
@@ -108,14 +109,68 @@ export function specLines(d: DeviceDesign, diag: number, g?: GameState): [string
   return lines
 }
 
+// Thumbnails are drawn one at a time, between frames, and only for rows that
+// are on screen: a table of sixty rivals no longer holds the page up while
+// every one of them is rendered.
+const drawn = new Map<string, string>()
+const waiting: (() => void)[] = []
+let pumping = false
+function pump() {
+  const job = waiting.shift()
+  if (!job) return void (pumping = false)
+  job()
+  window.setTimeout(pump, 0)
+}
+function later(job: () => void): () => void {
+  waiting.push(job)
+  if (!pumping) (pumping = true), window.setTimeout(pump, 0)
+  return () => {
+    const i = waiting.indexOf(job)
+    if (i >= 0) waiting.splice(i, 1)
+  }
+}
+/**
+ * What makes one thumbnail different from another. Product ids start again in
+ * every game, so the id alone would show a device from the last game loaded;
+ * the logo is part of it so that changing the logo redraws the devices that carry it.
+ */
+export const thumbKey = (p: Product, logo?: string) => `${p.id}|${p.companyId}|${p.name}|${p.launchDay}|${p.design.body.width}x${p.design.body.height}x${p.design.body.thickness}|${p.design.body.backColor}|${p.design.parts.length}|${logo ? `${logo.length}${logo.slice(-12)}` : ''}`
+
 export function Thumb({ product, className = '' }: { product: Product; className?: string }) {
-  const [src, setSrc] = useState('')
   const logo = useStore((s) => (s.game ? player(s.game).logo : undefined))
+  const key = thumbKey(product, logo)
+  const [src, setSrc] = useState(() => drawn.get(key) ?? '')
+  const box = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    const id = window.setTimeout(() => setSrc(deviceThumbnail(product.id, product.design, logo)), 0)
-    return () => window.clearTimeout(id)
-  }, [product.id, product.design, logo])
-  return src ? <img src={src} alt="" draggable={false} className={`object-contain ${className}`} /> : <div className={className} />
+    const hit = drawn.get(key)
+    if (hit !== undefined) return setSrc(hit)
+    setSrc('')
+    const el = box.current
+    if (!el) return
+    let cancel = () => {}
+    const draw = () => {
+      cancel = later(() => {
+        const url = deviceThumbnail(key, product.design, logo)
+        drawn.set(key, url)
+        if (drawn.size > 400) drawn.delete(drawn.keys().next().value!)
+        setSrc(url)
+      })
+    }
+    // only what is in view, or about to be, is worth drawing
+    if (typeof IntersectionObserver === 'undefined') return draw(), () => cancel()
+    const seen = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((e) => e.isIntersecting)) return
+        seen.disconnect()
+        draw()
+      },
+      { rootMargin: '240px' },
+    )
+    seen.observe(el)
+    return () => (seen.disconnect(), cancel())
+    // the design of a device does not change once it exists: the key says everything that can
+  }, [key]) // eslint-disable-line react-hooks/exhaustive-deps
+  return src ? <img src={src} alt="" draggable={false} className={`object-contain ${className}`} /> : <div ref={box} className={className} />
 }
 
 export const statusTone = (p: Product) => (p.status === 'sale' ? (p.stock <= 0 && p.companyId === 'player' ? 'neg' : 'pos') : p.status === 'dev' ? 'warn' : 'dim') as 'neg' | 'pos' | 'warn' | 'dim'
@@ -214,6 +269,16 @@ function Manage({ p }: { p: Product }) {
   const pending = pendingUnits(g, p.id)
   const orders = g.orders.filter((o) => o.productId === p.id)
   const ended = p.status === 'ended'
+  const order = () => {
+    const err = act((s) => orderProduction(s, p.id, qty, mode))
+    if (err) say(err === 'Enter a quantity' ? 'Enter how many units to build.' : err, 'bad')
+    else (sfx.cash(), say(`Ordered ${num(qty)} units. You pay as they are built.`))
+  }
+  const reprice = () => {
+    if (price === p.price || price <= 0) return
+    act((s) => setPrice(s, p.id, price))
+    say(`${p.name} now costs ${money(price)}.`)
+  }
   return (
     <div className="space-y-3 p-2">
       <div className="grid grid-cols-3 gap-1">
@@ -235,18 +300,9 @@ function Manage({ p }: { p: Product }) {
             ))}
           </div>
           <div className="mt-2 flex items-center gap-2">
-            <NumInput value={qty} onChange={setQty} step={1000} className="h-7 w-28 text-right" />
+            <NumInput value={qty} onChange={setQty} step={1000} max={MAX_RUN} onEnter={order} aria-label="Units to build" className="h-7 w-28 text-right" />
             <span className="num flex-1 text-[11px] text-dim">x {money(cost)}</span>
-            <Btn
-              small
-              tone="primary"
-              icon="package"
-              onClick={() => {
-                const err = act((s) => orderProduction(s, p.id, qty, mode))
-                if (err) say(err, 'bad')
-                else (sfx.cash(), say(`Ordered ${num(qty)} units. You pay as they are built.`))
-              }}
-            >
+            <Btn small tone="primary" icon="package" disabled={qty <= 0} title={qty <= 0 ? 'Enter how many units to build' : undefined} onClick={order}>
               Order {money(qty * cost, 1)}
             </Btn>
           </div>
@@ -276,9 +332,9 @@ function Manage({ p }: { p: Product }) {
             Retail price
           </Head>
           <div className="flex items-center gap-2">
-            <NumInput value={price} onChange={setP} step={10} className="h-7 w-28 text-right" />
-            <span className="flex-1 text-[10px] text-faint">{p.tiers.length ? `Storage options move with it (avg paid ${money(avg.price)})` : 'Retailers keep 15%'}</span>
-            <Btn small icon="check" disabled={price === p.price || price <= 0} onClick={() => (act((s) => setPrice(s, p.id, price)), say(`${p.name} now costs ${money(price)}.`))}>
+            <NumInput value={price} onChange={setP} step={10} max={MAX_PRICE} onEnter={reprice} aria-label="Retail price" className="h-7 w-28 text-right" />
+            <span className="flex-1 text-[10px] text-faint">{p.tiers.length ? `Storage options move with it (avg paid ${money(avg.price)})` : `Retailers keep ${pct(RETAIL_CUT, 0)}`}</span>
+            <Btn small icon="check" disabled={price === p.price || price <= 0} title={price <= 0 ? 'Enter a price above zero' : price === p.price ? 'This is the price already' : undefined} onClick={reprice}>
               Apply
             </Btn>
           </div>
@@ -314,9 +370,9 @@ function Manage({ p }: { p: Product }) {
       </div>
 
       {!ended && (
-        <Btn small tone="danger" icon="ban" className="w-full" onClick={() => act((s) => discontinue(s, p.id))}>
+        <ConfirmBtn small icon="ban" className="w-full" confirm={`Stop selling ${p.name} for good?`} title="Takes the device off sale. Unsold stock is written off and orders for it are cancelled. This cannot be undone." onClick={() => (act((s) => discontinue(s, p.id)), say(`${p.name} is discontinued.`))}>
           Discontinue {p.name}
-        </Btn>
+        </ConfirmBtn>
       )}
     </div>
   )
@@ -341,13 +397,14 @@ export function ProductDrawer() {
     setColor(-1)
     setTab('overview')
     setTorn(false)
+    // the same view shows the next device: frame it afresh rather than build a new view for it
+    setNonce((x) => x + 1)
   }, [id])
+  // (Esc closes it: the drawer is the top layer while it is open)
+  // a device that no longer exists (another game was loaded) leaves nothing selected behind
   useEffect(() => {
-    if (!id) return
-    const key = (e: KeyboardEvent) => e.key === 'Escape' && focus(null)
-    window.addEventListener('keydown', key)
-    return () => window.removeEventListener('keydown', key)
-  }, [id, focus])
+    if (id && !product) focus(null)
+  }, [id, product, focus])
 
   if (!product) return null
   const company = companyOf(g, product.companyId)
@@ -367,7 +424,7 @@ export function ProductDrawer() {
       }
     >
       <div className="relative h-[270px] border-b border-line">
-        <DeviceView key={product.id} design={product.design} view={view} viewNonce={nonce} autoRotate={!torn} logo={player(g).logo} colorIndex={color} teardown={torn} />
+        <DeviceView design={product.design} view={view} viewNonce={nonce} autoRotate={!torn && !reducedMotion()} logo={player(g).logo} colorIndex={color} teardown={torn} />
         <div className="absolute left-2 top-2 flex border border-line bg-panel/90">
           {(['back', 'front', 'side'] as ViewName[]).map((v) => (
             <Btn key={v} small tone="ghost" active={view === v} onClick={() => (setView(v), setNonce((x) => x + 1))}>
@@ -381,7 +438,7 @@ export function ProductDrawer() {
         {!!product.design.colors?.length && (
           <div className="absolute bottom-2 left-2 flex gap-1">
             {[{ back: product.design.body.backColor, name: 'Standard' }, ...product.design.colors].map((c, i) => (
-              <button key={i} title={c.name} onClick={() => setColor(i - 1)} className={`h-4 w-4 border ${color === i - 1 ? 'border-accent' : 'border-line2'}`} style={{ background: c.back }} />
+              <button key={i} title={c.name} aria-label={`Show it in ${c.name}`} aria-pressed={color === i - 1} onClick={() => setColor(i - 1)} className={`h-4 w-4 border ${color === i - 1 ? 'border-accent' : 'border-line2'}`} style={{ background: c.back }} />
             ))}
           </div>
         )}
@@ -464,6 +521,7 @@ export function ProductDrawer() {
             onClick={() => {
               const err = useStore.getState().act((s) => recallProduct(s, product.id))
               if (err) useStore.getState().say(err, 'bad')
+              else (sfx.confirm(), useStore.getState().say(`${product.name} is being recalled and repaired.`))
             }}
           >
             Recall and repair ({money(product.recall.cost, 1)})

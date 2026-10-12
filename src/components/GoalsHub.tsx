@@ -5,18 +5,18 @@ import { CAPS, guided, has } from '../sim/progress'
 import { useGame, useStore } from '../store/game'
 import { GoalsScreen } from './Empire'
 import { GrowthTree } from './Progress'
-import { Tabs } from './ui'
+import { Tabs, useKept } from './ui'
 
 export function GoalsHub() {
   const g = useGame()
   const hint = useStore((s) => s.hint)
-  const [view, setView] = useState<'goals' | 'growth'>(hint?.tab === 'goals' && hint.view === 'growth' ? 'growth' : 'goals')
+  const [view, setView] = useKept<'goals' | 'growth'>('goals:view', 'goals')
   // "take me there" can ask for either page
   useEffect(() => {
     if (hint?.tab !== 'goals') return
     if (hint.view === 'growth' || hint.view === 'goals') setView(hint.view)
     useStore.getState().takeHint()
-  }, [hint])
+  }, [hint, setView])
   if (!guided(g)) return <GoalsScreen />
   const open = CAPS.filter((c) => has(g, c.id)).length
   return (

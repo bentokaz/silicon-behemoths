@@ -8,12 +8,12 @@ import { DIFFICULTY, defaultConfig } from '../sim/game'
 import { START_TYPES } from '../sim/world'
 import { type Difficulty, type GameConfig, TRACKS } from '../sim/types'
 import { useStore } from '../store/game'
-import { LogoPicker } from './Company'
+import { LogoPicker } from './LogoPicker'
 import { ImportButton, SaveList, ThemePicker } from './System'
 import { FeedbackLinks } from './Safety'
 import { KeysPanel, SettingsPanel } from './Settings'
 import { Icon, trackIcon, typeIcon } from './icons'
-import { Btn, Head, Lead, Panel, Row, Slider, Tabs, TextInput, money } from './ui'
+import { Btn, Head, Lead, NumInput, Panel, Row, Slider, Tabs, TextInput, money } from './ui'
 
 function Wordmark() {
   return (
@@ -69,7 +69,7 @@ export function MainMenu() {
             <div className="min-h-0 flex-1">{view === 'settings' ? <SettingsPanel /> : <KeysPanel />}</div>
           </>
         ) : (
-          <Panel title="Continue" icon="folder" bodyClass="overflow-auto" className="max-h-full">
+          <Panel title="Continue" icon="folder" bodyClass="@container overflow-auto" className="max-h-full">
             <SaveList />
           </Panel>
         )}
@@ -86,6 +86,12 @@ export function NewGame() {
   const [cfg, setCfg] = useState<GameConfig>(() => ({ ...defaultConfig(), startType: 'phone', progression: 'guided', seed: Math.floor(Math.random() * 99999) + 1 }))
   const up = (patch: Partial<GameConfig>) => setCfg((c) => ({ ...c, ...patch }))
   const d = DIFFICULTY[cfg.difficulty]
+  const name = cfg.companyName.trim()
+  const found = () => {
+    if (!name) return
+    sfx.confirm()
+    begin({ ...cfg, companyName: name })
+  }
   return (
     <div className="grid h-full grid-cols-[420px_minmax(0,1fr)] bg-carbon">
       <div className="flex flex-col justify-between border-r border-line bg-panel p-8">
@@ -105,7 +111,7 @@ export function NewGame() {
                 <Lead icon="edit" />
                 Name
               </span>
-              <TextInput value={cfg.companyName} maxLength={18} onChange={(v) => up({ companyName: v })} className="w-48" />
+              <TextInput value={cfg.companyName} maxLength={18} onChange={(v) => up({ companyName: v })} onEnter={found} className={`w-48 ${name ? '' : '!border-warn'}`} placeholder="Name your company" />
             </label>
             <div className="flex items-center justify-between gap-2 py-1">
               <span className="text-[11px] text-dim">
@@ -119,14 +125,14 @@ export function NewGame() {
                 <Lead icon="theme" />
                 Brand colour
               </span>
-              <input type="color" value={cfg.color} onChange={(e) => up({ color: e.target.value })} />
+              <input type="color" aria-label="Brand colour" value={cfg.color} onChange={(e) => up({ color: e.target.value })} />
             </label>
             <label className="flex items-center justify-between gap-2 py-1">
               <span className="text-[11px] text-dim">
                 <Lead icon="home" />
                 Home market
               </span>
-              <select value={cfg.home ?? 'na'} onChange={(e) => up({ home: e.target.value })} className="h-7 w-48 rounded-none border border-line2 bg-raise px-2 text-xs text-fg outline-none focus:border-accent">
+              <select aria-label="Home market" value={cfg.home ?? "na"} onChange={(e) => up({ home: e.target.value })} className="h-7 w-48 rounded-none border border-line2 bg-raise px-2 text-xs text-fg outline-none focus:border-accent">
                 {REGIONS.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.name}
@@ -139,7 +145,7 @@ export function NewGame() {
                 <Lead icon="dice" />
                 World seed
               </span>
-              <input type="number" value={cfg.seed} onChange={(e) => up({ seed: Math.max(1, Math.floor(Number(e.target.value)) || 1) })} className="num h-7 w-48 rounded-none border border-line2 bg-raise px-2 text-xs outline-none focus:border-accent" />
+              <NumInput aria-label="World seed" value={cfg.seed} min={1} max={2147483647} onChange={(seed) => up({ seed })} onEnter={found} className="w-48" title="The same seed gives the same rivals and the same world" />
             </label>
           </Panel>
 
@@ -187,16 +193,18 @@ export function NewGame() {
             </div>
             <div className="mt-2 text-[11px] leading-snug text-dim">You begin as a maker of one kind of device and open other lines under Research as you grow. Related lines are cheaper to open; the most demanding need your technology to be far enough along. "Everything" starts with every line open.</div>
             <label className="mt-2 flex items-center gap-2 text-[11px] text-dim">
-              <input type="checkbox" checked={!!cfg.parody} onChange={(e) => up({ parody: e.target.checked })} />
+              <input type="checkbox" className="accent-accent" checked={!!cfg.parody} onChange={(e) => up({ parody: e.target.checked })} />
               Use joke names for rival companies instead of invented ones
             </label>
           </Panel>
 
           <Panel title="Mode" icon="box" bodyClass="p-3">
             <div className="flex gap-2">
-              <Btn active icon="box" className="flex-1">
+              {/* the only mode there is yet: shown as chosen, with nothing to press */}
+              <div className="flex h-7 flex-1 items-center justify-center gap-[6px] border border-accent bg-accent/10 px-3 text-xs uppercase tracking-wider text-accent">
+                <Icon name="box" size={13} />
                 Sandbox
-              </Btn>
+              </div>
               <Btn disabled icon="clock" className="flex-1" title="Planned for a later build">
                 Timeline 1970+
               </Btn>
@@ -245,7 +253,7 @@ export function NewGame() {
           </Panel>
 
           <div className="col-span-2 flex justify-end">
-            <Btn tone="primary" icon="arrowRight" className="h-10 w-64" disabled={!cfg.companyName.trim()} onClick={() => (sfx.confirm(), begin({ ...cfg, companyName: cfg.companyName.trim() }))}>
+            <Btn tone="primary" icon="arrowRight" className="h-10 w-64" disabled={!name} title={name ? undefined : 'Give the company a name first'} onClick={found}>
               Found company
             </Btn>
           </div>

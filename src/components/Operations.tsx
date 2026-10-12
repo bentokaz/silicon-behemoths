@@ -11,13 +11,13 @@ import { SUPPLY_CATS } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { SiteBuilder } from './SiteBuilder'
 import { Icon, type IconName, supplyIcon, typeIcon } from './icons'
-import { Btn, Empty, Fold, IconBtn, Kpi, Lead, Meter, Mini, Panel, Tabs, Tag, Th, money, num, pct } from './ui'
+import { Btn, ConfirmBtn, ConfirmIconBtn, Empty, Fold, Kpi, Lead, Meter, Mini, Panel, Tabs, Tag, Th, money, num, pct, pressable, useKept } from './ui'
 
 type View = 'floor' | 'orders' | 'supply'
 
 function Orders() {
   const g = useGame()
-  const { act, focus } = useStore.getState()
+  const { act, focus, say } = useStore.getState()
   const line = factoryLine(g)
   if (!g.orders.length) return <Empty icon="package" text="No production runs are in progress. Open a device and order a run from its Manage tab, or set one up when you launch." />
   return (
@@ -50,7 +50,7 @@ function Orders() {
           const waiting = o.mode === 'contract' ? Math.max(0, CONTRACT.leadDays - (g.day - o.placedDay)) : 0
           const stalled = o.mode === 'factory' && !line?.running
           return (
-            <tr key={o.id} className="row cursor-pointer" onClick={() => focus(p.id)}>
+            <tr key={o.id} className="row cursor-pointer" {...pressable(() => focus(p.id))}>
               <td className="text-fg">
                 <Lead icon={typeIcon(p.type)} size={12} />
                 {p.name}
@@ -69,7 +69,7 @@ function Orders() {
               <td className="num r text-dim">{money(orderLeft(o) * each, 1)}</td>
               <td>{stalled ? <Tag tone="neg" icon="alert">line down</Tag> : waiting ? <Tag tone="warn" icon="hourglass">starts in {waiting}d</Tag> : <Tag tone="pos" icon="build">building</Tag>}</td>
               <td className="r">
-                <IconBtn icon="close" tone="ghost" title="Cancel the units not yet built" onClick={(e) => (e.stopPropagation(), act((s) => cancelOrder(s, o.id)))} />
+                <ConfirmIconBtn icon="close" title="Cancel the units not yet built" onClick={(e) => (e.stopPropagation(), act((s) => cancelOrder(s, o.id)), say(`The rest of the ${p.name} run is cancelled.`))} onKeyDown={(e) => e.stopPropagation()} />
               </td>
             </tr>
           )
@@ -95,7 +95,9 @@ function Supply() {
             <div className="flex items-center justify-between">
               <span className="flex min-w-0 items-center gap-[6px] text-[11px] font-semibold uppercase tracking-[0.12em] text-fg">
                 <Icon name={supplyIcon(c)} size={13} className="text-dim" />
-                <span className="truncate">{SUPPLY_LABELS[c]}</span>
+                <span className="truncate" title={SUPPLY_LABELS[c]}>
+                  {SUPPLY_LABELS[c]}
+                </span>
               </span>
               {short ? <Tag tone="neg" icon="alert">shortage</Tag> : price > 1.08 ? <Tag tone="warn" icon="trendUp">dear</Tag> : price < 0.94 ? <Tag tone="pos" icon="trendDown">cheap</Tag> : <Tag>normal</Tag>}
             </div>
@@ -142,7 +144,7 @@ function Supply() {
 export function FactoryScreen() {
   const g = useGame()
   const { act, say } = useStore.getState()
-  const [view, setView] = useState<View>(g.factory ? 'floor' : 'orders')
+  const [view, setView] = useKept<View>('factory:view', () => (g.factory ? 'floor' : 'orders'))
   const line = factoryLine(g)
   const next = SITE_TIERS.factory[g.factory ? g.factory.tier + 1 : 0]
   const factoryOrders = g.orders.filter((o) => o.mode === 'factory')
@@ -195,9 +197,9 @@ export function FactoryScreen() {
                   <Mini label="Floor" icon="plot" value={`${next.w} x ${next.h} m`} />
                   <Mini label="Upkeep / month" icon="receipt" value={money(next.rent, 1)} />
                 </div>
-                <Btn tone="primary" icon="build" className="mt-4 h-10 w-full" onClick={build}>
+                <ConfirmBtn tone="primary" confirm={`Pay ${money(next.cost, 1)}?`} icon="build" className="mt-4 h-10 w-full" onClick={build}>
                   Build a {next.name.toLowerCase()} for {money(next.cost, 1)}
-                </Btn>
+                </ConfirmBtn>
               </div>
             </div>
           ) : (
@@ -250,9 +252,9 @@ export function FactoryScreen() {
                   <Mini label="Upkeep / month" icon="receipt" value={money(upkeep(g.factory), 1)} />
                 </div>
                 {next ? (
-                  <Btn small icon="plot" className="mt-2 w-full" onClick={build}>
+                  <ConfirmBtn small tone="default" confirm={`Pay ${money(next.cost, 1)}?`} icon="plot" className="mt-2 w-full" onClick={build}>
                     Expand to {next.name.toLowerCase()} ({money(next.cost, 1)})
-                  </Btn>
+                  </ConfirmBtn>
                 ) : (
                   <div className="mt-2 text-[11px] text-dim">This is the largest factory.</div>
                 )}

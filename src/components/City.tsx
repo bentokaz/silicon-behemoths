@@ -5,11 +5,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { CityView, type Focus, type Sky } from '../3d/CityView'
 import { ISLAND, type Place, districts, places, traffic } from '../3d/city/plan'
 import { sfx } from '../audio/sfx'
+import { capOfTab, has } from '../sim/progress'
 import { aim } from '../store/focus'
 import { type Tab, useGame, useStore } from '../store/game'
 import { keyName, keysFor } from '../store/settings'
 import { Icon, type IconName } from './icons'
-import { Btn } from './ui'
+import { Btn, Stage3D, reducedMotion } from './ui'
 
 const SKIES: { id: Sky; label: string; icon: IconName }[] = [
   { id: 'auto', label: 'Follow the game clock', icon: 'clock' },
@@ -41,6 +42,10 @@ export function CityScreen() {
   const fly = (f: Omit<Focus, 'key'>) => setFocus({ ...f, key: ++flights.current })
 
   const enter = (p: Place) => {
+    // a place the company has not earned yet says what it takes, and the camera stays where it is:
+    // flying in and then not going anywhere left the view zoomed on a building for no reason
+    const cap = capOfTab(LEADS[p.kind])
+    if (cap && !has(g, cap)) return void (sfx.toggle(), useStore.getState().showLock(cap))
     sfx.confirm()
     fly({ x: p.x, z: p.z, h: p.h, dist: p.kind === 'region' ? 300 : Math.max(46, Math.max(p.w, p.d) * 1.5) })
     // the camera goes in first, then the place opens
@@ -49,7 +54,7 @@ export function CityScreen() {
       if (p.store) aim('store', p.store.id)
       if (p.kind === 'region') aim('region', p.region)
       useStore.getState().setTab(LEADS[p.kind])
-    }, 640)
+    }, reducedMotion() ? 0 : 640)
   }
 
   const move = `${keysFor('camForward').slice(0, 1).map(keyName).join('')}${keysFor('camLeft').slice(0, 1).map(keyName).join('')}${keysFor('camBack').slice(0, 1).map(keyName).join('')}${keysFor('camRight').slice(0, 1).map(keyName).join('')}`
@@ -57,8 +62,10 @@ export function CityScreen() {
 
   return (
     <div className="relative h-full min-h-0 overflow-hidden">
-      <div className="absolute inset-0">
-        <CityView g={g} all={all} list={list} traffic={moving} sky={sky} speed={speed} names={names} hover={hover} onHover={setHover} onPick={enter} focus={focus} />
+      <div className="absolute inset-0 isolate">
+        <Stage3D label="Drawing the city">
+          <CityView g={g} all={all} list={list} traffic={moving} sky={sky} speed={speed} names={names} hover={hover} onHover={setHover} onPick={enter} focus={focus} />
+        </Stage3D>
       </div>
 
       <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-start justify-between gap-2 p-2">

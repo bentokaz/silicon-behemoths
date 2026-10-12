@@ -41,7 +41,7 @@
   --color-line2: #303b48;
   --color-fg: #d9dfe7;
   --color-dim: #808b98;
-  --color-faint: #4c5662;
+  --color-faint: #56616e;
   --color-accent: #36c5d6;
 }
 [data-theme='rose'] {
@@ -53,7 +53,7 @@
   --color-line2: #45383e;
   --color-fg: #f2e9ec;
   --color-dim: #a3959b;
-  --color-faint: #65575d;
+  --color-faint: #6c5e64;
   --color-accent: #ff4f81;
 }
 
@@ -79,9 +79,45 @@ body {
 @layer base {
   input,
   select,
+  textarea,
   button {
     font: inherit;
     color: inherit;
+  }
+  /* the page itself is not selectable, but anything typed into must be (Safari will not even take a caret otherwise) */
+  input,
+  textarea {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  /* where the keyboard is: a thin square line in the accent colour, only when keys are in use */
+  :focus-visible {
+    outline: 1px solid var(--color-accent);
+    outline-offset: 1px;
+  }
+  input[type='range']:focus-visible {
+    outline-offset: 3px;
+  }
+  /* rows that open something can be reached and pressed like buttons */
+  tr[tabindex]:focus-visible {
+    outline-offset: -1px;
+  }
+  button:not(:disabled),
+  [role='button'],
+  summary {
+    cursor: pointer;
+  }
+}
+
+/* a player who has asked their system for less motion gets none of the interface's own */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
   }
 }
 
@@ -168,6 +204,37 @@ table.grid-table td {
   padding: 4px 8px;
   border-bottom: 1px solid var(--color-line);
   white-space: nowrap;
+}
+/* a table with less room than it wants draws tighter before it scrolls sideways */
+.tight table.grid-table th,
+.tight table.grid-table td {
+  padding-left: 4px;
+  padding-right: 4px;
+}
+.tight table.grid-table th {
+  letter-spacing: 0.02em;
+}
+.tight table.grid-table td {
+  font-size: 12px;
+}
+/* the monthly statement has fourteen columns: at the smallest window it goes one step tighter still */
+.tight table.grid-table.ledger th,
+.tight table.grid-table.ledger td {
+  padding-left: 3px;
+  padding-right: 3px;
+}
+.tight table.grid-table.ledger td {
+  font-size: 11px;
+}
+.tight table.grid-table.ledger th {
+  letter-spacing: 0;
+  font-size: 9px;
+}
+/* and its longer names are cut short there; the cell's tooltip has them in full */
+.tight table.grid-table td.clip {
+  max-width: 9.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 table.grid-table tr.row:hover td {
   background: var(--color-hover);

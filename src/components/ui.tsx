@@ -1,6 +1,10 @@
 // Shared dashboard primitives: panels, buttons, sliders, readouts.
-import { type ButtonHTMLAttributes, type ReactNode, type ThHTMLAttributes, useLayoutEffect, useRef, useState } from 'react'
+import { type ButtonHTMLAttributes, type InputHTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject, type ThHTMLAttributes, isValidElement, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { keepView, keptView, viewKept } from '../store/focus'
+import { readNumber } from './format'
 import { Icon, type IconName } from './icons'
+
+export { int, money, num, pct } from './format'
 
 /** An icon set into a line of text, sitting on the text's own baseline. */
 export function Lead({ icon, size = 11 }: { icon?: IconName; size?: number }) {
@@ -8,26 +12,218 @@ export function Lead({ icon, size = 11 }: { icon?: IconName; size?: number }) {
   return <Icon name={icon} size={size} className="mr-[5px] inline-block" style={{ verticalAlign: -Math.round(size * 0.18) }} />
 }
 
-export function money(v: number, digits = 2): string {
-  const a = Math.abs(v)
-  const sign = v < 0 ? '-' : ''
-  if (a >= 1e9) return `${sign}$${(a / 1e9).toFixed(digits)}B`
-  if (a >= 1e6) return `${sign}$${(a / 1e6).toFixed(digits)}M`
-  if (a >= 1e4) return `${sign}$${(a / 1e3).toFixed(1)}K`
-  return `${sign}$${Math.round(a).toLocaleString()}`
+// ---------------------------------------------------------------- layers and keys
+//
+// Anything that opens over the screen (a drawer, a card, a dialog) is a layer.
+// Esc belongs to the layer on top and to nothing under it; a dialog that must
+// be answered also keeps the game's own keys quiet while it is up, and keeps
+// Tab inside itself.
+
+interface Layer {
+  esc?: () => void
+  modal: boolean
+  box?: RefObject<HTMLElement | null>
+}
+const layers: Layer[] = []
+
+/** True while a dialog that must be answered is on screen: the game's hotkeys wait. */
+export const modalOpen = () => layers.some((l) => l.modal)
+
+/** The element that has focus, and the one that had it before: where focus goes back to when a layer that took it closes. */
+const focusTrail: [HTMLElement | null, HTMLElement | null] = [null, null]
+if (typeof document !== 'undefined') {
+  document.addEventListener('focusin', (e) => {
+    const to = e.target as HTMLElement
+    if (to !== focusTrail[1]) (focusTrail[0] = focusTrail[1]), (focusTrail[1] = to)
+  })
 }
 
-export function num(v: number): string {
-  const a = Math.abs(v)
-  if (a >= 1e9) return `${(v / 1e9).toFixed(2)}B`
-  if (a >= 1e6) return `${(v / 1e6).toFixed(2)}M`
-  if (a >= 1e4) return `${(v / 1e3).toFixed(1)}K`
-  return Math.round(v).toLocaleString()
+const FOCUSABLE ='button:not(:disabled), a[href], input:not(:disabled):not([type=hidden]), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+
+if (typeof window !== 'undefined') {
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      const top = layers[layers.length - 1]
+      if (!top) return
+      if (e.key === 'Escape') {
+        // a layer that takes every key itself (rebinding a key) is left to it
+        if (!top.esc) return
+        e.preventDefault()
+        e.stopPropagation()
+        top.esc()
+      } else if (e.key === 'Tab' && top.modal && top.box?.current) {
+        const box = top.box.current
+        const stops = Array.from(box.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => el.offsetParent !== null)
+        if (!stops.length) return
+        const at = stops.indexOf(document.activeElement as HTMLElement)
+        const leaving = at < 0 || (e.shiftKey ? at === 0 : at === stops.length - 1)
+        if (!leaving) return
+        e.preventDefault()
+        stops[e.shiftKey ? stops.length - 1 : 0].focus()
+      }
+    },
+    true,
+  )
 }
 
-export const pct = (v: number, digits = 1) => `${(v * 100).toFixed(digits)}%`
+/**
+ * Put a layer on screen for as long as `active` is true. `esc` is what Esc
+ * does while it is the top one. With `modal`, the game's keys are held and,
+ * given the element in `box`, Tab stays inside it; focus moves into the box
+ * as it opens and goes back to where it was as it closes.
+ */
+export function useLayer(active: boolean, esc?: () => void, { modal = false, box }: { modal?: boolean; box?: RefObject<HTMLElement | null> } = {}) {
+  const fn = useRef(esc)
+  fn.current = esc
+  const hasEsc = !!esc
+  useEffect(() => {
+    if (!active) return
+    const layer: Layer = { esc: hasEsc ? () => fn.current?.() : undefined, modal, box }
+    layers.push(layer)
+    const el = box?.current
+    // where focus was before the layer took it; a field in the layer that focuses itself as it appears has already
+    // taken it by now, and what had it before that is what to go back to
+    const focused = document.activeElement as HTMLElement | null
+    const before = el && focused && el.contains(focused) ? focusTrail[0] : focused
+    if (el && !el.contains(document.activeElement)) {
+      if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1')
+      el.focus({ preventScroll: true })
+    }
+    return () => {
+      layers.splice(layers.indexOf(layer), 1)
+      if (el && before?.isConnected && (!document.activeElement || document.activeElement === document.body || el.contains(document.activeElement))) before.focus({ preventScroll: true })
+    }
+  }, [active, modal, box, hasEsc])
+}
 
-export function Panel({ title, icon, right, children, className = '', bodyClass = '' }: { title?: ReactNode; icon?: IconName; right?: ReactNode; children: ReactNode; className?: string; bodyClass?: string }) {
+/** Props that let a table row or any other plain element be opened with the keyboard as well as the mouse. */
+export function pressable(open: () => void) {
+  return {
+    tabIndex: 0,
+    onClick: open,
+    onKeyDown: (e: ReactKeyboardEvent) => {
+      if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return
+      e.preventDefault()
+      open()
+    },
+  }
+}
+
+/**
+ * State that outlives the screen it belongs to: which view of a screen was
+ * open, which filter was on. Leaving the screen and coming back finds it as
+ * it was left. It is forgotten when another game is started or loaded.
+ */
+export function useKept<T>(key: string, initial: T | (() => T)): [T, (next: T | ((prev: T) => T)) => void] {
+  const [value, setValue] = useState<T>(() => (viewKept(key) ? keptView<T>(key) : typeof initial === 'function' ? (initial as () => T)() : initial))
+  const set = useCallback(
+    (next: T | ((prev: T) => T)) =>
+      setValue((prev) => {
+        const to = typeof next === 'function' ? (next as (p: T) => T)(prev) : next
+        keepView(key, to)
+        return to
+      }),
+    [key],
+  )
+  return [value, set]
+}
+
+/** A scrolling element that is found where it was left when its screen is opened again. */
+export function useKeptScroll(key: string | undefined) {
+  const ref = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || !key) return
+    const k = `scroll:${key}`
+    if (viewKept(k)) el.scrollTop = keptView<number>(k)
+    const on = () => keepView(k, el.scrollTop)
+    el.addEventListener('scroll', on, { passive: true })
+    return () => el.removeEventListener('scroll', on)
+  }, [key])
+  return ref
+}
+
+/**
+ * Whether a table has less room than it wants. A panel that is short of
+ * width draws its table tighter (see `.tight` in index.css) before it lets
+ * it scroll sideways, and loosens it again when there is room.
+ */
+/** Room a tight table must have to spare before it is drawn loose again: more than a scrollbar's width. */
+const SLACK = 28
+function useTight(ref: RefObject<HTMLElement | null>): boolean {
+  const [tight, setTight] = useState(false)
+  // the width the table wanted when it was last drawn loose
+  const need = useRef(0)
+  const check = useCallback(() => {
+    const el = ref.current
+    if (!el) return
+    if (!el.querySelector(':scope table.grid-table')) return setTight(false)
+    const isTight = el.classList.contains('tight')
+    if (!isTight) need.current = el.scrollWidth
+    // Going tight changes the row heights, which can add or remove the panel's own scrollbar and with it a few
+    // pixels of width. Loosening therefore waits for clear room to spare, or the two states would chase each other.
+    setTight(isTight ? need.current > el.clientWidth - SLACK : need.current > el.clientWidth + 1)
+  }, [ref])
+  // when the panel changes size, and when a table arrives in it later (a list that had to be read first)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const watch = new ResizeObserver(check)
+    watch.observe(el)
+    // (looked at in a task of its own, never in the same breath as the change that was seen: an observer that
+    // answers a change with a change of its own must not be able to spin)
+    let queued = 0
+    const arrivals = new MutationObserver(() => void (queued ||= window.setTimeout(() => ((queued = 0), check()), 0)))
+    arrivals.observe(el, { childList: true })
+    if (el.firstElementChild && el.firstElementChild.tagName !== 'TABLE') arrivals.observe(el.firstElementChild, { childList: true })
+    return () => (watch.disconnect(), arrivals.disconnect(), window.clearTimeout(queued))
+  }, [ref, check])
+  // and whenever what is in it is drawn again: more rows, another view
+  useLayoutEffect(check)
+  return tight
+}
+
+/**
+ * A 3D view with a mark to look at while it is being built. Building a site
+ * takes the browser a second or more, during which nothing else can be drawn:
+ * so the mark is put on screen first, the view is started a frame later, and
+ * the mark is taken away once the view has had time to draw itself.
+ */
+export function Stage3D({ label, children }: { label: string; children: ReactNode }) {
+  // 0: only the mark; 1: the view is being built under the mark; 2: the view is up
+  const [phase, setPhase] = useState<0 | 1 | 2>(0)
+  useEffect(() => {
+    let frame = requestAnimationFrame(() => (frame = requestAnimationFrame(() => setPhase((p) => (p < 1 ? 1 : p)))))
+    // (a page in the background gets few frames: do not wait on them for long)
+    const t = window.setTimeout(() => setPhase((p) => (p < 1 ? 1 : p)), 200)
+    return () => (cancelAnimationFrame(frame), window.clearTimeout(t))
+  }, [])
+  useEffect(() => {
+    if (phase !== 1) return
+    let frame = requestAnimationFrame(() => (frame = requestAnimationFrame(() => (frame = requestAnimationFrame(() => setPhase(2))))))
+    const t = window.setTimeout(() => setPhase(2), 2500)
+    return () => (cancelAnimationFrame(frame), window.clearTimeout(t))
+  }, [phase])
+  return (
+    <>
+      {phase > 0 && children}
+      {phase < 2 && (
+        <div role="status" className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-carbon">
+          <Icon name="layers" size={22} className="text-line2" />
+          <span className="num text-[11px] uppercase tracking-[0.2em] text-faint">{label}</span>
+        </div>
+      )}
+    </>
+  )
+}
+
+/** True when the player has asked their system for less motion. */
+export const reducedMotion = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+export function Panel({ title, icon, right, children, className = '', bodyClass = '', keep }: { title?: ReactNode; icon?: IconName; right?: ReactNode; children: ReactNode; className?: string; bodyClass?: string; /** A name for the body's scroll position, so it is found where it was left. */ keep?: string }) {
+  const body = useKeptScroll(keep)
+  const tight = useTight(body)
   return (
     <section className={`flex min-h-0 flex-col border border-line bg-panel ${className}`}>
       {title !== undefined && (
@@ -35,31 +231,44 @@ export function Panel({ title, icon, right, children, className = '', bodyClass 
           <span className="flex min-w-0 items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-fg">
             <span className="h-3 w-[3px] shrink-0 bg-accent" />
             {icon && <Icon name={icon} size={13} className="text-dim" />}
-            <span className="truncate">{title}</span>
+            <span className="truncate" title={typeof title === "string" ? title : undefined}>
+              {title}
+            </span>
           </span>
           {right}
         </header>
       )}
-      <div className={`min-h-0 flex-1 ${bodyClass}`}>{children}</div>
+      <div ref={body} className={`min-h-0 flex-1 ${bodyClass} ${tight ? 'tight' : ''}`}>
+        {children}
+      </div>
     </section>
   )
 }
 
+/** Does this content say anything in words? An icon alone does not. */
+function hasWords(node: ReactNode): boolean {
+  if (typeof node === 'string') return node.trim() !== ''
+  if (typeof node === 'number') return true
+  if (Array.isArray(node)) return node.some(hasWords)
+  if (isValidElement(node)) return node.type !== Icon && hasWords((node.props as { children?: ReactNode }).children)
+  return false
+}
+
 type Tone = 'default' | 'primary' | 'danger' | 'ghost'
 const BTN_TONES: Record<Tone, string> = {
-  default: 'border-line2 bg-raise text-fg hover:border-accent hover:text-accent',
-  primary: 'border-accent bg-accent font-semibold text-carbon hover:bg-transparent hover:text-accent',
-  danger: 'border-neg/60 bg-transparent text-neg hover:bg-neg hover:text-carbon',
-  ghost: 'border-transparent bg-transparent text-dim hover:text-fg',
+  default: 'border-line2 bg-raise text-fg enabled:hover:border-accent enabled:hover:text-accent',
+  primary: 'border-accent bg-accent font-semibold text-carbon enabled:hover:bg-transparent enabled:hover:text-accent',
+  danger: 'border-neg/60 bg-transparent text-neg enabled:hover:bg-neg enabled:hover:text-carbon',
+  ghost: 'border-transparent bg-transparent text-dim enabled:hover:text-fg',
 }
 const BTN_ON = 'border-accent bg-accent/10 text-accent'
 // The icon carries its own colour: the unlayered `button { color: inherit }` in
 // index.css outranks the text-colour classes above, so they cannot tint it.
 const ICON_TONES: Record<Tone, string> = {
-  default: 'text-fg opacity-70 group-hover/btn:text-accent group-hover/btn:opacity-100',
-  primary: 'text-carbon group-hover/btn:text-accent',
-  danger: 'text-neg group-hover/btn:text-carbon',
-  ghost: 'text-dim group-hover/btn:text-fg',
+  default: 'text-fg opacity-70 group-enabled/btn:group-hover/btn:text-accent group-enabled/btn:group-hover/btn:opacity-100',
+  primary: 'text-carbon group-enabled/btn:group-hover/btn:text-accent',
+  danger: 'text-neg group-enabled/btn:group-hover/btn:text-carbon',
+  ghost: 'text-dim group-enabled/btn:group-hover/btn:text-fg',
 }
 
 /**
@@ -99,10 +308,15 @@ export function Btn({ tone = 'default', active, small, icon, locked, onLocked, l
       </button>
     )
   }
+  // a button that is only an icon is named by its tooltip; a switch says whether it is on
+  const named = rest['aria-label'] ?? (rest.title && !hasWords(children) ? rest.title : undefined)
   return (
     <button
+      type="button"
       {...rest}
-      className={`group/btn rounded-none border ${small ? 'h-6 px-2 text-[11px]' : 'h-7 px-3 text-xs'} uppercase tracking-wider transition-colors disabled:pointer-events-none disabled:opacity-35 ${icon ? 'inline-flex items-center justify-center gap-[6px]' : ''} ${active ? BTN_ON : BTN_TONES[tone]} ${className}`}
+      aria-label={named}
+      aria-pressed={rest['aria-pressed'] ?? (active === undefined ? undefined : active)}
+      className={`group/btn rounded-none border ${small ? 'h-6 px-2 text-[11px]' : 'h-7 px-3 text-xs'} uppercase tracking-wider transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${icon ? 'inline-flex items-center justify-center gap-[6px]' : ''} ${active ? BTN_ON : BTN_TONES[tone]} ${className}`}
     >
       {icon && <Icon name={icon} size={small ? 12 : 13} className={active ? 'text-accent' : tone === 'primary' ? '' : ICON_TONES[tone]} />}
       {children}
@@ -115,14 +329,49 @@ type IconBtnProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'title' | 'chi
 export function IconBtn({ icon, title, tone = 'default', active, small = true, className = '', ...rest }: IconBtnProps) {
   return (
     <button
+      type="button"
       {...rest}
       title={title}
       aria-label={title}
-      className={`group/btn inline-flex shrink-0 items-center justify-center rounded-none border align-middle ${small ? 'h-6 w-6' : 'h-7 w-7'} transition-colors disabled:pointer-events-none disabled:opacity-35 ${active ? BTN_ON : BTN_TONES[tone]} ${className}`}
+      aria-pressed={rest['aria-pressed'] ?? (active === undefined ? undefined : active)}
+      className={`group/btn inline-flex shrink-0 items-center justify-center rounded-none border align-middle ${small ? 'h-6 w-6' : 'h-7 w-7'} transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${active ? BTN_ON : BTN_TONES[tone]} ${className}`}
     >
-      <Icon name={icon} size={small ? 12 : 14} className={active ? 'text-accent' : tone === 'default' ? 'text-fg group-hover/btn:text-accent' : ICON_TONES[tone]} />
+      <Icon name={icon} size={small ? 12 : 14} className={active ? 'text-accent' : tone === 'default' ? 'text-fg group-enabled/btn:group-hover/btn:text-accent' : ICON_TONES[tone]} />
     </button>
   )
+}
+
+/** How long a button stays armed, waiting for the second click. */
+const ARMED_MS = 4000
+
+/**
+ * A button for something that cannot be taken back. The first click arms it
+ * and it says so; the second, within a few seconds, does the thing. Moving
+ * away from it disarms it.
+ */
+export function ConfirmBtn({ confirm = 'Click again to confirm', onClick, children, tone = 'danger', icon, className = '', ...rest }: BtnProps & { confirm?: ReactNode }) {
+  const [armed, setArmed] = useState(false)
+  useEffect(() => {
+    if (!armed) return
+    const t = window.setTimeout(() => setArmed(false), ARMED_MS)
+    return () => window.clearTimeout(t)
+  }, [armed])
+  return (
+    <Btn {...rest} tone={tone} icon={armed ? 'alert' : icon} className={`${className} ${armed ? '!border-neg !bg-neg !text-carbon [&_svg]:!text-carbon' : ''}`} onBlur={() => setArmed(false)} onClick={(e) => (armed ? (setArmed(false), onClick?.(e)) : setArmed(true))}>
+      {armed ? confirm : children}
+    </Btn>
+  )
+}
+
+/** The icon-only form: the first click turns it into a filled warning, the second does it. `title` names the action. */
+export function ConfirmIconBtn({ title, icon, onClick, tone = 'ghost', className = '', ...rest }: IconBtnProps) {
+  const [armed, setArmed] = useState(false)
+  useEffect(() => {
+    if (!armed) return
+    const t = window.setTimeout(() => setArmed(false), ARMED_MS)
+    return () => window.clearTimeout(t)
+  }, [armed])
+  return <IconBtn {...rest} tone={tone} icon={armed ? 'alert' : icon} title={armed ? `${title}: click again to confirm` : title} className={`${className} ${armed ? '!border-neg !bg-neg [&_svg]:!text-carbon' : ''}`} onBlur={() => setArmed(false)} onClick={(e) => (armed ? (setArmed(false), onClick?.(e)) : setArmed(true))} />
 }
 
 /** A small uppercase heading inside a panel, with an optional icon. */
@@ -204,7 +453,7 @@ export function Slider({ label, icon, value, min, max, step = 1, onChange, forma
         </span>
         <span className="num text-[11px] text-fg">{format ? format(value) : value}</span>
       </div>
-      <input type="range" className={`w-full ${locked ? 'pointer-events-none' : ''}`} min={min} max={max} step={step} value={value} disabled={disabled || !!locked} onChange={(e) => onChange(Number(e.target.value))} />
+      <input type="range" aria-label={label} aria-valuetext={format ? format(value) : undefined} className={`w-full ${locked ? 'pointer-events-none' : ''}`} min={min} max={max} step={step} value={value} disabled={disabled || !!locked} onChange={(e) => onChange(Number(e.target.value))} />
     </label>
   )
 }
@@ -271,12 +520,73 @@ export function Row({ k, v, tone, icon }: { k: ReactNode; v: ReactNode; tone?: s
   )
 }
 
-export function TextInput({ value, onChange, className = '', ...rest }: { value: string; onChange: (v: string) => void; className?: string; placeholder?: string; maxLength?: number }) {
-  return <input {...rest} value={value} onChange={(e) => onChange(e.target.value)} className={`h-7 rounded-none border border-line2 bg-raise px-2 text-xs outline-none focus:border-accent ${className}`} style={{ userSelect: 'text' }} />
+type FieldProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'type' | 'min' | 'max' | 'step'> & { /** What Enter does in the field. */ onEnter?: () => void }
+
+/** A line of text. Give it `aria-label` or a placeholder when no visible label wraps it. */
+export function TextInput({ value, onChange, className = '', onEnter, onKeyDown, ...rest }: FieldProps & { value: string; onChange: (v: string) => void }) {
+  return (
+    <input
+      type="text"
+      spellCheck={false}
+      autoComplete="off"
+      {...rest}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={(e) => (onKeyDown?.(e), e.key === 'Enter' && onEnter && (e.preventDefault(), onEnter()))}
+      className={`h-7 rounded-none border border-line2 bg-raise px-2 text-xs outline-none focus:border-accent ${className}`}
+      style={{ userSelect: 'text' }}
+    />
+  )
 }
 
-export function NumInput({ value, onChange, className = '', min = 0, step = 1 }: { value: number; onChange: (v: number) => void; className?: string; min?: number; step?: number }) {
-  return <input type="number" min={min} step={step} value={Number.isFinite(value) ? value : 0} onChange={(e) => onChange(Number(e.target.value))} className={`num h-7 rounded-none border border-line2 bg-raise px-2 text-xs outline-none focus:border-accent ${className}`} />
+/**
+ * A name that is being edited in place (a company, a team). What is typed
+ * shows at once, but a blank is never kept: leaving the field empty puts the
+ * last name back.
+ */
+export function NameInput({ value, onChange, ...rest }: FieldProps & { value: string; onChange: (v: string) => void }) {
+  const [text, setText] = useState<string | null>(null)
+  return (
+    <TextInput
+      {...rest}
+      value={text ?? value}
+      onChange={(v) => {
+        setText(v)
+        if (v.trim()) onChange(v)
+      }}
+      onBlur={() => setText(null)}
+      onEnter={() => (document.activeElement as HTMLElement | null)?.blur()}
+    />
+  )
+}
+
+/**
+ * A number. What is typed stays as typed while the field has focus; the value
+ * handed on is always a number within `min` and `max`, whole unless `decimals`
+ * is set, whatever was typed: nothing, a minus, letters, a figure with thirty
+ * digits. On leaving the field it shows that value.
+ */
+export function NumInput({ value, onChange, className = '', min = 0, max = 1e9, step = 1, decimals = false, onEnter, onKeyDown, ...rest }: FieldProps & { value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number; decimals?: boolean }) {
+  const [text, setText] = useState<string | null>(null)
+  const safe = Number.isFinite(value) ? value : 0
+  return (
+    <input
+      type="number"
+      inputMode={decimals ? 'decimal' : 'numeric'}
+      {...rest}
+      min={min}
+      max={max}
+      step={step}
+      value={text ?? String(safe)}
+      onChange={(e) => {
+        setText(e.target.value)
+        onChange(readNumber(e.target.value, { min, max, whole: !decimals }))
+      }}
+      onBlur={(e) => (setText(null), rest.onBlur?.(e))}
+      onKeyDown={(e) => (onKeyDown?.(e), e.key === 'Enter' && (setText(null), onEnter && (e.preventDefault(), onEnter())))}
+      className={`num h-7 rounded-none border border-line2 bg-raise px-2 text-xs outline-none focus:border-accent ${className}`}
+    />
+  )
 }
 
 export const chart = {
@@ -368,11 +678,13 @@ export function Fold({ title, icon, right, children, open: initial = true, class
 
 /** A slide-over panel covering the right side of its positioned parent. */
 export function Drawer({ open, onClose, title, children, width = 420, footer }: { open: boolean; onClose: () => void; title: ReactNode; children: ReactNode; width?: number; footer?: ReactNode }) {
+  const box = useRef<HTMLElement>(null)
+  useLayer(open, onClose, { box })
   if (!open) return null
   return (
-    <div className="absolute inset-0 z-30 flex justify-end">
+    <div className="absolute inset-0 z-[35] flex justify-end">
       <div className="absolute inset-0 bg-carbon/60" onClick={onClose} />
-      <aside className="relative flex h-full min-h-0 flex-col border-l border-line2 bg-carbon" style={{ width, maxWidth: '100%' }}>
+      <aside ref={box} role="dialog" aria-label={typeof title === 'string' ? title : 'Details'} className="relative flex h-full min-h-0 flex-col border-l border-line2 bg-carbon outline-none" style={{ width, maxWidth: '100%' }}>
         <header className="flex h-9 shrink-0 items-center justify-between border-b border-line bg-panel px-3">
           <span className="truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-fg">{title}</span>
           <button onClick={onClose} className="-mr-1 flex h-6 w-6 shrink-0 items-center justify-center text-dim hover:text-accent" title="Close (Esc)" aria-label="Close">
@@ -393,15 +705,19 @@ export function Kpi({ label, icon, value, sub, tone }: { label: string; icon?: I
     <div className="border border-line bg-panel px-3 py-2">
       <FitLabel icon={icon} label={label} size={12} className="label gap-[5px] text-faint" />
       <div className={`num mt-1 text-xl font-semibold leading-none ${color}`}>{value}</div>
-      {sub !== undefined && <div className="num mt-1 truncate text-[10px] text-faint">{sub}</div>}
+      {sub !== undefined && (
+        <div className="num mt-1 truncate text-[10px] text-faint" title={typeof sub === 'string' ? sub : undefined}>
+          {sub}
+        </div>
+      )}
     </div>
   )
 }
 
 /** A small supporting figure, visually quieter than a Kpi. */
-export function Mini({ label, icon, value, tone }: { label: string; icon?: IconName; value: ReactNode; tone?: string }) {
+export function Mini({ label, icon, value, tone, title }: { label: string; icon?: IconName; value: ReactNode; tone?: string; /** Said on hover when the label is a short form. */ title?: string }) {
   return (
-    <div className="border border-line px-2 py-1">
+    <div className="border border-line px-2 py-1" title={title}>
       <FitLabel icon={icon} label={label} size={10} className="gap-1 text-[9px] uppercase tracking-[0.12em] text-faint" />
       <div className={`num text-xs ${tone ?? 'text-dim'}`}>{value}</div>
     </div>

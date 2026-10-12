@@ -10,7 +10,7 @@ const loadShell = () => import('./components/Shell').then((m) => ({ default: m.S
 const Shell = lazy(loadShell)
 
 function Loading() {
-  return <div className="num flex h-full items-center justify-center bg-bg text-[11px] uppercase tracking-[0.2em] text-faint">Loading the company</div>
+  return <div className="num flex h-full items-center justify-center bg-carbon text-[11px] uppercase tracking-[0.2em] text-faint">Loading the company</div>
 }
 
 export default function App() {
@@ -24,15 +24,18 @@ export default function App() {
     return () => window.clearTimeout(id)
   }, [])
   return (
-    <div className="relative h-full">
-      <CrashGuard>
-        <Suspense fallback={<Loading />}>{screen === 'game' && hasGame ? <Shell /> : screen === 'new' ? <NewGame /> : <MainMenu />}</Suspense>
-      </CrashGuard>
+    <div className="flex h-full flex-col">
+      {/* in the flow, above everything: it takes its own height instead of lying over the top bar */}
       <SizeNotice />
-      <FeedbackHost />
-      {toast && (
-        <div className={`num pointer-events-none absolute bottom-4 left-1/2 z-[60] -translate-x-1/2 border bg-panel px-4 py-2 text-xs ${toast.tone === 'bad' ? 'border-neg text-neg' : 'border-accent text-fg'}`}>{toast.text}</div>
-      )}
+      <div className="relative min-h-0 flex-1">
+        <CrashGuard>
+          <Suspense fallback={<Loading />}>{screen === 'game' && hasGame ? <Shell /> : screen === 'new' ? <NewGame /> : <MainMenu />}</Suspense>
+        </CrashGuard>
+        <FeedbackHost />
+        {toast && (
+          <div role={toast.tone === 'bad' ? 'alert' : 'status'} className={`num pointer-events-none absolute bottom-4 left-1/2 z-[100] max-w-[min(640px,calc(100%-2rem))] -translate-x-1/2 border bg-panel px-4 py-2 text-center text-xs ${toast.tone === 'bad' ? 'border-neg text-neg' : 'border-accent text-fg'}`}>{toast.text}</div>
+        )}
+      </div>
     </div>
   )
 }

@@ -11,6 +11,7 @@ import { monthCosts } from '../sim/types'
 import { hasType } from '../sim/world'
 import { type FingerprintStyle, type FrontStyle, type VariantId, deriveVariant, layoutParts, syncSockets } from '../sim/rivals'
 import type { Body, DeviceDesign, DeviceType, Face, GameConfig, GameState, PartKind, PlacedPart, Product, Specs } from '../sim/types'
+import { forgetViews } from './focus'
 import { AUTOSAVE, BEFORE_DEBT, saveGame, saveSnapshot } from './saves'
 import { useSettings } from './settings'
 
@@ -65,6 +66,22 @@ function remember(key: string, value: string) {
 
 /** Name offered for a new product line, e.g. "Acme Tab 2". */
 const defaultName = (company: string, type: DeviceType, count: number) => `${company} ${TYPES[type].series ? TYPES[type].series + ' ' : ''}${count}`
+
+/**
+ * A name for a new device that is not already taken: the one proposed, or the
+ * next number after it that is free. "Acme 2" when Acme 2 and 3 exist is "Acme 4".
+ * A name counts as taken while any of the company's devices, on sale or not,
+ * carries it with the same variant label.
+ */
+export function freeFamily(g: GameState, propose: string, variant = ''): string {
+  const taken = new Set(g.products.filter((p) => p.companyId === 'player' && (p.variant ?? '') === variant).map((p) => p.family.trim().toLowerCase()))
+  let name = propose.trim()
+  for (let i = 0; i < 500 && taken.has(name.trim().toLowerCase()); i++) {
+    const m = /^(.*?)(\d+)$/.exec(name)
+    name = m ? `${m[1]}${Number(m[2]) + 1}` : `${name} 2`
+  }
+  return name
+}
 
 function relayout(d: DeviceDesign, o: SimpleLayout, g: GameState): PlacedPart[] {
   return layoutParts(d.body, { ...o, type: d.type, periscope: g.features.includes('periscope') && o.sensor >= 3, stereo: d.specs.extras.includes('stereo'), logoImage: !!player(g).logo, io: d.specs.io })
@@ -150,8 +167,16 @@ interface Store {
   toggleRail(): void
   toggleFeed(): void
 
+  /**
+   * True while a design that was being worked on is set aside: the designer
+   * was left for another screen with changes made. "New device" picks it up
+   * again instead of starting over.
+   */
+  kept: boolean
+  /** Open the designer. With no options it picks up a design that was set aside, if there is one. */
   openDesigner(opts?: { type?: DeviceType; from?: Product; variant?: VariantId | 'next' }): void
-  closeDesigner(): void
+  /** Leave the designer. The design is set aside if it has changes, unless it is being thrown away or has just been launched. */
+  closeDesigner(discard?: boolean): void
   setType(type: DeviceType): void
   setMeta(patch: Partial<DraftMeta>): void
   setEditorMode(m: EditorMode): void
@@ -181,7 +206,10 @@ export const useStore = create<Store>((set, get) => {
     lastEdit = now
     set({ draft, future: [], past: cur && !merge ? [...get().past.slice(-59), cur] : get().past, ...extra })
   }
-  const reset = { designing: false, draft: null, inspect: null, past: [], future: [], selectedPart: null, lockCard: null, banners: [], freshTabs: [], hint: null }
+  // everything that belongs to one game and must not follow the player into another
+  const reset = { designing: false, kept: false, draft: null, inspect: null, person: null, yearEnd: null, toast: null, past: [], future: [], selectedPart: null, lockCard: null, banners: [], freshTabs: [], hint: null }
+  /** Whether the design on the bench is worth setting aside: it has been changed since it was opened. */
+  const worthKeeping = () => get().designing && !!get().draft && get().past.length > 0
   /** Capabilities open before a step of the simulation, to tell which ones it opened. */
   const openBefore = (g: GameState) => new Set(Object.keys(g.unlocks ?? {}))
   /** Announce whatever opened: a sound, a banner each, and a mark on any new screen. */
@@ -222,6 +250,7 @@ export const useStore = create<Store>((set, get) => {
     takeHint: () => set({ hint: null }),
 
     designing: false,
+    kept: false,
     editorMode: saved('sb-editor', 'simple') === 'advanced' ? 'advanced' : 'simple',
     simple: { layout: 1, cams: 3, sensor: 0, front: 'notch', fingerprint: 'side', flash: true, logo: '' },
     draft: null,
@@ -236,26 +265,37 @@ export const useStore = create<Store>((set, get) => {
       const g = get().game
       const cap = capOfTab(tab)
       if (g && cap && !has(g, cap)) return set({ lockCard: { cap } })
-      set({ tab, designing: false, selectedPart: null, person: null, lockCard: null, freshTabs: get().freshTabs.filter((t) => t !== tab) })
+      // going to another screen from the designer sets the design aside rather than losing it
+      const keep = worthKeeping()
+      set({ tab, designing: false, kept: keep || get().kept, selectedPart: null, person: null, inspect: null, lockCard: null, freshTabs: get().freshTabs.filter((t) => t !== tab) })
+      if (keep) get().say('Your design is set aside. New device picks it up again.')
     },
     setSpeed: (speed) => set({ speed }),
     begin(cfg) {
       rolling = null
+      forgetViews()
+      clearTimeout(toastTimer)
       set({ game: newGame(cfg), screen: 'game', tab: 'city', speed: 0, rev: 0, checkpoint: null, showing: null, ...reset })
     },
     resume(state) {
       rolling = null
+      forgetViews()
+      clearTimeout(toastTimer)
       set({ game: state, screen: 'game', tab: 'dashboard', speed: 0, rev: 0, checkpoint: null, showing: null, ...reset })
     },
     quit() {
       rolling = null
+      forgetViews()
+      clearTimeout(toastTimer)
       set({ game: null, screen: 'menu', speed: 0, checkpoint: null, showing: null, ...reset })
     },
     rewind() {
       const cp = get().checkpoint
       if (!cp) return
       rolling = null
-      set({ game: migrate(JSON.parse(cp.json)), speed: 0, rev: get().rev + 1, showing: null, ...reset })
+      forgetViews()
+      clearTimeout(toastTimer)
+      set({ game: migrate(JSON.parse(cp.json)), tab: 'dashboard', speed: 0, rev: get().rev + 1, showing: null, ...reset })
     },
     watch: (showing) => set({ showing, speed: showing ? 0 : get().speed }),
 
@@ -317,7 +357,7 @@ export const useStore = create<Store>((set, get) => {
     },
 
     say(text, tone = 'ok') {
-      window.clearTimeout(toastTimer)
+      clearTimeout(toastTimer)
       set({ toast: { text, tone } })
       if (tone === 'bad') sfx.error()
       toastTimer = window.setTimeout(() => set({ toast: null }), 3400)
@@ -336,6 +376,14 @@ export const useStore = create<Store>((set, get) => {
     openDesigner(opts = {}) {
       const g = get().game
       if (!g) return
+      const plain = !opts.type && !opts.from
+      // already at the bench: asking for the designer again must not wipe the design on it
+      if (plain && get().designing && get().draft) return
+      // a design set aside earlier is picked up where it was left, undo history and all
+      if (plain && get().kept && get().draft) {
+        set({ designing: true, kept: false, selectedPart: null, speed: 0, inspect: null, person: null, lockCard: null })
+        return get().say('Picked up the design you set aside.')
+      }
       // a company starts on one kind of device and opens the others under Research
       const wanted = opts.from?.type ?? opts.type
       if (wanted && !hasType(g, wanted)) return get().say(`Your company does not make ${TYPES[wanted].plural.toLowerCase()} yet. Open that line under Research.`, 'bad')
@@ -354,18 +402,22 @@ export const useStore = create<Store>((set, get) => {
         draft = JSON.parse(JSON.stringify(from.design))
         // the next generation: bump a trailing number if the name has one
         const m = /^(.*?)(\d+)$/.exec(from.family)
-        meta = opts.variant === 'next' ? { family: m ? `${m[1]}${Number(m[2]) + 1}` : `${from.family} 2`, variant: from.variant } : { family: `${from.family} copy`, variant: '' }
+        meta = opts.variant === 'next' ? { family: freeFamily(g, m ? `${m[1]}${Number(m[2]) + 1}` : `${from.family} 2`, from.variant), variant: from.variant } : { family: freeFamily(g, `${from.family} copy`), variant: "" }
       } else {
         const type = opts.type ?? 'phone'
         draft = starterDesign(g, type)
         const base = player(g).name.split(' ')[0]
         const count = own.filter((p) => p.type === type && !p.variant).length + 1
-        meta = { family: defaultName(base, type, count), variant: '' }
+        meta = { family: freeFamily(g, defaultName(base, type, count)), variant: '' }
       }
       lastEdit = 0
-      set({ designing: true, draft, meta, simple: readLayout(draft, g), selectedPart: null, speed: 0, past: [], future: [], inspect: null })
+      set({ designing: true, kept: false, draft, meta, simple: readLayout(draft, g), selectedPart: null, speed: 0, past: [], future: [], inspect: null, person: null, lockCard: null })
     },
-    closeDesigner: () => set({ designing: false, selectedPart: null }),
+    closeDesigner(discard = false) {
+      const keep = !discard && worthKeeping()
+      set({ designing: false, selectedPart: null, kept: keep })
+      if (keep) get().say('Your design is set aside. New device picks it up again.')
+    },
 
     setType(type) {
       const g = get().game
@@ -374,7 +426,7 @@ export const useStore = create<Store>((set, get) => {
       const draft = starterDesign(g, type)
       const base = player(g).name.split(' ')[0]
       const count = g.products.filter((p) => p.companyId === 'player' && p.type === type && !p.variant).length + 1
-      set({ draft, simple: readLayout(draft, g), selectedPart: null, past: [], future: [], meta: { family: defaultName(base, type, count), variant: '' } })
+      set({ draft, simple: readLayout(draft, g), selectedPart: null, past: [], future: [], meta: { family: freeFamily(g, defaultName(base, type, count)), variant: '' } })
     },
     setMeta: (patch) => set({ meta: { ...get().meta, ...patch } }),
 

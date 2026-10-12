@@ -1,6 +1,6 @@
 // The company as an institution: who owns it, where in the world it sells,
 // how it looks after owners, and the goals on the way to becoming a behemoth.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { sfx } from '../audio/sfx'
 import { RECALL_DEADLINE, acquire, buyBackShares, buyRivalStake, enterRegion, fmtDate, fundingRound, listCompany, monthLabel, player, recallProduct, sellRivalStake, sellShares, setCare, setPayout, setRegionPrice } from '../sim/game'
@@ -13,9 +13,9 @@ import { takeAim } from '../store/focus'
 import { useGame, useStore } from '../store/game'
 import { LockNote, lockProps } from './Progress'
 import { Icon, type IconName } from './icons'
-import { Btn, Empty, Head, Kpi, Lead, type LockProps, Meter, Mini, Panel, Row, Slider, Tabs, Tag, chart, money, num, pct } from './ui'
+import { Btn, ConfirmBtn, Empty, Head, Kpi, Lead, type LockProps, Meter, Mini, Panel, Row, Slider, Tabs, Tag, chart, money, num, pct, pressable, useKept } from './ui'
 
-const big = (v: number) => (Math.abs(v) >= 1e9 ? `$${(v / 1e9).toFixed(2)}B` : money(v, 1))
+const big = (v: number) => money(v, 1)
 
 // ------------------------------------------------------------------ shares
 
@@ -61,7 +61,7 @@ function Raise() {
           <div className="text-[11px] leading-snug text-dim">
             List on the stock market. You raise a lot at once, your shares get a price every day, and you can buy stakes in rivals. Needs a valuation of {money(IPO_MIN_VALUE, 0)} and a year of accounts.
           </div>
-          <Slider label="Share of the company to float" icon="pie" value={float} min={0.05} max={0.4} step={0.01} format={(x) => pct(x, 0)} onChange={setFloat} disabled={!!ipo} />
+          <Slider label="Share of the company to float" icon="pie" value={float} min={0.05} max={0.4} step={0.01} format={(x) => pct(x, 0)} onChange={setFloat} disabled={!!ipo} hint={ipo ?? undefined} />
           <div className="grid grid-cols-2 gap-1">
             <Mini label="Would raise about" icon="cash" value={big(((v * float) / (1 - float)) * 0.94)} tone="text-pos" />
             <Mini label="You would hold" icon="pie" value={pct((k.founder / k.shares) * (1 - float))} />
@@ -69,9 +69,9 @@ function Raise() {
           {ipo ? (
             <div className="mt-2 border border-line px-2 py-[7px] text-[11px] text-faint">{ipo}</div>
           ) : (
-            <Btn tone="primary" icon="bell" className="mt-2 h-9 w-full" onClick={() => run(act((s) => listCompany(s, float)), () => (sfx.bell(), say('The opening bell rang. You are a public company.')))}>
+            <ConfirmBtn tone="primary" icon="bell" className="mt-2 h-9 w-full" confirm={`Float ${pct(float, 0)}? A listing cannot be undone.`} onClick={() => run(act((s) => listCompany(s, float)), () => (sfx.bell(), say('The opening bell rang. You are a public company.')))}>
               List the company
-            </Btn>
+            </ConfirmBtn>
           )}
         </div>
       </div>
@@ -154,12 +154,12 @@ export function SharesScreen() {
               </ResponsiveContainer>
             )}
           </Panel>
-          <Panel title="Other companies" icon="rivals" className="flex-1" bodyClass="overflow-auto">
+          <Panel title="Other companies" icon="rivals" className="flex-1" bodyClass="@container overflow-auto">
             <table className="grid-table">
               <thead>
                 <tr>
                   <th>Company</th>
-                  <th>Based in</th>
+                  <th className="@max-[640px]:hidden">Based in</th>
                   <th className="r">Worth</th>
                   <th className="r">You own</th>
                   <th />
@@ -175,23 +175,23 @@ export function SharesScreen() {
                         <span className="mr-2 inline-block h-2 w-2" style={{ background: c.color }} />
                         {c.name}
                       </td>
-                      <td className="text-dim">{REGIONS.find((r) => r.id === homeOf(c))?.name}</td>
+                      <td className="text-dim @max-[640px]:hidden">{REGIONS.find((r) => r.id === homeOf(c))?.name}</td>
                       <td className="num r text-dim">{c.acquired ? '--' : big(worth)}</td>
                       <td className="num r text-fg">{c.acquired ? <Tag tone="pos" icon="check">yours</Tag> : own ? pct(own, 0) : '--'}</td>
                       <td className="r whitespace-nowrap">
                         {!c.acquired && (
                           <>
                             {own > 0 && (
-                              <Btn small tone="ghost" title="Sell your whole stake at today's price" onClick={() => (act((s) => sellRivalStake(s, c.id)), sfx.cash())}>
+                              <Btn small tone="ghost" title="Sell your whole stake at today's price" onClick={() => (act((s) => sellRivalStake(s, c.id)), sfx.cash(), say(`Sold your stake in ${c.name}.`))}>
                                 Sell
                               </Btn>
                             )}
                             <Btn small className="ml-1" disabled={own >= 0.489} onClick={() => run(act((s) => buyRivalStake(s, c.id, 0.05)), sfx.confirm)} title="Buy 5% on the market">
                               +5% {big(stakePrice(c, 0.05))}
                             </Btn>
-                            <Btn small tone="primary" className="ml-1" onClick={() => run(act((s) => acquire(s, c.id)), () => (sfx.bell(), say(`${c.name} is now part of ${me.name}.`)))} title="Buy the whole company. Its devices are withdrawn; its customers and know-how come to you.">
+                            <ConfirmBtn small tone="primary" className="ml-1" confirm={`Pay ${big(takeoverPrice(g, c))}?`} onClick={() => run(act((s) => acquire(s, c.id)), () => (sfx.bell(), say(`${c.name} is now part of ${me.name}.`)))} title="Buy the whole company. Its devices are withdrawn; its customers and know-how come to you. This cannot be undone.">
                               Buy out {big(takeoverPrice(g, c))}
-                            </Btn>
+                            </ConfirmBtn>
                           </>
                         )}
                       </td>
@@ -395,7 +395,12 @@ function RegionPanel({ r }: { r: RegionDef }) {
 export function WorldScreen() {
   const g = useGame()
   // a region picked in the city view is the one shown first
-  const [selected, setSelected] = useState(() => takeAim('region') ?? homeRegion(g))
+  const [selected, setSelected] = useKept('world:region', () => homeRegion(g))
+  // a region picked in the city wins over the one last looked at
+  useEffect(() => {
+    const aimed = takeAim('region')
+    if (aimed) setSelected(aimed)
+  }, [setSelected])
   const open = REGIONS.filter((r) => g.regions[r.id].open)
   const total = open.reduce((a, r) => a + (g.regions[r.id].history.at(-1) ?? 0), 0)
   const region = REGIONS.find((r) => r.id === selected) ?? REGIONS[0]
@@ -412,7 +417,7 @@ export function WorldScreen() {
           <Panel title="World" icon="world" className="flex-1" bodyClass="p-3" right={<span className="num text-[10px] text-faint">brighter = better known / grey = not entered</span>}>
             <WorldMap g={g} selected={selected} onSelect={setSelected} />
           </Panel>
-          <Panel className="shrink-0" bodyClass="overflow-auto">
+          <Panel className="shrink-0" bodyClass="@container overflow-auto">
             <table className="grid-table">
               <thead>
                 <tr>
@@ -420,7 +425,7 @@ export function WorldScreen() {
                   <th className="r">World demand</th>
                   <th className="w-32">Awareness</th>
                   <th className="r">Units last month</th>
-                  <th className="r">Share of your sales</th>
+                  <th className="r @max-[640px]:hidden">Share of your sales</th>
                   <th className="r">Local price</th>
                 </tr>
               </thead>
@@ -428,7 +433,7 @@ export function WorldScreen() {
                 {REGIONS.map((r) => {
                   const st = g.regions[r.id]
                   return (
-                    <tr key={r.id} className={`row cursor-pointer ${selected === r.id ? 'bg-accent/10' : ''}`} onClick={() => setSelected(r.id)}>
+                    <tr key={r.id} className={`row cursor-pointer ${selected === r.id ? 'bg-accent/10' : ''}`} {...pressable(() => setSelected(r.id))}>
                       <td className={st.open ? 'text-fg' : 'text-faint'}>
                         {r.name}
                         {homeRegion(g) === r.id && (
@@ -440,7 +445,7 @@ export function WorldScreen() {
                       <td className="num r text-dim">{pct(r.share, 0)}</td>
                       <td>{st.open ? <Meter value={st.awareness} tone="accent" /> : <span className="text-[10px] text-faint">not entered ({money(r.entry, 1)})</span>}</td>
                       <td className="num r text-fg">{st.open ? num(st.history.at(-1) ?? 0) : '--'}</td>
-                      <td className="num r text-dim">{st.open && total > 0 ? pct((st.history.at(-1) ?? 0) / total, 0) : '--'}</td>
+                      <td className="num r text-dim @max-[640px]:hidden">{st.open && total > 0 ? pct((st.history.at(-1) ?? 0) / total, 0) : '--'}</td>
                       <td className="num r text-dim">{st.open ? `${st.priceAdj >= 1 ? '+' : ''}${Math.round((st.priceAdj - 1) * 100)}%` : '--'}</td>
                     </tr>
                   )
@@ -597,7 +602,7 @@ function GoalRow({ goal, g }: { goal: Goal; g: GameState }) {
   return (
     <div className={`border-b border-line px-2 py-[6px] ${done !== undefined ? 'opacity-70' : ''}`}>
       <div className="flex items-baseline justify-between gap-2">
-        <span className={`text-xs uppercase tracking-wider ${done !== undefined ? 'text-pos' : 'text-fg'}`}>
+        <span className={`min-w-0 break-words text-xs uppercase tracking-wider ${done !== undefined ? 'text-pos' : 'text-fg'}`}>
           {done !== undefined && <Lead icon="check" size={12} />}
           {goal.name}
         </span>
@@ -615,7 +620,7 @@ export function GoalsScreen() {
   const g = useGame()
   const stage = stageOf(g)
   const groups: Goal['group'][] = ['Products', 'Company', 'Reach', 'Money']
-  const [view, setView] = useState<'open' | 'all'>('open')
+  const [view, setView] = useKept<'open' | 'all'>('goals:list', 'open')
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-2">
       <div className="shrink-0 border border-line bg-panel p-3">
@@ -644,7 +649,7 @@ export function GoalsScreen() {
         {groups.map((group) => {
           const list = GOALS.filter((x) => x.group === group && (view === 'all' || g.goals[x.id] === undefined)).sort((a, b) => (g.goals[a.id] !== undefined ? 1 : 0) - (g.goals[b.id] !== undefined ? 1 : 0) || b.progress(g) - a.progress(g))
           return (
-            <Panel key={group} title={group} icon={GROUP_ICON[group]} bodyClass="overflow-y-auto" right={<span className="num text-[10px] text-faint">{GOALS.filter((x) => x.group === group && g.goals[x.id] !== undefined).length} / {GOALS.filter((x) => x.group === group).length}</span>}>
+            <Panel key={group} title={group} icon={GROUP_ICON[group]} bodyClass="overflow-y-auto overflow-x-hidden" right={<span className="num text-[10px] text-faint">{GOALS.filter((x) => x.group === group && g.goals[x.id] !== undefined).length} / {GOALS.filter((x) => x.group === group).length}</span>}>
               {list.length === 0 && <Empty icon="check" text="All done here." />}
               {list.map((goal) => (
                 <GoalRow key={goal.id} goal={goal} g={g} />

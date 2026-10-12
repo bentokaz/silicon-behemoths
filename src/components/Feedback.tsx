@@ -1,11 +1,11 @@
 // Reporting a problem or an idea from inside the game, and the small question
 // the game asks when it looks as if the player is leaving because of a problem.
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { sendFeedback } from '../store/cloud'
 import { useStore } from '../store/game'
 import { type FeedbackKind, type Sign, maybeAsk, noteBack, noteLeaving, noteRefusal, noteTrouble, recentSigns, useFeedback } from '../store/trouble'
 import { Icon, type IconName } from './icons'
-import { Btn } from './ui'
+import { Btn, useLayer } from './ui'
 
 export const FEEDBACK_URL = 'https://bentokaz.itch.io/siliconbehemoths'
 export const ISSUES_URL = 'https://github.com/bentokaz/silicon-behemoths/issues'
@@ -49,6 +49,7 @@ const QUESTION: Record<Sign['kind'], { title: string; text: (s: Sign) => string 
 function Ask() {
   const ask = useFeedback((s) => s.ask)
   const { open, dismiss } = useFeedback.getState()
+  useLayer(!!ask, () => dismiss())
   if (!ask) return null
   const q = QUESTION[ask.kind]
   return (
@@ -56,7 +57,7 @@ function Ask() {
       <div className="flex items-center gap-2 border-b border-line px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">
         <Icon name="review" size={14} />
         <span className="flex-1">{q.title}</span>
-        <button className="text-faint hover:text-fg" onClick={() => dismiss()} title="Close" aria-label="Close">
+        <button className="-mr-1 flex h-6 w-6 items-center justify-center text-faint hover:text-fg" onClick={() => dismiss()} title="Close (Esc)" aria-label="Close">
           <Icon name="close" size={13} />
         </button>
       </div>
@@ -92,12 +93,8 @@ function Form() {
   useEffect(() => {
     if (form) (setKind(form.kind), setState('idle'))
   }, [form])
-  useEffect(() => {
-    if (!form) return
-    const key = (e: KeyboardEvent) => e.key === 'Escape' && close()
-    window.addEventListener('keydown', key)
-    return () => window.removeEventListener('keydown', key)
-  }, [form, close])
+  const box = useRef<HTMLDivElement>(null)
+  useLayer(!!form, close, { modal: true, box })
   if (!form) return null
   const K = KINDS.find((k) => k.id === kind)!
   const body = `${text.trim()}\n\n---\n${withDetails ? Object.entries(context).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(' | ') || 'none' : v}`).join('\n') : `build: ${BUILD}`}`
@@ -110,11 +107,11 @@ function Form() {
   }
   return (
     <div className="absolute inset-0 z-[90] flex items-center justify-center bg-black/60 p-4" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div className="flex max-h-full w-[560px] max-w-full flex-col border border-line2 bg-panel" role="dialog" aria-label="Send feedback">
+      <div ref={box} className="flex max-h-full w-[560px] max-w-full flex-col border border-line2 bg-panel outline-none" role="dialog" aria-modal="true" aria-label="Send feedback">
         <div className="flex items-center gap-2 border-b border-line px-4 py-3 text-[12px] font-semibold uppercase tracking-[0.14em] text-fg">
           <Icon name="review" size={15} className="text-accent" />
           <span className="flex-1">Tell us about it</span>
-          <button className="text-faint hover:text-fg" onClick={close} title="Close (Esc)" aria-label="Close">
+          <button className="-mr-1 flex h-6 w-6 items-center justify-center text-faint hover:text-fg" onClick={close} title="Close (Esc)" aria-label="Close">
             <Icon name="close" size={14} />
           </button>
         </div>
@@ -145,9 +142,25 @@ function Form() {
             </div>
             <div>
               <div className="mb-1 text-[11px] text-dim">{K.ask}</div>
-              <textarea autoFocus value={text} onChange={(e) => setText(e.target.value)} maxLength={4000} rows={6} className="w-full resize-y border border-line2 bg-bg p-2 text-[12px] leading-relaxed text-fg outline-none focus:border-accent" placeholder="A sentence or two is plenty." />
+              <textarea
+                autoFocus
+                aria-label={K.ask}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                // Ctrl+Enter sends, as in most places where Enter itself makes a new line
+                onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && text.trim().length >= 3 && state !== 'sending' && (e.preventDefault(), void send())}
+                maxLength={4000}
+                rows={6}
+                style={{ userSelect: 'text' }}
+                className="max-h-[40vh] min-h-20 w-full resize-y border border-line2 bg-carbon p-2 text-[12px] leading-relaxed text-fg outline-none focus:border-accent"
+                placeholder="A sentence or two is plenty."
+              />
+              <div className="num mt-[2px] flex justify-between text-[10px] text-faint">
+                <span>{text.trim().length < 3 ? 'Write a few words to send.' : 'Ctrl+Enter sends.'}</span>
+                {text.length > 3600 && <span className={text.length >= 4000 ? 'text-warn' : ''}>{text.length} / 4000</span>}
+              </div>
             </div>
-            <input value={contact} onChange={(e) => setContact(e.target.value)} maxLength={120} className="w-full border border-line2 bg-bg px-2 py-[6px] text-[12px] text-fg outline-none focus:border-accent" placeholder="How to reach you, if you want a reply (optional)" />
+            <input aria-label="How to reach you (optional)" style={{ userSelect: 'text' }} value={contact} onChange={(e) => setContact(e.target.value)} maxLength={120} className="w-full border border-line2 bg-carbon px-2 py-[6px] text-[12px] text-fg outline-none focus:border-accent" placeholder="How to reach you, if you want a reply (optional)" />
             <label className="flex items-start gap-2 text-[11px] leading-snug">
               <input type="checkbox" className="mt-[2px]" checked={withDetails} onChange={(e) => setWithDetails(e.target.checked)} />
               <span>
@@ -157,7 +170,7 @@ function Form() {
                 </button>
               </span>
             </label>
-            {peek && <pre className="num max-h-28 overflow-auto border border-line bg-bg p-2 text-[10px] leading-snug text-faint">{Object.entries(context).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(' | ') || 'none' : v}`).join('\n')}</pre>}
+            {peek && <pre className="num max-h-28 overflow-auto border border-line bg-carbon p-2 text-[10px] leading-snug text-faint">{Object.entries(context).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(' | ') || 'none' : v}`).join('\n')}</pre>}
             {state === 'failed' && (
               <p className="flex items-start gap-2 text-warn">
                 <Icon name="alert" size={14} className="mt-[1px] shrink-0" />

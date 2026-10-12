@@ -2,10 +2,10 @@
 import { useEffect, useState } from 'react'
 import { getVolume, setAmbienceLevel, setVolume, sfx } from '../audio/sfx'
 import { chooseFolder, cloudBuiltIn, cloudConfig, cloudUser, folderState, forgetFolder, setCloudConfig, signIn, signOut, signUp, unlockFolder } from '../store/cloud'
-import { ACTIONS, type Action, QUALITY, type Quality, keyName, keysFor, useSettings } from '../store/settings'
+import { ACTIONS, type Action, DEFAULT_SETTINGS, QUALITY, type Quality, keyName, keysFor, useSettings } from '../store/settings'
 import { ThemePicker } from './System'
 import { Icon, type IconName } from './icons'
-import { Btn, Head, Lead, Panel, Slider, TextInput } from './ui'
+import { Btn, ConfirmBtn, Head, Lead, Panel, Slider, TextInput, useLayer } from './ui'
 
 function Toggle({ on, onChange, title, note, icon }: { on: boolean; onChange: (v: boolean) => void; title: string; note: string; icon?: IconName }) {
   return (
@@ -77,9 +77,9 @@ export function SettingsPanel() {
           ))}
         </div>
         <div className="mt-2 text-[10px] leading-snug text-faint">Every sound is generated in the browser.</div>
-        <Btn small icon="reset" className="mt-4 w-full" onClick={() => (resetSettings(), sfx.confirm())}>
+        <ConfirmBtn small tone="default" icon="reset" className="mt-4 w-full" confirm="Put every setting back?" title="Graphics, camera, play and sound go back to how they were at first. Keys and colours are left alone." onClick={() => (resetSettings(), setVol(0.5), setVolume(0.5), setAmbienceLevel(DEFAULT_SETTINGS.ambience), sfx.confirm())}>
           Reset all settings
-        </Btn>
+        </ConfirmBtn>
       </Panel>
     </div>
   )
@@ -141,9 +141,9 @@ export function SavesBeyond() {
         {!cfg ? (
           <>
             <div className="text-[11px] leading-snug text-dim">Not set up. Online saves need a free Supabase project; the steps are in CLOUD.md in the game's folder. Paste the project address and public key here once you have them.</div>
-            <TextInput value={url} onChange={setUrl} placeholder="Project address (https://...supabase.co)" className="mt-2 w-full" />
-            <TextInput value={key} onChange={setKey} placeholder="Public (anon) key" className="mt-1 w-full" />
-            <Btn small icon="check" className="mt-1" disabled={!url.trim() || !key.trim()} onClick={() => (setCloudConfig(url, key), setCfg(cloudConfig()), setNote('Project saved. Now sign in or create an account.'))}>
+            <TextInput value={url} onChange={setUrl} maxLength={200} placeholder="Project address (https://...supabase.co)" className="mt-2 w-full" />
+            <TextInput value={key} onChange={setKey} maxLength={600} placeholder="Public (anon) key" className="mt-1 w-full" />
+            <Btn small icon="check" className="mt-1" disabled={!url.trim() || !key.trim()} title={!url.trim() || !key.trim() ? "Paste the project address and its public key first" : undefined} onClick={() => (setCloudConfig(url, key), setCfg(cloudConfig()), setNote('Project saved. Now sign in or create an account.'))}>
               Use this project
             </Btn>
           </>
@@ -159,13 +159,13 @@ export function SavesBeyond() {
         ) : (
           <>
             <div className="text-[11px] leading-snug text-dim">Sign in to keep saves online and load them on any device.</div>
-            <TextInput value={email} onChange={setEmail} placeholder="Email" className="mt-2 w-full" />
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="mt-1 h-7 w-full rounded-none border border-line2 bg-raise px-2 text-xs text-fg outline-none focus:border-accent" />
+            <TextInput value={email} onChange={setEmail} placeholder="Email" aria-label="Email" maxLength={254} inputMode="email" autoComplete="email" className="mt-2 w-full" />
+            <input type="password" aria-label="Password" maxLength={128} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="mt-1 h-7 w-full rounded-none border border-line2 bg-raise px-2 text-xs text-fg outline-none focus:border-accent" />
             <div className="mt-1 flex gap-1">
-              <Btn small tone="primary" icon="key" disabled={!email || password.length < 6} onClick={() => run(() => signIn(email, password), 'Signed in.')}>
+              <Btn small tone="primary" icon="key" disabled={!email || password.length < 6} title={!email || password.length < 6 ? "Enter your email and a password of at least six characters" : undefined} onClick={() => run(() => signIn(email, password), 'Signed in.')}>
                 Sign in
               </Btn>
-              <Btn small icon="hire" disabled={!email || password.length < 6} onClick={() => run(() => signUp(email, password), 'Account created.')}>
+              <Btn small icon="hire" disabled={!email || password.length < 6} title={!email || password.length < 6 ? "Enter your email and a password of at least six characters" : undefined} onClick={() => run(() => signUp(email, password), 'Account created.')}>
                 Create account
               </Btn>
               {!cloudBuiltIn() && (
@@ -186,28 +186,51 @@ export function KeysPanel() {
   const { bind, resetKeys } = useSettings()
   useSettings((s) => s.binds)
   const [waiting, setWaiting] = useState<{ action: string; slot: number } | null>(null)
+  /** What the last change did besides the obvious: whose key it took, or why nothing changed. */
+  const [note, setNote] = useState('')
+  // while a key is being chosen every key press is the answer, Esc included: nothing else may act on it
+  useLayer(!!waiting, undefined, { modal: true })
 
   useEffect(() => {
     if (!waiting) return
+    const label = (id: string) => ACTIONS.find((a) => a.id === id)?.label ?? id
     const key = (e: KeyboardEvent) => {
+      // a modifier on its own is the start of a combination, not a key; the game's keys are single keys
+      if (['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight'].includes(e.code)) return
       e.preventDefault()
       e.stopPropagation()
-      if (e.code !== 'Escape' || waiting.action === 'cancel') {
-        const keys = [...keysFor(waiting.action)]
+      const mine = keysFor(waiting.action)
+      if (e.code === 'Escape' && waiting.action !== 'cancel') setNote('')
+      else if (e.code === 'Backspace') {
+        // Backspace clears a second key; the last key an action has stays, so nothing is left unreachable by accident
+        if (!mine[waiting.slot]) setNote('')
+        else if (mine.length < 2) setNote(`"${label(waiting.action)}" keeps at least one key. Press another key to change it.`)
+        else (bind(waiting.action, mine.filter((_, i) => i !== waiting.slot)), setNote(`Removed ${keyName(mine[waiting.slot])} from ${label(waiting.action)}.`), sfx.toggle())
+      } else if (!e.code || e.code === 'Unidentified') setNote('That key cannot be used: the browser does not say which one it is.')
+      else if (mine[waiting.slot] === e.code) setNote('')
+      else {
+        const keys = [...mine]
         keys[waiting.slot] = e.code
-        // a key does one thing at a time: take it away from anything else that had it
+        // a key does one thing at a time: take it away from anything else that had it, and say so
+        const taken: string[] = []
         for (const other of ACTIONS) {
           if (other.id === waiting.action) continue
           const theirs = keysFor(other.id)
-          if (theirs.includes(e.code)) bind(other.id, theirs.filter((k) => k !== e.code))
+          if (theirs.includes(e.code)) (bind(other.id, theirs.filter((k) => k !== e.code)), taken.push(other.label))
         }
         bind(waiting.action, [...new Set(keys.filter(Boolean))])
+        setNote(taken.length ? `${keyName(e.code)} now does "${label(waiting.action)}". It was taken from "${taken.join('", "')}".` : `${keyName(e.code)} now does "${label(waiting.action)}".`)
         sfx.confirm()
       }
       setWaiting(null)
     }
+    // clicking anywhere else gives up on the change
+    const away = (e: PointerEvent) => {
+      if (!(e.target as HTMLElement).closest?.('[data-keyslot]')) setWaiting(null)
+    }
     window.addEventListener('keydown', key, true)
-    return () => window.removeEventListener('keydown', key, true)
+    window.addEventListener('pointerdown', away, true)
+    return () => (window.removeEventListener('keydown', key, true), window.removeEventListener('pointerdown', away, true))
   }, [waiting, bind])
 
   const groups: Action['group'][] = ['Game', 'Screens', 'Building']
@@ -216,11 +239,11 @@ export function KeysPanel() {
       <div className="flex shrink-0 items-center justify-between border border-line bg-panel px-2 py-[6px]">
         <span className="flex items-center gap-2 text-[11px] text-dim">
           <Icon name="keys" size={13} className={waiting ? 'text-accent' : 'text-faint'} />
-          {waiting ? 'Press the key to use. Esc cancels.' : 'Click a key to change it. Each action can have two keys.'}
+          {waiting ? (waiting.action === 'cancel' ? 'Press the key to use. Click elsewhere to cancel.' : 'Press the key to use. Esc cancels, Backspace clears a second key.') : note || 'Click a key to change it. Each action can have two keys.'}
         </span>
-        <Btn small icon="reset" onClick={() => (resetKeys(), sfx.confirm())}>
+        <ConfirmBtn small tone="default" icon="reset" confirm="Reset every key?" onClick={() => (resetKeys(), setNote('Every key is back to its default.'), sfx.confirm())}>
           Reset to defaults
-        </Btn>
+        </ConfirmBtn>
       </div>
       <div className="grid min-h-0 flex-1 grid-cols-3 gap-2">
         {groups.map((group) => (
@@ -234,7 +257,7 @@ export function KeysPanel() {
                     {[0, 1].map((slot) => {
                       const on = waiting?.action === a.id && waiting.slot === slot
                       return (
-                        <button key={slot} onClick={() => setWaiting({ action: a.id, slot })} className={`num h-6 min-w-12 border px-2 text-[10px] uppercase ${on ? 'border-accent bg-accent/10 text-accent' : keys[slot] ? 'border-line2 text-fg hover:border-accent' : 'border-line text-faint hover:border-line2'}`}>
+                        <button key={slot} data-keyslot aria-label={`${a.label}, ${slot ? 'second' : 'first'} key: ${on ? 'press a key' : keys[slot] ? keyName(keys[slot]) : 'not set'}`} onClick={() => (setNote(''), setWaiting(on ? null : { action: a.id, slot: Math.min(slot, keys.length) }))} className={`num h-6 min-w-12 border px-2 text-[10px] uppercase ${on ? 'border-accent bg-accent/10 text-accent' : keys[slot] ? 'border-line2 text-fg hover:border-accent' : 'border-line text-faint hover:border-line2'}`}>
                           {on ? '...' : keys[slot] ? keyName(keys[slot]) : '--'}
                         </button>
                       )

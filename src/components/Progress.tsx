@@ -1,7 +1,7 @@
 // How the company grows, on screen: the card that explains a locked place,
 // the strip that announces a new one, the tree of everything there is to earn,
 // and the executive seats.
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { sfx } from '../audio/sfx'
 import { fmtDate, hireExec } from '../sim/game'
 import { CAPS, type CapId, type Capability, GROWTH_STAGES, type ReqState, START_WITH, type Where, capOf, capsOfExec, execAvailable, execNeeds, has, isNear, lockTip, needText, nextReq, ratioOf, reqsOf, vacantSeats } from '../sim/progress'
@@ -9,7 +9,7 @@ import { EXECS, TRAITS, execOf } from '../sim/staff'
 import { EXEC_IDS, type Employee, type ExecId, type GameState } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { Icon, type IconName } from './icons'
-import { Btn, Head, IconBtn, type LockProps, Meter, Tag, money, num, pct } from './ui'
+import { Btn, Head, IconBtn, type LockProps, Meter, Tag, money, num, pct, useLayer } from './ui'
 
 const iconOf = (c: Capability) => c.icon as IconName
 /** Where "take me there" leads for something that is open. */
@@ -104,19 +104,23 @@ export function LockCard() {
   const card = useStore((s) => s.lockCard)
   const railOpen = useStore((s) => s.railOpen)
   const close = () => useStore.getState().showLock(null)
-  useEffect(() => {
-    if (!card) return
-    const key = (e: KeyboardEvent) => e.key === 'Escape' && close()
-    window.addEventListener('keydown', key)
-    return () => window.removeEventListener('keydown', key)
-  }, [card])
-  if (!card || has(g, card.cap)) return null
+  const shown = !!card && !has(g, card.cap)
+  const box = useRef<HTMLDivElement>(null)
+  const host = useRef<HTMLDivElement>(null)
+  useLayer(shown, close, { box })
+  // where it was asked for is a place in the window; the card is placed in its own frame, which starts lower when a notice sits above the game
+  const [frame, setFrame] = useState({ top: 0, height: 0 })
+  useLayoutEffect(() => {
+    const r = host.current?.getBoundingClientRect()
+    if (r) setFrame((was) => (was.top === r.top && was.height === r.height ? was : { top: r.top, height: r.height }))
+  }, [shown, card?.y])
+  if (!card || !shown) return null
   const cap = capOf(card.cap)
   // beside the navigation when it was asked for there, otherwise over the middle of the screen
-  const style = card.y !== undefined ? { left: (railOpen ? 172 : 52) + 8, top: Math.max(48, Math.min(card.y - 24, window.innerHeight - 420)) } : { left: '50%', top: 76, transform: 'translateX(-50%)' }
+  const style = card.y !== undefined ? { left: (railOpen ? 172 : 52) + 8, top: Math.max(48, Math.min(card.y - frame.top - 24, (frame.height || window.innerHeight) - 420)), maxHeight: 'calc(100% - 56px)' } : { left: '50%', top: 76, transform: 'translateX(-50%)', maxHeight: 'calc(100% - 84px)' }
   return (
-    <div className="absolute inset-0 z-40" onClick={close}>
-      <div className="absolute w-[340px] border border-line2 bg-panel" style={style} onClick={(e) => e.stopPropagation()} role="dialog" aria-label={`${cap.name}: not open yet`}>
+    <div ref={host} className="absolute inset-0 z-40" onClick={close}>
+      <div ref={box} className="absolute w-[340px] max-w-[calc(100%-16px)] overflow-y-auto border border-line2 bg-panel outline-none" style={style} onClick={(e) => e.stopPropagation()} role="dialog" aria-label={`${cap.name}: not open yet`}>
         <CapHead cap={cap} right={<IconBtn icon="close" tone="ghost" title="Close (Esc)" onClick={close} />} />
         <CapBody g={g} cap={cap} close={close} />
       </div>
@@ -188,7 +192,9 @@ export function UnlockBanner() {
   const [held, setHeld] = useState(false)
   // each one added buys a little more reading time, and starts the clock again
   useEffect(() => {
-    if (!key || held) return
+    // with nothing on screen there is nothing under the pointer: the next announcement starts its clock afresh
+    if (!key) return setHeld(false)
+    if (held) return
     const t = window.setTimeout(() => dismiss(), (BANNER_SECONDS + 4 * (key.split(' ').length - 1)) * 1000)
     return () => window.clearTimeout(t)
   }, [key, held])
@@ -422,7 +428,9 @@ function Seat({ g, id }: { g: GameState; id: ExecId }) {
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-fg">{def.title}</span>
-          <span className="block truncate text-[10px] text-dim">{def.effect}</span>
+          <span className="block truncate text-[10px] text-dim" title={def.effect}>
+            {def.effect}
+          </span>
         </span>
         <span className="flex shrink-0 flex-wrap justify-end gap-1">
           {runs.map((c) => (
