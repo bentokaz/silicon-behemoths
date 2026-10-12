@@ -455,7 +455,7 @@ export function FrontSigns({ site, crowd }: { site: Site; crowd: Crowd }) {
       ctx.fillStyle = '#2c3036'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      ctx.font = '700 44px system-ui, sans-serif'
+      ctx.font = '700 36px system-ui, sans-serif'
       ctx.fillText('BACK SOON', 128, 68)
     }
     const t = new THREE.CanvasTexture(cv)
