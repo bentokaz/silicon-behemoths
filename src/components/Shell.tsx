@@ -423,7 +423,7 @@ export function Shell() {
         className={`${base} ${on ? 'border-l-accent bg-accent/10 text-accent' : designing ? 'border-l-transparent text-faint hover:bg-hover hover:text-fg' : 'border-l-transparent text-dim hover:bg-hover hover:text-fg'}`}
       >
         {name}
-        {n > 0 ? <span className={`num text-[11px] text-warn ${railOpen ? '' : 'absolute right-1 top-0'}`}>{n}</span> : isNew ? <span className={`text-[11px] text-accent ${railOpen ? '' : 'absolute right-[3px] top-0'}`}>{railOpen ? 'NEW' : '+'}</span> : railOpen && k && <span className={`num text-[11px] ${on ? 'text-dim' : 'text-faint'}`}>{k}</span>}
+        {n > 0 ? <span className={`num text-[11px] text-warn ${railOpen ? '' : 'absolute right-1 top-0'}`}>{n}</span> : isNew ? <span className={`text-[11px] text-accent ${railOpen ? '' : 'absolute right-[3px] top-0'}`}>{railOpen ? 'NEW' : '+'}</span> : railOpen && k && d.id !== 'system' && <span className={`num text-[11px] ${on ? 'text-dim' : 'text-faint'}`}>{k}</span>}
       </button>
     )
   }
