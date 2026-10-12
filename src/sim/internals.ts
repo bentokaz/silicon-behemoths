@@ -1673,6 +1673,7 @@ export function weightShares(d: DeviceDesign, n: Internals): WeightShares {
   let lump = 0
   for (const p of parts) {
     if (p.key === 'works') lump += p.grams
+    else if (!(p.grams > 0)) continue
     else if (p.key === 'buds') {
       // one bud is the one taken apart; the other is whole
       const bud = n.comps.filter(inBud)

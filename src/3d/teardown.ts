@@ -6,7 +6,7 @@
 // printed labels) is made once and marked so that disposing of a model leaves it alone.
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
-import { caseShape, isFlip, standMount } from '../sim/geometry'
+import { caseShape, isFlip, speakerShape, standMount } from '../sim/geometry'
 import type { Box, Comp, Dir, Internals, V3, Zone } from '../sim/internals'
 import type { DeviceDesign, Face, PlacedPart } from '../sim/types'
 import { themeColor } from '../store/theme'
@@ -80,6 +80,14 @@ const M = {
   eyeGlass: share(new THREE.MeshPhysicalMaterial({ color: '#2a3442', roughness: 0.2, metalness: 0.1, clearcoat: 0.6, clearcoatRoughness: 0.25, side: THREE.DoubleSide })),
 }
 
+/**
+ * Nothing in here is drawn above this plane (in world space). It stands far out of the way except while a
+ * speaker's sleeve is being lifted off: then it rides up with the rim of the sleeve, so that what is inside comes
+ * into view under the sleeve as it rises instead of showing through it. The view has to allow materials to clip.
+ */
+const REVEAL = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e9)
+for (const m of Object.values(M).flat()) m.clippingPlanes = [REVEAL]
+
 const boxCache = new Map<string, THREE.BufferGeometry>()
 /** A box with rounded edges, kept so that the next model to want the same one gets it for nothing. */
 function rbox(w: number, h: number, d: number, r: number): THREE.BufferGeometry {
@@ -134,7 +142,7 @@ function printed(text: string, style: 'etch' | 'label' | 'pcb'): THREE.MeshStand
   const t = new THREE.CanvasTexture(c)
   t.colorSpace = THREE.SRGBColorSpace
   t.anisotropy = 4
-  const m = share(new THREE.MeshStandardMaterial({ map: t, roughness: style === 'label' ? 0.82 : 0.7, metalness: 0 }))
+  const m = share(new THREE.MeshStandardMaterial({ map: t, roughness: style === 'label' ? 0.82 : 0.7, metalness: 0, clippingPlanes: [REVEAL] }))
   textCache.set(key, m)
   if (textCache.size > 240) {
     const old = textCache.keys().next().value!
@@ -644,30 +652,34 @@ function draw(c: Comp, g: THREE.Group, a: number, b: number, h: number, toLocal:
         bx(g, a, b, h, M.darkSteel)
         for (const sx of [-1, 1]) for (const sy of [-1, 1]) cy(g, Math.min(a, b) * 0.1, 1.6, M.steel, sx * a * 0.36, sy * b * 0.3, top + 0.8, true)
       } else if (v === 5) {
-        // an LED backlight on its white reflector: a grid of dimming zones with a lamp in each, or strips along two edges
-        bx(g, a, b, h, M.reflector, 0, 0, 0, false)
+        // an LED backlight on its white reflector: a grid of dimming zones with a lamp in each, or strips along two edges.
+        // All of it keeps inside its own thickness: the chassis lies directly on top
+        const base = h * 0.4
+        const rise = h - base
+        const zb = -top + base
+        bx(g, a, b, base, M.reflector, 0, 0, -top + base / 2, false)
         const zones = c.n ?? 0
         const lamp = Math.max(1.6, a / 260)
         if (zones > 0) {
           const rows = Math.max(1, Math.round(Math.sqrt((zones * b) / a)))
           const cols = Math.max(1, Math.round(zones / rows))
           const list: [number, number, number, number, number, number][] = []
-          for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) list.push([lamp, lamp, 0.5, -a / 2 + ((i + 0.5) * a) / cols, -b / 2 + ((j + 0.5) * b) / rows, top + 0.25])
+          for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) list.push([lamp, lamp, rise * 0.5, -a / 2 + ((i + 0.5) * a) / cols, -b / 2 + ((j + 0.5) * b) / rows, zb + rise * 0.25])
           boxes(g, M.ledOff, list)
           // the low walls that keep the light of one zone out of the next
           const walls: [number, number, number, number, number, number][] = []
           const wt = Math.max(0.6, a / 900)
-          for (let i = 1; i < cols; i++) walls.push([wt, b, 0.9, -a / 2 + (i * a) / cols, 0, top + 0.45])
-          for (let j = 1; j < rows; j++) walls.push([a, wt, 0.9, 0, -b / 2 + (j * b) / rows, top + 0.45])
+          for (let i = 1; i < cols; i++) walls.push([wt, b, rise * 0.8, -a / 2 + (i * a) / cols, 0, zb + rise * 0.4])
+          for (let j = 1; j < rows; j++) walls.push([a, wt, rise * 0.8, 0, -b / 2 + (j * b) / rows, zb + rise * 0.4])
           if (walls.length) boxes(g, M.white, walls)
         } else {
           // edge-lit: a light guide over the reflector, and a strip of lamps along the bottom and the top
-          bx(g, a * 0.985, b * 0.955, 0.6, M.pale, 0, 0, top + 0.3, false)
+          bx(g, a * 0.985, b * 0.95, rise * 0.5, M.pale, 0, 0, zb + rise * 0.25, false)
           const n = Math.max(12, Math.min(72, Math.round(a / 16)))
           const list: [number, number, number, number, number, number][] = []
-          for (const s of [-1, 1]) {
-            bx(g, a * 0.97, b * 0.014, 0.5, M.white, 0, s * b * 0.487, top + 0.25, false)
-            for (let i = 0; i < n; i++) list.push([lamp * 1.4, b * 0.008, 0.6, -a * 0.47 + ((i + 0.5) * a * 0.94) / n, s * b * 0.487, top + 0.7])
+          for (const s2 of [-1, 1]) {
+            bx(g, a * 0.97, b * 0.016, rise * 0.3, M.white, 0, s2 * b * 0.488, zb + rise * 0.15, false)
+            for (let i = 0; i < n; i++) list.push([lamp * 1.4, b * 0.009, rise * 0.5, -a * 0.47 + ((i + 0.5) * a * 0.94) / n, s2 * b * 0.488, zb + rise * 0.55])
           }
           boxes(g, M.ledOff, list)
         }
@@ -1139,6 +1151,8 @@ interface Cover {
   move: Motion
   /** Where it goes in the exploded view instead: straight out along the opening. */
   stack: THREE.Vector3 | null
+  /** Its own way of getting there, where a straight line from one place to the other would take it through something. */
+  apart?: (k: number, e: number, pos: THREE.Vector3, quat: THREE.Quaternion) => void
 }
 
 interface Drawn {
@@ -1410,10 +1424,25 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
       move(1, pos0, quat0)
       const aside = pos0.clone().addScaledVector(up, -pos0.dot(up))
       // the back of a television comes away as the last of three sheets, each slid clear of the one before
-      if (d.type === 'tv' || d.type === 'desktop') stack.copy(up).multiplyScalar(size * 0.06 * 3.4).add(new THREE.Vector3(b.width * 1.04, 0, 0))
+      if (d.type === 'tv' || d.type === 'desktop') stack.copy(up).multiplyScalar(size * 0.06 * 4.4).add(new THREE.Vector3(b.width * 1.04, 0, 0))
       else if (aside.lengthSq() > 1 && d.type !== 'console' && d.type !== 'headset' && d.type !== 'laptop') stack.addScaledVector(aside.normalize(), Math.min(b.width, b.height) * 0.9)
     }
-    covers.push({ zone: z.id, group: coverG, move, stack })
+    let apart: Cover['apart']
+    if ((d.type === 'tv' || d.type === 'desktop') && stack) {
+      // the back of a screen on a stand swings shut again as it is drawn straight back, clear of the stand that
+      // passes through it, and only then rises clear of the sheets under it
+      const pivot = new THREE.Vector3(0, b.height / 2, seam.z)
+      const far = stack.dot(up)
+      const pop = size * 0.02
+      apart = (k, e, pos, quat) => {
+        const back = smooth(e / 0.5)
+        const swing = smooth((k - 0.14) / 0.86) * (1 - back)
+        quat.setFromAxisAngle(pitch, 1.83 * swing)
+        pos.copy(pivot).negate().applyQuaternion(quat).add(pivot).addScaledVector(up, pop * smooth(k / 0.22) * (1 - 0.7 * swing) + far * back * k)
+        pos.y += b.height * 1.16 * smooth((e - 0.5) / 0.5) * k
+      }
+    }
+    covers.push({ zone: z.id, group: coverG, move, stack, apart })
   }
 
   // ---- covers that are not cut from the shell: a speaker's sleeve, and the works of an earbud case, which lift out whole
@@ -1432,13 +1461,46 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
     const round = (b.form ?? 'column') !== 'block'
     // four posts between a base and a hoop at the top; on a round speaker they stand on the circle
     const k = round ? 0.7071 : 1
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) bx(t, 2.4, zy, 2.4, M.black, sx * (zx / 2 + 1.2) * k, z.box.c[1], sz * (zz / 2 + 1.2) * k, false)
+    if ((b.form ?? 'column') !== 'orb') for (const sx of [-1, 1]) for (const sz of [-1, 1]) bx(t, 2.4, zy, 2.4, M.black, sx * (zx / 2 + 1.2) * k, z.box.c[1], sz * (zz / 2 + 1.2) * k, false)
     const flat = (o: THREE.Mesh, y: number) => {
       o.rotation.x = -Math.PI / 2
       o.position.set(0, y, 0)
       ;(o.material as THREE.Material).side = THREE.DoubleSide
     }
-    if (round) {
+    if ((b.form ?? 'column') === 'orb') {
+      // an orb's frame follows its shell: ribs from the base to the top like lines of longitude, and a hoop at each end and round the middle
+      const sh = speakerShape(b)
+      const lo = z.box.c[1] - zy / 2
+      const hi = z.box.c[1] + zy / 2
+      const at = (an: number, y: number) => {
+        const k2 = Math.sqrt(Math.max(0.02, 1 - (y / sh.ry) ** 2))
+        return new THREE.Vector3(Math.cos(an) * (b.width / 2 - 3.4) * k2, y, Math.sin(an) * (b.thickness / 2 - 3.4) * k2)
+      }
+      const ribs = 6
+      const steps = 8
+      const cage = new THREE.InstancedMesh(BOX, M.black, ribs * steps)
+      const m4 = new THREE.Matrix4()
+      const q = new THREE.Quaternion()
+      const yAxis = new THREE.Vector3(0, 1, 0)
+      for (let i = 0; i < ribs; i++) {
+        for (let j = 0; j < steps; j++) {
+          const an = ((i + 0.5) / ribs) * Math.PI * 2
+          const p0 = at(an, lo + ((hi - lo) * j) / steps)
+          const p1 = at(an, lo + ((hi - lo) * (j + 1)) / steps)
+          const len = p0.distanceTo(p1)
+          q.setFromUnitVectors(yAxis, p1.clone().sub(p0).normalize())
+          cage.setMatrixAt(i * steps + j, m4.compose(p0.add(p1).multiplyScalar(0.5), q, new THREE.Vector3(2, len + 0.6, 2)))
+        }
+      }
+      cage.raycast = () => {}
+      cage.receiveShadow = true
+      t.add(cage)
+      for (const [y, solid] of [[lo - 0.4, true], [hi + 0.6, false], [0, false]] as const) {
+        const edge = at(0, y).x * 2 + 2.4
+        const edgeZ = at(Math.PI / 2, y).z * 2 + 2.4
+        flat(part(t, solid ? DISC : RING, M.black, edge, edgeZ, 1), y)
+      }
+    } else if (round) {
       flat(part(t, DISC, M.black, zx + 5, zz + 5, 1), z.box.c[1] - zy / 2 - 0.4)
       flat(part(t, RING, M.black, zx + 5, zz + 5, 1), z.box.c[1] + zy / 2 + 0.6)
     } else {
@@ -1628,7 +1690,8 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
       const e = smooth(explode) * k
       for (const cv of covers) {
         cv.move(k, pos, quat)
-        if (cv.stack && e > 0) {
+        if (cv.apart && e > 0) cv.apart(k, e, pos, quat)
+        else if (cv.stack && e > 0) {
           pos.lerp(cv.stack, e)
           quat.slerp(ident, e)
         }
@@ -1702,6 +1765,10 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
         gh.g.position.copy(gh.at).addScaledVector(gh.up, lift(gh, k, e))
         gh.g.scale.setScalar(Math.max(0.001, 1 - smooth(t)))
       }
+      if (d.type === 'speaker' && vis && k < 0.4) {
+        anchor.updateWorldMatrix(true, false)
+        REVEAL.constant = anchor.localToWorld(pos.set(0, -b.height / 2 + b.height * 1.08 * smooth(k / 0.4), 0)).y
+      } else REVEAL.constant = 1e9
       if (notch) {
         notch.on.updateWorldMatrix(true, false)
         notch.world.forEach((p, i) => p.copy(notch!.local[i]).applyMatrix4(notch!.on.matrixWorld))
