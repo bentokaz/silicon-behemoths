@@ -1084,7 +1084,9 @@ export class Crowd {
         way.length = 0
         way.push(b.x, b.y, b.z)
         if (from.via) for (let k = from.via.length - 3; k >= 0; k -= 3) way.push(from.via[k], from.via[k + 1], from.via[k + 2])
-        way.push(this.nav.cx(from.access), 0, this.nav.cz(from.access))
+        // off a row of seats many people come down to the same tile: each to a place of their own on it
+        const loose = from.row ? 0.5 : 0
+        way.push(this.nav.cx(from.access) + (rnd(b.seed + 21) - 0.5) * loose, 0, this.nav.cz(from.access) + (rnd(b.seed + 22) - 0.5) * loose)
         b.crab = from.row ? from.face : NaN
         this.startWay(b)
         b.mode = Mode.Exit
@@ -1685,9 +1687,14 @@ export class Crowd {
         const ox = o.x - b.x
         const oz = o.z - b.z
         if (ox * ox + oz * oz > WAY_GAP * WAY_GAP || ox * b.hx + oz * b.hz < 0.08 || o.hx * b.hx + o.hz * b.hz < 0.3) continue
+        // where two ways run together each may be ahead of the other: one of them goes first. And nobody waits for ever
+        if (-ox * o.hx - oz * o.hz >= 0.08 && b.seed + b.look * 1e-4 < o.seed + o.look * 1e-4) continue
+        if (b.waited > 2.5) continue
+        b.waited += dt
         b.speed = 0
         return false
       }
+      b.waited = Math.max(0, b.waited - dt * 0.5)
     }
     const step = speed * dt
     b.wayAt = Math.min(b.wayLen, b.wayAt + step)

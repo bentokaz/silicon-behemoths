@@ -16,6 +16,8 @@ export const WALL_T = 0.16
 export const CUT_H = 0.9
 export const STOREY = 3
 const DOOR_H = 2.1
+/** A stretch of straight wall shorter than this, in metres, between a grid corner and a curved wall gets no post of its own at the curve. */
+const STUB = 0.45
 const CAP = '#1c1e22'
 const POST = '#33363b'
 
@@ -457,8 +459,10 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
         if (kind !== 'open') edges.set(`${x},${y},${side}`, glassWall ? 'glass' : 'wall')
       } else if (kind !== 'open') {
         // a stretch that stops short of the corner ends in a post, where the curved wall takes over
-        // (a stretch of a centimetre or two only squares off a corner the curve clips, and needs none)
-        if (len > 0.08) for (const u of [u0, u1]) if (u > 0.001 && u < 0.999) post(ox + x + (side === 'n' ? u : 0), oz + y + (side === 'w' ? u : 0), full && exterior ? top + 0.345 : H + 0.035)
+        // (a stretch of a centimetre or two only squares off a corner the curve clips, and needs none; nor does a
+        // short stub, whose end lies inside the curved wall's own thickness: a second post that close to the one
+        // at the grid corner would read as a lump, so the stub simply runs into the curve)
+        if (len >= STUB) for (const u of [u0, u1]) if (u > 0.001 && u < 0.999) post(ox + x + (side === 'n' ? u : 0), oz + y + (side === 'w' ? u : 0), full && exterior ? top + 0.345 : H + 0.035)
         if (len > 0.08 && u0 <= 0.001) edges.set(`${x},${y},${side}:0`, glassWall ? 'glass' : 'wall')
         if (len > 0.08 && u1 >= 0.999) edges.set(`${x},${y},${side}:1`, glassWall ? 'glass' : 'wall')
       }

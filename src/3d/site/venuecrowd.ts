@@ -22,7 +22,7 @@ export interface Programme {
 export type Phase = 'closed' | 'crew' | 'rehearsal' | 'doors' | 'show' | 'ovation' | 'out'
 
 /** The run of a show day, in hours on the site clock. */
-export const SHOW = { crewIn: 7.6, rehearse: 10, rehearseEnd: 11.4, doors: 12.3, start: 14, ovation: 15.6, end: 15.8, cleared: 16.8, crewOut: 18.4 }
+export const SHOW = { crewIn: 7.6, rehearse: 10, rehearseEnd: 11.4, doors: 12, start: 14, ovation: 15.6, end: 15.8, cleared: 16.8, crewOut: 18.4 }
 /** Moments in the show that get a round of applause, in hours after it starts, and how long each lasts. */
 const BEATS = [0.28, 0.62, 0.96, 1.28]
 const BEAT_LEN = 0.075
@@ -111,7 +111,7 @@ export class VenueCrowd extends Crowd {
     if (nav.entry >= 0 && this.seats.length) {
       let far = 0
       for (const seat of this.seats) far = Math.max(far, Math.abs(seat.x - nav.cx(nav.entry)) + Math.abs(seat.z - nav.cz(nav.entry)))
-      this.lead = Math.max(0.4, (far / 1.45 + 22) / 45)
+      this.lead = Math.max(0.4, ((far * 1.3) / 1.45 + 26) / 45)
     }
     // the steps down the open sides of raised seating stand on the edge of the aisle beside it: walkers keep off that edge
     this.shy.clear()

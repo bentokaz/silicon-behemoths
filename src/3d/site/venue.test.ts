@@ -216,7 +216,9 @@ describe('a venue on a show day', () => {
       expect(closest).toBeGreaterThan(0.25)
       expect(crowd.ghosts).toBe(0)
       // and they all get out again
-      run(crowd, SHOW.start, SHOW.cleared + 0.8)
+      run(crowd, SHOW.start, SHOW.cleared + 0.8, (t) => {
+        if (Math.round(t * 2700) % 540 === 0 && t > SHOW.end) console.log('OUT', turned, t.toFixed(2), crowd.phase, crowd.bodies.filter((b) => b.kind === Kind.Guest).length, crowd.bodies.filter((b) => b.kind === Kind.Guest && b.spot === b.seat).length, crowd.house.toFixed(2), JSON.stringify(crowd.bodies.filter((b) => b.kind === Kind.Guest).slice(0, 6).map((b) => [b.mode, b.striding, +(b.x + site.w / 2).toFixed(1), +(b.z + site.h / 2).toFixed(1), +b.y.toFixed(2), +b.speed.toFixed(1), +b.wayAt.toFixed(1), +b.wayLen.toFixed(1), b.stage])))
+      })
       expect(crowd.bodies.filter((b) => b.kind === Kind.Guest).length).toBe(0)
       expect(crowd.ghosts).toBe(0)
     }
