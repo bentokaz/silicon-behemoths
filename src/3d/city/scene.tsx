@@ -12,7 +12,7 @@ import { BOARD_SLOTS, type District, HOME, ISLAND, ISLAND_STREETS, LOTS, PIER, t
 
 const PAVE = '#a7a399'
 const ROAD = '#33363a'
-const LANE = '#8e8a81'
+const LANE = '#87837a'
 const LAWN = '#5d8a49'
 const CONCRETE = '#8b8d8a'
 const SEAWALL = '#6d6b64'

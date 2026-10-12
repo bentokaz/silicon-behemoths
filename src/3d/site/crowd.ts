@@ -107,8 +107,9 @@ export class Body {
   thinkIn = 0
   seat: Spot | null = null
   station: Spot | null = null
-  /** What a factory hand is there to do (see factorycrowd.ts). */
+  /** What a factory hand is there to do, and which shift they work (see factorycrowd.ts). */
   job = 0
+  crew = 0
   /** The reception desk they look after instead of sitting at their own, if they are the one on the front desk. */
   post: Spot | null = null
   /** Seconds left of a handshake across the reception desk, and who it is with. */

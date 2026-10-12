@@ -365,7 +365,16 @@ export function OfficeItem({ kind, c }: { kind: string; c: OfficeCtx }) {
           <B p={[0, 0.1, 0.184]} s={[1.86, 0.03, 0.012]} c="#ffffff" r={0} glow="#ffd9a8" glowPower={1.4 * c.glow} cast={false} />
           <Sign p={[0, 0.62, 0.184]} size={[1.1, 0.5]} name={c.company} logo={c.logo} glow={0.6 * c.glow} color="#2c3036" />
           <Monitor x={0.4} z={-0.2} y={0.735} w={0.4} glow={c.glow} on />
-          <Chair z={-0.45} rotY={Math.PI} />
+          {/* whoever is on the desk is drawn by the view, on their feet behind the counter: then only a stool stands by, at the end */}
+          {c.live ? (
+            <>
+              <C p={[-0.62, 0.3, -0.4]} r={[0.02, 0.02]} h={0.6} c={STEEL} seg={8} cast={false} />
+              <C p={[-0.62, 0.62, -0.4]} r={[0.15, 0.15]} h={0.05} c={DARK} seg={14} />
+              <C p={[-0.62, 0.02, -0.4]} r={[0.16, 0.18]} h={0.03} c={STEEL} seg={14} cast={false} />
+            </>
+          ) : (
+            <Chair z={-0.45} rotY={Math.PI} />
+          )}
         </>
       )
     case 'logowall':

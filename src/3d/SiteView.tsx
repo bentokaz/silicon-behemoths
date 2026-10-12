@@ -26,7 +26,7 @@ import { FactoryFloor, shippingDocks } from './site/factorylife'
 import { Jacks } from './site/jacks'
 import { Doors, Dropping, Sparks, SparksView, WallFx, type WallPiece, snapshot, wallChanges, wallHeight } from './site/fx'
 import { Baked, type PersonLook, hash } from './site/kit'
-import { DeskScreens, RoomLights, StageLights } from './site/lights'
+import { DeskScreens, FrontSigns, RoomLights, StageLights } from './site/lights'
 import { buildNav, cutOffRooms } from './site/nav'
 import { OfficeItem } from './site/office'
 import { type Target, itemTarget, placeBeside, rayBox } from './site/pick'
@@ -86,8 +86,12 @@ export interface RunInfo {
 
 /** What the area tool would do where the pointer is, beyond how much ground it covers. */
 export interface AreaNote {
-  /** The room would take the whole courtyard: a box that covers most of it, or the fill tool. */
+  /** The room would take the whole courtyard: a box that covers half of it or more, or the fill tool. */
   filled?: boolean
+  /** Open ground, in square metres, in the curved courtyard a box is being drawn in: half of this or more and the box takes it all. */
+  yard?: number
+  /** Metres of the plot's edge that close the courtyard the fill tool points at, where walls do not go all the way round. */
+  rim?: number
   /** Why the fill tool cannot be used here. */
   error?: string
 }
@@ -203,7 +207,7 @@ function ItemModel({ kind, item, c }: { kind: SiteKind; item: string; c: ItemCtx
   if (kind === 'office') return <OfficeItem kind={item} c={{ who: c.who, glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, devices: c.devices, on: c.on, live: c.live, progress: c.progress, busy: c.busy }} />
   if (kind === 'factory') return <FactoryItem kind={item} c={{ running: !!c.running, flow: c.flow, glow: c.glow, seed: c.seed, fill: c.fill, away: c.away, live: c.live }} />
   if (kind === 'store') return <StoreItem kind={item} c={{ products: c.products, glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, soldOut: c.soldOut }} />
-  return <VenueItem kind={item} c={{ glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, crowd: c.show?.crowd ?? 0, cheer: c.show?.cheer ?? false, show: !!c.show, screen: c.show?.screen, products: c.products, aisles: c.aisles }} />
+  return <VenueItem kind={item} c={{ glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, crowd: c.show?.crowd ?? 0, cheer: c.show?.cheer ?? false, show: !!c.show, screen: c.show?.screen, products: c.products, aisles: c.aisles, live: c.live }} />
 }
 
 /** One block of furniture, merged into a few meshes. Only looked at again when its signature changes. */
@@ -1005,7 +1009,7 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
     return {
       who: item.id ? occupant.get(item.id) : undefined,
       on: !!item.id && liveSeats.has(item.id),
-      live: site.kind === 'factory' ? crowdOn : liveKinds && (item.kind === 'server' || item.kind === 'helpdesk' || item.kind === 'screen' || item.kind === 'showcase'),
+      live: site.kind === 'factory' || item.kind === 'reception' ? crowdOn : liveKinds && (item.kind === 'server' || item.kind === 'helpdesk' || item.kind === 'screen' || item.kind === 'showcase'),
       glow,
       company,
       logo,
@@ -1031,7 +1035,7 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
         const on = shown.get(item.id)
         return `${item.id}:${item.x},${item.y},${item.rot}:${who ? who.look + who.color : liveSeats.has(item.id) ? 'L' : ''}:${line?.linked.has(item.id) ? 1 : 0}${line?.flow.get(item.id)?.join('') ?? ''}${on ? on.devices.map((p) => p.id).join('') + (on.progress ?? '') : ''}${yard.managed.has(item.id) ? 'A' : ''}${site.kind === 'venue' ? seatAisles(site, item) || '' : ''}`
       })
-      .join('|') + `#${Math.round(glow * 10)}${running ? 'r' : ''}${site.kind === 'factory' ? `${Math.round(busy * 5)}${crowdOn ? 'w' : ''}` : ''}${company}${logo?.length ?? 0}${color}${productKey}${soldKey}${liveKinds ? 'v' : ''}${researching ? 'R' : ''}${showcaseList[0]?.id ?? ''}${staged ? `s${staged.screen?.uuid ?? ''}` : ''}`
+      .join('|') + `#${Math.round(glow * 10)}${running ? 'r' : ''}${site.kind === 'factory' ? `${Math.round(busy * 5)}${crowdOn ? 'w' : ''}` : ''}${company}${logo?.length ?? 0}${color}${productKey}${soldKey}${liveKinds ? 'v' : ''}${crowdOn ? 'c' : ''}${researching ? 'R' : ''}${showcaseList[0]?.id ?? ''}${staged ? `s${staged.screen?.uuid ?? ''}` : ''}`
 
   const place = (item: SiteItem): [number, number, number] => {
     const def = ITEMS[site.kind][item.kind]
@@ -1107,27 +1111,29 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
     if (!hover || !tool) return null
     if (areaTool) {
       /** A whole courtyard, shown in its true shape: its open tiles and the corners its curved walls leave over. */
-      const yard = (tiles: [number, number][], live = curveTiles(site)) => {
-        const pocket = tiles.length ? pocketAt(site, tiles[0][0], tiles[0][1], live) : null
-        return { good: tiles, bad: [] as [number, number][], curve: null, area: tiles.length, shapes: (pocket?.curved ?? []).flatMap((key) => live.get(key)?.shape.outside ?? []), note: { filled: true } as AreaNote }
+      const yard = (tiles: [number, number][], live = curveTiles(site), pocket = tiles.length ? pocketAt(site, tiles[0][0], tiles[0][1], live) : null) => {
+        const note: AreaNote = { filled: true, rim: pocket && !pocket.enclosed ? Math.round(pocket.rim) : undefined }
+        return { good: tiles, bad: [] as [number, number][], curve: null, area: tiles.length, shapes: (pocket?.curved ?? []).flatMap((key) => live.get(key)?.shape.outside ?? []), note }
       }
       if (filling) {
         const live = curveTiles(site)
         const pocket = pocketAt(site, hover.x, hover.y, live)
         const error = fillError(pocket)
         if (error || !pocket) return { good: [], bad: [[hover.x, hover.y]] as [number, number][], curve: null, area: 0, note: { error: error ?? '' } as AreaNote }
-        return yard(pocket.tiles, live)
+        return yard(pocket.tiles, live, pocket)
       }
       const from = anchor ?? [hover.x, hover.y]
-      // a box that covers most of a curved courtyard takes the whole of it
-      const plan = tool.type === 'room' && anchor && shape === 'rect' ? zonePlan(site, from[0], from[1], hover.x, hover.y, shape, opts) : null
-      if (plan?.filled) return yard(plan.tiles)
+      // a box across half or more of a curved courtyard takes the whole of it; one in such a courtyard at all is told so,
+      // before the first corner is set as well as after
+      const plan = tool.type === 'room' && shape === 'rect' && site.curves?.length ? zonePlan(site, from[0], from[1], hover.x, hover.y, shape, opts) : null
+      if (plan?.filled && anchor) return yard(plan.tiles)
+      const inYard: AreaNote | undefined = plan?.yard ? { yard: plan.yard } : undefined
       // a room with a curved wall takes every tile the curve touches
       const all = areaTiles(from[0], from[1], hover.x, hover.y, shape, opts, tool.type === 'room').filter(([x, y]) => inPlot(site, x, y))
       const good = all.filter(([x, y]) => (tool.type === 'clear' ? !!gridAt(site, x, y) : !gridAt(site, x, y) && !(tool.type === 'room' && itemAt(site, x, y))))
       const bad = tool.type === 'room' ? all.filter(([x, y]) => gridAt(site, x, y) || itemAt(site, x, y)) : []
       const curve = anchor ? curveFor(from[0], from[1], hover.x, hover.y, shape, opts) : null
-      return { good, bad, curve, area: tool.type === 'room' ? Math.round(areaOf(good, curve)) : good.length }
+      return { good, bad, curve, area: tool.type === 'room' ? Math.round(areaOf(good, curve)) : good.length, note: inYard }
     }
     if (tool.type === 'item') {
       const def = ITEMS[site.kind][tool.kind]
@@ -1207,7 +1213,7 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
 
   const previewCount = areaTool && (anchor || filling) && preview ? ('area' in preview && preview.area !== undefined ? preview.area : preview.good.length) : 0
   const areaNote = areaTool && preview && 'note' in preview ? preview.note : undefined
-  const noteKey = areaNote ? `${areaNote.filled ? 1 : 0}|${areaNote.error ?? ''}` : ''
+  const noteKey = areaNote ? `${areaNote.filled ? 1 : 0}|${areaNote.error ?? ''}|${areaNote.yard ?? 0}|${areaNote.rim ?? 0}` : ''
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => onPreview?.(previewCount, areaNote), [previewCount, noteKey, onPreview])
 
@@ -1453,6 +1459,9 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
   }, [hot, tool])
 
   const venueStage = site.kind === 'venue' ? site.items.find((i) => i.kind === 'stage') : undefined
+  // a show in a hall: the hall's own lights go down for it, whatever the hour outside. Seen with the roof off, that
+  // means less of the daylight too
+  const houseDown = !!staged && !!venueStage && gridAt(site, venueStage.x, venueStage.y) > 0 && !dark
   const stage = show?.presenter ? venueStage : undefined
   const sun: [number, number, number] = [M.sunDir[0] * span * 1.4, M.sunDir[1] * span * 1.4, M.sunDir[2] * span * 1.4]
   const far = span * 7 + 420
@@ -1468,10 +1477,10 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
     <Canvas shadows={Q.shadows > 0} dpr={[1, Q.dpr]} camera={{ fov: 30, near, far, position: home }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: dark ? 1.25 : 1, powerPreference: 'high-performance' }}>
       <color attach="background" args={[sky]} />
       <fog attach="fog" args={[sky, span * 3 + 80, far * 0.9]} />
-      <hemisphereLight args={[dark ? '#6a7fa8' : '#fff4e6', dark ? '#14161c' : '#4a4338', M.hemi + (dark ? 0.35 : 0)]} />
+      <hemisphereLight args={[dark ? '#6a7fa8' : '#fff4e6', dark ? '#14161c' : '#4a4338', (M.hemi + (dark ? 0.35 : 0)) * (houseDown ? 0.42 : 1)]} />
       <directionalLight
         color={M.sunColor}
-        intensity={M.sun}
+        intensity={M.sun * (houseDown ? 0.2 : 1)}
         position={sun}
         castShadow={Q.shadows > 0}
         shadow-mapSize={[Q.shadows || 512, Q.shadows || 512]}
@@ -1485,8 +1494,8 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
         shadow-camera-far={span * 5 + 60}
       />
       {/* a venue has a wash on its stage and house lights over the seats, which go down for a show */}
-      {site.kind === 'venue' && <StageLights site={site} mood={mood} show={!!staged} />}
-      <Environment resolution={128} frames={1} environmentIntensity={dark ? 0.12 : 0.4}>
+      {site.kind === 'venue' && <StageLights site={site} mood={mood} show={!!staged} down={houseDown} />}
+      <Environment resolution={128} frames={1} environmentIntensity={dark ? 0.12 : houseDown ? 0.16 : 0.4}>
         <color attach="background" args={[sky]} />
         <Lightformer form="rect" intensity={3} color="#fff1e0" position={[0, 8, 0]} rotation-x={Math.PI / 2} scale={[14, 14, 1]} />
         <Lightformer form="rect" intensity={1.4} color="#cfe0ff" position={[-8, 2, 0]} scale={[4, 6, 1]} target={[0, 0, 0]} />
@@ -1551,8 +1560,9 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
         }}
       >
         {lively && <Day crowd={crowd} speed={speed} onTurn={onTurn} />}
-        {crowd && <People crowd={crowd} cap={site.kind === 'store' ? cap : site.kind === 'venue' ? VENUE_WALKERS[prefs.quality] + 10 : cap + 8} neg={neg} />}
+        {crowd && <People crowd={crowd} cap={site.kind === 'store' ? cap : site.kind === 'venue' ? VENUE_WALKERS[prefs.quality] + 10 : site.kind === 'factory' ? cap * 2 + 8 : cap + 8} neg={neg} />}
         {crowd instanceof FactoryCrowd && <Jacks crowd={crowd} />}
+        {crowd && (site.kind === 'office' || site.kind === 'venue') && <FrontSigns site={site} crowd={crowd} />}
         {crowd && site.kind === 'office' && <DeskScreens site={site} items={liveDesks} crowd={crowd} glow={M.glow} />}
         {/* after dark the rooms are lit from within, the ones with people in them brightest */}
         <RoomLights site={site} crowd={crowd} mood={indoor && mood === 'night' ? 'dusk' : mood} lamps={site.kind === 'venue' ? 0 : ROOM_LAMPS[prefs.quality]} gain={site.kind === 'venue' ? (staged ? 0.05 : 0.15) : indoor ? 0.5 : 1} busy={lively && site.kind === 'factory' && !crowd ? () => running : undefined} onDark={mode === 'cut' ? undefined : setDarkRooms} />

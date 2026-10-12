@@ -161,8 +161,8 @@ const PEOPLE = ['#2c4a6e', '#7a1f24', '#3e5a48', '#c9c2b2', '#1d2023', '#c9a227'
 const CARGO = ['#b5462f', '#2f5d8a', '#3f7d4d', '#c9a227', '#8a8f95']
 const MAX_TRUCKS = 24
 const MAX_SHIPS = 12
-/** Enough for a full queue outside thirty stores; with more stores than that the queues are all drawn shorter. */
-const MAX_PEOPLE = 780
+/** Enough for a full queue outside sixty or seventy stores; with more stores than that the queues are all drawn shorter. */
+const MAX_PEOPLE = 1300
 const MAX_PINS = 256
 
 /** Lorries on the streets, ships in the bay and the queues outside the shops. Each kind is one instanced mesh or two. */
@@ -270,8 +270,9 @@ function Movers({ traffic, speed, color, pins }: { traffic: Traffic; speed: numb
       q.setFromAxisAngle(up, spin * 0.9 + i)
       // a store drawn small, in a district whose blocks are full, carries a marker to match
       const k = pin.kind === 'store' ? 0.9 * Math.max(0.45, pin.scale ?? 1) : 1.6
-      // and carries it lower, so that among close neighbours it is plain whose it is
-      m.compose(p.set(pin.x, pin.h + (pin.crowded ? 2.5 : 5) + k + Math.sin(spin * 1.6 + i) * (pin.crowded ? 0.3 : 0.5), pin.z), q, s.set(k, k * 1.3, k))
+      // and carries it just over its own roof, so that among close neighbours, and with a row behind, it is plain whose it is
+      const top = pin.kind === 'store' && pin.site ? (pin.site.floors * 3 + 0.5) * (pin.scale ?? 1) : pin.h
+      m.compose(p.set(pin.x, top + (pin.kind === 'store' ? (pin.crowded ? 1.4 : 3) : 5) + k + Math.sin(spin * 1.6 + i) * (pin.crowded ? 0.3 : 0.5), pin.z), q, s.set(k, k * 1.3, k))
       parts.pins.setMatrixAt(i, m)
       parts.pins.setColorAt(i, c.set(pin.warn ? '#f2b631' : color))
     })

@@ -410,7 +410,9 @@ function build(env: Env, w: number, h: number, mood: Mood): Layout {
     for (let i = 0; i < 9; i++) {
       const x = -far * 0.5 + i * (far / 9) + hash(i * 3) * 8
       if (Math.abs(x) < 6) continue
-      cars.push({ x, z: rz + (i % 2 ? 2.2 : -2.2), rot: i % 2 ? Math.PI / 2 : -Math.PI / 2, seed: i * 7 + w })
+      // on an industrial estate the cars stand at the kerb, leaving both lanes to the lorries (see yard.ts)
+      const off = env === 'industrial' ? 3.6 : 2.2
+      cars.push({ x, z: rz + (i % 2 ? off : -off), rot: i % 2 ? Math.PI / 2 : -Math.PI / 2, seed: i * 7 + w })
     }
   }
 
