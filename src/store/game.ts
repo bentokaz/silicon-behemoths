@@ -281,6 +281,7 @@ export const useStore = create<Store>((set, get) => {
       if (!g || g.gameOver || days <= 0) return
       const lastNews = g.news[0]?.id ?? 0
       const month = Math.floor(g.day / DAYS_PER_MONTH)
+      const startDay = g.day
       const year = Math.floor(g.day / (DAYS_PER_MONTH * 12))
       // while there is money in the bank, keep a recent copy of the game: every
       // couple of days when cash is running low, less often when it is not
@@ -316,7 +317,9 @@ export const useStore = create<Store>((set, get) => {
       const keynote = g.events.find((e) => e.done && e.type === 'keynote' && !shown.has(e.id) && e.beats)
       // the calendar turned: stop and look back on the year
       const turned = Math.floor(g.day / (DAYS_PER_MONTH * 12)) !== year && g.reports.length >= 6
-      const decision = g.incidents.some((i) => !i.done)
+      // something new needs a decision: stop once, when it arrives. It may then wait (a month, after which it settles
+      // itself), and time can go on while it does: stopping on every tick would leave the player unable to let it wait
+      const decision = g.incidents.some((i) => !i.done && i.day > startDay)
       set({ rev: get().rev + 1, speed: g.gameOver || keynote || halt || turned || decision ? 0 : get().speed, checkpoint, showing: keynote ? keynote.id : get().showing, yearEnd: turned ? START_YEAR + year : get().yearEnd })
     },
 

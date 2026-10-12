@@ -23,7 +23,7 @@ import { LICENCE_CAP, chipAdoption, licenceValue } from './tech'
 import { type CustomChip, DEVICE_TYPES, type DeviceType, type GameState } from './types'
 import { designProblem } from './validate'
 import { MIN_FOUNDER, RAISE_GAP, founderStake, raiseBlocked } from './stock'
-import { INCIDENTS, PEAK_DAY, priceIndex, rollIncident, settleIncident } from './world'
+import { INCIDENTS, PEAK_DAY, STARTUPS, priceIndex, rollIncident, settleIncident } from './world'
 import { RECALL_DEADLINE } from './care'
 
 const game = (over: Partial<Parameters<typeof G.newGame>[0]> = {}) => G.newGame({ ...G.defaultConfig(), startCash: 500e6, ...over })
@@ -339,6 +339,23 @@ describe('the world', () => {
     const back = G.migrate(old)
     expect(back.companies[3].origin).toBe('Something Else')
     expect(back.companies[0].origin).toBeUndefined()
+  })
+
+  it('keeps newcomers arriving when every name on the list has been used', () => {
+    const s = game({ unlimitedMoney: true })
+    // a long game in which nearly every rival has gone, and every start-up there has ever been too
+    s.companies.slice(4).forEach((c) => {
+      c.alive = false
+      for (const p of s.products) if (p.companyId === c.id && p.status === 'sale') (p.status = 'ended'), (p.endDay = s.day)
+    })
+    STARTUPS.forEach((name, i) => s.companies.push({ ...JSON.parse(JSON.stringify(s.companies[5])), id: `gone${i}`, name, origin: name, alive: false }))
+    const before = s.companies.length
+    G.tick(s, 360 * 6)
+    const fresh = s.companies.slice(before)
+    expect(fresh.length).toBeGreaterThan(0)
+    for (const c of fresh) expect(c.name).toMatch(/^[A-Z][a-z]+ \d+$/)
+    expect(new Set(s.companies.map((c) => c.name)).size).toBe(s.companies.length)
+    sound(s)
   })
 
   it('stops refurbishing trade-ins when the last workshop that could do it is gone', () => {

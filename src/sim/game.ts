@@ -2063,7 +2063,11 @@ function closeMonth(s: GameState) {
 
   const alive = s.companies.filter((c) => !c.isPlayer && c.alive)
   const used = new Set(s.companies.map((c) => c.name))
-  const free = (s.config.parody ? STARTUP_NAMES : STARTUPS).filter((n) => !used.has(n))
+  const names = s.config.parody ? STARTUP_NAMES : STARTUPS
+  let free = names.filter((n) => !used.has(n))
+  // when every name has been taken (a long game in which the player keeps buying the newcomers), the next
+  // generation takes the old names with a number: the market never runs out of people willing to try
+  for (let n = 2; !free.length && n < 1000; n++) free = names.map((x) => `${x} ${n}`).filter((x) => !used.has(x))
   if (alive.length < 9 && free.length && rand(s) < 0.08) {
     const name = pick(s, free)
     const segs = [pick(s, SEGMENTS).id]
