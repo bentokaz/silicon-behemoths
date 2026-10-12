@@ -1,5 +1,14 @@
 @import 'tailwindcss';
 
+/*
+ * Colour tokens. Every pair of text and background the interface draws is
+ * 4.5:1 or better in all four themes: src/store/contrast.ts holds the list of
+ * pairs and src/store/contrast.test.ts fails when a token change breaks one.
+ *   fg     what matters
+ *   dim    what explains it
+ *   faint  the quietest text there is (labels, table headers, hints)
+ *   mute   not for text: hairlines, empty meters, marks
+ */
 @theme {
   /* Ember (default): warm graphite with a signal-orange accent */
   --color-carbon: #0a0908;
@@ -10,8 +19,9 @@
   --color-line: #2b2622;
   --color-line2: #453d37;
   --color-fg: #f1ece6;
-  --color-dim: #a39a91;
-  --color-faint: #655c54;
+  --color-dim: #aba298;
+  --color-faint: #908981;
+  --color-mute: #655c54;
   --color-accent: #ff6b1a;
   --color-pos: #5fd08a;
   --color-neg: #ff4d4f;
@@ -28,8 +38,9 @@
   --color-line: #262a20;
   --color-line2: #3c4232;
   --color-fg: #eef0e8;
-  --color-dim: #979d8a;
-  --color-faint: #5b6050;
+  --color-dim: #9fa592;
+  --color-faint: #898d80;
+  --color-mute: #5b6050;
   --color-accent: #c6f135;
 }
 [data-theme='ice'] {
@@ -40,8 +51,9 @@
   --color-line: #1e252e;
   --color-line2: #303b48;
   --color-fg: #d9dfe7;
-  --color-dim: #808b98;
-  --color-faint: #56616e;
+  --color-dim: #929ca9;
+  --color-faint: #7e8793;
+  --color-mute: #56616e;
   --color-accent: #36c5d6;
 }
 [data-theme='rose'] {
@@ -52,8 +64,9 @@
   --color-line: #2b2327;
   --color-line2: #45383e;
   --color-fg: #f2e9ec;
-  --color-dim: #a3959b;
-  --color-faint: #6c5e64;
+  --color-dim: #ab9da3;
+  --color-faint: #92858a;
+  --color-mute: #6c5e64;
   --color-accent: #ff4f81;
 }
 
@@ -68,8 +81,8 @@ body {
   background: var(--color-carbon);
   color: var(--color-fg);
   font-family: var(--font-sans);
-  font-size: 13px;
-  line-height: 1.35;
+  font-size: 12px;
+  line-height: 1.4;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
   user-select: none;
@@ -90,22 +103,26 @@ body {
     -webkit-user-select: text;
     user-select: text;
   }
-  /* where the keyboard is: a thin square line in the accent colour, only when keys are in use */
+  /* where the keyboard is: a square line in the accent colour, only when keys are in use */
   :focus-visible {
-    outline: 1px solid var(--color-accent);
+    outline: 2px solid var(--color-accent);
     outline-offset: 1px;
   }
   input[type='range']:focus-visible {
     outline-offset: 3px;
   }
   /* rows that open something can be reached and pressed like buttons */
-  tr[tabindex]:focus-visible {
-    outline-offset: -1px;
+  tr[tabindex]:focus-visible,
+  [data-row]:focus-visible {
+    outline-offset: -2px;
   }
   button:not(:disabled),
   [role='button'],
   summary {
     cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
   }
 }
 
@@ -151,8 +168,11 @@ input[type='range']::-webkit-slider-thumb {
   background: var(--color-accent);
   border: 0;
 }
+input[type='range']:disabled {
+  cursor: not-allowed;
+}
 input[type='range']:disabled::-webkit-slider-thumb {
-  background: var(--color-faint);
+  background: var(--color-mute);
 }
 input[type='color'] {
   -webkit-appearance: none;
@@ -171,17 +191,66 @@ input[type='color']::-webkit-color-swatch {
   border: 0;
 }
 
+/*
+ * The type scale. Nothing in the interface is smaller than 11px.
+ *   11  labels and table headers            .label  .th
+ *   12  body, table cells, buttons          (the body size)
+ *   13  panel titles and navigation         .t-title
+ *   16  the value of a tile                 .t-value
+ *   20  the one headline figure of a screen .t-headline
+ *   48  the main menu only
+ * Uppercase is for navigation and table headers and nothing else; the
+ * monospace face is for numbers and nothing else.
+ */
 .label {
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-size: 11px;
+  line-height: 1.3;
   color: var(--color-dim);
+}
+.th {
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-faint);
+}
+.t-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-fg);
+}
+.t-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 16px;
+  line-height: 1.1;
+}
+.t-headline {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.1;
 }
 .num {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
+/* a key the player can press, drawn as a small cap */
+.kbd {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 4px;
+  border: 1px solid var(--color-line2);
+  background: var(--color-raise);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  color: var(--color-fg);
+}
 
+/* The plain HTML table, where the Table component is not used. */
 table.grid-table {
   width: 100%;
   border-collapse: collapse;
@@ -189,19 +258,22 @@ table.grid-table {
 table.grid-table th {
   text-align: left;
   font-weight: 400;
-  font-size: 10px;
-  letter-spacing: 0.12em;
+  font-size: 11px;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--color-dim);
-  padding: 5px 8px;
+  color: var(--color-faint);
+  height: 28px;
+  padding: 0 8px;
   border-bottom: 1px solid var(--color-line2);
   position: sticky;
   top: 0;
+  z-index: 1;
   background: var(--color-panel);
   white-space: nowrap;
 }
 table.grid-table td {
-  padding: 4px 8px;
+  height: 32px;
+  padding: 0 8px;
   border-bottom: 1px solid var(--color-line);
   white-space: nowrap;
 }
@@ -212,23 +284,7 @@ table.grid-table td {
   padding-right: 4px;
 }
 .tight table.grid-table th {
-  letter-spacing: 0.02em;
-}
-.tight table.grid-table td {
-  font-size: 12px;
-}
-/* the monthly statement has fourteen columns: at the smallest window it goes one step tighter still */
-.tight table.grid-table.ledger th,
-.tight table.grid-table.ledger td {
-  padding-left: 3px;
-  padding-right: 3px;
-}
-.tight table.grid-table.ledger td {
-  font-size: 11px;
-}
-.tight table.grid-table.ledger th {
   letter-spacing: 0;
-  font-size: 9px;
 }
 /* and its longer names are cut short there; the cell's tooltip has them in full */
 .tight table.grid-table td.clip {
