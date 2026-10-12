@@ -2061,9 +2061,9 @@ const OLD_GUIDE = [1, 2, 3, 5, 7, 8, 9, 10, 12, 14, 15, 17, 18]
 
 /**
  * A book foldable designed before the camera of its cover screen became a part of its own has none: it was
- * drawn without being placed. Give it the part, where laying the device out again would put it. The camera
- * was always counted as looks only, and a product's cost and scores were fixed at launch, so nothing else moves.
- * Returns true if the design was changed.
+ * drawn without being placed. Give it the part, where laying the device out again would put it. A product's
+ * cost and scores were fixed when it launched, so nothing about it moves; a design made from it afterwards is
+ * evaluated with the camera, exactly as a freshly laid out one is. Returns true if the design was changed.
  */
 export function addCoverCamera(d: DeviceDesign): boolean {
   if (d?.type !== 'foldable' || isFlip(d.body) || d.parts.some((p) => isCoverCam(d, p))) return false
