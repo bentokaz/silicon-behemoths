@@ -119,6 +119,8 @@ export function DeskScreens({ site, items, crowd, glow }: { site: Site; items: S
 
 /** How brightly a room of each type is left lit when nobody is in it: receptions and shop floors keep a light on. */
 const STANDBY: Record<string, number> = { lobby: 0.45, atrium: 0.3, server: 0.28, sales: 0.5, forum: 0.4, service: 0.3, foyer: 0.45, hall: 0.3, control: 0.35 }
+/** A production hall with the shift gone home is left on a few safety lights: its windows go dark. */
+const FACTORY_HALL = 0.12
 /** Things that light the floor round them after dark, by item kind: reach in metres and strength. */
 const LIT_ITEMS: Record<string, [number, number]> = { lamp: [4.2, 1], sign: [2.6, 0.6], fountain: [3.2, 0.4], logowall: [2.2, 0.5], aquarium: [2.2, 0.5], vending: [1.8, 0.4], showcase: [1.6, 0.45], coffee: [2, 0.35] }
 const NIGHT: Record<Mood, number> = { day: 0, dusk: 0.5, night: 1 }
@@ -159,7 +161,7 @@ export function RoomLights({ site, crowd, mood, lamps, busy, onDark, gain = 1 }:
       const n = site.grid[i]
       if (!n) continue
       let r = rooms.get(n)
-      if (!r) rooms.set(n, (r = { n, tiles: [], x: 0, z: 0, radius: 1, standby: STANDBY[types.get(n) ?? ''] ?? 0 }))
+      if (!r) rooms.set(n, (r = { n, tiles: [], x: 0, z: 0, radius: 1, standby: site.kind === 'factory' && types.get(n) === 'hall' ? FACTORY_HALL : (STANDBY[types.get(n) ?? ''] ?? 0) }))
       r.tiles.push(i)
     }
     for (const r of rooms.values()) {

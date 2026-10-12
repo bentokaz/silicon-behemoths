@@ -683,7 +683,9 @@ export class Crowd {
       if (!r) continue
       let visitor: Body | null = r.shake > 0 ? r.partner : null
       if (r.shake > 0) {
-        r.shake -= dt
+        // they let go when the other does
+        const p = r.partner
+        r.shake = p && p.pose === Pose.Shake && p.mode === Mode.Do && !p.dead ? Math.max(0.05, r.shake - dt) : 0
         r.pose = Pose.Shake
         r.hip = 0.86
         if (r.shake <= 0) r.partner = null

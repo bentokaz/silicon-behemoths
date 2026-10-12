@@ -115,7 +115,7 @@ const DEFS: Record<SiteKind, Record<string, SpotDef[]>> = {
     bench: [s(U.station, 0.1, 0.56, 0, Pose.Perch, 0.5, 1, { hip: 0.66, role: 'researcher' })],
     devrig: [s(U.station, 0, 0.56, 0, Pose.Tend, 0, 1, { role: 'engineer' })],
     printer3d: [s(U.look, 0, 0.72, 0, Pose.Look, 0, 1)],
-    server: [s(U.station, 0, 0.82, 0, Pose.Tend, 0, 1, { role: 'software' })],
+    server: [s(U.station, 0, 0.9, 0, Pose.Tend, 0, 1, { role: 'software' })],
     design: [s(U.station, -0.4, 0.62, 0, Pose.Perch, -0.5, 1, { hip: 0.72, role: 'designer' }), s(U.station, 0.4, 0.62, 0, Pose.Perch, 0.5, 1, { hip: 0.72, role: 'designer' })],
     media: [s(U.station, 0.2, 0.78, 0, Pose.Film, 0.5, 1, { role: 'marketer' })],
     meeting,
