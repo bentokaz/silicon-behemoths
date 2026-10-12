@@ -230,6 +230,9 @@ export interface Product {
   segUnits: Record<string, number>
 }
 
+/** A device that has been on sale at some time (and may since have been discontinued), as opposed to one still in development or shelved before it shipped. */
+export const wasReleased = (p: Pick<Product, 'status' | 'reviews'>) => p.status === 'sale' || (p.status === 'ended' && p.reviews.length > 0)
+
 export interface Company {
   id: string
   name: string
@@ -256,6 +259,8 @@ export interface Company {
   logo?: string
   /** Region id the company is based in. */
   home?: string
+  /** The name a rival was founded under. Where it is based and how far it reaches follow from this, so renaming it moves nothing. */
+  origin?: string
   /** Sales revenue for each of the last 12 months. */
   revYear?: number[]
   revMonth?: number

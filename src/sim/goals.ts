@@ -1,6 +1,6 @@
 // Goals: milestones on the way from a garage to a behemoth. Each pays a small
 // reward the first time it is reached.
-import { DEVICE_TYPES, type GameState, monthCosts } from './types'
+import { DEVICE_TYPES, type GameState, monthCosts, wasReleased } from './types'
 import { type CapId, has } from './progress'
 import { REGIONS } from './regions'
 import { builtTiles, lineStats } from './sites'
@@ -23,7 +23,7 @@ export interface Goal {
 const mine = (s: GameState) => s.products.filter((p) => p.companyId === 'player')
 const units = (s: GameState) => s.companies[0].unitsTotal
 const ratio = (v: number, target: number) => Math.max(0, Math.min(1, v / target))
-const bestReview = (s: GameState) => mine(s).filter((p) => p.status !== 'dev').reduce((m, p) => Math.max(m, p.reviewAvg), 0)
+const bestReview = (s: GameState) => mine(s).filter(wasReleased).reduce((m, p) => Math.max(m, p.reviewAvg), 0)
 const bestMonth = (s: GameState) => s.reports.reduce((m, r) => Math.max(m, r.revenue), 0)
 const share = (s: GameState) => {
   const last = s.shareHistory[s.shareHistory.length - 1]
@@ -33,7 +33,7 @@ const share = (s: GameState) => {
 }
 
 export const GOALS: Goal[] = [
-  { id: 'launch', group: 'Products', name: 'Ship it', note: 'Put your first device on sale.', progress: (s) => (mine(s).some((p) => p.status !== 'dev') ? 1 : 0), cash: 100e3 },
+  { id: 'launch', group: 'Products', name: 'Ship it', note: 'Put your first device on sale.', progress: (s) => (mine(s).some(wasReleased) ? 1 : 0), cash: 100e3 },
   { id: 'u10k', group: 'Products', name: 'Ten thousand', note: 'Sell 10,000 devices.', progress: (s) => ratio(units(s), 10e3), cash: 150e3 },
   { id: 'u100k', group: 'Products', name: 'Six figures', note: 'Sell 100,000 devices.', progress: (s) => ratio(units(s), 100e3), cash: 500e3 },
   { id: 'u1m', group: 'Products', name: 'The first million', note: 'Sell a million devices.', progress: (s) => ratio(units(s), 1e6), cash: 2e6 },
@@ -47,7 +47,7 @@ export const GOALS: Goal[] = [
   { id: 'os', needs: 'labs', group: 'Products', name: 'Own platform', note: 'Ship your own operating system.', progress: (s) => (s.os.own ? 1 : 0), cash: 1e6 },
 
   { id: 'variants', group: 'Products', name: 'A full range', note: 'Sell three versions of the same device at once (such as a Pro and a Lite).', progress: (s) => { const by = new Map<string, number>(); for (const p of mine(s)) if (p.status === 'sale') by.set(p.family, (by.get(p.family) ?? 0) + 1); return ratio(Math.max(0, ...by.values()), 3) }, cash: 800e3 },
-  { id: 'design90', group: 'Products', name: 'Object of desire', note: 'Ship a device with a design score of 90% or more.', progress: (s) => ratio(mine(s).filter((p) => p.status !== 'dev').reduce((m, p) => Math.max(m, p.designPct), 0), 90), cash: 600e3, fans: 5000 },
+  { id: 'design90', group: 'Products', name: 'Object of desire', note: 'Ship a device with a design score of 90% or more.', progress: (s) => ratio(mine(s).filter(wasReleased).reduce((m, p) => Math.max(m, p.designPct), 0), 90), cash: 600e3, fans: 5000 },
   { id: 'hit', group: 'Products', name: 'A hit', note: 'Sell a million units of a single device.', progress: (s) => ratio(mine(s).reduce((m, p) => Math.max(m, p.unitsSold), 0), 1e6), cash: 3e6 },
   { id: 'lines4', needs: 'research', group: 'Products', name: 'Branching out', note: 'Open four kinds of device.', progress: (s) => ratio(s.types ? s.types.length : DEVICE_TYPES.length, 4), cash: 1.5e6 },
   { id: 'happy', group: 'Products', name: 'Loved', note: 'Have a device on sale with owner satisfaction of 85% or more.', progress: (s) => ratio(mine(s).filter((p) => p.status === 'sale').reduce((m, p) => Math.max(m, p.satisfaction), 0), 0.85), cash: 500e3, fans: 8000 },

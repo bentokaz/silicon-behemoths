@@ -532,8 +532,9 @@ export function curveFor(x0: number, y0: number, x1: number, y1: number, shape: 
   const by = Math.max(y0, y1)
   const w = bx - ax + 1
   const h = by - ay + 1
+  if (![x0, y0, x1, y1].every(Number.isFinite)) return null
   const sweep = opts.sweep === 90 || opts.sweep === 180 || opts.sweep === 270 ? opts.sweep : 360
-  const turn = (((opts.turn ?? 0) % 4) + 4) % 4
+  const turn = Number.isFinite(opts.turn) ? (((Math.round(opts.turn!) % 4) + 4) % 4) : 0
   let cx = ax + w / 2
   let cy = ay + h / 2
   let rx = w / 2
@@ -556,7 +557,7 @@ export function curveFor(x0: number, y0: number, x1: number, y1: number, shape: 
   if (Math.min(rx, ry) < MIN_RADIUS) return null
   const spec: CurveSpec = { cx, cy, rx, ry }
   if (shape === 'ring') {
-    const t = Math.max(MIN_THICK, Math.round(opts.thick ?? 4))
+    const t = Math.max(MIN_THICK, Math.round(Number.isFinite(opts.thick) ? opts.thick! : 4))
     if (holeOf({ ...spec, t })) spec.t = t
   }
   if (sweep < 360) {
@@ -961,9 +962,14 @@ export function roomNames(kind: SiteKind, def: ItemDef): string {
   return names.length > 3 ? `${names.slice(0, 3).join(', ')} and ${names.length - 3} more` : names.join(' or ')
 }
 
+/** What is said of something that is not in the list of things a plot can hold. */
+export const UNKNOWN_ITEM = 'There is no such thing to place on this kind of plot'
+
 export function canPlace(site: Site, kind: string, x: number, y: number, rot: number): string | null {
-  const def = ITEMS[site.kind][kind]
-  if (!def) return 'Unknown item'
+  // only what the list itself names: "constructor" is a property of every object, and not a piece of furniture
+  const def = typeof kind === 'string' && Object.hasOwn(ITEMS[site.kind], kind) ? ITEMS[site.kind][kind] : undefined
+  if (!def) return UNKNOWN_ITEM
+  if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(rot)) return 'It does not fit on the plot'
   if (!itemAllowed(site, kind)) return 'Trees do not grow inside a mall'
   let room = -1
   for (const [a, b] of tilesOf(def, x, y, rot)) {

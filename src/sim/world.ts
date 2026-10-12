@@ -1,6 +1,6 @@
 // The wider world: invented company names, which kinds of device a company
 // may build, things that happen to it, and how rivals respond to what it does.
-import { DAYS_PER_YEAR } from '../data/catalog'
+import { DAYS_PER_YEAR, TRACK_INFO } from '../data/catalog'
 import { type SegmentInfo, TYPES, segmentInfo } from '../data/devices'
 import { clamp, int, pick, rand, range } from './rng'
 import { type Company, DEVICE_TYPES, type DeviceType, type GameState, type Incident, type Levels, SUPPLY_CATS, TRACKS } from './types'
@@ -82,8 +82,8 @@ const UNLOCKS: Record<string, Unlock> = {
 /** What it takes to start making a kind of device. Types added later carry their own terms in the type data. */
 export function unlockOf(type: DeviceType): Unlock {
   // the first eight kinds were tuned together here; newer kinds bring their terms with them
-  if (UNLOCKS[type]) return UNLOCKS[type]
-  const own = TYPES[type].unlock
+  if (Object.hasOwn(UNLOCKS, type)) return UNLOCKS[type]
+  const own = Object.hasOwn(TYPES, type) ? TYPES[type].unlock : undefined
   return { cost: own?.cost ?? 4e6, needs: own?.needs ?? {}, from: own?.from ?? [] }
 }
 export const hasType = (s: GameState, type: DeviceType) => !s.types || s.types.includes(type)
@@ -98,7 +98,7 @@ export function unlockBlocked(s: GameState, type: DeviceType): string | null {
   const u = unlockOf(type)
   for (const t of TRACKS) {
     const need = u.needs[t]
-    if (need !== undefined && s.levels[t] < need) return `Needs ${t} research at level ${need}`
+    if (need !== undefined && s.levels[t] < need) return `Needs ${TRACK_INFO[t].name.toLowerCase()} research at level ${need} (you are at level ${s.levels[t]}). Research it first.`
   }
   return null
 }
@@ -133,6 +133,9 @@ const revenue = (s: GameState) => Math.max(200e3, s.reports[s.reports.length - 1
 const bump = (s: GameState, by: number) => {
   for (const r of Object.values(s.regions)) if (r.open) r.awareness = clamp(r.awareness + (1 - r.awareness) * by, 0, 1)
 }
+
+/** How many units a bulk order can still be met with: what was asked for, or what is left in stock if that is less. */
+const bulkUnits = (p: { stock: number } | undefined, i: Incident) => Math.max(0, Math.min(Math.floor(p?.stock ?? 0), i.amount ?? 0))
 
 export const INCIDENTS: Record<string, IncidentDef> = {
   viral: {
@@ -172,7 +175,8 @@ export const INCIDENTS: Record<string, IncidentDef> = {
   poach: {
     title: 'Someone wants your people',
     weight: 3,
-    when: (s) => s.staff.some((e) => e.skill >= 55),
+    // somebody has to be doing the poaching: with every rival gone, nobody is
+    when: (s) => s.staff.some((e) => e.skill >= 55) && s.companies.some((c) => !c.isPlayer && c.alive),
     setup: (s, i) => {
       const stars = s.staff.filter((e) => e.skill >= 55)
       i.staffId = pick(s, stars).id
@@ -346,24 +350,31 @@ export const INCIDENTS: Record<string, IncidentDef> = {
       i.amount = Math.min(p.stock, int(s, 2000, 12000))
       return true
     },
-    text: (s, i) => `A school network wants ${i.amount?.toLocaleString()} units of ${s.products.find((p) => p.id === i.productId)?.name} at 20% off.`,
+    text: (s, i) => `A school network wants ${i.amount?.toLocaleString('en-US')} units of ${s.products.find((p) => p.id === i.productId)?.name} at 20% off.`,
     choices: (s, i) => {
       const p = s.products.find((x) => x.id === i.productId)
+      // paid for what can be shipped: stock sold elsewhere since the offer came is not theirs to buy
+      const units = bulkUnits(p, i)
       return [
-        { label: 'Take the order', note: 'Sold in one go, at a discount.', cost: -Math.round((i.amount ?? 0) * (p?.price ?? 0) * 0.8) },
+        { label: 'Take the order', note: units < (i.amount ?? 0) ? `Only ${units.toLocaleString('en-US')} are left in stock: they take those, at the discount.` : 'Sold in one go, at a discount.', cost: -Math.round(units * (p?.price ?? 0) * 0.8) },
         { label: 'Decline', note: 'Keep the stock for full-price buyers.' },
       ]
     },
     resolve(s, i, c) {
       const p = s.products.find((x) => x.id === i.productId)
       if (c !== 0 || !p) return 'You turned the order down.'
-      const units = Math.min(p.stock, i.amount ?? 0)
+      const units = bulkUnits(p, i)
+      if (!units) return `There was no stock of ${p.name} left to ship. The order lapsed.`
+      const income = Math.round(units * p.price * 0.8)
       p.stock -= units
       p.unitsSold += units
       p.monthUnits += units
+      p.revenue += income
       me(s).unitsTotal += units
+      me(s).revenueTotal += income
+      s.cur.units += units
       s.owners += units
-      return `${units.toLocaleString()} units of ${p.name} shipped to the schools.`
+      return `${units.toLocaleString('en-US')} units of ${p.name} shipped to the schools.`
     },
   },
 }
@@ -390,11 +401,15 @@ export function rollIncident(s: GameState): Incident | null {
 export function settleIncident(s: GameState, id: string, choice: number, canAfford: (n: number) => boolean): { error?: string; text?: string } {
   const i = s.incidents.find((x) => x.id === id)
   const def = i && INCIDENTS[i.kind]
-  if (!i || !def || i.done) return { error: 'That has already been dealt with' }
+  if (!i || !def) return { error: 'There is nothing of that kind waiting for a decision' }
+  if (i.done) return { error: 'That has already been dealt with' }
   const options = def.choices(s, i)
-  const opt = options[choice]
-  if (!opt) return { error: 'Pick an option' }
-  if (opt.cost && opt.cost > 0 && !canAfford(opt.cost)) return { error: 'Not enough cash for that' }
+  const opt = Number.isInteger(choice) ? options[choice] : undefined
+  if (!opt) return { error: 'Pick one of the options' }
+  // the cheapest way out is always open, even into debt: otherwise a company at the end of its credit
+  // could answer neither way, and the incident would wait for ever
+  const cheapest = Math.min(...options.map((o) => Math.max(0, o.cost ?? 0)))
+  if (opt.cost && opt.cost > cheapest && !canAfford(opt.cost)) return { error: `Not enough cash: "${opt.label}" costs $${opt.cost.toLocaleString('en-US')}. Pick the other option, or decide later.` }
   if (opt.cost) {
     s.cash -= opt.cost
     if (opt.cost > 0) s.cur.overhead += opt.cost

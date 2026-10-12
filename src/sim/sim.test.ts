@@ -205,7 +205,7 @@ describe('devices and production', () => {
 
   it('runs a factory line and builds cheaper than a contractor', () => {
     const s = rich()
-    expect(orderProduction(s, 'nope', 10, 'factory')).toMatch(/not available/)
+    expect(orderProduction(s, 'nope', 10, 'factory')).toMatch(/no such device/)
     expect(buildFactory(s)).toBeNull()
     expect(lineStats(s.factory!).running).toBe(false)
     expect(startProduct(s, order(s, { mode: 'factory' }))).toMatch(/no working line/)
