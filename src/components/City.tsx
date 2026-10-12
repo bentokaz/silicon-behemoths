@@ -110,7 +110,7 @@ export function CityScreen() {
         </div>
       )}
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 p-2">
+      <div data-bottom-bar className="pointer-events-none absolute inset-x-0 bottom-0 p-2">
         <div className={`pointer-events-auto inline-block max-w-full border bg-panel/95 px-3 py-[7px] text-[11px] ${hovered ? 'border-accent text-fg' : 'border-line2 text-dim'}`}>{info}</div>
       </div>
     </div>

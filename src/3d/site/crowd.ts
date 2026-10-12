@@ -55,6 +55,10 @@ const WALL_GAP = 0.22
 const DOOR_HALF = 0.2
 const EDGE = 0.5 - WALL_GAP
 const SCRATCH = new Int16Array(PATH_MAX)
+/** How far from the middle of a tile a body's middle may be on a side that has steps along it: clear of them by a shoulder. */
+const SHY = 0.09
+/** How close two people going the same way up a flight of steps or along a row may come. */
+const WAY_GAP = 0.5
 
 export class Body {
   id = ''
@@ -95,6 +99,9 @@ export class Body {
   crab = NaN
   /** 1 while stepping sideways to their right, -1 to their left, 0 walking forwards. */
   sidle = 0
+  /** The way they are moving along the route into or out of a spot, so that people on the same steps keep their distance. */
+  hx = 0
+  hz = 0
   /** Seconds left of whatever they are doing, where that is timed. */
   wait = 0
   thinkIn = 0
@@ -157,6 +164,8 @@ export class Body {
   nextGate = -1
   /** The busy doorway they last looked for a way round, so they only think about it once. */
   swerved = -1
+  /** The tile on the edge of the plot they come in or go out by. */
+  gateTile = -1
   /** The tile someone standing about has to themselves. */
   claim = -1
   /** Smoothed joint angles, owned by the renderer; and what it last drew in their hands. */
@@ -191,7 +200,7 @@ export function describe(b: Body): string {
     if (b.spot && b.spot.use & USE.lunch) return 'On a break'
     return going ? 'On the way to their station' : b.pose === Pose.Type ? 'Watching the line from the control desk' : 'Working the line'
   }
-  if (b.kind === Kind.Front) return b.shake > 0 ? 'Welcoming a new colleague' : b.walking ? 'On the way to the front desk' : b.pose === Pose.Meet ? 'Seeing to a visitor' : 'On reception'
+  if (b.kind === Kind.Front) return b.shake > 0 ? 'Welcoming a new colleague' : b.walking ? 'On the way to the front desk' : b.pose === Pose.Stand ? 'Seeing to a visitor' : 'On reception'
   if (b.kind === Kind.Applicant) return b.hired ? 'Hired: starts in the morning' : 'Here about a job'
   if (b.kind === Kind.Shopper) return b.stage === 1 ? 'Queueing to pay' : b.bag ? 'Leaving with a new device' : 'Browsing'
   if (b.kind === Kind.Guest) return b.walking || b.striding ? (b.leaving ? 'On the way out' : 'Finding a seat') : b.cheer ? 'On their feet' : b.clap > 0.2 ? 'Applauding' : b.pose === Pose.Hold ? 'Trying the device' : 'In the audience'
@@ -203,7 +212,7 @@ export function describe(b: Body): string {
     case Act.Home:
       return 'Heading home'
     case Act.Desk:
-      if (b.post && !b.carry) return going ? 'On the way to the front desk' : b.shake > 0 ? 'Welcoming a new colleague' : b.pose === Pose.Meet ? 'Seeing to a visitor' : 'On reception'
+      if (b.post && !b.carry) return going ? 'On the way to the front desk' : b.shake > 0 ? 'Welcoming a new colleague' : b.pose === Pose.Stand ? 'Seeing to a visitor' : 'On reception'
       return going ? (b.carry ? 'First day: finding their desk' : 'Walking to their desk') : b.slump ? 'At their desk, struggling' : 'Working at their desk'
     case Act.Station:
       return going ? 'On the way to their station' : 'Working at their station'
@@ -244,8 +253,21 @@ export class Crowd {
   private tables: Spot[][] = []
   protected keepOff = (tile: number) => this.keepClear[tile] === 1
   private lobby = new Set<number>()
-  /** The chairs behind the reception desks. */
-  protected fronts: Spot[] = []
+  /** The places behind the reception desks. */
+  fronts: Spot[] = []
+  /** Tiles with something narrow along one edge that a walker keeps off, though the tile itself is clear: the steps down the side of a bank of seats. Bits: 1 west, 2 east, 4 north, 8 south. */
+  protected shy = new Map<number, number>()
+  /**
+   * The tiles on the edge of the plot people come and go by: the way in, and the open ground either side of it where
+   * the edge is not walled. A crowd arriving spreads across them instead of filing through one tile.
+   */
+  private wayIn: number[] = []
+  /** How many tiles either side of the way in a crowd may spread to. */
+  protected spread = 1
+  /** For tests: told whenever someone has to push through. */
+  onGhost: ((b: Body) => void) | null = null
+  /** Everyone following a route into or out of a spot on their feet. */
+  private wayers: Body[] = []
   private hours: OfficeLife['hours'] = 'standard'
   protected settled = false
   private counter = 0
@@ -313,7 +335,21 @@ export class Crowd {
       for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) clear(x + dx, y + dy)
     }
     this.gateLoad = new Int16Array(this.gates.length)
-    if (nav.entry >= 0) this.keepClear[nav.entry] = 1
+    this.wayIn = []
+    if (nav.entry >= 0) {
+      this.wayIn.push(nav.entry)
+      // along the edge of the plot from the way in, for as far as it is open ground that joins up with it
+      const along = Math.abs(nav.outside[1]) > nav.h / 2 ? 1 : w
+      const line = (t: number) => (along === 1 ? (t / w) | 0 : t % w)
+      for (const dir of [-1, 1]) {
+        for (let k = 1; k <= this.spread && !site.grid[nav.entry]; k++) {
+          const t = nav.entry + dir * k * along
+          if (t < 0 || t >= n || line(t) !== line(nav.entry) || !nav.walk[t] || !nav.reach[t] || site.grid[t]) break
+          this.wayIn.push(t)
+        }
+      }
+      for (const t of this.wayIn) this.keepClear[t] = 1
+    }
     // routes keep off the floor where people stand at counters, tables and in queues, when there is another way
     for (const s of spots) {
       if (s.access >= 0) this.keepClear[s.access] = 1
@@ -376,7 +412,7 @@ export class Crowd {
         if (lostGoal) this.stand(b)
         else {
           if (b.goalSpot) b.goalTile = b.goalSpot.access
-          else if (b.leaving) b.goalTile = nav.entry
+          else if (b.leaving) b.goalTile = b.gateTile = nav.entry
           if (b.mode === Mode.Walk) this.route(b)
           else if (b.mode === Mode.Enter && b.goalSpot && b.way.length >= 6) {
             // the chair they are sitting down on may have been turned: finish where it now is
@@ -627,8 +663,13 @@ export class Crowd {
     }
   }
 
+  /** True if someone is behind a reception desk right now. */
+  frontManned(desk: Spot): boolean {
+    return !!this.receptionist(desk)
+  }
+
   /** Whether the front desk is manned at this hour. */
-  protected frontHours(hour: number): boolean {
+  frontHours(hour: number): boolean {
     return hour >= 8.3 && hour < 17.7
   }
 
@@ -695,7 +736,8 @@ export class Crowd {
           const v = s.taken as Body | null
           if (v && v.mode === Mode.Do && v.spot === s) visitor = v
         }
-        r.pose = visitor ? Pose.Meet : desk.pose
+        // hands on the counter; looking up, hands off it, when someone comes to it
+        r.pose = visitor ? Pose.Stand : desk.pose
         r.hip = desk.hip
       }
       // turned toward whoever they are dealing with, and square to the counter otherwise
@@ -930,15 +972,18 @@ export class Crowd {
   protected arriveOutside(b: Body) {
     const nav = this.nav
     // not on top of someone else who is just arriving or leaving
+    b.gateTile = this.wayIn.length ? this.wayIn[Math.floor(rnd(b.seed + 7.3 + this.counter++ * 0.37) * this.wayIn.length)] : nav.entry
+    const ox = nav.outside[0] + nav.cx(b.gateTile) - nav.cx(nav.entry)
+    const oz = nav.outside[1] + nav.cz(b.gateTile) - nav.cz(nav.entry)
     for (let k = 0; k < 8; k++) {
-      b.x = nav.outside[0] + (rnd(b.seed + 3 + k * 1.7) - 0.5) * (2.4 + k * 0.5)
-      b.z = nav.outside[1] + (rnd(b.seed + 4 + k * 2.3) - 0.5) * (1.2 + k * 0.4)
+      b.x = ox + (rnd(b.seed + 3 + k * 1.7) - 0.5) * (2.4 + k * 0.5)
+      b.z = oz + (rnd(b.seed + 4 + k * 2.3) - 0.5) * (1.2 + k * 0.4)
       let free = true
       for (const o of this.bodies) if (o !== b && o.mode !== Mode.Off && (o.x - b.x) ** 2 + (o.z - b.z) ** 2 < 0.36) free = false
       if (free) break
     }
     b.y = 0
-    b.yaw = Math.atan2(-(nav.cx(nav.entry) - b.x), -(nav.cz(nav.entry) - b.z))
+    b.yaw = Math.atan2(-(nav.cx(b.gateTile) - b.x), -(nav.cz(b.gateTile) - b.z))
     b.mode = Mode.In
     b.pose = Pose.Stand
     b.hip = 0.86
@@ -994,7 +1039,17 @@ export class Crowd {
     this.release(b, b.goalSpot)
     this.unclaim(b)
     b.goalSpot = null
-    b.goalTile = this.nav.entry
+    // out by whichever part of the way in is nearest to hand
+    let out = this.nav.entry
+    let near = Infinity
+    for (const t of this.wayIn) {
+      const d = Math.abs(this.nav.cx(t) - b.x) + Math.abs(this.nav.cz(t) - b.z) + rnd(b.seed + t) * 1.5
+      if (d < near) {
+        near = d
+        out = t
+      }
+    }
+    b.goalTile = b.gateTile = out
     b.leaving = true
     if (this.nav.entry < 0 || this.zoneOf(b) !== this.nav.zone[this.nav.entry]) return this.vanish(b)
     this.depart(b)
@@ -1052,6 +1107,7 @@ export class Crowd {
 
   protected startWay(b: Body) {
     const way = b.way
+    b.hx = b.hz = 0
     let len = 0
     for (let k = 3; k < way.length; k += 3) len += Math.hypot(way[k] - way[k - 3], way[k + 1] - way[k - 2], way[k + 2] - way[k - 1])
     b.wayLen = len
@@ -1344,6 +1400,13 @@ export class Crowd {
       if (Math.abs(nx - mx) > Math.abs(nz - mz)) nz = mz + Math.sign(nz - mz) * EDGE
       else nx = mx + Math.sign(nx - mx) * EDGE
     }
+    const shy = this.shy.get(t1)
+    if (shy) {
+      if (shy & 1 && nx < mx - SHY) nx = mx - SHY
+      if (shy & 2 && nx > mx + SHY) nx = mx + SHY
+      if (shy & 4 && nz < mz - SHY) nz = mz - SHY
+      if (shy & 8 && nz > mz + SHY) nz = mz + SHY
+    }
     this.cx = nx
     this.cz = nz
   }
@@ -1494,6 +1557,7 @@ export class Crowd {
       b.still = 0
       b.pass = 1
       this.ghosts++
+      if (this.onGhost) this.onGhost(b)
     }
   }
 
@@ -1587,7 +1651,8 @@ export class Crowd {
     }
     const there = this.toward(b, mx + ox, mz + oz, dt, last ? 0.07 : 0.3, true)
     // someone on the way out is through as soon as they set foot on the tile at the way out: nobody queues for its middle
-    if (there || (!last && cur === tile && b.still > 0.3) || (last && b.leaving && cur === tile) || (last && b.still > 0.8 && (b.x - mx) ** 2 + (b.z - mz) ** 2 < 0.3)) {
+    // nor for the middle of the tile at the foot of the steps to a row of seats: they start up from wherever they reach it
+    if (there || (!last && cur === tile && b.still > 0.3) || (last && cur === tile && (b.leaving || (b.goalSpot?.row && b.goalSpot.via))) || (last && b.still > 0.8 && (b.x - mx) ** 2 + (b.z - mz) ** 2 < 0.3)) {
       if (last) this.arrive(b, false)
       else {
         b.pathAt++
@@ -1613,6 +1678,17 @@ export class Crowd {
       return b.wayAt >= 1
     }
     const speed = b.sidle ? ROW_SPEED : SIDLE_SPEED
+    // whoever is just ahead on the same steps, going the same way, is not walked through
+    if (b.hx || b.hz) {
+      for (const o of this.wayers) {
+        if (o === b || Math.abs(o.y - b.y) > 0.7) continue
+        const ox = o.x - b.x
+        const oz = o.z - b.z
+        if (ox * ox + oz * oz > WAY_GAP * WAY_GAP || ox * b.hx + oz * b.hz < 0.08 || o.hx * b.hx + o.hz * b.hz < 0.3) continue
+        b.speed = 0
+        return false
+      }
+    }
     const step = speed * dt
     b.wayAt = Math.min(b.wayLen, b.wayAt + step)
     let left = b.wayAt
@@ -1627,6 +1703,8 @@ export class Crowd {
         const hz = way[k + 2] - way[k - 1]
         const flat = Math.hypot(hx, hz)
         if (flat > 1e-2) {
+          b.hx = hx / flat
+          b.hz = hz / flat
           // along a row of seats they face the front and step sideways; the step back into the seat itself is taken facing the front too
           const rowed = b.crab === b.crab
           const along = rowed ? (hx * -Math.sin(b.crab) + hz * -Math.cos(b.crab)) / flat : 1
@@ -1651,10 +1729,12 @@ export class Crowd {
     switch (b.mode) {
       case Mode.In:
         // onto the plot anywhere on the tile at the way in: nobody has to reach the very middle of it
-        if (this.toward(b, nav.cx(nav.entry), nav.cz(nav.entry), dt, 0.25, false) || nav.tileAt(b.x, b.z) === nav.entry) this.route(b)
+        if (b.gateTile < 0 || !nav.walk[b.gateTile]) b.gateTile = nav.entry
+        if (this.toward(b, nav.cx(b.gateTile), nav.cz(b.gateTile), dt, 0.25, false) || this.wayIn.includes(nav.tileAt(b.x, b.z))) this.route(b)
         break
       case Mode.Out:
-        if (this.toward(b, nav.outside[0] + (rnd(b.seed + 3) - 0.5) * 2.4, nav.outside[1], dt, 0.15, false)) this.vanish(b)
+        if (b.gateTile < 0 || nav.entry < 0) b.gateTile = nav.entry
+        if (this.toward(b, nav.outside[0] + (b.gateTile >= 0 ? nav.cx(b.gateTile) - nav.cx(nav.entry) : 0) + (rnd(b.seed + 3) - 0.5) * 2.4, nav.outside[1] + (b.gateTile >= 0 ? nav.cz(b.gateTile) - nav.cz(nav.entry) : 0), dt, 0.15, false)) this.vanish(b)
         break
       case Mode.Walk:
         this.walk(b, dt)
@@ -1794,9 +1874,13 @@ export class Crowd {
     foot.length = 0
     for (const b of this.bodies) {
       if (b.mode === Mode.Off) continue
+      // someone on a flight of steps or shuffling along a row is off the floor the others walk on: they keep their own distance there
+      if (b.striding && (b.mode === Mode.Enter || b.mode === Mode.Exit)) continue
       if (b.mode !== Mode.Do || !b.spot || b.spot.open) foot.push(b)
     }
     this.countGates()
+    this.wayers.length = 0
+    for (const b of this.bodies) if (b.striding && (b.mode === Mode.Enter || b.mode === Mode.Exit)) this.wayers.push(b)
     this.clock += step
     let dead = false
     for (let i = 0; i < this.bodies.length; i++) {

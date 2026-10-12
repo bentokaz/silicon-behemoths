@@ -309,7 +309,7 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
 
       <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-start justify-between gap-2 p-2">
         <div className="pointer-events-auto flex flex-wrap items-center gap-2">
-          <Btn small className={toolCls} tone={open ? 'default' : 'primary'} active={open} onClick={() => setOpen(!open)}>
+          <Btn small data-coach-target="build" className={toolCls} tone={open ? 'default' : 'primary'} active={open} onClick={() => setOpen(!open)}>
             <Icon name="build" size={13} />
             Build
           </Btn>
@@ -357,7 +357,7 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
       </div>
 
       {open && (
-        <div className="absolute bottom-12 left-2 top-12 flex w-[262px] flex-col border border-line2 bg-panel/95">
+        <div data-coach-target="build" className="absolute bottom-12 left-2 top-12 flex w-[262px] flex-col border border-line2 bg-panel/95">
           <Tabs value={tab} options={(['Rooms', 'Furnish', 'Walls', 'Grounds', 'Look'] as Tab[]).map((x) => ({
               value: x,
               label: (
@@ -580,7 +580,7 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
 
       {children && <div className="pointer-events-none absolute bottom-12 right-2 top-12 flex w-[270px] flex-col gap-2 overflow-y-auto [&>*]:pointer-events-auto">{children}</div>}
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end gap-2 p-2">
+      <div data-bottom-bar className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end gap-2 p-2">
         {cutOff > 0 && (
           <div
             className="pointer-events-auto flex shrink-0 items-center gap-[6px] border border-warn bg-panel/95 px-2 py-[7px] text-[11px] text-warn"

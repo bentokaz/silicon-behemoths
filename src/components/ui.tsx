@@ -209,9 +209,14 @@ export function Slider({ label, icon, value, min, max, step = 1, onChange, forma
   )
 }
 
-export function Choice<T extends string | number>({ label, icon, value, options, onChange }: { label: string; icon?: IconName; value: T; options: { value: T; label: string; locked?: boolean }[]; onChange: (v: T) => void }) {
-  return (
-    <label className="flex items-center justify-between gap-2 py-1">
+/**
+ * A labelled drop-down. An option can be `locked`; when the reason is not
+ * plain from the list itself, `lockNote` says what opens the locked ones: it
+ * is the tooltip of the control and a line with a lock under it.
+ */
+export function Choice<T extends string | number>({ label, icon, value, options, onChange, lockNote }: { label: string; icon?: IconName; value: T; options: { value: T; label: string; locked?: boolean }[]; onChange: (v: T) => void; lockNote?: string | null }) {
+  const row = (
+    <label className="flex items-center justify-between gap-2 py-1" title={lockNote || undefined}>
       <span className="whitespace-nowrap text-[11px] text-dim">
         <Lead icon={icon} />
         {label}
@@ -232,6 +237,16 @@ export function Choice<T extends string | number>({ label, icon, value, options,
         ))}
       </select>
     </label>
+  )
+  if (!lockNote) return row
+  return (
+    <div>
+      {row}
+      <div className="flex items-start gap-[5px] pb-1 text-[10px] leading-snug text-faint" data-lock-note>
+        <Icon name="lock" size={10} className="mt-[2px] shrink-0" />
+        <span>{lockNote}</span>
+      </div>
+    </div>
   )
 }
 

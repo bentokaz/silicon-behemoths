@@ -73,6 +73,7 @@ function Campaigns() {
           tone="primary"
           icon="play"
           className="mt-3 h-9 w-full"
+          data-coach-target="campaign"
           onClick={() => {
             const err = act((s) => startCampaign(s, channel, target, budget, region === 'all' ? undefined : region))
             if (err) say(err, 'bad')

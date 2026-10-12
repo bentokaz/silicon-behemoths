@@ -268,7 +268,7 @@ function Movers({ traffic, speed, color, pins }: { traffic: Traffic; speed: numb
     const spin = state.clock.elapsedTime
     pins.slice(0, MAX_PINS).forEach((pin, i) => {
       q.setFromAxisAngle(up, spin * 0.9 + i)
-      // a store drawn small on a shared plot carries a marker to match
+      // a store drawn small, in a district whose blocks are full, carries a marker to match
       const k = pin.kind === 'store' ? 0.9 * Math.max(0.45, pin.scale ?? 1) : 1.6
       // and carries it lower, so that among close neighbours it is plain whose it is
       m.compose(p.set(pin.x, pin.h + (pin.crowded ? 2.5 : 5) + k + Math.sin(spin * 1.6 + i) * (pin.crowded ? 0.3 : 0.5), pin.z), q, s.set(k, k * 1.3, k))

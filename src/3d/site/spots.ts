@@ -68,6 +68,13 @@ interface SpotDef {
   via?: [number, number, number][]
   /** Seats in a row: reached by sidling along the row from whichever end is open, rather than from the marked tile. */
   row?: boolean
+  /**
+   * Other places to be, tried in turn when the tile this one is stepped into from is walled off or has something
+   * standing on it: the back of a machine whose front is boxed in, the end of a counter whose back is to a wall.
+   */
+  alts?: Partial<SpotDef>[]
+  /** Leave the spot out altogether when none of its places can be walked to, rather than have someone dropped into it. */
+  strict?: boolean
 }
 
 const s = (use: number, x: number, z: number, face: number, pose: Pose, ax: number, az: number, extra: Partial<SpotDef> = {}): SpotDef => ({ use, x, z, face, pose, ax, az, ...extra })
@@ -95,9 +102,23 @@ const VISIT_Z = 0.63
 const reception = [
   s(U.visit, -0.5, VISIT_Z, 0, Pose.Stand, -0.5, 1),
   s(U.visit, 0.5, VISIT_Z, 0, Pose.Stand, 0.5, 1),
-  // the receptionist's chair behind the counter, facing whoever comes in
-  s(U.front, 0, -0.45, Math.PI, Pose.Type, 0, -1, { hip: 0.5 }),
+  // the receptionist stands behind the counter, hands on it, facing whoever comes in. They come round from behind, or
+  // in by either end where the back is to a wall; never through the counter
+  s(U.front, 0, -0.42, Math.PI, Pose.Tend, 0, -1, {
+    strict: true,
+    alts: [
+      { ax: -1.5, az: 0, via: [[-1.22, 0, -0.46]] },
+      { ax: 1.5, az: 0, via: [[1.22, 0, -0.46]] },
+    ],
+  }),
 ]
+/** The same place at the back of a machine, for when its front is boxed in. */
+const behind = (d: SpotDef): SpotDef => ({ ...d, alts: [{ z: -d.z, face: Math.PI, az: -d.az }] })
+/** Where a pallet truck is brought up to something: far enough back that its forks stop short, nearer where there is no room. */
+const forkAt = (use: number, x: number, bothSides: boolean): SpotDef =>
+  s(use, x, 1.87, 0, Pose.Stand, x, 2, {
+    alts: [{ z: 1.45, az: 1 }, ...(bothSides ? [{ z: -1.87, face: Math.PI, az: -2 }, { z: -1.45, face: Math.PI, az: -1 }] : [])],
+  })
 /** Up the two steps at stage left, then across the boards. */
 const STEPS: [number, number, number][] = [
   [-2.45, 0, 2.05],
@@ -142,17 +163,18 @@ const DEFS: Record<SiteKind, Record<string, SpotDef[]>> = {
   },
   factory: {
     // the people who work a line: at the front of each machine, where its controls are
-    smt: [s(U.station, -0.6, 0.88, 0, Pose.Tend, -1, 1)],
-    robot: [s(U.station, 0.5, 1.34, 0, Pose.Tend, 0.5, 1.5)],
+    smt: [behind(s(U.station, -0.6, 0.88, 0, Pose.Tend, -1, 1))],
+    // at the far end of the cell from the test station that usually follows it, so the two are not shoulder to shoulder
+    robot: [behind(s(U.station, -0.5, 1.34, 0, Pose.Tend, -0.5, 1.5))],
     manual: [s(U.station, 0, 0.3, 0, Pose.Perch, 0, 1, { hip: 0.54 })],
-    test: [s(U.station, -0.24, 0.88, 0, Pose.Tend, 0, 1)],
-    pack: [s(U.station, 0.48, 0.88, 0, Pose.Tend, 0.5, 1), s(U.press, -0.5, 1.4, 0, Pose.Stand, -0.5, 1)],
+    test: [behind(s(U.station, -0.24, 0.88, 0, Pose.Tend, 0, 1))],
+    pack: [behind(s(U.station, 0.48, 0.88, 0, Pose.Tend, 0.5, 1)), forkAt(U.press, -0.5, false)],
     console: [s(U.station, -0.4, 0.5, 0, Pose.Type, -0.5, 1, { hip: 0.5 }), s(U.station, 0.4, 0.5, 0, Pose.Type, 0.5, 1, { hip: 0.5 })],
-    qa: [s(U.station, 0.2, 0.74, 0, Pose.Tend, 0.5, 1)],
+    qa: [behind(s(U.station, 0.2, 0.74, 0, Pose.Tend, 0.5, 1))],
     // where a pallet truck is loaded, and where it is set down
-    rack: [s(U.press, 0.5, 1.4, 0, Pose.Stand, 0.5, 1)],
-    pallets: [s(U.press, 0, 1.4, 0, Pose.Stand, 0, 1)],
-    dock_out: [s(U.crew, 0.5, 1.4, 0, Pose.Stand, 0.5, 1)],
+    rack: [forkAt(U.press, 0.5, true)],
+    pallets: [forkAt(U.press, 0, true)],
+    dock_out: [forkAt(U.crew, 0.5, false)],
     canteen: [
       s(U.lunch, -0.5, 0.42, 0, Pose.Sit, -0.5, 1, { hip: 0.47 }),
       s(U.lunch, 0.5, 0.42, 0, Pose.Sit, 0.5, 1, { hip: 0.47 }),
@@ -329,7 +351,16 @@ export function buildSpots(site: Site, nav: Nav): Spot[] {
     const room = gridAt(site, item.x, item.y)
     const inItem = (t: number) => tiles.some(([x, y]) => y * w + x === t)
     const usable = (t: number) => t >= 0 && nav.walk[t] === 1 && gridAt(site, t % w, (t / w) | 0) === room
-    list.forEach((d, i) => {
+    list.forEach((d0, i) => {
+      // the first of the places it could be that can be walked to
+      let d = d0
+      if (d0.alts) {
+        for (const c of [d0, ...d0.alts.map((a): SpotDef => ({ ...d0, ...a, alts: undefined }))]) {
+          if (!usable(nav.tileAt(frameX(f, c.ax, c.az), frameZ(f, c.ax, c.az)))) continue
+          d = c
+          break
+        }
+      }
       const x = frameX(f, d.x, d.z)
       const z = frameZ(f, d.x, d.z)
       let access = -1
@@ -353,12 +384,14 @@ export function buildSpots(site: Site, nav: Nav): Spot[] {
             const other = itemAt(site, t % w, (t / w) | 0)
             if (!other || !isSeating(other.kind) || other.rot % 4 !== item.rot % 4) break
           }
-          if (end < 0 || k >= best) continue
+          if (end < 0) continue
           // the side of the last block in the row, and the middle of the steps that run down it
           const edge = d.x + dir * ((k - 1) * 0.5 + 0.25)
           const aisle = edge + dir * STAIR_X
           const pts: number[] = []
           let from = end
+          // how good a way in this is: the walk along the row, and a long way further if there are no steps to it
+          let cost = k
           if (y > 0) {
             // a raised row: up the steps from the foot of the bank of seating, one row at a time
             const climb: [number, number][] = []
@@ -371,16 +404,24 @@ export function buildSpots(site: Site, nav: Nav): Spot[] {
               climb.push([lz - LEGROOM, Math.max(0, floor)])
               if (floor <= 0) {
                 foot = t
+                // every other seat is come at from a tile further out, so the foot of the steps is not one crowded tile
+                const out = nav.tileAt(frameX(f, aisle, lz - LEGROOM - 1), frameZ(f, aisle, lz - LEGROOM - 1))
+                if (i % 2 === 1 && usable(out)) foot = out
                 break
               }
             }
             if (foot >= 0) {
               from = foot
               for (let j = climb.length - 1; j >= 0; j--) pts.push(frameX(f, aisle, climb[j][0]), climb[j][1], frameZ(f, aisle, climb[j][0]))
-            } else pts.push(frameX(f, aisle, strip), y, frameZ(f, aisle, strip))
+            } else {
+              // nothing but a step up from the aisle beside the row: only if the other end is no better
+              cost += 100
+              pts.push(frameX(f, aisle, strip), y, frameZ(f, aisle, strip))
+            }
           } else pts.push(frameX(f, aisle, strip), 0, frameZ(f, aisle, strip))
           pts.push(frameX(f, d.x, strip), y, frameZ(f, d.x, strip))
-          best = k
+          if (cost >= best) continue
+          best = cost
           access = from
           via = pts
         }
@@ -388,6 +429,7 @@ export function buildSpots(site: Site, nav: Nav): Spot[] {
         access = nav.tileAt(frameX(f, d.ax, d.az), frameZ(f, d.ax, d.az))
         if (d.via) via = d.via.flatMap(([vx, vy, vz]) => [frameX(f, vx, vz), vy, frameZ(f, vx, vz)])
       }
+      if (!usable(access) && d.strict) return
       if (!usable(access)) {
         // the marked way in is blocked: any free tile beside the spot will do
         const own = nav.tileAt(x, z)

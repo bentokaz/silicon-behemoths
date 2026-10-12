@@ -8,10 +8,11 @@ import { ITEMS, gridAt } from '../../sim/sites'
 import type { GameState, Site } from '../../sim/types'
 import { Sign, Trees, hash } from '../site/kit'
 import { Batch, Ground, STOREY, Structure, surface } from '../site/structure'
-import { BOARD_SLOTS, type District, HOME, ISLAND, ISLAND_STREETS, LOTS, PIER, type Place, ROADS, towerFloors } from './plan'
+import { BOARD_SLOTS, type District, HOME, ISLAND, ISLAND_STREETS, LOTS, PIER, type Place, ROADS, fillers, towerFloors } from './plan'
 
 const PAVE = '#a7a399'
 const ROAD = '#33363a'
+const LANE = '#8e8a81'
 const LAWN = '#5d8a49'
 const CONCRETE = '#8b8d8a'
 const SEAWALL = '#6d6b64'
@@ -19,6 +20,8 @@ const STEEL = '#8a8f95'
 const BLOCKS = ['#d9d6cf', '#bfc6cc', '#c9c2b2', '#e4e1da', '#9fb0bd', '#b5a08a']
 const BOXES = ['#b5462f', '#2f5d8a', '#3f7d4d', '#c9a227', '#8a8f95', '#d9d6cf']
 const SHOPS = ['#d9d6cf', '#c9b9a3', '#b9c0c6', '#a89684', '#e4dccb', '#9aa7a0', '#c4a58c']
+/** The wall an entered district's name is on: how far south of the island's middle (the edge of the quay), how wide and how high. Low enough not to hide the shopfronts behind it. */
+const REGION_WALL = { z: ISLAND.d / 2 - 0.8, w: 24, h: 3.1 }
 /** Height of the ground the company's own plots are drawn on, clear of the paving under them. */
 export const PLOT_Y = 0.22
 
@@ -95,8 +98,11 @@ function land(b: Batch, x: number, z: number, w: number, d: number, on: boolean)
   b.box('floor8', x, -0.5, z, w, 1, d, faded(PAVE, on))
 }
 
-/** The fixed part of the city: land, streets, filler buildings, piers. `taken` lists plots something real stands on. */
-export function buildBase(all: District[], taken: Set<string>, mats: CityMats): { meshes: THREE.Mesh[]; trees: [number, number, number][] } {
+/**
+ * The fixed part of the city: land, streets, filler buildings, piers. `taken` lists the tower plots a rival
+ * stands on; the neighbours' shops give way wherever one of the company's stores in `list` has the ground.
+ */
+export function buildBase(all: District[], taken: Set<string>, list: Place[], mats: CityMats): { meshes: THREE.Mesh[]; trees: [number, number, number][] } {
   const b = new Batch()
   const trees: [number, number, number][] = []
   const free = (x: number, z: number) => !taken.has(`${x},${z}`)
@@ -117,7 +123,8 @@ export function buildBase(all: District[], taken: Set<string>, mats: CityMats): 
         b.quad(color === LAWN || color === '#668f4f' ? 'floor10' : 'floor8', lot.x - lot.w / 2, lot.z - lot.d / 2, lot.x + lot.w / 2, lot.z + lot.d / 2, 0.1, color)
       }
       for (const [x, z] of d.towers) if (free(x, z)) tower(b, x, z, 19 + hash(x) * 4, 18, 4 + Math.floor(hash(x * 3 + 1) * 7), BLOCKS[Math.abs(Math.round(x)) % BLOCKS.length], Math.round(x + 400), true)
-      d.shops.forEach(([x, z], i) => free(x, z) && shop(b, x, z + 1, i * 5 + 3, true))
+      const open = fillers(d, list)
+      d.shops.forEach((slot, i) => open.includes(slot) && shop(b, slot[0], slot[1], i * 5 + 3, true))
       // lamps and trees down the avenue and the high street, trees through the parks
       for (let x = HOME.x0 + 9; x < HOME.x1 - 5; x += 22) {
         if (ROADS.some((r) => r.x1 - r.x0 < 20 && x > r.x0 - 4 && x < r.x1 + 15)) continue
@@ -167,10 +174,12 @@ export function buildBase(all: District[], taken: Set<string>, mats: CityMats): 
       dashes(b, r, on)
     }
     for (const [x, z] of d.towers) if (free(x, z)) tower(b, x, z, 19 + hash(x + z) * 4, 18, 3 + Math.floor(hash(x * 3 + z) * 7), BLOCKS[Math.abs(Math.round(x + z)) % BLOCKS.length], Math.round(x * 7 + z), on)
-    d.shops.forEach(([x, z], i) => free(x, z) && shop(b, x, z + 1, i * 7 + Math.round(d.x), on))
+    const open = fillers(d, list)
+    d.shops.forEach((slot, i) => open.includes(slot) && shop(b, slot[0], slot[1], i * 7 + Math.round(d.x), on))
+    // the lamps stand along the north kerb of each street, clear of the shops that front on it from the other side
     for (let x = d.x - ISLAND.w / 2 + 9; x < d.x + ISLAND.w / 2 - 4; x += 20) {
-      streetLamp(b, x, d.z + ISLAND_STREETS[0][0] + 4.2, on)
-      streetLamp(b, x + 10, d.z + ISLAND_STREETS[1][0] + 4.2, on)
+      streetLamp(b, x, d.z + ISLAND_STREETS[0][0] - 3.3, on)
+      streetLamp(b, x + 10, d.z + ISLAND_STREETS[1][0] - 3.25, on)
       if (on) trees.push([x + 9, d.z + ISLAND_STREETS[0][0] - 4.4, 2.1 + hash(x) * 0.8], [x + 4, d.z + ISLAND.d / 2 - 4, 2 + hash(x + 9)])
     }
     // its pier, pointing home
@@ -179,7 +188,10 @@ export function buildBase(all: District[], taken: Set<string>, mats: CityMats): 
     if (Math.abs(dx) > Math.abs(dz)) b.box('wall', d.dock[0] + Math.sign(dx) * 19, -0.55, d.dock[1], 42, 1.1, 11, faded('#77756e', on))
     else b.box('wall', d.dock[0], -0.55, d.dock[1] + 19, 11, 1.1, 42, faded('#77756e', on))
   }
-  return { meshes: b.build(mats.of), trees }
+  // a street tree gives way to a store built where it stood, or to the lane in front of one
+  const stores = list.filter((p) => p.kind === 'store')
+  const clear = trees.filter(([x, z]) => !stores.some((p) => Math.abs(p.x - x) < p.w / 2 + 1.5 && z > p.z - p.d / 2 - 1.5 && z < p.z + p.d / 2 + (p.front ?? 0) + 3))
+  return { meshes: b.build(mats.of), trees: clear }
 }
 
 /** The research park's buildings, as offsets from the middle of its plot: [x, z, width, depth, floors]. */
@@ -292,12 +304,19 @@ export function buildTowers(list: Place[], mats: CityMats): THREE.Mesh[] {
       b.box('wall', p.x, 9.5, p.z - 0.3, 12, 5.6, 0.5, '#16181b')
       b.box('neon', p.x, 6.9, p.z, 12, 0.25, 0.2, '#ffffff')
     } else if (p.kind === 'region') {
-      // a board on the quay: the district's name, or the way in to a market not yet entered
-      const w = p.dim ? 17 : 46
-      const y = p.dim ? 13.2 : 9
-      for (const sx of [-w / 2 + 1.5, w / 2 - 1.5]) b.box('trim', p.x + sx, y / 2, p.z + ISLAND.d / 2 - 2.3, 0.8, y, 0.8, '#2f3338')
-      b.box('wall', p.x, y, p.z + ISLAND.d / 2 - 2, w, p.dim ? 3.8 : 7, 0.8, '#16181b')
-      if (p.dim) b.box('neon', p.x, y - 2.1, p.z + ISLAND.d / 2 - 1.9, w, 0.25, 0.8, '#ffffff')
+      if (p.dim) {
+        // a board on the quay: the way in to a market not yet entered
+        const w = 17
+        const y = 13.2
+        for (const sx of [-w / 2 + 1.5, w / 2 - 1.5]) b.box('trim', p.x + sx, y / 2, p.z + ISLAND.d / 2 - 2.3, 0.8, y, 0.8, '#2f3338')
+        b.box('wall', p.x, y, p.z + ISLAND.d / 2 - 2, w, 3.8, 0.8, '#16181b')
+        b.box('neon', p.x, y - 2.1, p.z + ISLAND.d / 2 - 1.9, w, 0.25, 0.8, '#ffffff')
+      } else {
+        // once the company trades there, the district's name is on a low wall at the edge of the quay instead: a
+        // board on posts would stand between the view and the shopfronts behind it
+        b.box('wall', p.x, REGION_WALL.h / 2, p.z + REGION_WALL.z, REGION_WALL.w, REGION_WALL.h, 0.8, '#16181b')
+        b.box('trim', p.x, REGION_WALL.h + 0.02, p.z + REGION_WALL.z, REGION_WALL.w + 0.4, 0.24, 1.1, '#2f3338')
+      }
     } else if ((p.kind === 'factory' || p.kind === 'venue') && !p.site) {
       // an empty plot behind a fence, waiting to be bought
       const w = p.w - 8
@@ -307,8 +326,15 @@ export function buildTowers(list: Place[], mats: CityMats): THREE.Mesh[] {
       b.box('wall', p.x, 4.4, p.z + d / 2 + 0.4, 13, 3.6, 0.5, '#16181b')
       for (const sx of [-5, 5]) b.box('trim', p.x + sx, 1.5, p.z + d / 2 + 0.3, 0.4, 3, 0.4, '#2f3338')
     }
-    // a store that shares its plot has the neighbours close by: its scaffolding keeps tight to the walls, to the
-    // store's own scale, and there is no room to stand a crane
+    // a store in a row behind the street front stands on a lane of its own: setts, a shade darker than the paving,
+    // from its shopfront to the backs of the row in front
+    if (p.kind === 'store' && p.site && p.row && p.front) {
+      const wall = p.z + (p.site.h / 2) * (p.scale ?? 1)
+      b.quad('floor8', p.x - p.w / 2, wall, p.x + p.w / 2, wall + p.front, 0.05, LANE)
+      b.quad('floor8', p.x - p.w / 2, wall + p.front - 0.25, p.x + p.w / 2, wall + p.front, 0.06, '#77736b')
+    }
+    // a store with neighbours close by keeps its scaffolding tight to the walls, to the store's own scale, and
+    // there is no room to stand a crane
     if (p.building !== undefined && p.site) scaffold(b, p.x, p.z, p.site.w * (p.scale ?? 1), p.site.h * (p.scale ?? 1), Math.max(7, p.site.floors * STOREY + 2) * (p.scale ?? 1), p.id.length, p.crowded ? 0.55 * (p.scale ?? 1) : 1, !p.crowded)
   }
   return b.build(mats.of)
@@ -451,15 +477,16 @@ export function SiteModel({ site, x, z, lights, scale = 1 }: { site: Site; x: nu
 
 /** Everything standing in the city, apart from the company's own sites and what moves. */
 export function CityModel({ g, all, list, mats, lights, color, accent }: { g: GameState; all: District[]; list: Place[]; mats: CityMats; lights: boolean; color: string; accent: string }) {
-  const taken = useMemo(() => new Set(list.filter((p) => p.kind === 'store' || p.kind === 'rival').map((p) => p.lot ?? `${p.x},${p.z}`)), [list])
-  const takenKey = [...taken].join('|')
+  const taken = useMemo(() => new Set(list.filter((p) => p.kind === 'rival').map((p) => `${p.x},${p.z}`)), [list])
+  // the ground the company's stores stand on: the base is rebuilt only when that changes
+  const takenKey = `${[...taken].join('|')}#${list.map((p) => (p.kind === 'store' ? `${p.x.toFixed(2)},${p.z.toFixed(2)},${p.w.toFixed(2)},${p.d.toFixed(2)},${(p.front ?? 0).toFixed(2)}` : '')).join('|')}`
   const openKey = all.map((d) => (d.open ? 1 : 0)).join('')
-  const base = useMemo(() => buildBase(all, taken, mats), [takenKey, openKey, mats]) // eslint-disable-line react-hooks/exhaustive-deps
+  const base = useMemo(() => buildBase(all, taken, list, mats), [takenKey, openKey, mats]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => base.meshes.forEach((m) => m.geometry.dispose()), [base])
   const civic = useBatch(() => buildCivic(g, mats), [g.activeResearch.length, g.stock.listed, g.stock.history.length, mats])
   const stock = g.products.filter((p) => p.companyId === 'player' && p.status === 'sale').reduce((a, p) => a + p.stock, 0)
   const port = useBatch(() => buildPort(stock, g.orders.length, color, mats), [containers(stock), g.orders.length > 0, color, mats])
-  const towersKey = list.map((p) => `${p.id}:${p.dim ? 0 : 1}:${p.building !== undefined ? 1 : 0}:${p.site ? `${p.site.w}.${p.site.floors}.${p.x}.${p.z}.${p.scale ?? 1}` : ''}:${p.company ? towerFloors(p.company) + p.company.color : ''}`).join('|')
+  const towersKey = list.map((p) => `${p.id}:${p.dim ? 0 : 1}:${p.building !== undefined ? 1 : 0}:${p.site ? `${p.site.w}.${p.site.floors}.${p.x}.${p.z}.${p.scale ?? 1}.${p.front ?? 0}.${p.crowded ? 1 : 0}` : ''}:${p.company ? towerFloors(p.company) + p.company.color : ''}`).join('|')
   const towers = useBatch(() => buildTowers(list, mats), [towersKey, mats])
   const me = g.companies[0]
   return (
@@ -475,7 +502,8 @@ export function CityModel({ g, all, list, mats, lights, color, accent }: { g: Ga
       {list.map((p) => {
         if (p.kind === 'rival' && p.company && !p.dim) return <Sign key={p.id} p={[p.x, 3.2 + towerFloors(p.company) * 3.2 - 2.2, p.z + 6.1]} size={[14, 3.4]} name={p.company.name} glow={lights ? 1.1 : 0.5} />
         if (p.kind === 'board') return <Sign key={p.id} p={[p.x, 9.5, p.z + 0.02]} size={[11, 4.6]} name={p.campaign?.target === 'brand' ? me.name : p.name.replace(/ campaign$/, '')} logo={p.campaign?.target === 'brand' ? me.logo : undefined} glow={lights ? 1.3 : 0.7} />
-        if (p.kind === 'region') return <Sign key={p.id} p={[p.x, p.dim ? 13.2 : 9, p.z + ISLAND.d / 2 - 1.55]} size={p.dim ? [14, 3] : [42, 6]} name={p.dim ? (p.locked ?? 'Enter') : p.name} color={p.dim ? accent : '#f2f0ea'} glow={p.dim ? 1.4 : lights ? 0.9 : 0.5} />
+        if (p.kind === 'region' && p.dim) return <Sign key={p.id} p={[p.x, 13.2, p.z + ISLAND.d / 2 - 1.55]} size={[14, 3]} name={p.locked ?? 'Enter'} color={accent} glow={1.4} />
+        if (p.kind === 'region') return <Sign key={p.id} p={[p.x, REGION_WALL.h / 2, p.z + REGION_WALL.z + 0.45]} size={[REGION_WALL.w - 3, REGION_WALL.h - 0.7]} name={p.name} color="#f2f0ea" glow={lights ? 0.9 : 0.5} />
         if ((p.kind === 'factory' || p.kind === 'venue') && !p.site) return <Sign key={p.id} p={[p.x, 4.4, p.z + (p.d - 8) / 2 + 0.7]} size={[12, 3]} name={p.locked ?? 'Land for sale'} glow={0.6} />
         return null
       })}

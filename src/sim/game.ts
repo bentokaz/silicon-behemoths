@@ -652,20 +652,23 @@ export interface ZonePlan {
   area: number
   /** True when a box drawn across a curved courtyard was widened to take the whole courtyard. */
   filled: boolean
+  /** Open tiles in the curved courtyard a box lies in, or 0 where it lies in none: a box across half of them or more takes them all. */
+  yard: number
 }
 
 /**
  * Works out what an area tool marked from one corner to the other would
- * build. A plain box that covers most of a courtyard closed in by a curved
- * wall takes the whole courtyard, so the room shares the curve all round
- * instead of leaving slivers of ground beside its straight sides.
+ * build. A plain box that covers half or more of a courtyard closed in by a
+ * curved wall takes the whole courtyard, so the room shares the curve all
+ * round instead of leaving slivers of ground beside its straight sides.
  */
 export function zonePlan(site: Site, x0: number, y0: number, x1: number, y1: number, shape: Shape = 'rect', opts?: ShapeOpts): ZonePlan {
   const tiles = zoneable(site, x0, y0, x1, y1, shape, opts)
   const curve = curveFor(x0, y0, x1, y1, shape, opts)
-  if (curve) return { tiles, curve, area: tiles.length ? zoneArea(site, x0, y0, x1, y1, shape, opts) : 0, filled: false }
-  const whole = shape === 'rect' ? courtyardFor(site, tiles) : null
-  return { tiles: whole ?? tiles, curve: null, area: (whole ?? tiles).length, filled: !!whole }
+  if (curve) return { tiles, curve, area: tiles.length ? zoneArea(site, x0, y0, x1, y1, shape, opts) : 0, filled: false, yard: 0 }
+  const yard = shape === 'rect' ? courtyardFor(site, tiles) : null
+  const took = yard?.whole ? yard.tiles : tiles
+  return { tiles: took, curve: null, area: took.length, filled: !!yard?.whole, yard: yard?.tiles.length ?? 0 }
 }
 
 /**
@@ -709,8 +712,8 @@ function raise(s: GameState, site: Site, type: string, tiles: [number, number][]
  * the finish of the oldest. Pass `into` to extend a room the new floor does
  * not touch, or `apart` to build a room of its own whatever stands next to
  * it. Round and ring shapes get a smooth curved wall; `opts` sets a ring's
- * depth and how much of a turn an arc covers. A box across most of a curved
- * courtyard takes all of it (see zonePlan).
+ * depth and how much of a turn an arc covers. A box across half or more
+ * of a curved courtyard takes all of it (see zonePlan).
  */
 export function zoneRoom(s: GameState, ref: string, type: string, x0: number, y0: number, x1: number, y1: number, shape: Shape = 'rect', into?: number, opts?: ShapeOpts, apart = false): string | null {
   const site = siteOf(s, ref)
@@ -729,7 +732,8 @@ export function zoneRoom(s: GameState, ref: string, type: string, x0: number, y0
  * Fill the courtyard a tile lies in with a room: every open tile shut in with
  * it, up to the walls all round, curved ones included. Charged by the tile
  * like any other room, and joined to rooms of the same type it touches unless
- * `apart` is set. Refused where the ground is not closed in.
+ * `apart` is set. The edge of the plot may close part of the courtyard; ground
+ * that is mostly open to the plot is refused (see fillError).
  */
 export function fillRoom(s: GameState, ref: string, type: string, x: number, y: number, apart = false): string | null {
   const site = siteOf(s, ref)

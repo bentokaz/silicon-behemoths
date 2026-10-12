@@ -9,11 +9,12 @@ import { sfx } from '../audio/sfx'
 import { TYPES } from '../data/devices'
 import { fmtDate, hire, researchItem, setCampaignBudget, stopCampaign, toggleResearch } from '../sim/game'
 import { devProgress, factoryLife, officeLife, researchLines, storeLife, venueLife } from '../sim/life'
+import { type CapId, capOfTab, lockTip } from '../sim/progress'
 import { ITEMS } from '../sim/sites'
 import { ROLE_INFO, staffEffects, titleFor } from '../sim/staff'
 import { TRACKS } from '../sim/types'
 import { type Tab, useGame, useStore } from '../store/game'
-import { ExecShortlist } from './Progress'
+import { ExecShortlist, lockProps } from './Progress'
 import { Icon, type IconName } from './icons'
 import { Btn, Meter, Row, Tag, money, num, pct } from './ui'
 
@@ -34,8 +35,20 @@ const TITLES: Record<Target['kind'], { title: string; icon: IconName }> = {
 
 const hourText = (h: number) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`
 
-function Frame({ target, close, children, more, title }: { target: Target; close: () => void; children: ReactNode; more?: { label: string; tab: Tab }; title?: string }) {
+/** Where a card's link at the bottom leads: a screen, perhaps a view inside it, and the capability it waits on when that is not the screen's own. */
+interface More {
+  label: string
+  tab: Tab
+  view?: string
+  cap?: CapId
+}
+
+function Frame({ target, close, children, more, title }: { target: Target; close: () => void; children: ReactNode; more?: More; title?: string }) {
+  const g = useGame()
   const t = TITLES[target.kind]
+  // a link to somewhere not open yet wears a lock, says what opens it, and shows the card for it instead of going
+  const cap = more ? (more.cap ?? capOfTab(more.tab)) : undefined
+  const tip = cap ? lockTip(g, cap) : null
   const stop = (e: { stopPropagation: () => void }) => e.stopPropagation()
   return (
     <div className="w-[264px] border border-line2 bg-panel/95 text-left" onPointerDown={stop} onPointerUp={stop} onClick={stop} onWheel={stop} onContextMenu={stop}>
@@ -49,11 +62,17 @@ function Frame({ target, close, children, more, title }: { target: Target; close
         </button>
       </div>
       <div className="max-h-[260px] overflow-y-auto p-2">{children}</div>
-      {more && (
+      {more && tip && cap && (
+        <button aria-disabled title={tip} className="flex h-7 w-full cursor-not-allowed items-center justify-between gap-2 border-t border-line px-2 text-[10px] uppercase tracking-wider text-faint" onClick={() => useStore.getState().showLock(cap)}>
+          <span className="truncate">{more.label}</span>
+          <Icon name="lock" size={10} className="shrink-0" />
+        </button>
+      )}
+      {more && !tip && (
         <button
           className="flex h-7 w-full items-center justify-between border-t border-line px-2 text-[10px] uppercase tracking-wider text-dim hover:bg-hover hover:text-accent"
           onClick={() => {
-            useStore.getState().setTab(more.tab)
+            useStore.getState().go({ tab: more.tab, view: more.view })
             close()
           }}
         >
@@ -67,6 +86,23 @@ function Frame({ target, close, children, more, title }: { target: Target; close
 
 const Note = ({ children, tone = 'text-dim' }: { children: ReactNode; tone?: string }) => <div className={`text-[11px] leading-snug ${tone}`}>{children}</div>
 
+/**
+ * The line a card shows while the part of the company it belongs to is not
+ * open yet: a lock, what opens it, and the full card for it on a click.
+ * Nothing once it is open.
+ */
+function LockLine({ id }: { id: CapId }) {
+  const g = useGame()
+  const tip = lockTip(g, id)
+  if (!tip) return null
+  return (
+    <button data-lock-line onClick={() => useStore.getState().showLock(id)} title="See what it takes" className="mb-2 flex w-full items-start gap-[6px] border border-line px-2 py-[5px] text-left text-[11px] leading-snug text-dim hover:border-line2">
+      <Icon name="lock" size={11} className="mt-[2px] shrink-0 text-faint" />
+      <span>{tip}</span>
+    </button>
+  )
+}
+
 function ResearchCard({ target, close }: { target: Target; close: () => void }) {
   const g = useGame()
   const { act, say } = useStore.getState()
@@ -76,6 +112,8 @@ function ResearchCard({ target, close }: { target: Target; close: () => void }) 
     .sort((a, b) => a.cost - b.cost)
     .slice(0, lines.length ? 2 : 3)
   const step = g.rdBudget >= 1e6 ? 250e3 : 50e3
+  // While Research is locked nothing can be started or funded; stopping and spending less are always allowed, as they are in the simulation.
+  const lock = lockProps(g, 'research')
   const toggle = (id: string) => {
     const err = act((s) => toggleResearch(s, id))
     if (err) say(err, 'bad')
@@ -90,12 +128,13 @@ function ResearchCard({ target, close }: { target: Target; close: () => void }) 
             -
           </Btn>
           <span className="num w-16 text-center text-xs text-fg">{money(g.rdBudget, 1)}</span>
-          <Btn small className="!px-2" onClick={() => act((s) => void (s.rdBudget += step))} title="Spend more: research goes faster">
+          <Btn small className="!px-2" {...lock} lockMark="corner" onClick={() => act((s) => void (s.rdBudget += step))} title="Spend more: research goes faster">
             +
           </Btn>
         </span>
       </div>
-      {lines.length === 0 && <Note>Nothing is being researched. Start a project and the benches get to work.</Note>}
+      <LockLine id="research" />
+      {lines.length === 0 && !lock.locked && <Note>Nothing is being researched. Start a project and the benches get to work.</Note>}
       {lines.length > 0 && g.rdBudget <= 0 && <Note tone="text-warn">There is no budget, so nothing moves. Raise it above.</Note>}
       {lines.map((l) => (
         <div key={l.id} className="border-b border-line py-[5px] last:border-0">
@@ -118,7 +157,7 @@ function ResearchCard({ target, close }: { target: Target; close: () => void }) 
           <span className="min-w-0 truncate text-[11px] text-dim" title={i.name}>
             {i.name}
           </span>
-          <Btn small className="shrink-0" onClick={() => toggle(i.id)}>
+          <Btn small className="shrink-0" {...lock} onClick={() => toggle(i.id)}>
             Start
           </Btn>
         </div>
@@ -188,11 +227,14 @@ function CampaignCard({ target, close }: { target: Target; close: () => void }) 
   const g = useGame()
   const { act } = useStore.getState()
   const all = officeLife(g).campaigns
+  // as with research: spending more waits on Marketing, spending less and stopping never do
+  const lock = lockProps(g, 'marketing')
   // the one on this screen first, then the rest
   const list = [...all].sort((a, b) => (a.id === target.id ? -1 : 0) - (b.id === target.id ? -1 : 0))
   return (
     <Frame target={target} close={close} more={{ label: all.length ? 'Plan campaigns' : 'Plan a campaign', tab: 'marketing' }}>
-      {!list.length && <Note>No campaigns are running. The marketing suite shows them here as posters once there are.</Note>}
+      <LockLine id="marketing" />
+      {!list.length && !lock.locked && <Note>No campaigns are running. The marketing suite shows them here as posters once there are.</Note>}
       {list.map((c) => {
         const step = Math.max(10e3, Math.round((c.monthly * 0.2) / 10e3) * 10e3)
         return (
@@ -207,7 +249,7 @@ function CampaignCard({ target, close }: { target: Target; close: () => void }) 
                   -
                 </Btn>
                 <span className="num w-20 text-center text-[11px] text-fg">{money(c.monthly, 0)}/mo</span>
-                <Btn small className="!px-2" onClick={() => act((s) => setCampaignBudget(s, c.id, c.monthly + step))} title="Spend more">
+                <Btn small className="!px-2" {...lock} lockMark="corner" onClick={() => act((s) => setCampaignBudget(s, c.id, c.monthly + step))} title="Spend more">
                   +
                 </Btn>
               </span>
@@ -278,6 +320,9 @@ function OsCard({ target, close }: { target: Target; close: () => void }) {
         <Tag tone={os.own ? 'pos' : 'dim'}>{os.own ? 'your own' : 'licensed'}</Tag>
       </div>
       {!os.own && !os.project && <Note>Your devices run stock software, the same as everyone else. Your own system starts in the labs.</Note>}
+      <div className="mt-2 empty:hidden">
+        <LockLine id="labs" />
+      </div>
       {os.own && (
         <>
           <Row k="Quality" v={Math.round(os.quality)} tone={os.quality >= os.industry ? 'text-pos' : 'text-warn'} />
@@ -304,7 +349,8 @@ function TeamCard({ target, close }: { target: Target; close: () => void }) {
   const teams = life.teams.filter((t) => t.leadId && t.members.length >= 2)
   const tables = g.office.items.filter((i) => i.kind === 'meeting').length
   return (
-    <Frame target={target} close={close} more={{ label: 'Manage teams', tab: 'staff' }}>
+    <Frame target={target} close={close} more={{ label: 'Manage teams', tab: 'staff', view: 'teams', cap: 'teams' }}>
+      <LockLine id="teams" />
       {!teams.length && <Note>No team has a lead yet. Teams with a lead meet here every day, and get more done for it.</Note>}
       {teams.map((t, k) => {
         const slot = meetingSlot(k, Math.max(1, tables))
@@ -333,6 +379,7 @@ function SupportCard({ target, close }: { target: Target; close: () => void }) {
   const tone = s.load >= 1 ? 'neg' : s.load >= 0.75 ? 'warn' : 'pos'
   return (
     <Frame target={target} close={close} more={{ label: 'After-sales', tab: 'care' }}>
+      <LockLine id="care" />
       <Row k="Tickets a day" v={num(s.tickets)} />
       <Row k="The team can answer" v={num(s.capacity)} />
       <Meter value={Math.min(1, s.load)} tone={tone} className="mt-2" />
@@ -430,7 +477,8 @@ function VenueCard({ target, close }: { target: Target; close: () => void }) {
   const st = v.stats
   const here = v.upcoming.filter((e) => e.here)
   return (
-    <Frame target={target} close={close} title={target.id === 'people' ? 'Show day' : target.label} more={{ label: 'Book an event', tab: 'marketing' }}>
+    <Frame target={target} close={close} title={target.id === 'people' ? 'Show day' : target.label} more={{ label: 'Book an event', tab: 'marketing', cap: 'events' }}>
+      <LockLine id="events" />
       <div className="mb-1 flex items-center justify-between gap-2">
         <span className="flex flex-wrap gap-1">
           {def?.crowd ? <Tag tone="accent">{def.crowd} seats</Tag> : null}

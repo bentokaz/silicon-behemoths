@@ -1,6 +1,6 @@
 // Things that speak to the player directly: the guided first hour, decisions
 // that incidents ask for, and the summary at the end of each year.
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { sfx } from '../audio/sfx'
 import { DAYS_PER_YEAR, START_YEAR } from '../data/catalog'
 import { decide, player, trailingUnits } from '../sim/game'
@@ -34,6 +34,8 @@ export interface Step {
   needs?: CapId
   /** The capability this step opens: it says so beside the title. */
   opens?: CapId
+  /** What the step points at: the name controls give themselves in `data-coach-target`. The coach keeps off them. */
+  target?: string
 }
 const mine = (s: GameState) => s.products.filter((p) => p.companyId === 'player')
 const desks = (s: GameState) => reachable(s.office).filter((i) => ITEMS.office[i.kind]?.seats).length
@@ -42,19 +44,19 @@ export const STEPS: Step[] = [
   { title: 'Welcome', tab: 'city', only: 'guided', text: 'This is the city, and the small building in the middle is your company: two desks in a garage. That is all there is for now, and the menu on the left is short to match. It grows as the company does: each person you hire, thing you build and device you sell opens another part. The next steps take you from here to a device on sale. You can leave the guide at any time and bring it back from System.' },
   { title: 'Welcome', tab: 'city', only: 'open', text: 'This is the city, and the small building in the middle is your company: two desks in a garage. Everything you build later appears here, and clicking a place takes you inside it. The next few steps take you from here to a device on sale. You can leave the guide at any time and bring it back from System.' },
   { title: 'Look around', tab: 'office', text: 'This is the campus, seen from inside. People come in each morning, work, eat and go home; click one, or a desk or a screen, to see what is going on. Drag to turn the view, right-drag or use W A S D to move, scroll to zoom. The buttons at the top right switch between a cutaway, full walls and the outside.' },
-  { title: 'Add a desk', tab: 'office', text: 'Open Build, choose Furnish, pick a Desk and click an empty spot inside the room. R turns it before you place it. Each desk seats one person.', done: (s) => desks(s) >= 3 },
-  { title: 'Hire an engineer', tab: 'staff', where: { tab: 'staff', view: 'hire', role: 'engineer' }, only: 'guided', text: 'Open Staff, go to Applicants and hire a hardware engineer. Engineers shorten the time a device takes to develop. Hiring costs one month of their salary.', done: (s) => s.staff.some((e) => e.role === 'engineer') },
-  { title: 'Hire two people', tab: 'staff', where: { tab: 'staff', view: 'hire' }, only: 'open', text: 'Open Staff, go to Applicants and hire an engineer and one other. Engineers shorten development; designers, researchers and marketers each help in their own way. Hiring costs one month of their salary.', done: (s) => s.staff.length >= 2 },
-  { title: 'Open Research', tab: 'staff', where: { tab: 'staff', view: 'hire', role: 'researcher' }, only: 'guided', opens: 'research', text: 'Research is the first screen to earn. Hire a researcher from the applicants, or build a research lab on the campus, and Research appears in the menu. The dim entries with a lock all work this way: click one to see what it needs.', done: (s) => has(s, 'research') },
-  { title: 'Design a device', designer: true, text: 'Press New device. Shape the body, choose what goes inside, and watch the cost and the appeal to each kind of buyer. When you are happy, press Launch, set a price a fair way above the unit cost, and order a first production run.', done: (s) => mine(s).length >= 1 },
-  { title: 'Fund research', tab: 'research', needs: 'research', text: 'While it is being developed, set a monthly research budget and pick a project. Research unlocks better parts and, later, whole new kinds of device.', done: (s) => s.rdBudget > 0 && s.activeResearch.length > 0 },
+  { title: 'Add a desk', tab: 'office', text: 'Open Build, choose Furnish, pick a Desk and click an empty spot inside the room. R turns it before you place it. Each desk seats one person.', target: 'build', done: (s) => desks(s) >= 3 },
+  { title: 'Hire an engineer', tab: 'staff', where: { tab: 'staff', view: 'hire', role: 'engineer' }, only: 'guided', text: 'Open Staff, go to Applicants and hire a hardware engineer. Engineers shorten the time a device takes to develop. Hiring costs one month of their salary.', target: 'hire-engineer', done: (s) => s.staff.some((e) => e.role === 'engineer') },
+  { title: 'Hire two people', tab: 'staff', where: { tab: 'staff', view: 'hire' }, only: 'open', text: 'Open Staff, go to Applicants and hire an engineer and one other. Engineers shorten development; designers, researchers and marketers each help in their own way. Hiring costs one month of their salary.', target: 'hire', done: (s) => s.staff.length >= 2 },
+  { title: 'Open Research', tab: 'staff', where: { tab: 'staff', view: 'hire', role: 'researcher' }, only: 'guided', opens: 'research', text: 'Research is the first screen to earn. Hire a researcher from the applicants, or build a research lab on the campus, and Research appears in the menu. The dim entries with a lock all work this way: click one to see what it needs.', target: 'hire-researcher', done: (s) => has(s, 'research') },
+  { title: 'Design a device', designer: true, text: 'Press New device. Shape the body, choose what goes inside, and watch the cost and the appeal to each kind of buyer. When you are happy, press Launch, set a price a fair way above the unit cost, and order a first production run.', target: 'new-device', done: (s) => mine(s).length >= 1 },
+  { title: 'Fund research', tab: 'research', needs: 'research', text: 'While it is being developed, set a monthly research budget and pick a project. Research unlocks better parts and, later, whole new kinds of device.', target: 'research', done: (s) => s.rdBudget > 0 && s.activeResearch.length > 0 },
   { title: 'Let time pass', text: 'Start the clock with the play buttons at the top, or press Space. Development takes a couple of months; the faster speeds help. The game pauses itself for anything important.', done: (s) => mine(s).some((p) => p.status === 'sale') },
-  { title: 'Read the reviews', tab: 'products', text: 'Your device is on sale. Click it to see what reviewers and owners think, how it is selling in each market, and to order more stock before it runs out.', done: (s) => useStore.getState().inspect !== null || mine(s).some((p) => p.unitsSold > 2000) },
-  { title: 'Open Marketing', tab: 'staff', where: { tab: 'staff', view: 'hire', role: 'marketer' }, only: 'guided', opens: 'marketing', text: 'Hardly anyone has heard of you yet. Hire a marketer and the Marketing screen opens. Your device going on sale has also opened the Market screen and the executive search.', done: (s) => has(s, 'marketing') },
-  { title: 'Get known', tab: 'marketing', needs: 'marketing', text: 'Start an advertising campaign: search ads are cheap and steady. Awareness is what turns a good device into sales.', done: (s) => s.campaigns.length > 0 },
-  { title: 'Your first executive', tab: 'staff', where: { tab: 'staff', view: 'execs' }, only: 'guided', needs: 'execs', opens: 'finance', text: 'Executives run a whole side of the company. Under Staff, Executives, a finance chief will talk to you now: hire one and the Finance screen opens, with a statement for every month. Others will follow as the company grows, each opening more. They cost about twice an ordinary salary, so there is no rush.', done: (s) => has(s, 'finance') },
-  { title: 'Build a second room', tab: 'office', text: 'Open Build, choose Rooms, pick a kind of room and click two corners on open ground. Walls and a door appear on their own. A lounge lifts morale; a research lab holds benches that speed up research.', done: (s) => s.office.rooms.length >= 2 },
-  { title: 'Make a team', tab: 'staff', where: { tab: 'staff', view: 'teams' }, needs: 'teams', text: 'On the Teams tab, press Organise by role. A team with a lead gets more done, and once you pass eight people anyone without a lead slows down.', done: (s) => s.teams.some((t) => teamBonus(s, t) > 0) || s.staff.length < 2 },
+  { title: 'Read the reviews', tab: 'products', text: 'Your device is on sale. Click it to see what reviewers and owners think, how it is selling in each market, and to order more stock before it runs out.', target: 'device', done: (s) => useStore.getState().inspect !== null || mine(s).some((p) => p.unitsSold > 2000) },
+  { title: 'Open Marketing', tab: 'staff', where: { tab: 'staff', view: 'hire', role: 'marketer' }, only: 'guided', opens: 'marketing', text: 'Hardly anyone has heard of you yet. Hire a marketer and the Marketing screen opens. Your device going on sale has also opened the Market screen and the executive search.', target: 'hire-marketer', done: (s) => has(s, 'marketing') },
+  { title: 'Get known', tab: 'marketing', needs: 'marketing', text: 'Start an advertising campaign: search ads are cheap and steady. Awareness is what turns a good device into sales.', target: 'campaign', done: (s) => s.campaigns.length > 0 },
+  { title: 'Your first executive', tab: 'staff', where: { tab: 'staff', view: 'execs' }, only: 'guided', needs: 'execs', opens: 'finance', text: 'Executives run a whole side of the company. Under Staff, Executives, a finance chief will talk to you now: hire one and the Finance screen opens, with a statement for every month. Others will follow as the company grows, each opening more. They cost about twice an ordinary salary, so there is no rush.', target: 'exec-cfo', done: (s) => has(s, 'finance') },
+  { title: 'Build a second room', tab: 'office', text: 'Open Build, choose Rooms, pick a kind of room and click two corners on open ground. Walls and a door appear on their own. A lounge lifts morale; a research lab holds benches that speed up research.', target: 'build', done: (s) => s.office.rooms.length >= 2 },
+  { title: 'Make a team', tab: 'staff', where: { tab: 'staff', view: 'teams' }, needs: 'teams', text: 'On the Teams tab, press Organise by role. A team with a lead gets more done, and once you pass eight people anyone without a lead slows down.', target: 'teams', done: (s) => s.teams.some((t) => teamBonus(s, t) > 0) || s.staff.length < 2 },
   { title: 'Grow', tab: 'goals', where: { tab: 'goals', view: 'growth' }, only: 'guided', text: 'From here the company is yours to shape. Goals has a second page, Company growth: everything still to open, what each part needs and how far along you are. A factory, stores, other regions, investors and labs are all on it. Design a Pro or a Lite version of your device in the meantime, or a successor.' },
   { title: 'Grow', tab: 'world', only: 'open', text: 'From here the company is yours to shape: enter another region, open a store, build a factory, design a Pro or a Lite version, or open a new line of devices under Research. The Goals screen always has something to aim for.', done: (s) => REGIONS.filter((r) => s.regions[r.id]?.open).length >= 2 || s.stores.length > 0 || !!s.factory || mine(s).length >= 2 },
   { title: 'You are on your own', tab: 'goals', text: 'That is the guided start done. Incidents will come up that need a decision, rivals will react to what you do, and every year ends with a summary. Good luck.' },
@@ -97,30 +99,121 @@ function keepFolded(folded: boolean) {
   }
 }
 
+// ---- where the coach sits
+//
+// The coach floats over the screen it is talking about, so it must keep off
+// the thing it is pointing at. Controls say what they are with
+// `data-coach-target="name ..."`; a step names the ones it is about in
+// `target`, and the name `always` marks the one big action of a screen, kept
+// clear whatever the step. A builder's information bar says so with
+// `data-bottom-bar`, and the coach sits above it.
+
+/** The places the coach can sit, in the order it tries them. */
+const SLOTS = ['bottom', 'bottom-right', 'bottom-left', 'top-right', 'top-left'] as const
+type Slot = (typeof SLOTS)[number]
+interface Box {
+  left: number
+  top: number
+  right: number
+  bottom: number
+}
+/** Kept between the coach and the edges of the screen it floats over. */
+const EDGE = 8
+/** Kept between the coach and anything it must not cover. */
+const CLEAR = 6
+
+const cut = (a: Box, b: Box): Box | null => {
+  const r = { left: Math.max(a.left, b.left), top: Math.max(a.top, b.top), right: Math.min(a.right, b.right), bottom: Math.min(a.bottom, b.bottom) }
+  return r.right - r.left > 0.5 && r.bottom - r.top > 0.5 ? r : null
+}
+/** The part of an element that can be seen: what its scrolling and clipping ancestors leave of it. */
+function seenBox(el: Element, within: Element): Box | null {
+  let box: Box | null = cut(el.getBoundingClientRect(), within.getBoundingClientRect())
+  for (let p = el.parentElement; box && p && p !== within; p = p.parentElement) {
+    const style = getComputedStyle(p)
+    if (style.visibility === 'hidden') return null
+    if (style.overflowX !== 'visible' || style.overflowY !== 'visible') box = cut(box, p.getBoundingClientRect())
+  }
+  return box
+}
+
+interface Placing {
+  /** Where the card goes, or null when every place would cover what the step points at. */
+  card: Slot | null
+  /** Where the folded bar goes. */
+  bar: Slot
+  /** The screen area the coach floats over, as offsets from the edges of the element it is positioned in. */
+  left: number
+  right: number
+  top: number
+  width: number
+  /** Its bottom edge, already lifted over a builder's information bar. */
+  bottom: number
+}
+
+/** The CSS for a place. Until the screen has been measured: bottom middle of the window. */
+function styleOf(p: Placing | null, slot: Slot): React.CSSProperties {
+  if (!p) return { left: '50%', bottom: 12, transform: 'translateX(-50%)', maxWidth: 'calc(100% - 16px)' }
+  const maxWidth = p.width - 2 * EDGE
+  const y = slot.startsWith('top') ? { top: p.top + EDGE } : { bottom: p.bottom }
+  if (slot === 'bottom') return { left: p.left + p.width / 2, transform: 'translateX(-50%)', maxWidth, ...y }
+  return slot.endsWith('right') ? { right: p.right + EDGE, maxWidth, ...y } : { left: p.left + EDGE, maxWidth, ...y }
+}
+
 /**
- * How much of the bottom of the screen a builder's own information bar takes
- * (the city, the campus, a factory, a store and a venue each have one, pinned
- * across the bottom of the view), so the coach can sit above it rather than
- * on it. Zero on the screens without one.
+ * Finds a place for the coach's card and for its folded bar where neither
+ * covers what the step points at, and looks again whenever the window, the
+ * screen, the scroll position or the step changes.
  */
-function useBottomBar(): number {
-  const [height, setHeight] = useState(0)
+function usePlacing(card: React.RefObject<HTMLElement | null>, bar: React.RefObject<HTMLElement | null>, target: string | undefined, key: string): Placing | null {
+  const [placing, setPlacing] = useState<Placing | null>(null)
   useEffect(() => {
     const main = document.querySelector('main')
     if (!main) return
     const seen = new WeakSet<Element>()
+    const watch = (el: Element) => void (seen.has(el) || (seen.add(el), sizes.observe(el)))
+    const names = ['always', ...(target ? [target] : [])]
     const measure = () => {
-      const floor = main.getBoundingClientRect().bottom
-      let top = 0
-      main.querySelectorAll('.absolute.inset-x-0.bottom-0').forEach((bar) => {
-        if (!seen.has(bar)) (seen.add(bar), sizes.observe(bar))
-        // the bar itself is as wide as the screen and see-through; what counts is what is in it
-        for (const part of bar.children) {
+      const host = (card.current ?? bar.current)?.offsetParent
+      if (!host) return
+      const m = main.getBoundingClientRect()
+      const h = host.getBoundingClientRect()
+      // a builder's information bar: the bar itself is as wide as the screen and see-through; what counts is what is in it
+      let lift = 0
+      const bars = main.querySelectorAll('[data-bottom-bar]')
+      bars.forEach((b) => {
+        watch(b)
+        for (const part of b.children) {
           const r = part.getBoundingClientRect()
-          if (r.width && r.height) top = Math.max(top, floor - r.top)
+          if (r.width && r.height) lift = Math.max(lift, m.bottom - r.top)
         }
       })
-      setHeight(Math.max(0, Math.round(top)))
+      const floor = m.bottom - (lift ? Math.round(lift) + 4 : 12)
+      const keepOff: Box[] = []
+      main.querySelectorAll('[data-coach-target]').forEach((el) => {
+        const said = (el.getAttribute('data-coach-target') ?? '').split(/\s+/)
+        if (!names.some((n) => said.includes(n))) return
+        watch(el)
+        const box = seenBox(el, main)
+        if (box) keepOff.push({ left: box.left - CLEAR, top: box.top - CLEAR, right: box.right + CLEAR, bottom: box.bottom + CLEAR })
+      })
+      const room = m.width - 2 * EDGE
+      const boxAt = (slot: Slot, w: number, ht: number): Box => {
+        const left = slot === 'bottom' ? m.left + (m.width - w) / 2 : slot.endsWith('right') ? m.right - EDGE - w : m.left + EDGE
+        const top = slot.startsWith('top') ? m.top + EDGE : floor - ht
+        return { left, top, right: left + w, bottom: top + ht }
+      }
+      const find = (el: HTMLElement | null): Slot | null => {
+        if (!el) return null
+        const w = Math.min(el.offsetWidth, room)
+        const ht = el.offsetHeight
+        if (ht > floor - m.top - EDGE) return null
+        // a view with its own bar along the bottom has its tools along the top: there the coach keeps to the bottom
+        const slots = bars.length ? SLOTS.filter((s) => s.startsWith('bottom')) : SLOTS
+        return slots.find((s) => !keepOff.some((k) => cut(k, boxAt(s, w, ht)))) ?? null
+      }
+      const next: Placing = { card: find(card.current), bar: find(bar.current) ?? 'bottom', left: Math.round(m.left - h.left), right: Math.round(h.right - m.right), top: Math.round(m.top - h.top), width: Math.round(m.width), bottom: Math.round(h.bottom - floor) }
+      setPlacing((was) => (was && JSON.stringify(was) === JSON.stringify(next) ? was : next))
     }
     // however much changes in a frame, look once
     let queued = 0
@@ -128,11 +221,16 @@ function useBottomBar(): number {
     const sizes = new ResizeObserver(soon)
     const nodes = new MutationObserver(soon)
     sizes.observe(main)
+    if (card.current) sizes.observe(card.current)
+    if (bar.current) sizes.observe(bar.current)
     nodes.observe(main, { childList: true, subtree: true })
+    window.addEventListener('resize', soon)
+    // a list scrolled inside the screen moves what the step points at
+    document.addEventListener('scroll', soon, true)
     measure()
-    return () => (sizes.disconnect(), nodes.disconnect(), cancelAnimationFrame(queued))
-  }, [])
-  return height
+    return () => (sizes.disconnect(), nodes.disconnect(), window.removeEventListener('resize', soon), document.removeEventListener('scroll', soon, true), cancelAnimationFrame(queued))
+  }, [card, bar, target, key])
+  return placing
 }
 
 export function Coach() {
@@ -141,9 +239,14 @@ export function Coach() {
   const tab = useStore((s) => s.tab)
   const designing = useStore((s) => s.designing)
   const [folded, setFolded] = useState(wasFolded)
-  const fold = (to: boolean) => (keepFolded(to), setFolded(to), sfx.toggle())
-  const bar = useBottomBar()
+  // opened by hand where there is no room for it: for this step on this screen only
+  const [forced, setForced] = useState('')
+  const cardRef = useRef<HTMLDivElement>(null)
+  const barRef = useRef<HTMLButtonElement>(null)
   const step = STEPS[g.guide]
+  const here = `${g.guide}/${tab}`
+  const placing = usePlacing(cardRef, barRef, step?.target, `${here}/${folded}/${designing}`)
+  const fold = (to: boolean) => (keepFolded(to), setFolded(to), setForced(to ? '' : here), sfx.toggle())
   const passed = !!step && !suits(g, step)
   const done = !!step?.done?.(g)
   // a step that is not for this game, or uses something still locked, is passed over
@@ -163,23 +266,36 @@ export function Coach() {
   const last = following(g, g.guide) < 0
   const go = () => goStep(step)
   const icon: IconName = step.opens ? (has(g, step.opens) ? 'unlock' : 'lock') : 'goals'
-  // above a builder's information bar where there is one, otherwise just off the bottom edge
-  const place = { bottom: bar ? bar + 4 : 12 }
-  if (folded) {
-    return (
-      <button onClick={() => fold(false)} style={place} title={`Guide, step ${at + 1} of ${mine.length}: ${step.title}. Click to open it.`} aria-expanded={false} className="pointer-events-auto absolute left-1/2 z-30 flex h-7 max-w-[calc(100%-16px)] -translate-x-1/2 items-center gap-2 border border-accent bg-panel px-2 text-left hover:bg-hover">
-        <Icon name={done ? 'check' : icon} size={12} className={`shrink-0 ${done ? 'text-pos' : 'text-accent'}`} />
-        <span className="label shrink-0 text-faint">Guide</span>
-        <span className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">{step.title}</span>
-        <span className="num shrink-0 text-[10px] text-faint">
-          {at + 1} / {mine.length}
-        </span>
-        <Icon name="arrowUp" size={11} className="shrink-0 text-dim" />
-      </button>
-    )
-  }
-  return (
-    <div style={place} className="pointer-events-auto absolute left-1/2 z-30 w-[440px] max-w-[calc(100%-16px)] -translate-x-1/2 border border-accent bg-panel">
+  // With no place for the card that leaves the step's target clear, it folds to its bar by itself;
+  // the card stays in the page, unseen, so its size is known when room comes back.
+  const cramped = !folded && !!placing && !placing.card && forced !== here
+  const asBar = folded || cramped
+  // the bar is in the page even while the card is up, so that it is already measured when it is needed
+  const bar = (
+    <button
+      ref={barRef}
+      data-coach="bar"
+      data-coach-slot={placing?.bar}
+      onClick={() => fold(false)}
+      style={styleOf(placing, placing?.bar ?? 'bottom')}
+      title={`Guide, step ${at + 1} of ${mine.length}: ${step.title}. ${cramped ? 'Folded so that it does not cover what this step points at. Click to open it anyway.' : 'Click to open it.'}`}
+      aria-expanded={false}
+      aria-hidden={!asBar || undefined}
+      tabIndex={asBar ? undefined : -1}
+      className={`absolute z-30 flex h-7 items-center gap-2 border border-accent bg-panel px-2 text-left hover:bg-hover ${asBar ? 'pointer-events-auto' : 'pointer-events-none invisible'}`}
+    >
+      <Icon name={done ? 'check' : icon} size={12} className={`shrink-0 ${done ? 'text-pos' : 'text-accent'}`} />
+      <span className="label shrink-0 text-faint">Guide</span>
+      <span className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">{step.title}</span>
+      <span className="num shrink-0 text-[10px] text-faint">
+        {at + 1} / {mine.length}
+      </span>
+      <Icon name="arrowUp" size={11} className="shrink-0 text-dim" />
+    </button>
+  )
+  if (folded) return bar
+  const card = (
+    <div ref={cardRef} data-coach="card" data-coach-slot={placing?.card ?? 'none'} aria-hidden={cramped || undefined} style={styleOf(placing, placing?.card ?? 'bottom')} className={`absolute z-30 w-[440px] border border-accent bg-panel ${cramped ? 'pointer-events-none invisible' : 'pointer-events-auto'}`}>
       <div className="flex items-center justify-between gap-2 border-b border-line py-[3px] pl-3 pr-1">
         <span className="flex min-w-0 items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">
           <Icon name={icon} size={13} className="shrink-0" />
@@ -228,6 +344,12 @@ export function Coach() {
         </div>
       </div>
     </div>
+  )
+  return (
+    <>
+      {bar}
+      {card}
+    </>
   )
 }
 
