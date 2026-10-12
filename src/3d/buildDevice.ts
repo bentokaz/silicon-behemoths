@@ -539,7 +539,9 @@ function buildPart(p: PlacedPart, solid: Body, face: Face, c: Ctx): THREE.Group 
         g.add(l)
         break
       }
-      const look = logoFinish(luminance(surfaceUnder(p, c)))
+      // the name of the finish is for the designer's panel, not for the material
+      const { finish: _name, ...look } = logoFinish(luminance(surfaceUnder(p, c)))
+      void _name
       const mat = new THREE.MeshPhysicalMaterial({ ...look, alphaMap: logoTexture(p.text || ' '), transparent: true, depthWrite: false })
       const l = mesh(new THREE.PlaneGeometry(p.w, p.h), mat, false)
       l.position.z = lift(0.05)

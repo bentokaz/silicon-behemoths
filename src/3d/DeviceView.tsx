@@ -8,7 +8,7 @@ import * as THREE from 'three'
 import { TYPES } from '../data/devices'
 import type { DeviceDesign, DeviceType } from '../sim/types'
 import { type Quality, useSettings } from '../store/settings'
-import { AutoTurn, SafeCanvas, StrainWatch, useStrain } from './SafeCanvas'
+import { AutoTurn, SafeCanvas, StrainWatch, useShadingRelease, useStrain } from './SafeCanvas'
 import { layoutInternals, weightShares } from '../sim/internals'
 import { LiveDevice, type TearInfo } from './LiveDevice'
 import { buildDevice, deviceFrame, disposeDevice } from './buildDevice'
@@ -175,6 +175,7 @@ export function DeviceView(props: Props) {
   const backFill = design.type === 'tv' || design.type === 'desktop' ? 1.1 : design.type === 'laptop' ? 0.7 : 0
   const S = STUDIO[useSettings((s) => s.settings.quality)]
   const strained = useStrain()
+  const shading = useShadingRelease()
   const ao = S.ao === 'full' || (S.ao === 'spare' && !strained)
   return (
     <SafeCanvas
@@ -230,7 +231,7 @@ export function DeviceView(props: Props) {
       </mesh>
 
       {ao && (
-        <EffectComposer multisampling={4}>
+        <EffectComposer ref={shading} multisampling={4}>
           <N8AO halfRes={S.ao === 'spare'} aoRadius={9 * k} distanceFalloff={1} intensity={2.2} quality={S.ao === 'spare' ? 'performance' : 'medium'} />
         </EffectComposer>
       )}

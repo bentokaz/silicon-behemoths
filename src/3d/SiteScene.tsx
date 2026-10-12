@@ -5,7 +5,7 @@ import { type ThreeEvent, useFrame, useThree } from '@react-three/fiber'
 import { EffectComposer, N8AO } from '@react-three/postprocessing'
 import { type ReactNode, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
-import { AutoTurn, CameraFence, SafeCanvas } from './SafeCanvas'
+import { AutoTurn, CameraFence, SafeCanvas, useShadingRelease } from './SafeCanvas'
 import { type Pt, bayRun, bayStands, curveTiles, nearestBay } from '../sim/curves'
 import { EDGE_COST, keepsDoors, zonePlan } from '../sim/game'
 import type { FactoryLife, OfficeLife, StoreLife, VenueLife } from '../sim/life'
@@ -739,6 +739,7 @@ const fmtHour = (h: number) => `${String(Math.floor(h)).padStart(2, '0')}:${Stri
 export function SiteScene({ site, mode, mood, tool, company, color, logo, selectedRoom, sealed, onTile, onRow, onEdges, onSell, onRun, onArea, onPreview, seated = [], idle = [], applicants, onPerson, day = 0, line, producing = false, products = [], busy = 0, show, autoRotate, speed = 0, life, card, onCutOff }: SiteViewProps) {
   const prefs = useSettings((s) => s.settings)
   const Q = QUALITY[prefs.quality]
+  const shading = useShadingRelease()
   const { w, h } = site
   const crowded = useRef(false)
   crowded.current = site.items.length >= (crowded.current ? SPARING_UNTIL : SPARING_AT)
@@ -1536,8 +1537,9 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
       <Ground site={site} dim={indoor ? M.ground : mood === 'night' ? 0.6 : mood === 'dusk' ? 0.85 : 1} />
       <Structure site={standing} mode={mode} glow={mood === 'day' ? 0 : M.glow * 0.6} leaves={false} dark={mode === 'cut' ? undefined : darkRooms} />
 
-      {/* invisible pick surface over the whole plot */}
+      {/* pick surface over the whole plot: found by the pointer, never drawn */}
       <mesh
+        visible={false}
         rotation-x={-Math.PI / 2}
         position={[0, 0.005, 0]}
         onPointerMove={(e) => {
@@ -1577,7 +1579,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
         }}
       >
         <planeGeometry args={[w, h]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        <meshBasicMaterial />
       </mesh>
 
       {chunks.map((chunk) => {
@@ -1680,7 +1682,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
 
       {Q.shadows > 0 && <StaticShadows sig={shadowSig} />}
       {Q.ao && (
-        <EffectComposer multisampling={4}>
+        <EffectComposer ref={shading} multisampling={4}>
           <N8AO halfRes aoRadius={0.8} distanceFalloff={1} intensity={mood === 'night' ? 1.2 : 2} quality="medium" />
         </EffectComposer>
       )}

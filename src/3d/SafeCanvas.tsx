@@ -6,7 +6,7 @@
 // happened in plain words and given a way to try again, and the rest of the
 // game goes on working.
 import { Canvas, type CanvasProps, useFrame, useThree } from '@react-three/fiber'
-import { Component, type ReactNode, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { Component, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type * as THREE from 'three'
 import { useSettings } from '../store/settings'
 import { Pace, fence, lostCopy, sweep } from './canvasHelp'
@@ -58,6 +58,114 @@ class SceneGuard extends Component<{ children: ReactNode; onError: (e: Error) =>
   render() {
     return this.state.failed ? null : this.props.children
   }
+}
+
+interface Disposable {
+  dispose(): void
+}
+
+/**
+ * Lets go of everything a scene was drawn with. Shapes, materials and
+ * pictures are shared between views and kept for the next one (a desk is
+ * built once, not once per visit), and the renderer leaves a note on each one
+ * it has drawn so that it can clean up after it. Those notes point back at the
+ * renderer: unless they are taken off, every view ever opened stays in memory
+ * for good, canvas, scene and all, behind the things it shared. Disposing
+ * them takes the notes off; what is shared is simply sent to the graphics
+ * card again by whichever view draws it next.
+ */
+function releaseScene(scene: THREE.Scene, gl: THREE.WebGLRenderer) {
+  const held = new Set<Disposable>()
+  const keep = (v: unknown) => {
+    if (v && typeof (v as Disposable).dispose === 'function') held.add(v as Disposable)
+  }
+  const material = (m: THREE.Material | undefined) => {
+    if (!m) return
+    keep(m)
+    for (const v of Object.values(m)) if (v && (v as THREE.Texture).isTexture) keep(v)
+    const uniforms = (m as THREE.ShaderMaterial).uniforms
+    if (uniforms) for (const u of Object.values(uniforms)) if (u?.value && (u.value as THREE.Texture).isTexture) keep(u.value)
+    // and the pictures the renderer itself hands every material: its lighting table is one shared by every renderer
+    // there has ever been, and is the note that kept each of them alive
+    const drawn = (gl.properties.get(m) as { uniforms?: Record<string, { value: unknown }> } | undefined)?.uniforms
+    if (drawn) for (const u of Object.values(drawn)) if (u?.value && (u.value as THREE.Texture).isTexture) keep(u.value)
+  }
+  scene.traverse((o) => {
+    const mesh = o as THREE.Mesh
+    keep(mesh.geometry)
+    if (Array.isArray(mesh.material)) mesh.material.forEach(material)
+    else material(mesh.material)
+    if ((o as THREE.InstancedMesh).isInstancedMesh) keep(o)
+    const light = o as THREE.DirectionalLight
+    if (light.isLight && light.shadow) keep(light.shadow)
+  })
+  if ((scene.background as THREE.Texture | null)?.isTexture) keep(scene.background)
+  if (scene.environment) keep(scene.environment)
+  // once the view has finished coming down (it draws no more frames)
+  window.setTimeout(() => {
+    for (const r of held) {
+      try {
+        r.dispose()
+      } catch {
+        /* already gone */
+      }
+    }
+  }, 0)
+}
+
+/**
+ * The shading laid over a finished picture (see the views' EffectComposer) is
+ * drawn with shapes and materials of its own that are in no scene: the one
+ * triangle that covers the screen is shared by every view there has ever
+ * been, and held each of them in memory in the same way. This finds what the
+ * shading holds and lets go of it when the view that used it closes. Pass the
+ * returned function as the composer's `ref`.
+ */
+export function useShadingRelease(): (composer: unknown) => void {
+  const last = useRef<unknown>(null)
+  useLayoutEffect(
+    () => () => {
+      const held = new Set<Disposable>()
+      const seen = new Set<object>()
+      const walk = (v: unknown, depth: number) => {
+        if (!v || typeof v !== 'object' || depth > 5 || seen.has(v) || ArrayBuffer.isView(v)) return
+        seen.add(v)
+        const o = v as Record<string, unknown> & Partial<Disposable>
+        // the view's own scene, camera and renderer are not the shading's to let go of
+        if (o.isWebGLRenderer || o.isScene || o.isCamera || (typeof Element !== 'undefined' && v instanceof Element)) return
+        if ((o.isBufferGeometry || o.isMaterial || o.isTexture || o.isRenderTarget || o.isWebGLRenderTarget) && typeof o.dispose === 'function') held.add(o as Disposable)
+        if (Array.isArray(v)) {
+          for (let i = 0; i < Math.min(v.length, 64); i++) walk(v[i], depth + 1)
+          return
+        }
+        for (const k of Object.keys(o)) walk(o[k], depth + 1)
+      }
+      walk(last.current, 0)
+      last.current = null
+      window.setTimeout(() => {
+        for (const r of held) {
+          try {
+            r.dispose()
+          } catch {
+            /* already gone */
+          }
+        }
+      }, 0)
+    },
+    [],
+  )
+  return useCallback((composer: unknown) => {
+    // kept even after the shading is switched off: what it shared still points at this view's renderer
+    if (composer) last.current = composer
+  }, [])
+}
+
+/** Placed first in every canvas, so that it is the first thing taken down, while the scene is still whole. */
+function Release() {
+  const scene = useThree((s) => s.scene)
+  const gl = useThree((s) => s.gl)
+  useLayoutEffect(() => () => releaseScene(scene, gl), [scene, gl])
+  return null
 }
 
 /** Where a camera stood and what it looked at, kept while its view is rebuilt. */
@@ -303,6 +411,7 @@ export function SafeCanvas({ children, dpr, what = '3D view', ...rest }: CanvasP
       {!broke && (
         <SceneGuard key={attempt} onError={setBroke}>
           <Canvas dpr={dpr} {...rest}>
+            <Release />
             <ContextWatch onLost={onLost} onBack={onBack} onReady={onReady} pose={pose} />
             <DensityWatch dpr={dpr} />
             {children}

@@ -58,6 +58,9 @@ const smooth = (a: number, b: number, x: number) => {
 const DAY = { sky: new THREE.Color('#a8c8e4'), sun: new THREE.Color('#fff3dd'), sea: new THREE.Color('#2a6781'), hemi: new THREE.Color('#fff4e6'), floor: new THREE.Color('#4a4338') }
 const DUSK = { sky: new THREE.Color('#d98f66'), sun: new THREE.Color('#ffab72'), sea: new THREE.Color('#5b5a72'), hemi: new THREE.Color('#ffd9b8'), floor: new THREE.Color('#3a2f2a') }
 const NIGHT = { sky: new THREE.Color('#0a0f1e'), sun: new THREE.Color('#9db4e0'), sea: new THREE.Color('#0b1626'), hemi: new THREE.Color('#6a7fa8'), floor: new THREE.Color('#14161c') }
+const sunDir = new THREE.Vector3()
+const MOON = new THREE.Vector3(-0.4, 1, 0.5)
+const ORIGIN = new THREE.Vector3()
 const PANE = new THREE.Color('#27353f')
 const WARM = new THREE.Color('#2a2418')
 const mix = (out: THREE.Color, key: keyof typeof DAY, day: number, dusk: number, night: number) => out.setRGB(DAY[key].r * day + DUSK[key].r * dusk + NIGHT[key].r * night, DAY[key].g * day + DUSK[key].g * dusk + NIGHT[key].g * night, DAY[key].b * day + DUSK[key].b * dusk + NIGHT[key].b * night)
@@ -127,9 +130,9 @@ function Daylight({ sky, speed, startDay, mats, shadows, sig, onLights }: { sky:
     mix(light.color, 'sun', day, dusk, night)
     // the sun crosses from east to west; after dark the moon stands high in the south-west
     const turn = Math.PI * Math.min(1, Math.max(0, p / 0.5))
-    const dir = new THREE.Vector3(Math.cos(turn) * 0.95, Math.max(0.2, height), 0.5).lerp(new THREE.Vector3(-0.4, 1, 0.5), night).normalize()
+    const dir = sunDir.set(Math.cos(turn) * 0.95, Math.max(0.2, height), 0.5).lerp(MOON, night).normalize()
     // shadows are drawn round whatever the camera is looking at, and only when something has changed
-    const target = controls?.target ?? new THREE.Vector3()
+    const target = controls?.target ?? ORIGIN
     const reach = Math.min(440, Math.max(150, camera.position.distanceTo(target) * 0.62))
     const grid = reach / 6
     const x = Math.round(target.x / grid) * grid
