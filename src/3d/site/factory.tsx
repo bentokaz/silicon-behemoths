@@ -17,6 +17,8 @@ export interface FactoryCtx {
   away?: boolean
   /** How full the warehouse is, 0-1: racks empty out as stock sells. */
   fill?: number
+  /** The shift is drawn walking about, so nobody is modelled sitting at a bench. */
+  live?: boolean
 }
 
 const BELT = 0.8
@@ -230,7 +232,7 @@ export function FactoryItem({ kind, c }: { kind: string; c: FactoryCtx }) {
           <C p={[0, 0.015, 0.3]} r={[0.17, 0.19]} h={0.03} c={STEEL} seg={14} cast={false} />
           <C p={[0, 0.26, 0.3]} r={[0.02, 0.02]} h={0.46} c={STEEL} seg={8} cast={false} />
           <C p={[0, 0.5, 0.3]} r={[0.16, 0.16]} h={0.04} c={DARK} seg={14} />
-          {c.running && <Person who={CREW[c.seed % 3]} p={[0, 0.02, 0.3]} />}
+          {c.running && !c.live && <Person who={CREW[c.seed % 3]} p={[0, 0.02, 0.3]} />}
         </>
       )
     case 'test':

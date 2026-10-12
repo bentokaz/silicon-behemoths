@@ -140,7 +140,26 @@ const DEFS: Record<SiteKind, Record<string, SpotDef[]>> = {
     fountain: [s(U.look, 0, 2, 0, Pose.Look, 0, 2), s(U.look, -2, 0, -HALF, Pose.Look, -2, 0)],
     gbench: [s(U.lunch | U.coffee | U.wait, -0.45, 0, Math.PI, Pose.Sit, -0.5, 1, { hip: 0.52 }), s(U.lunch | U.coffee | U.wait, 0.45, 0, Math.PI, Pose.Sit, 0.5, 1, { hip: 0.52 })],
   },
-  factory: {},
+  factory: {
+    // the people who work a line: at the front of each machine, where its controls are
+    smt: [s(U.station, -0.6, 0.88, 0, Pose.Tend, -1, 1)],
+    robot: [s(U.station, 0.5, 1.34, 0, Pose.Tend, 0.5, 1.5)],
+    manual: [s(U.station, 0, 0.3, 0, Pose.Perch, 0, 1, { hip: 0.54 })],
+    test: [s(U.station, -0.24, 0.88, 0, Pose.Tend, 0, 1)],
+    pack: [s(U.station, 0.48, 0.88, 0, Pose.Tend, 0.5, 1), s(U.press, -0.5, 1.4, 0, Pose.Stand, -0.5, 1)],
+    console: [s(U.station, -0.4, 0.5, 0, Pose.Type, -0.5, 1, { hip: 0.5 }), s(U.station, 0.4, 0.5, 0, Pose.Type, 0.5, 1, { hip: 0.5 })],
+    qa: [s(U.station, 0.2, 0.74, 0, Pose.Tend, 0.5, 1)],
+    // where a pallet truck is loaded, and where it is set down
+    rack: [s(U.press, 0.5, 1.4, 0, Pose.Stand, 0.5, 1)],
+    pallets: [s(U.press, 0, 1.4, 0, Pose.Stand, 0, 1)],
+    dock_out: [s(U.crew, 0.5, 1.4, 0, Pose.Stand, 0.5, 1)],
+    canteen: [
+      s(U.lunch, -0.5, 0.42, 0, Pose.Sit, -0.5, 1, { hip: 0.47 }),
+      s(U.lunch, 0.5, 0.42, 0, Pose.Sit, 0.5, 1, { hip: 0.47 }),
+      s(U.lunch, -0.5, -0.42, Math.PI, Pose.Sit, -0.5, -1, { hip: 0.47 }),
+      s(U.lunch, 0.5, -0.42, Math.PI, Pose.Sit, 0.5, -1, { hip: 0.47 }),
+    ],
+  },
   store: {
     table,
     demo: [s(U.browse, 0, 0.8, 0, Pose.Hold, 0, 1), s(U.browse, 0.8, 0, HALF, Pose.Hold, 1, 0)],

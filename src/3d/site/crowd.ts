@@ -17,9 +17,9 @@ import { Pose, type Spot, USE } from './spots'
 
 export const Act = { None: -1, Home: 0, Desk: 1, Station: 2, Meet: 3, Lunch: 4, Coffee: 5, Gym: 6, Wander: 7, Away: 8, Quit: 9, Visit: 10, Shop: 11, Watch: 12, Crew: 13, Host: 14 } as const
 export const Mode = { Off: 0, In: 1, Walk: 2, Enter: 3, Do: 4, Exit: 5, Out: 6 } as const
-export const Kind = { Staff: 0, Applicant: 1, Shopper: 2, Guest: 3, Crew: 4, Host: 5, Front: 6 } as const
+export const Kind = { Staff: 0, Applicant: 1, Shopper: 2, Guest: 3, Crew: 4, Host: 5, Front: 6, Hand: 7 } as const
 /** Something carried that is not decided by what the person is doing. */
-export const Tool = { None: 0, Broom: 1, Clipboard: 2 } as const
+export const Tool = { None: 0, Broom: 1, Clipboard: 2, Jack: 3 } as const
 
 /** Deterministic pseudo-random number in [0, 1) from a number. */
 export function rnd(n: number): number {
@@ -100,6 +100,8 @@ export class Body {
   thinkIn = 0
   seat: Spot | null = null
   station: Spot | null = null
+  /** What a factory hand is there to do (see factorycrowd.ts). */
+  job = 0
   /** The reception desk they look after instead of sitting at their own, if they are the one on the front desk. */
   post: Spot | null = null
   /** Seconds left of a handshake across the reception desk, and who it is with. */
@@ -137,6 +139,11 @@ export class Body {
   /** Seconds they have been held up by something they cannot get round, and seconds spent waiting behind someone. */
   still = 0
   patience = 0
+  /** Where they stood when they last took a step, so that being pushed straight back by someone standing in the way is not mistaken for headway. */
+  px = NaN
+  pz = NaN
+  /** True when the last step ended with someone who cannot step aside pushing them back. */
+  shoved = false
   /** Which side they try to pass on: flips when the first choice turns out to be a wall. */
   pass = 1
   /** Seconds left of pushing straight through, when nothing else has worked. */
@@ -176,6 +183,14 @@ export interface StaffEntry {
 
 /** What someone is up to, in a few words, for the label under the pointer. */
 export function describe(b: Body): string {
+  if (b.kind === Kind.Hand) {
+    const going = b.walking || b.mode === Mode.Enter || b.mode === Mode.Exit
+    if (b.leaving) return 'End of the shift: heading home'
+    if (b.tool === Tool.Jack) return b.stage >= 2 ? 'Taking cartons to the shipping dock' : b.stage === 1 ? 'Loading up' : 'Fetching the next load'
+    if (b.tool === Tool.Clipboard) return going ? 'Walking the line' : 'Checking on a station'
+    if (b.spot && b.spot.use & USE.lunch) return 'On a break'
+    return going ? 'On the way to their station' : b.pose === Pose.Type ? 'Watching the line from the control desk' : 'Working the line'
+  }
   if (b.kind === Kind.Front) return b.shake > 0 ? 'Welcoming a new colleague' : b.walking ? 'On the way to the front desk' : b.pose === Pose.Meet ? 'Seeing to a visitor' : 'On reception'
   if (b.kind === Kind.Applicant) return b.hired ? 'Hired: starts in the morning' : 'Here about a job'
   if (b.kind === Kind.Shopper) return b.stage === 1 ? 'Queueing to pay' : b.bag ? 'Leaving with a new device' : 'Browsing'
@@ -1057,6 +1072,7 @@ export class Crowd {
     if (!b.pathLen) return this.arrive(b, true)
     b.mode = Mode.Walk
     b.still = 0
+    b.px = NaN
   }
 
   /** Looks for a way that does not use a busy doorway. True if one was found that is not much longer; otherwise the route is left as it was. */
@@ -1154,6 +1170,8 @@ export class Crowd {
     }
     if (b.spot === b.seat) b.carry = false
     if (b.kind === Kind.Applicant && b.hired) b.thinkIn = 0
+    // someone standing on open floor is in the way of anyone walking through: routes go round where they can
+    if (b.spot && b.spot.open) this.claimTile(b, this.nav.tileAt(b.spot.x, b.spot.z))
     if (b.kind === Kind.Shopper) b.wait = b.stage === 1 ? 2.2 + rnd(b.seed + b.browse) * 2 : 3 + rnd(b.seed + b.browse * 3) * 5
     this.onStop(b)
   }
@@ -1428,8 +1446,13 @@ export class Crowd {
     const mx = this.cx - b.x
     const mz = this.cz - b.z
     const moved = Math.hypot(mx, mz)
-    // made no headway, and not because they are politely waiting behind someone: something is in the way
-    const made = mx * ux + mz * uz
+    // made no headway, and not because they are politely waiting behind someone: something is in the way. What counts
+    // is where the last step really left them: a step forward that someone standing there pushed straight back is none
+    const net = b.px === b.px ? (b.x - b.px) * ux + (b.z - b.pz) * uz : 1
+    b.px = b.x
+    b.pz = b.z
+    const made = b.shoved ? Math.min(mx * ux + mz * uz, net) : mx * ux + mz * uz
+    b.shoved = false
     if (made < v * dt * 0.25 && !held) b.still += dt
     else b.still = Math.max(0, b.still - dt * 3)
     // a queue that shuffles forward is a queue; one that never moves is a knot
@@ -1725,6 +1748,8 @@ export class Crowd {
         // walkers share the step; someone standing about gives way a little more than a walker does
         const wa = al ? (bl ? (a.walking === b.walking ? 0.5 : a.walking ? 0.4 : 0.6) : 1) : 0
         const wb = bl ? 1 - (al ? wa : 0) : 0
+        if (!bl) a.shoved = true
+        if (!al) b.shoved = true
         if (wa > 0) {
           this.confine(a, a.x - dx * push * wa, a.z - dz * push * wa)
           a.x = this.cx

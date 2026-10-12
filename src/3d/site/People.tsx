@@ -94,8 +94,12 @@ const REST: Record<number, number[]> = {
 /** Arms only: lean, head, shoulders, spreads, elbows, turn-ins. */
 const CARRY = [0.02, 0, 0.2, 0.2, 0.03, 0.03, 1.4, 1.4, 0.15, 0.15]
 const CLAP = [0.02, 0, 0.6, 0.6, 0.03, 0.03, 1.45, 1.45, 0.8, 0.8]
+/** Both hands on the handle of a pallet truck, low in front. */
+const PUSH = [0.1, 0.05, 0.42, 0.42, 0.02, 0.02, 0.5, 0.5, 0.12, 0.12]
 const CHEER = [-0.04, -0.2, 2.85, 2.85, 0.3, 0.3, 0.2, 0.2, 0, 0]
 const ARMS = [0, 1, 2, 3, 4, 5, 10, 11, 12, 13]
+/** A seat at a canteen table (USE.lunch): nobody pushes a pallet truck there. */
+const LUNCH = 8
 const AMP = 14
 const HIP = 15
 
@@ -220,12 +224,12 @@ function pose(m: Meshes, i: number, b: Body, dt: number): boolean {
   const prop = propOf(b, walking)
   const bothHands = prop === Prop.Box || prop === Prop.Tray
   // whatever the hands are busy with wins over what the pose would have them do
-  const arms = b.cheer ? CHEER : b.clap > 0.05 ? CLAP : bothHands && b.pose !== Pose.Pack ? CARRY : null
+  const arms = b.cheer ? CHEER : b.clap > 0.05 ? CLAP : b.tool === Tool.Jack && b.mode !== Mode.Off ? PUSH : bothHands && b.pose !== Pose.Pack ? CARRY : null
   for (let j = 0; j < 14; j++) {
     let goal = rest[j]
     if (arms) {
       const a = ARMS.indexOf(j)
-      if (a >= 0 && (a > 1 || arms !== CARRY)) goal = arms[a]
+      if (a >= 0 && (a > 1 || arms !== CARRY) && !(arms === PUSH && b.mode === Mode.Do && b.spot && b.spot.use & LUNCH)) goal = arms[a]
     }
     if (slump && j === 0) goal += walking ? 0.2 : 0.26
     if (slump && j === 1) goal += 0.38

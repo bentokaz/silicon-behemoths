@@ -21,7 +21,9 @@ import { type Body, Crowd, Kind, type StaffEntry, describe, meetingSlot } from '
 import { BayCursor, CurveOutline } from './site/curved'
 import { Environs, type Mood, isIndoor, moodOf } from './site/env'
 import { FactoryItem } from './site/factory'
+import { FactoryCrowd } from './site/factorycrowd'
 import { FactoryFloor, shippingDocks } from './site/factorylife'
+import { Jacks } from './site/jacks'
 import { Doors, Dropping, Sparks, SparksView, WallFx, type WallPiece, snapshot, wallChanges, wallHeight } from './site/fx'
 import { Baked, type PersonLook, hash } from './site/kit'
 import { DeskScreens, RoomLights } from './site/lights'
@@ -199,7 +201,7 @@ interface ItemCtx {
 /** The model for one placed item of any kind of site. */
 function ItemModel({ kind, item, c }: { kind: SiteKind; item: string; c: ItemCtx }) {
   if (kind === 'office') return <OfficeItem kind={item} c={{ who: c.who, glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, devices: c.devices, on: c.on, live: c.live, progress: c.progress, busy: c.busy }} />
-  if (kind === 'factory') return <FactoryItem kind={item} c={{ running: !!c.running, flow: c.flow, glow: c.glow, seed: c.seed, fill: c.fill, away: c.away }} />
+  if (kind === 'factory') return <FactoryItem kind={item} c={{ running: !!c.running, flow: c.flow, glow: c.glow, seed: c.seed, fill: c.fill, away: c.away, live: c.live }} />
   if (kind === 'store') return <StoreItem kind={item} c={{ products: c.products, glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, soldOut: c.soldOut }} />
   return <VenueItem kind={item} c={{ glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, crowd: c.show?.crowd ?? 0, cheer: c.show?.cheer ?? false, show: !!c.show, screen: c.show?.screen, products: c.products, aisles: c.aisles }} />
 }
@@ -602,7 +604,7 @@ function Pointer({ enabled, targets, crowd, titles, hover, onHover, onPick, cons
       const staff = b.kind === Kind.Staff || b.kind === Kind.Applicant
       const hint = !staff ? describe(b) : b.kind === Kind.Applicant ? (b.hired ? describe(b) : `Applicant, ${ROLE_INFO[b.role!].name.toLowerCase()}`) : `${titles.get(String(b.id)) ?? ROLE_INFO[b.role!].name}. ${describe(b)}`
       if (hover.current?.target.key !== key || hover.current.target.hint !== hint) {
-        onHover({ target: { key, kind: !staff ? (b.kind === Kind.Front && !(crowd instanceof VenueCrowd) ? 'applicants' : 'venue') : b.kind === Kind.Applicant ? 'applicants' : 'person', id: staff ? b.id : 'people', label: b.name, hint, box: [0, 0, 0, 0, 0, 0], anchor: [b.x, b.y + b.hip + 1.0, b.z] }, body: b })
+        onHover({ target: { key, kind: !staff ? (b.kind === Kind.Hand ? 'orders' : b.kind === Kind.Front && !(crowd instanceof VenueCrowd) ? 'applicants' : 'venue') : b.kind === Kind.Applicant ? 'applicants' : 'person', id: staff ? b.id : 'people', label: b.name, hint, box: [0, 0, 0, 0, 0, 0], anchor: [b.x, b.y + b.hip + 1.0, b.z] }, body: b })
       }
       return
     }
@@ -763,8 +765,8 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
   const owners = useMemo(() => seatOwners(site, seated), [site, site.rev, seatedKey]) // eslint-disable-line react-hooks/exhaustive-deps
   // what each person is called: an executive goes by the seat they hold, not their desk job
   const titles = useMemo(() => new Map([...seated, ...idle].map((e) => [String(e.id), jobTitle(e)])), [seatedKey, idle.length]) // eslint-disable-line react-hooks/exhaustive-deps
-  const crowdOn = lively && prefs.walkers && site.kind !== 'factory'
-  const crowd = useMemo(() => (crowdOn ? (site.kind === 'venue' ? new VenueCrowd() : new Crowd()) : null), [crowdOn, site.kind])
+  const crowdOn = lively && prefs.walkers && (site.kind !== 'factory' || !!life?.factory)
+  const crowd = useMemo(() => (crowdOn ? (site.kind === 'venue' ? new VenueCrowd() : site.kind === 'factory' ? new FactoryCrowd() : new Crowd()) : null), [crowdOn, site.kind])
   /** Whether the site is in its working day, and where a venue is in its programme: told by the clock when either turns over. */
   const [turn, setTurn] = useState<{ working: boolean; phase: Phase }>({ working: true, phase: 'closed' })
   const onTurn = useCallback((working: boolean, phase: Phase) => setTurn({ working, phase }), [])
@@ -808,6 +810,12 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
     const spotsFor = spots.filter((s) => s.access >= 0).length
     const open = shopFloor?.open ?? false
     crowd.setShop(open ? Math.min(cap, Math.round(busy * Math.min(16, spotsFor * 0.6))) : 0, open && shopFloor ? Math.min(5, Math.ceil(shopFloor.perDay / 30)) : 0)
+  })
+
+  // a factory's shift follows the line: how much of it there is, and whether it has orders to work through
+  const shift = life?.factory
+  useLayoutEffect(() => {
+    if (crowd instanceof FactoryCrowd) crowd.setLine(shift?.line?.linked, !!shift?.producing, cap)
   })
 
   const atDesks = !lively || turn.working
@@ -997,7 +1005,7 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
     return {
       who: item.id ? occupant.get(item.id) : undefined,
       on: !!item.id && liveSeats.has(item.id),
-      live: liveKinds && (item.kind === 'server' || item.kind === 'helpdesk' || item.kind === 'screen' || item.kind === 'showcase'),
+      live: site.kind === 'factory' ? crowdOn : liveKinds && (item.kind === 'server' || item.kind === 'helpdesk' || item.kind === 'screen' || item.kind === 'showcase'),
       glow,
       company,
       logo,
@@ -1023,7 +1031,7 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
         const on = shown.get(item.id)
         return `${item.id}:${item.x},${item.y},${item.rot}:${who ? who.look + who.color : liveSeats.has(item.id) ? 'L' : ''}:${line?.linked.has(item.id) ? 1 : 0}${line?.flow.get(item.id)?.join('') ?? ''}${on ? on.devices.map((p) => p.id).join('') + (on.progress ?? '') : ''}${yard.managed.has(item.id) ? 'A' : ''}${site.kind === 'venue' ? seatAisles(site, item) || '' : ''}`
       })
-      .join('|') + `#${Math.round(glow * 10)}${running ? 'r' : ''}${site.kind === 'factory' ? Math.round(busy * 5) : ''}${company}${logo?.length ?? 0}${color}${productKey}${soldKey}${liveKinds ? 'v' : ''}${researching ? 'R' : ''}${showcaseList[0]?.id ?? ''}${staged ? `s${staged.screen?.uuid ?? ''}` : ''}`
+      .join('|') + `#${Math.round(glow * 10)}${running ? 'r' : ''}${site.kind === 'factory' ? `${Math.round(busy * 5)}${crowdOn ? 'w' : ''}` : ''}${company}${logo?.length ?? 0}${color}${productKey}${soldKey}${liveKinds ? 'v' : ''}${researching ? 'R' : ''}${showcaseList[0]?.id ?? ''}${staged ? `s${staged.screen?.uuid ?? ''}` : ''}`
 
   const place = (item: SiteItem): [number, number, number] => {
     const def = ITEMS[site.kind][item.kind]
@@ -1544,9 +1552,10 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
       >
         {lively && <Day crowd={crowd} speed={speed} onTurn={onTurn} />}
         {crowd && <People crowd={crowd} cap={site.kind === 'store' ? cap : site.kind === 'venue' ? VENUE_WALKERS[prefs.quality] + 10 : cap + 8} neg={neg} />}
+        {crowd instanceof FactoryCrowd && <Jacks crowd={crowd} />}
         {crowd && site.kind === 'office' && <DeskScreens site={site} items={liveDesks} crowd={crowd} glow={M.glow} />}
         {/* after dark the rooms are lit from within, the ones with people in them brightest */}
-        <RoomLights site={site} crowd={crowd} mood={indoor && mood === 'night' ? 'dusk' : mood} lamps={site.kind === 'venue' ? 0 : ROOM_LAMPS[prefs.quality]} gain={site.kind === 'venue' ? 0.15 : indoor ? 0.5 : 1} busy={lively && site.kind === 'factory' ? () => running : undefined} onDark={mode === 'cut' ? undefined : setDarkRooms} />
+        <RoomLights site={site} crowd={crowd} mood={indoor && mood === 'night' ? 'dusk' : mood} lamps={site.kind === 'venue' ? 0 : ROOM_LAMPS[prefs.quality]} gain={site.kind === 'venue' ? 0.15 : indoor ? 0.5 : 1} busy={lively && site.kind === 'factory' && !crowd ? () => running : undefined} onDark={mode === 'cut' ? undefined : setDarkRooms} />
         {site.kind === 'venue' && <Audience site={site} state={houseState} filled={crowd ? filledSeat : undefined} />}
         {stage && !crowd && <Presenter site={site} cheer={!!show?.cheer} />}
         <SparksView sparks={sparks} />
