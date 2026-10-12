@@ -17,7 +17,7 @@ import { themeColor } from '../store/theme'
 import { buildDevice, deviceFrame, disposeDevice, layerScaleOf, placeOnFace, pointToFace, setFold } from './buildDevice'
 import { DEMO_SOUND, type Demo, type DemoHints, type DemoSpec, type Pose, buildDemo, diffDesign, disposeDemo } from './demos'
 import { type Guide, studioDebug, studioHint, useStudio } from './studio'
-import { CompLabel, type TourStop, fitDistance, pickedOf, tearDir, tourStops, useCompHover } from './tearView'
+import { CompLabel, TEAR_LAMP, type TourStop, fitDistance, pickedOf, tearDir, tourStops, useCompHover } from './tearView'
 import { type Rig, newRigMemory, rigTeardown } from './teardown'
 
 /** What the studio needs to open the device up and say what each component is worth. */
@@ -52,6 +52,8 @@ interface Props {
   hints?: DemoHints
   /** Given in the designer: lets the device open up while the Internals panel is. */
   tear?: TearInfo
+  /** Where the camera stands for the view that is chosen: where it goes back to when the device shuts, if it has nowhere else to go back to. */
+  home?: [number, number, number]
 }
 
 // ---------------------------------------------------------------- easing the body
@@ -290,7 +292,7 @@ function onPlaneOf(obj: THREE.Object3D, ray: THREE.Ray): THREE.Vector3 | null {
   return t > 0 ? local.at(t, new THREE.Vector3()) : null
 }
 
-export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, scale, editable, hints, tear }: Props) {
+export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, scale, editable, hints, tear, home }: Props) {
   const shown = useEased(design)
   const group = useMemo(() => buildDevice(shown, null, logo, colorIndex), [shown, logo, colorIndex])
   useEffect(() => () => disposeDevice(group), [group])
@@ -302,8 +304,8 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
   const turn = useRef<THREE.Group>(null)
   const bar = useRef<THREE.Group>(null)
   const tip = useRef<THREE.Group>(null)
-  const live = useRef({ design, group, hints, shown, tear })
-  live.current = { design, group, hints, shown, tear }
+  const live = useRef({ design, group, hints, shown, tear, home })
+  live.current = { design, group, hints, shown, tear, home }
   /** How far open the device is drawn, and how far its layers are pulled apart, both easing towards what is asked for. */
   const opened = useRef(0)
   const exploded = useRef(0)
@@ -353,6 +355,9 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
     const d = live.current.design
     const st = useStudio.getState()
     if (!ctl || !turn.current) return
+    // how near and how far the camera may go when the device is shut: the view sets these from the size of the device
+    const reach = live.current.home ? Math.hypot(...live.current.home) : 0
+    const lim: [number, number] = reach ? [reach * 0.3, reach * 2.4] : (V.limits ?? [ctl.minDistance, ctl.maxDistance])
     if (V.type !== d.type) {
       // another kind of device: the view it came from was of something else
       V.type = d.type
@@ -389,13 +394,13 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
     } else if (!wantOpen && V.on) {
       V.on = false
       V.key = ''
-      if (V.limits) {
-        ctl.minDistance = V.limits[0]
-        ctl.maxDistance = Math.max(V.limits[1], cam.position.distanceTo(ctl.target))
-      }
-      if (V.home && !V.moved) {
+      ctl.minDistance = lim[0]
+      ctl.maxDistance = Math.max(lim[1], cam.position.distanceTo(ctl.target))
+      // back to where it was; or, if the device has changed kind since, to the view that is chosen for the new one
+      const back = V.home ?? (live.current.home ? { pos: new THREE.Vector3(...live.current.home), target: new THREE.Vector3() } : null)
+      if (back && !V.moved) {
         V.from = { pos: cam.position.clone(), target: ctl.target.clone() }
-        V.goal = V.home
+        V.goal = back
         V.t0 = now
       }
     }
@@ -426,8 +431,9 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
       turn.current.rotation.y = yawWas
       turn.current.position.x = shakeWas
       rig.pose(opened.current, exploded.current, 0, mem.current, now)
-      ctl.minDistance = Math.min(V.limits?.[0] ?? dist, dist * 0.2)
-      ctl.maxDistance = Math.max(V.limits?.[1] ?? dist, whole * 1.7)
+      // opened, there is more to get close to and more to stand back from: a cover laid aside has to stay in the picture
+      ctl.minDistance = Math.min(lim[0], dist * 0.2)
+      ctl.maxDistance = Math.max(lim[1], whole * 1.7)
       V.from = { pos: cam.position.clone(), target: ctl.target.clone() }
       V.goal = { pos: target.clone().addScaledVector(dir, dist), target }
       V.t0 = now
@@ -670,7 +676,7 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
     const lamp = (g.userData.lamp ??= state.scene.getObjectByName('tearLamp')) as THREE.DirectionalLight | undefined
     if (lamp) {
       lamp.position.copy(state.camera.position)
-      lamp.intensity = 0.85 * opened.current
+      lamp.intensity = TEAR_LAMP * opened.current
     }
     if (opened.current < 0.3 && st.pick) useStudio.setState({ pick: null })
     frameView(state, rig, wantOpen, now, dt)

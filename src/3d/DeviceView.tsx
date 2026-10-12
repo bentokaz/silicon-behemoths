@@ -12,7 +12,7 @@ import { LiveDevice, type TearInfo } from './LiveDevice'
 import { buildDevice, deviceFrame, disposeDevice } from './buildDevice'
 import type { DemoHints } from './demos'
 import { type Picked, useStudio } from './studio'
-import { CompLabel, pickedOf, useCompHover } from './tearView'
+import { CompLabel, TEAR_LAMP, pickedOf, useCompHover } from './tearView'
 import { type Rig, newRigMemory, rigTeardown } from './teardown'
 
 export type ViewName = 'back' | 'front' | 'side' | 'bottom'
@@ -37,8 +37,6 @@ const DESK_VIEWS: Partial<Record<DeviceType, Views>> = {
 const viewDir = (d: DeviceDesign, v: ViewName) => (DESK_VIEWS[d.type] ?? VIEWS)[v]
 /** What the fourth view button shows for a device type. */
 export const fourthView = (type: DeviceType): string => (type === 'laptop' || type === 'console' || type === 'headset' || type === 'speaker' ? 'top' : type === 'desktop' || type === 'tv' ? 'under' : 'bottom')
-/** How bright the lamp at the camera is once a device is fully open. */
-export const TEAR_LAMP = 0.85
 /** Camera distance per unit of device radius, for a 26 degree lens. */
 const FRAMING = 5.3
 
@@ -208,7 +206,7 @@ export function DeviceView(props: Props) {
         <Lightformer form="ring" intensity={1.2} color="#9fb4c8" position={[0, -7, 0]} scale={6} target={[0, 0, 0]} />
       </Environment>
 
-      {props.studio ? <LiveDevice design={design} selectedId={props.selectedId} onPick={props.onPick} logo={props.logo} colorIndex={props.colorIndex} scale={k} editable={props.studio.editable} hints={props.studio.hints} tear={props.studio.tear} /> : <Device {...props} />}
+      {props.studio ? <LiveDevice design={design} selectedId={props.selectedId} onPick={props.onPick} logo={props.logo} colorIndex={props.colorIndex} scale={k} editable={props.studio.editable} hints={props.studio.hints} tear={props.studio.tear} home={[dir[0] * dist, dir[1] * dist, dir[2] * dist]} /> : <Device {...props} />}
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, floorY, 0]} receiveShadow>
         <planeGeometry args={[3000 * k, 3000 * k]} />

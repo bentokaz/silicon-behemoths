@@ -9,6 +9,9 @@ import type { DeviceDesign, DeviceType } from '../sim/types'
 import type { Picked } from './studio'
 import type { Rig } from './teardown'
 
+/** How bright the lamp at the camera is once a device is fully open: whatever is being looked into is lit. */
+export const TEAR_LAMP = 0.85
+
 export const pickedOf = (c: Comp): Picked => ({ id: c.id, label: c.label, figure: c.figure ?? '', specs: c.specs, partId: c.partId, note: c.note, kind: c.kind })
 
 const usd = (v: number) => (v >= 100 ? `$${Math.round(v)}` : `$${v.toFixed(2)}`)
