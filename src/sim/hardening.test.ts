@@ -203,11 +203,22 @@ describe('devices, launches and orders', () => {
     p.stock = 500
     const before = s.cash
     const sold = p.unitsSold
-    expect(INCIDENTS.bulk.choices(s, s.incidents[0])[0].cost).toBe(-Math.round(500 * p.price * 0.8))
+    expect(INCIDENTS.bulk.choices(s, s.incidents[0])[0].cost).toBe(-500 * Math.round(p.price * 0.8))
     expect(G.decide(s, 'i1', 0)).toBeNull()
-    expect(s.cash - before).toBe(Math.round(500 * p.price * 0.8))
+    expect(s.cash - before).toBe(500 * Math.round(p.price * 0.8))
     expect(p.unitsSold - sold).toBe(500)
     expect(p.stock).toBe(0)
+    sound(s)
+    // a device listed at a silly price is bought at what such a device goes for, not at a fifth off the silly price
+    p.stock = 9000
+    G.setPrice(s, p.id, 5e6)
+    s.incidents.push({ id: 'i2', kind: 'bulk', day: s.day, done: false, productId: p.id, amount: 8000 })
+    const usual = segmentInfo(p.segment!).priceRef * priceIndex(s.day) * 1.25
+    expect(INCIDENTS.bulk.choices(s, s.incidents[1])[0].cost).toBe(-8000 * Math.round(usual * 0.8))
+    expect(INCIDENTS.bulk.text(s, s.incidents[1])).toMatch(/it will not pay anything like your list price/)
+    const cash = s.cash
+    expect(G.decide(s, 'i2', 0)).toBeNull()
+    expect(s.cash - cash).toBeLessThan(8000 * 2000)
     sound(s)
   })
 })

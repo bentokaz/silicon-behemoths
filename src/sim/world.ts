@@ -1,7 +1,7 @@
 // The wider world: invented company names, which kinds of device a company
 // may build, things that happen to it, and how rivals respond to what it does.
 import { DAYS_PER_YEAR, MAX_LEVEL, TRACK_INFO } from '../data/catalog'
-import { type SegmentInfo, TYPES, segmentInfo } from '../data/devices'
+import { SEGMENTS, type SegmentInfo, TYPES, segmentInfo } from '../data/devices'
 import { clamp, int, pick, rand, range } from './rng'
 import { type Company, DEVICE_TYPES, type DeviceType, type GameState, type Incident, type Levels, SUPPLY_CATS, TRACKS } from './types'
 
@@ -136,6 +136,17 @@ const bump = (s: GameState, by: number) => {
 
 /** How many units a bulk order can still be met with: what was asked for, or what is left in stock if that is less. */
 const bulkUnits = (p: { stock: number } | undefined, i: Incident) => Math.max(0, Math.min(Math.floor(p?.stock ?? 0), i.amount ?? 0))
+/**
+ * What a bulk buyer pays for each unit: a fifth off the list price, but never more than a fifth off what
+ * such a device goes for (a quarter over its segment's usual price). A device listed at a million is not
+ * bought by the thousand at eight hundred thousand each.
+ */
+function bulkPrice(s: GameState, p: { price: number; segment?: string; type: DeviceType } | undefined): number {
+  if (!p) return 0
+  const seg = (p.segment ? segmentInfo(p.segment) : undefined) ?? SEGMENTS.find((x) => x.type === p.type)
+  const usual = seg ? seg.priceRef * priceIndex(s.day) * 1.25 : p.price
+  return Math.round(Math.min(p.price, usual) * 0.8)
+}
 
 export const INCIDENTS: Record<string, IncidentDef> = {
   viral: {
@@ -350,13 +361,17 @@ export const INCIDENTS: Record<string, IncidentDef> = {
       i.amount = Math.min(p.stock, int(s, 2000, 12000))
       return true
     },
-    text: (s, i) => `A school network wants ${i.amount?.toLocaleString('en-US')} units of ${s.products.find((p) => p.id === i.productId)?.name} at 20% off.`,
+    text: (s, i) => {
+      const p = s.products.find((x) => x.id === i.productId)
+      const each = bulkPrice(s, p)
+      return `A school network wants ${i.amount?.toLocaleString('en-US')} units of ${p?.name} at ${p && each < Math.round(p.price * 0.8) ? `$${each.toLocaleString('en-US')} each: it will not pay anything like your list price` : `20% off ($${each.toLocaleString('en-US')} each)`}.`
+    },
     choices: (s, i) => {
       const p = s.products.find((x) => x.id === i.productId)
       // paid for what can be shipped: stock sold elsewhere since the offer came is not theirs to buy
       const units = bulkUnits(p, i)
       return [
-        { label: 'Take the order', note: units < (i.amount ?? 0) ? `Only ${units.toLocaleString('en-US')} are left in stock: they take those, at the discount.` : 'Sold in one go, at a discount.', cost: -Math.round(units * (p?.price ?? 0) * 0.8) },
+        { label: 'Take the order', note: units < (i.amount ?? 0) ? `Only ${units.toLocaleString('en-US')} are left in stock: they take those, at the discount.` : 'Sold in one go, at a discount.', cost: -units * bulkPrice(s, p) },
         { label: 'Decline', note: 'Keep the stock for full-price buyers.' },
       ]
     },
@@ -365,7 +380,7 @@ export const INCIDENTS: Record<string, IncidentDef> = {
       if (c !== 0 || !p) return 'You turned the order down.'
       const units = bulkUnits(p, i)
       if (!units) return `There was no stock of ${p.name} left to ship. The order lapsed.`
-      const income = Math.round(units * p.price * 0.8)
+      const income = units * bulkPrice(s, p)
       p.stock -= units
       p.unitsSold += units
       p.monthUnits += units
