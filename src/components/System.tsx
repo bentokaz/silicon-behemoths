@@ -10,6 +10,7 @@ import { THEMES, type ThemeId, applyTheme, getTheme } from '../store/theme'
 import { LogoPicker } from './Company'
 import type { IconName } from './icons'
 import { Btn, IconBtn, Panel, Row, Slider, TextInput, Th, money, Tabs } from './ui'
+import { FeedbackLinks } from './Safety'
 import { KeysPanel, SavesBeyond, SettingsPanel } from './Settings'
 
 export function SaveList({ onChange, nonce = 0 }: { onChange?: () => void; nonce?: number }) {
@@ -183,6 +184,7 @@ function Saves() {
             Run the guided start again
           </Btn>
         )}
+        <FeedbackLinks className="shrink-0" />
         <Btn tone="danger" icon="quit" className="shrink-0" onClick={quit}>
           Quit to main menu
         </Btn>

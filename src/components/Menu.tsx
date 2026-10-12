@@ -10,6 +10,7 @@ import { type Difficulty, type GameConfig, TRACKS } from '../sim/types'
 import { useStore } from '../store/game'
 import { LogoPicker } from './Company'
 import { ImportButton, SaveList, ThemePicker } from './System'
+import { FeedbackLinks } from './Safety'
 import { KeysPanel, SettingsPanel } from './Settings'
 import { Icon, trackIcon, typeIcon } from './icons'
 import { Btn, Head, Lead, Panel, Row, Slider, Tabs, TextInput, money } from './ui'
@@ -58,6 +59,7 @@ export function MainMenu() {
           <br />
           <br />
           A free game made for fun. The code, models and sounds were written by an AI (Claude) under one person's direction. Every company in it is made up.
+          <FeedbackLinks className="mt-3" />
         </div>
       </div>
       <div className="flex min-h-0 flex-col gap-2 p-8">
