@@ -10,7 +10,7 @@ import { hasType, unlockBlocked, unlockCost, unlockOf } from '../sim/world'
 import { useGame, useStore } from '../store/game'
 import { Research } from './ResearchTree'
 import { Icon, trackIcon, typeIcon } from './icons'
-import { Btn, Lead, Tabs, Tag, money, num } from './ui'
+import { Btn, Lead, Tabs, Tag, money, num, useKept } from './ui'
 
 function DeviceLines() {
   const g = useGame()
@@ -79,6 +79,7 @@ function DeviceLines() {
                   icon={blocked ? 'lock' : 'unlock'}
                   className="mt-2"
                   disabled={!!blocked}
+                  title={blocked ?? undefined}
                   onClick={() => {
                     const err = act((s) => unlockType(s, type))
                     if (err) say(err, 'bad')
@@ -98,7 +99,7 @@ function DeviceLines() {
 
 export function ResearchScreen() {
   const g = useGame()
-  const [view, setView] = useState<'tech' | 'lines'>('tech')
+  const [view, setView] = useKept<'tech' | 'lines'>('research:view', 'tech')
   const closed = DEVICE_TYPES.filter((t) => !hasType(g, t))
   const ready = closed.filter((t) => !unlockBlocked(g, t)).length
   if (!closed.length && view === 'tech') return <Research />

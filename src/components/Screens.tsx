@@ -21,7 +21,7 @@ import { Thumb, statusIcon, statusText, statusTone } from './Inspector'
 import { COST_ICON, Icon, type IconName, TAB_ICON, trackIcon, typeIcon } from './icons'
 // Table headings carry icons only where the table has room to spare at a
 // 1440 px window with the feed open; the dense ones keep plain words.
-import { Btn, Empty, Fold, Head, IconBtn, Kpi, Lead, Meter, Mini, Panel, Tabs, Tag, TextInput, Th, chart, money, num, pct } from './ui'
+import { Btn, Empty, Fold, Head, IconBtn, Kpi, Lead, Meter, Mini, NameInput, Panel, Tabs, Tag, Th, chart, money, num, pct, pressable, useKept, useLayer } from './ui'
 
 const mine = (g: GameState) => g.products.filter((p) => p.companyId === 'player').sort((a, b) => b.launchDay - a.launchDay)
 
@@ -192,7 +192,7 @@ export function Dashboard() {
     <Kpi key="profit" label="Profit, last month" icon={profit >= 0 ? 'trendUp' : 'trendDown'} value={last ? money(profit) : '--'} tone={profit >= 0 ? 'pos' : 'neg'} sub={last ? `income ${money(last.revenue + last.other, 1)}` : 'first month in progress'} />,
     open('market') && <Kpi key="share" label="Market share" icon="pie" value={pct(units / total, 2)} sub={`${num(units)} of ${num(total)} devices in 12 months`} />,
     <Kpi key="fans" label="Fans" icon="heart" value={num(g.fans)} sub={`${num(g.owners)} people own your devices`} />,
-    open('shares') && <Kpi key="value" label={g.stock.listed ? 'Market value' : 'Company value'} icon="chart" value={marketCap(g) >= 1e9 ? `${(marketCap(g) / 1e9).toFixed(2)}B` : money(marketCap(g), 1)} sub={`you own ${pct(founderStake(g), 0)}${g.stock.listed ? ` / ${g.stock.price.toFixed(2)} a share` : ''}`} />,
+    open('shares') && <Kpi key="value" label={g.stock.listed ? 'Market value' : 'Company value'} icon="chart" value={money(marketCap(g), 1)} sub={`you own ${pct(founderStake(g), 0)}${g.stock.listed ? ` / $${g.stock.price.toFixed(2)} a share` : ''}`} />,
   ].filter(Boolean)
   const minis = [
     open('marketing') && <Mini key="brand" label="Brand" icon="brand" value={Math.round(me.brand * 100)} />,
@@ -244,7 +244,7 @@ export function Dashboard() {
 
       <Panel title="Your devices" icon="devices" right={<Btn small tone="primary" icon="plus" data-coach-target="new-device" onClick={() => openDesigner()}>New device</Btn>} className="col-span-8" bodyClass="overflow-auto">
         {products.length === 0 ? (
-          <Empty icon="devices" text="Design your first device to enter the market. Fourteen rivals are already selling.">
+          <Empty icon="devices" text={`Design your first device to enter the market. ${g.companies.filter((c) => !c.isPlayer && c.alive).length} rivals are already selling.`}>
             <Btn tone="primary" icon="plus" className="h-11 px-8 text-sm" data-coach-target="new-device always" onClick={() => openDesigner()}>
               Design your first device
             </Btn>
@@ -330,7 +330,7 @@ function ProductTable({ g, rows, compact = false, showMaker = false, winRate }: 
         {rows.map((p) => {
           const c = companyOf(g, p.companyId)
           return (
-            <tr key={p.id} data-coach-target={c.isPlayer ? 'device' : undefined} className={`row cursor-pointer ${inspect === p.id ? 'bg-accent/5' : ''}`} onClick={() => focus(p.id)}>
+            <tr key={p.id} data-coach-target={c.isPlayer ? 'device' : undefined} className={`row cursor-pointer ${inspect === p.id ? 'bg-accent/5' : ''}`} {...pressable(() => focus(p.id))}>
               <td className="w-10 !p-0">
                 <Thumb product={p} className="h-10 w-9" />
               </td>
@@ -366,8 +366,9 @@ function ProductTable({ g, rows, compact = false, showMaker = false, winRate }: 
 export function Products() {
   const g = useGame()
   const { openDesigner } = useStore.getState()
-  const [filter, setFilter] = useState<'active' | 'all' | DeviceType>('active')
+  const [filter, setFilter] = useKept<"active" | "all" | DeviceType>("products:filter", "active")
   const [picking, setPicking] = useState(false)
+  useLayer(picking, () => setPicking(false))
   const all = mine(g)
   const rows = all.filter((p) => (filter === 'active' ? p.status !== 'ended' : filter === 'all' ? true : p.type === filter))
   // group variants under their family
@@ -384,7 +385,7 @@ export function Products() {
           fit
         />
         <div className="relative shrink-0">
-          <Btn tone="primary" icon="plus" className="px-5" data-coach-target="new-device" onClick={() => setPicking(!picking)}>
+          <Btn tone="primary" icon="plus" className="px-5" data-coach-target="new-device" aria-haspopup="menu" aria-expanded={picking} onClick={() => setPicking(!picking)}>
             New device
           </Btn>
           {picking && (
@@ -412,9 +413,9 @@ export function Products() {
           )}
         </div>
       </div>
-      <Panel className="flex-1" bodyClass="overflow-auto">
+      <Panel className="flex-1" bodyClass="overflow-auto" keep={`products:${filter}`}>
         {rows.length === 0 ? (
-          <Empty icon="devices" text="No devices here yet. Press New device to choose a type and open the designer." />
+          <Empty icon="devices" text={all.length ? 'No devices under this heading. Choose Current or All above, or press New device.' : 'No devices here yet. Press New device to choose a type and open the designer.'} />
         ) : (
           families.map((family) => {
             const group = rows.filter((p) => p.family === family)
@@ -441,8 +442,8 @@ export function Products() {
 
 export function Market() {
   const g = useGame()
-  const [type, setType] = useState<DeviceType>('phone')
-  const [seg, setSeg] = useState<string>('all')
+  const [type, setType] = useKept<DeviceType>("market:type", () => g.products.find((p) => p.companyId === "player" && p.status !== "ended")?.type ?? g.types?.[0] ?? "phone")
+  const [seg, setSeg] = useKept<string>("market:seg", "all")
   const segs = segmentsOf(type)
   const info = segs.find((s) => s.id === seg)
   const onSale = g.products.filter((p) => p.status === 'sale' && p.type === type)
@@ -490,7 +491,7 @@ export function Market() {
 export function Rivals() {
   const g = useGame()
   const { act } = useStore.getState()
-  const [companyId, setCompanyId] = useState('r0')
+  const [companyId, setCompanyId] = useKept("rivals:company", "r0")
   const trailing = trailingUnits(g)
   const total = trailing.reduce((a, t) => a + t.units, 0) || 1
   const company = g.companies.find((c) => c.id === companyId) ?? g.companies[1]
@@ -511,7 +512,7 @@ export function Rivals() {
           </thead>
           <tbody>
             {[...trailing].sort((a, b) => b.units - a.units).map(({ company: c, units }) => (
-              <tr key={c.id} className={`row cursor-pointer ${c.id === company.id ? 'bg-accent/5' : ''}`} onClick={() => setCompanyId(c.id)}>
+              <tr key={c.id} className={`row cursor-pointer ${c.id === company.id ? 'bg-accent/5' : ''}`} {...pressable(() => setCompanyId(c.id))}>
                 <td className={c.alive ? 'text-fg' : 'text-faint line-through'}>
                   <span className="mr-2 inline-block h-2 w-2" style={{ background: c.color }} />
                   {c.name}
@@ -548,7 +549,7 @@ export function Rivals() {
             !company.isPlayer && (
               <label className="flex shrink-0 items-center gap-2" title="Rename this company">
                 <Icon name="edit" size={12} className="text-faint" />
-                <TextInput value={company.name} maxLength={18} onChange={(v) => act(() => void (company.name = v))} className="h-6 w-32" />
+                <NameInput aria-label={`Rename ${company.name}`} value={company.name} maxLength={18} onChange={(v) => act(() => void (company.name = v))} className="h-6 w-32" />
               </label>
             )
           }

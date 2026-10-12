@@ -1,5 +1,5 @@
 // Growth: advertising campaigns, fans and owner feedback, events, and stores.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { sfx } from '../audio/sfx'
 import { TYPES, segmentsOf } from '../data/devices'
 import { autoVenue, buildVenue, closeStore, copyLayout, fmtDate, layoutQuote, layoutValue, newLayoutQuote, openStore, player, scheduleEvent, setCampaignBudget, startCampaign, stopCampaign } from '../sim/game'
@@ -14,7 +14,7 @@ import { useGame, useStore } from '../store/game'
 import { LockedPane } from './Progress'
 import { SiteBuilder } from './SiteBuilder'
 import { Icon, channelIcon, eventIcon } from './icons'
-import { Btn, Choice, Drawer, Empty, Fold, Head, IconBtn, Kpi, Lead, Meter, Mini, Panel, Slider, Tabs, Tag, Th, money, num, pct } from './ui'
+import { Btn, Choice, ConfirmBtn, Drawer, Empty, Fold, Head, IconBtn, Kpi, Lead, Meter, Mini, Panel, Slider, Tabs, Tag, Th, money, num, pct, pressable, useKept } from "./ui"
 
 const own = (g: GameState) => g.products.filter((p) => p.companyId === 'player' && p.status !== 'ended')
 
@@ -23,13 +23,16 @@ const own = (g: GameState) => g.products.filter((p) => p.companyId === 'player' 
 function Campaigns() {
   const g = useGame()
   const { act, say, focus } = useStore.getState()
-  const [channel, setChannel] = useState<ChannelId>('online')
-  const [target, setTarget] = useState('brand')
-  const [monthly, setMonthly] = useState(100e3)
-  const [region, setRegion] = useState('all')
+  const [channel, setChannel] = useKept<ChannelId>('campaign:channel', 'online')
+  const [aim, setTarget] = useKept('campaign:target', 'brand')
+  const [monthly, setMonthly] = useKept('campaign:monthly', 100e3)
+  const [where, setRegion] = useKept('campaign:region', 'all')
   const regions = openRegions(g)
   const def = CHANNELS[channel]
   const products = own(g)
+  // a device that has since been discontinued, or a region since left, is no longer a choice
+  const target = aim === 'brand' || products.some((p) => p.id === aim) ? aim : 'brand'
+  const region = where === 'all' || regions.some((r) => r.id === where) ? where : 'all'
   const product = products.find((p) => p.id === target)
   const budget = Math.max(monthly, def.min)
   return (
@@ -109,19 +112,25 @@ function Campaigns() {
                       {CHANNELS[c.channel].name}
                       {c.region && <span className="ml-2 text-[10px] text-faint">{regionInfo(c.region).name}</span>}
                     </td>
-                    <td className={p ? 'cursor-pointer text-accent' : 'text-dim'} onClick={() => p && focus(p.id)}>
-                      {p ? p.name : 'Company'}
+                    <td className={p ? 'text-accent' : 'text-dim'}>
+                      {p ? (
+                        <button className="hover:underline" title={`Open ${p.name}`} onClick={() => focus(p.id)}>
+                          {p.name}
+                        </button>
+                      ) : (
+                        'Company'
+                      )}
                     </td>
                     <td>
                       <div className="flex items-center gap-2">
-                        <input type="range" className="flex-1" min={CHANNELS[c.channel].min} max={Math.max(5e6, CHANNELS[c.channel].min * 10)} step={10e3} value={c.monthly} onChange={(e) => act((s) => setCampaignBudget(s, c.id, Number(e.target.value)))} />
+                        <input type="range" aria-label={`Monthly budget of the ${CHANNELS[c.channel].name} campaign`} className="flex-1" min={CHANNELS[c.channel].min} max={Math.max(5e6, CHANNELS[c.channel].min * 10)} step={10e3} value={c.monthly} onChange={(e) => act((s) => setCampaignBudget(s, c.id, Number(e.target.value)))} />
                         <span className="num w-14 text-right text-[11px] text-fg">{money(c.monthly, 1)}</span>
                       </div>
                     </td>
                     <td className="num r text-dim">{money(c.spent, 1)}</td>
                     <td>{p ? <Meter value={buzz} tone={buzz > 0.5 ? 'pos' : 'accent'} /> : <span className="text-[10px] text-faint">brand only</span>}</td>
                     <td className="r">
-                      <IconBtn icon="stop" tone="ghost" title="Stop this campaign" onClick={() => act((s) => stopCampaign(s, c.id))} />
+                      <IconBtn icon="stop" tone="ghost" title="Stop this campaign" onClick={() => (act((s) => stopCampaign(s, c.id)), say(`${CHANNELS[c.channel].name} campaign stopped.`))} />
                     </td>
                   </tr>
                 )
@@ -167,7 +176,7 @@ function Fans() {
               </thead>
               <tbody>
                 {products.map((p) => (
-                  <tr key={p.id} className="row cursor-pointer" onClick={() => focus(p.id)}>
+                  <tr key={p.id} className="row cursor-pointer" {...pressable(() => focus(p.id))}>
                     <td className="text-fg">{p.name}</td>
                     <td>
                       <div className="flex items-center gap-2">
@@ -342,7 +351,7 @@ function Events() {
 export function MarketingScreen() {
   const g = useGame()
   const me = player(g)
-  const [view, setView] = useState<'campaigns' | 'fans' | 'events'>('campaigns')
+  const [view, setView] = useKept<'campaigns' | 'fans' | 'events'>('marketing:view', 'campaigns')
   const spend = g.campaigns.reduce((a, c) => a + c.monthly, 0)
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-2">
@@ -466,7 +475,11 @@ export function StoresScreen() {
   const g = useGame()
   const { act, say } = useStore.getState()
   // a store picked in the city view opens straight away
-  const [openId, setOpenId] = useState<string>(() => takeAim('store') ?? 'list')
+  const [openId, setOpenId] = useKept<string>('stores:open', 'list')
+  useEffect(() => {
+    const aimed = takeAim('store')
+    if (aimed) setOpenId(aimed)
+  }, [setOpenId])
   const [region, setRegion] = useState(homeRegion(g))
   /** Store whose layout the next one opened is fitted out with; empty for the standard fit-out. */
   const [layout, setLayout] = useState('')
@@ -484,7 +497,7 @@ export function StoresScreen() {
   return (
     <div className="relative flex h-full min-h-0 flex-col">
       {store && picking && <LayoutPicker store={store} onClose={() => setPicking(false)} />}
-      <Tabs value={store ? store.id : 'list'} onChange={setOpenId} options={[{ value: 'list', label: 'All stores', icon: 'stores' as const, badge: g.stores.length }, ...g.stores.map((s) => ({ value: s.id, label: s.name, icon: 'pin' as const }))]} className="bg-panel" />
+      <Tabs value={store ? store.id : 'list'} onChange={setOpenId} options={[{ value: 'list', label: 'All stores', icon: 'stores' as const, badge: g.stores.length }, ...g.stores.map((s) => ({ value: s.id, label: s.name, icon: 'pin' as const }))]} className="bg-panel" fit />
       <div className="min-h-0 flex-1">
         {!store ? (
           <div className="h-full overflow-y-auto p-2">
@@ -565,7 +578,7 @@ export function StoresScreen() {
                     {g.stores.map((s) => {
                       const st = storeStats(s.site)
                       return (
-                        <tr key={s.id} className="row cursor-pointer" onClick={() => setOpenId(s.id)}>
+                        <tr key={s.id} className="row cursor-pointer" {...pressable(() => setOpenId(s.id))}>
                           <td className="text-fg">{s.name}</td>
                           <td className="text-dim">
                             {s.location} <span className="text-faint">/ {regionInfo(s.region).name}</span>
@@ -617,9 +630,9 @@ export function StoresScreen() {
                   <Btn small icon="plus" className="mt-1 w-full" title="Choose a plot for a new store fitted out exactly like this one" onClick={() => (setLayout(store.id), setOpenId('list'))}>
                     Open another like this
                   </Btn>
-                  <Btn small tone="danger" icon="lock" className="mt-2 w-full" onClick={() => (act((s) => closeStore(s, store.id)), setOpenId('list'))}>
+                  <ConfirmBtn small icon="lock" className="mt-2 w-full" confirm="Close it for good?" title="Closes the store and gives up the plot. Everything built there is lost." onClick={() => (act((s) => closeStore(s, store.id)), setOpenId('list'), say(`${store.name} is closed.`))}>
                     Close this store
-                  </Btn>
+                  </ConfirmBtn>
                 </Fold>
               </SiteBuilder>
             )

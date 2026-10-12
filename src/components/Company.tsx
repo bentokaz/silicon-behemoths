@@ -12,7 +12,7 @@ import { useGame, useStore } from '../store/game'
 import { Executives, LockedPane } from './Progress'
 import { SiteBuilder } from './SiteBuilder'
 import { Icon, roleIcon } from './icons'
-import { Btn, Choice, Drawer, Empty, Fold, Head, IconBtn, Kpi, Meter, Mini, Panel, Row, Tabs, Tag, TextInput, Th, money, pct } from './ui'
+import { Btn, Choice, ConfirmBtn, ConfirmIconBtn, Drawer, Empty, Fold, Head, IconBtn, Kpi, Meter, Mini, NameInput, Panel, Row, Tabs, Tag, Th, money, pct, pressable, useKept } from './ui'
 
 // ------------------------------------------------------------------ logo
 
@@ -58,7 +58,7 @@ export function LogoPicker({ value, onChange }: { value?: string; onChange: (log
       <Btn small icon="export" onClick={() => input.current?.click()}>
         {value ? 'Replace' : 'Upload logo'}
       </Btn>
-      {value && <IconBtn icon="bin" tone="ghost" title="Remove the logo" onClick={() => onChange(undefined)} />}
+      {value && <ConfirmIconBtn icon="bin" title="Remove the logo" onClick={() => onChange(undefined)} />}
     </div>
   )
 }
@@ -227,9 +227,9 @@ function EmployeeDrawer({ e, seated, onClose }: { e: Employee; seated: boolean; 
             </Btn>
           )}
         </div>
-        <Btn small tone="danger" icon="fire" className="w-full" onClick={() => (act((s) => fire(s, e.id)), onClose())}>
+        <ConfirmBtn small icon="fire" className="w-full" confirm={`Let ${e.name.split(' ')[0]} go for good?`} onClick={() => (act((s) => fire(s, e.id)), onClose(), say(`${e.name} has left the company.`))}>
           Let {e.name.split(' ')[0]} go
-        </Btn>
+        </ConfirmBtn>
       </div>
     </Drawer>
   )
@@ -238,7 +238,7 @@ function EmployeeDrawer({ e, seated, onClose }: { e: Employee; seated: boolean; 
 export function Staff() {
   const g = useGame()
   const { act, say, setTab } = useStore.getState()
-  const [view, setView] = useState<'team' | 'teams' | 'policy' | 'hire' | 'execs'>(g.staff.length ? 'team' : 'hire')
+  const [view, setView] = useKept<"team" | "teams" | "policy" | "hire" | "execs">("staff:view", () => (g.staff.length ? "team" : "hire"))
   // "take me there" from a requirement lands on the right view, filtered to the right job
   const hint = useStore((s) => s.hint)
   useEffect(() => {
@@ -252,7 +252,7 @@ export function Staff() {
   const execsWaiting = new Set(g.execPool.map((e) => e.exec)).size
   const loose = unmanaged(g)
   const meet = meetingFactor(g)
-  const [role, setRole] = useState<'all' | Role>('all')
+  const [role, setRole] = useKept<"all" | Role>("staff:role", "all")
   const setOpenId = useStore.getState().openPerson
   const fx = staffEffects(g)
   const seated = new Set(seatedStaff(g).map((e) => e.id))
@@ -285,7 +285,7 @@ export function Staff() {
           ))}
         </div>
       </div>
-      <Panel className="flex-1" bodyClass="overflow-auto">
+      <Panel className="flex-1" bodyClass="overflow-auto" keep={`staff:${view}`}>
         {view === 'team' &&
           (g.staff.length === 0 ? (
             <Empty icon="staff" text="Nobody works here yet. You run the company alone until you hire.">
@@ -313,7 +313,7 @@ export function Staff() {
               </thead>
               <tbody>
                 {byRole(g.staff).map((e) => (
-                  <tr key={e.id} className="row cursor-pointer" onClick={() => setOpenId(e.id)}>
+                  <tr key={e.id} className="row cursor-pointer" {...pressable(() => setOpenId(e.id))}>
                     <PersonRow
                       e={e}
                       status={
@@ -366,9 +366,9 @@ export function Staff() {
                 return (
                   <div key={t.id} className="border border-line">
                     <div className="flex items-center gap-2 border-b border-line px-2 py-[5px]">
-                      <TextInput value={t.name} onChange={(v) => act((s) => renameTeam(s, t.id, v))} maxLength={24} className="h-6 flex-1 !border-transparent !bg-transparent !px-0 text-xs uppercase tracking-wider text-fg" />
+                      <NameInput aria-label="Team name" title="Rename this team" value={t.name} onChange={(v) => act((s) => renameTeam(s, t.id, v))} maxLength={24} className="h-6 flex-1 !border-transparent !bg-transparent !px-0 text-xs uppercase tracking-wider text-fg" />
                       <span className={`num text-[11px] ${bonus > 0 ? 'text-pos' : 'text-warn'}`}>{bonus > 0 ? `+${pct(bonus, 0)} output` : members.length < 2 ? 'needs 2 people' : 'no lead'}</span>
-                      <IconBtn icon="bin" tone="ghost" title={`Disband ${t.name || 'this team'}`} onClick={() => act((s) => deleteTeam(s, t.id))} />
+                      <ConfirmIconBtn icon="bin" title={`Disband ${t.name || "this team"}`} onClick={() => act((s) => deleteTeam(s, t.id))} />
                     </div>
                     {members.length > TEAM_SPAN && <div className="border-b border-line px-2 py-1 text-[10px] text-warn">Too many for one lead: the bonus is spread thin.</div>}
                     {members.map((e) => (

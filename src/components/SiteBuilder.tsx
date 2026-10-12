@@ -17,7 +17,7 @@ import { useGame, useStore } from '../store/game'
 import { actionFor, keyName, keysFor } from '../store/settings'
 import { WorldCard } from './WorldCards'
 import { Icon, type IconName } from './icons'
-import { Btn, Tabs, money } from './ui'
+import { Btn, ConfirmBtn, Tabs, modalOpen, money } from './ui'
 
 interface Props {
   /** 'office', 'factory', 'venue' or 'store:<id>'. */
@@ -142,7 +142,8 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName
-      if (tag === 'INPUT' || tag === 'SELECT') return
+      // not while typing, and not behind a dialog that is waiting for an answer
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || modalOpen() || useStore.getState().game?.gameOver) return
       const action = actionFor(e, ['Building'])
       if (action === 'rotate') setRot((r) => (r + 1) % 4)
       else if (action === 'cancel') setTool(null)
@@ -358,15 +359,8 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
 
       {open && (
         <div data-coach-target="build" className="absolute bottom-12 left-2 top-12 flex w-[262px] flex-col border border-line2 bg-panel/95">
-          <Tabs value={tab} options={(['Rooms', 'Furnish', 'Walls', 'Grounds', 'Look'] as Tab[]).map((x) => ({
-              value: x,
-              label: (
-                <span className="flex items-center gap-[5px]" title={x}>
-                  <Icon name={TAB_ICONS[x]} size={13} />
-                  {tab === x && x}
-                </span>
-              ),
-            }))} onChange={setTab} className="flex-wrap" />
+          {/* five tabs in 262 px: the chosen one keeps its name, the others are their icon, named by tooltip and to screen readers */}
+          <Tabs fit value={tab} options={(['Rooms', 'Furnish', 'Walls', 'Grounds', 'Look'] as Tab[]).map((x) => ({ value: x, label: x, icon: TAB_ICONS[x] }))} onChange={setTab} />
           {(tab === 'Rooms' || tab === 'Grounds') && (
             <div className="border-b border-line px-2 py-[6px]">
               <div className={`grid gap-1 ${tab === 'Rooms' ? 'grid-cols-5' : 'grid-cols-4'}`}>
@@ -402,11 +396,11 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
                   <span className="mr-1 text-[10px] uppercase tracking-wider text-dim" title="How deep the building is, from its outer wall to the courtyard">
                     Depth
                   </span>
-                  <Btn small className="!px-2" disabled={thick <= MIN_THICK} onClick={() => setThick((t) => Math.max(MIN_THICK, t - 1))}>
+                  <Btn small className="!px-2" data-repeat aria-label="Shallower" title="Shallower" disabled={thick <= MIN_THICK} onClick={() => setThick((t) => Math.max(MIN_THICK, t - 1))}>
                     -
                   </Btn>
-                  <input type="range" min={MIN_THICK} max={16} step={1} value={thick} onChange={(e) => setThick(Number(e.target.value))} className="min-w-0 flex-1" title="How deep the building is, from its outer wall to the courtyard" />
-                  <Btn small className="!px-2" disabled={thick >= 16} onClick={() => setThick((t) => Math.min(16, t + 1))}>
+                  <input type="range" aria-label="Depth of the building" min={MIN_THICK} max={16} step={1} value={thick} onChange={(e) => setThick(Number(e.target.value))} className="min-w-0 flex-1" title="How deep the building is, from its outer wall to the courtyard" />
+                  <Btn small className="!px-2" data-repeat aria-label="Deeper" title="Deeper" disabled={thick >= 16} onClick={() => setThick((t) => Math.min(16, t + 1))}>
                     +
                   </Btn>
                   <span className="num w-9 text-right text-[11px] text-fg">{thick} m</span>
@@ -570,9 +564,9 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
               <Btn small className="flex-1" onClick={() => (setTab('Furnish'), setOpen(true))}>
                 Furnish
               </Btn>
-              <Btn small tone="danger" className="flex-1" onClick={() => (act((s) => removeRoom(s, siteRef, room.n)), sfx.demolish(), setSelected(0))}>
+              <ConfirmBtn small className="flex-1" confirm="Knock it down?" title="Knocks the room down. Everything inside is sold for half its price." onClick={() => (act((s) => removeRoom(s, siteRef, room.n)), sfx.demolish(), setSelected(0))}>
                 Demolish
-              </Btn>
+              </ConfirmBtn>
             </div>
           </div>
         </div>

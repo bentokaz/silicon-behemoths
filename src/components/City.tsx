@@ -9,7 +9,7 @@ import { aim } from '../store/focus'
 import { type Tab, useGame, useStore } from '../store/game'
 import { keyName, keysFor } from '../store/settings'
 import { Icon, type IconName } from './icons'
-import { Btn } from './ui'
+import { Btn, reducedMotion } from './ui'
 
 const SKIES: { id: Sky; label: string; icon: IconName }[] = [
   { id: 'auto', label: 'Follow the game clock', icon: 'clock' },
@@ -49,7 +49,7 @@ export function CityScreen() {
       if (p.store) aim('store', p.store.id)
       if (p.kind === 'region') aim('region', p.region)
       useStore.getState().setTab(LEADS[p.kind])
-    }, 640)
+    }, reducedMotion() ? 0 : 640)
   }
 
   const move = `${keysFor('camForward').slice(0, 1).map(keyName).join('')}${keysFor('camLeft').slice(0, 1).map(keyName).join('')}${keysFor('camBack').slice(0, 1).map(keyName).join('')}${keysFor('camRight').slice(0, 1).map(keyName).join('')}`

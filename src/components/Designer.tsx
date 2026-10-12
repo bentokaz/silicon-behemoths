@@ -19,7 +19,8 @@ import { type Colorway, DEVICE_TYPES, type DeviceType, type Face, type Lens, typ
 import { hasType } from '../sim/world'
 import { useGame, useStore } from '../store/game'
 import { typeIcon } from './icons'
-import { Btn, Choice, Meter, Mini, NumInput, Row, Slider, Tabs, Tag, TextInput, money, num, pct } from './ui'
+import { Btn, Choice, ConfirmBtn, Meter, Mini, NumInput, Row, Slider, Tabs, Tag, TextInput, modalOpen, money, num, pct, pressable, useLayer } from './ui'
+import { MAX_PRICE, MAX_RUN } from './format'
 
 const SWATCHES = ['#17191d', '#2b2f36', '#5b6470', '#c9ccd1', '#ecebe6', '#c8b89a', '#2e4a3c', '#2f4f73', '#8c2f39', '#d98a3d']
 const GLOWS = ['#ffffff', '#5ab4ff', '#8dffa8', '#ff5a4a', '#ffb347', '#c78bff']
@@ -48,11 +49,11 @@ function ColorPick({ label, value, onChange }: { label: string; value: string; o
     <div className="py-1">
       <div className="flex items-center justify-between">
         <span className="text-[11px] text-dim">{label}</span>
-        <input type="color" value={value} onChange={(e) => onChange(e.target.value)} />
+        <input type="color" aria-label={label} value={value} onChange={(e) => onChange(e.target.value)} />
       </div>
       <div className="mt-1 flex gap-[3px]">
         {SWATCHES.map((c) => (
-          <button key={c} title={c} onClick={() => onChange(c)} className={`h-4 flex-1 border ${value === c ? 'border-accent' : 'border-line2'}`} style={{ background: c }} />
+          <button key={c} title={c} aria-label={`${label}: ${c}`} aria-pressed={value === c} onClick={() => onChange(c)} className={`h-4 flex-1 border ${value === c ? 'border-accent' : 'border-line2'}`} style={{ background: c }} />
         ))}
       </div>
     </div>
@@ -365,7 +366,7 @@ function PartsPanel() {
       </Group>
       <Group title={`Placed parts (${d.parts.length})`}>
         {d.parts.map((p) => (
-          <div key={p.id} onClick={() => selectPart(p.id)} role="button" className={`flex cursor-pointer items-center justify-between border-l-2 px-2 py-[3px] text-[11px] ${selected === p.id ? 'border-accent bg-accent/10 text-accent' : 'border-transparent text-fg hover:bg-hover'}`}>
+          <div key={p.id} {...pressable(() => selectPart(p.id))} role="button" aria-pressed={selected === p.id} className={`flex cursor-pointer items-center justify-between border-l-2 px-2 py-[3px] text-[11px] ${selected === p.id ? 'border-accent bg-accent/10 text-accent' : 'border-transparent text-fg hover:bg-hover'}`}>
             <span className="truncate">
               {isCoverCam(d, p) ? 'Cover camera' : partLabel(p, d.type)}
               {p.kind === 'camera' && p.face === 'back' && !isCoverCam(d, p) ? ` / ${p.lens}` : ''}
@@ -373,7 +374,7 @@ function PartsPanel() {
             </span>
             <span className="flex shrink-0 items-center gap-2">
               <span className="num text-faint">{faceLabel(p.face, d.type)}</span>
-              <button className="num px-1 text-dim hover:text-neg" title="Remove" onClick={(e) => (e.stopPropagation(), removePart(p.id))}>
+              <button className="num px-1 text-dim hover:text-neg" title="Remove this part" aria-label={`Remove ${isCoverCam(d, p) ? "cover camera" : partLabel(p, d.type)}`} onClick={(e) => (e.stopPropagation(), removePart(p.id))}>
                 x
               </button>
             </span>
@@ -567,9 +568,9 @@ function ColoursPanel({ preview, setPreview }: { preview: number; setPreview: (i
         {colors.map((c, i) => (
           <div key={i} className={`mt-1 border p-2 ${preview === i ? 'border-accent' : 'border-line'}`}>
             <div className="flex items-center gap-2">
-              <button className="h-4 w-4 shrink-0 border border-line2" style={{ background: c.back }} onClick={() => setPreview(i)} title="Preview" />
-              <TextInput value={c.name} maxLength={16} onChange={(v) => update(i, { name: v })} className="h-6 min-w-0 flex-1" />
-              <button className="num px-1 text-dim hover:text-neg" onClick={() => (setPreview(-1), setDraft({ colors: colors.filter((_, k) => k !== i) }))}>
+              <button className="h-4 w-4 shrink-0 border border-line2" style={{ background: c.back }} onClick={() => setPreview(i)} title="Preview this colour" aria-label={`Preview ${c.name || "this colour"}`} />
+              <TextInput aria-label="Colour name" value={c.name} maxLength={16} onChange={(v) => update(i, { name: v })} className="h-6 min-w-0 flex-1" />
+              <button className="num px-1 text-dim hover:text-neg" title="Remove this colour" aria-label={`Remove ${c.name || "this colour"}`} onClick={() => (setPreview(-1), setDraft({ colors: colors.filter((_, k) => k !== i) }))}>
                 x
               </button>
             </div>
@@ -636,11 +637,11 @@ function PartInspector({ part }: { part: PlacedPart }) {
           <div className="py-1">
             <div className="flex items-center justify-between">
               <span className="text-[11px] text-dim">Glow</span>
-              <input type="color" value={part.color ?? '#ffffff'} onChange={(e) => set({ color: e.target.value })} />
+              <input type="color" aria-label="Glow colour" value={part.color ?? '#ffffff'} onChange={(e) => set({ color: e.target.value })} />
             </div>
             <div className="mt-1 flex gap-[3px]">
               {GLOWS.map((c) => (
-                <button key={c} title={c} onClick={() => set({ color: c })} className={`h-4 flex-1 border ${(part.color ?? '#ffffff') === c ? 'border-accent' : 'border-line2'}`} style={{ background: c }} />
+                <button key={c} title={c} aria-label={`Glow colour ${c}`} aria-pressed={(part.color ?? "#ffffff") === c} onClick={() => set({ color: c })} className={`h-4 flex-1 border ${(part.color ?? '#ffffff') === c ? 'border-accent' : 'border-line2'}`} style={{ background: c }} />
               ))}
             </div>
           </div>
@@ -816,10 +817,14 @@ function Workbench() {
     if (draft.specs.battery > ev.report.maxBattery && ev.report.maxBattery >= 100) setSpecs({ battery: ev.report.maxBattery })
   }, [draft.specs.battery, ev.report.maxBattery, setSpecs])
 
+  // the launch plan is a dialog over the bench: Esc goes back to the design, and nothing behind it takes keys
+  const planBox = useRef<HTMLDivElement>(null)
+  useLayer(launching, () => setLaunching(false), { modal: true, box: planBox })
+
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName
-      if (tag === 'INPUT' || tag === 'SELECT') return
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || modalOpen()) return
       const st = useStore.getState()
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault()
@@ -849,7 +854,7 @@ function Workbench() {
     if (err) return say(err, 'bad')
     sfx.confirm()
     say(`${productName(meta.family, meta.variant)} is in development. Release in ${plan.days} days.`)
-    closeDesigner()
+    closeDesigner(true)
     setTab('products')
   }
 
@@ -906,7 +911,7 @@ function Workbench() {
               <Btn small tone="ghost" icon="layers" active={!keepClosed && explode >= 0.5} onClick={() => useStudio.setState({ keepClosed: false, explode: 1, tour: -1 })}>
                 Exploded
               </Btn>
-              <input type="range" min={0} max={1} step={0.02} value={keepClosed ? 0 : explode} disabled={keepClosed} onChange={(e) => useStudio.setState({ explode: Number(e.target.value), tour: -1 })} className="mx-2 w-14 accent-accent" title="How far the layers are pulled apart" />
+              <input type="range" aria-label="How far the layers are pulled apart" min={0} max={1} step={0.02} value={keepClosed ? 0 : explode} disabled={keepClosed} onChange={(e) => useStudio.setState({ explode: Number(e.target.value), tour: -1 })} className="mx-2 w-14 accent-accent" title="How far the layers are pulled apart" />
               {tour < 0 ? (
                 <Btn small tone="ghost" icon="play" className="border-l border-l-line2" disabled={tourSteps < 2 && !keepClosed} title="A short tour of what is inside: the camera stops at each of the main components in turn. Move the camera or click anything to end it." onClick={() => useStudio.setState({ keepClosed: false, tour: 0 })}>
                   Tour
@@ -1027,7 +1032,7 @@ function Workbench() {
             <div className="max-h-[48vh] overflow-y-auto p-2">
               <div className="flex items-center justify-between pb-1">
                 <span className="text-[11px] text-dim">Test price</span>
-                <NumInput value={price} onChange={setPrice} className="h-6 w-24 text-right" step={10} />
+                <NumInput value={price} onChange={setPrice} className="h-6 w-24 text-right" step={10} max={MAX_PRICE} aria-label="Test price" />
               </div>
               {segmentsOf(type).map((seg) => {
                 const a = appeal(probe, me, seg, g.day)
@@ -1060,14 +1065,14 @@ function Workbench() {
           {issuesOpen && errors.length + warns.length > 0 && (
             <div className="max-h-40 overflow-y-auto border-b border-line py-1">
               {[...errors, ...warns].map((i, k) => (
-                <div key={k} role={i.partId ? 'button' : undefined} onClick={() => i.partId && !simple && selectPart(i.partId)} className={`flex gap-2 px-2 py-[2px] text-[11px] ${i.partId && !simple ? 'cursor-pointer hover:bg-hover' : ''}`}>
+                <div key={k} {...(i.partId && !simple ? { role: 'button', ...pressable(() => selectPart(i.partId!)) } : {})} className={`flex gap-2 px-2 py-[2px] text-[11px] ${i.partId && !simple ? 'cursor-pointer hover:bg-hover' : ''}`}>
                   <span className={`num w-12 shrink-0 ${i.level === 'error' ? 'text-neg' : 'text-warn'}`}>{i.level === 'error' ? 'BLOCK' : 'WARN'}</span>
                   <span className="text-fg">{i.text}</span>
                 </div>
               ))}
             </div>
           )}
-          <button onClick={() => setIssuesOpen(!issuesOpen)} className="num flex h-8 items-center gap-3 px-3 text-[11px]">
+          <button onClick={() => setIssuesOpen(!issuesOpen)} disabled={errors.length + warns.length === 0} aria-expanded={issuesOpen} className="num flex h-8 items-center gap-3 px-3 text-[11px]">
             {errors.length + warns.length === 0 ? (
               <span className="text-pos">NO ISSUES</span>
             ) : (
@@ -1084,7 +1089,13 @@ function Workbench() {
             {productName(meta.family, meta.variant) || 'Unnamed'} <span className="text-faint">/ {T.name}</span>
             {variant && <span className="ml-2"><Tag tone="accent">shared platform</Tag></span>}
           </span>
-          <Btn onClick={closeDesigner}>Cancel</Btn>
+          {canUndo ? (
+            <ConfirmBtn tone="default" confirm="Discard the design?" title="Throw this design away. To keep it for later, go to another screen instead: New device picks it up again." onClick={() => closeDesigner(true)}>
+              Cancel
+            </ConfirmBtn>
+          ) : (
+            <Btn onClick={() => closeDesigner(true)}>Cancel</Btn>
+          )}
           <Btn tone="primary" className="h-9 px-6" disabled={errors.length > 0} onClick={() => setLaunching(true)}>
             {errors.length ? `${errors.length} blocking` : 'Proceed to launch'}
           </Btn>
@@ -1094,20 +1105,20 @@ function Workbench() {
       {/* ---- launch plan */}
       {launching && (
         <div className="absolute inset-0 z-40 flex items-center justify-center bg-carbon/85 p-4">
-          <div className="flex max-h-full w-[760px] max-w-full flex-col border border-line2 bg-panel">
+          <div ref={planBox} role="dialog" aria-label="Launch plan" className="flex max-h-full w-[760px] max-w-full flex-col border border-line2 bg-panel outline-none">
             <div className="flex h-9 shrink-0 items-center border-b border-line px-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-fg">Launch plan</div>
             <div className="grid min-h-0 flex-1 grid-cols-2 overflow-y-auto">
               <div className="border-r border-line p-3">
                 <div className="label mb-1 text-faint">Name</div>
                 <div className="flex gap-1">
-                  <TextInput value={meta.family} onChange={(v) => setMeta({ family: v })} maxLength={24} className="min-w-0 flex-1" placeholder="Product line" />
-                  <TextInput value={meta.variant} onChange={(v) => setMeta({ variant: v })} maxLength={10} className="w-24" placeholder="Variant" />
+                  <TextInput value={meta.family} onChange={(v) => setMeta({ family: v })} maxLength={24} className="min-w-0 flex-1" placeholder="Product line" aria-label="Product line name" />
+                  <TextInput value={meta.variant} onChange={(v) => setMeta({ variant: v })} maxLength={10} className="w-24" placeholder="Variant" aria-label="Variant label" />
                 </div>
                 <div className="mt-1 text-[10px] leading-snug text-faint">{variant ? 'Shares a platform with a device you already make in this line, so development is cheaper and faster.' : 'Reuse an existing line name with a variant label (Pro, Lite) to share its platform.'}</div>
 
                 <div className="label mb-1 mt-3 text-faint">Price</div>
                 <div className="flex items-center gap-2">
-                  <NumInput value={price} onChange={setPrice} step={10} className="w-28 text-right" />
+                  <NumInput value={price} onChange={setPrice} step={10} max={MAX_PRICE} className="w-28 text-right" aria-label="Price" />
                   <span className="text-[11px] text-dim">
                     best fit {best.seg.name} (typical {money(best.seg.priceRef)})
                   </span>
@@ -1119,8 +1130,8 @@ function Workbench() {
                     {tiers.map((t, i) => (
                       <div key={t.storage} className="mt-1 flex items-center gap-2">
                         <span className="num w-16 text-[11px] text-fg">{storageLabel(t.storage)}</span>
-                        <NumInput value={t.price} onChange={(v) => setTiers(tiers.map((x, k) => (k === i ? { ...x, price: v } : x)))} step={10} className="h-6 w-24 text-right" />
-                        <button className="num text-[10px] text-dim hover:text-neg" onClick={() => setTiers(tiers.slice(0, i))}>
+                        <NumInput value={t.price} onChange={(v) => setTiers(tiers.map((x, k) => (k === i ? { ...x, price: v } : x)))} step={10} max={MAX_PRICE} className="h-6 w-24 text-right" aria-label={`Price of the ${storageLabel(t.storage)} option`} />
+                        <button className="num text-[10px] text-dim hover:text-neg" title={i < tiers.length - 1 ? 'Removes this option and the larger ones after it' : undefined} onClick={() => setTiers(tiers.slice(0, i))}>
                           REMOVE
                         </button>
                       </div>
@@ -1148,7 +1159,7 @@ function Workbench() {
                   ))}
                 </div>
                 <div className="mt-2 flex items-center gap-2">
-                  <NumInput value={quantity} onChange={setQuantity} step={1000} className="w-28 text-right" />
+                  <NumInput value={quantity} onChange={setQuantity} step={1000} max={MAX_RUN} className="w-28 text-right" aria-label="Units in the first production run" />
                   <span className="num text-[11px] text-dim">units at {money(buildEach)} each</span>
                 </div>
                 <div className="mt-1 text-[10px] leading-snug text-faint">

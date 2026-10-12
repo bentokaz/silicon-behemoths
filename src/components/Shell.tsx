@@ -30,7 +30,7 @@ import { ResearchScreen } from './Lines'
 import { Dashboard, Finance, Market, Products, Rivals } from './Screens'
 import { System } from './System'
 import { Icon, type IconName, TAB_ICON } from './icons'
-import { Btn, money } from './ui'
+import { Btn, modalOpen, money, num, pressable, useLayer } from './ui'
 
 interface NavItem {
   id: Tab
@@ -116,24 +116,55 @@ function useGameLoop() {
   }, [])
 }
 
+/** Save to the Quick slot and say how it went. */
+function quickSave() {
+  const st = useStore.getState()
+  if (!st.game) return
+  saveGame('quick', st.game).then(
+    () => (sfx.confirm(), st.say('Saved to the Quick slot.')),
+    () => st.say('Saving failed: the browser would not store it. Use Export to file under System to keep a copy.', 'bad'),
+  )
+}
+
 function useHotkeys() {
   const lastSpeed = useRef<Speed>(1)
   useEffect(() => {
+    // a key that pressed a game hotkey must not also press the button that happens to have focus when it comes up
+    let eaten = ''
+    const up = (e: KeyboardEvent) => {
+      if (e.code === eaten) (e.preventDefault(), (eaten = ''))
+    }
     const key = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement).tagName
-      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return
+      const el = e.target as HTMLElement
+      const tag = el.tagName
+      // function keys are never typing, and left to the browser they reload or search the page
+      const fn = /^F\d+$/.test(e.code)
+      if ((tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || el.isContentEditable) && !fn) return
       const st = useStore.getState()
-      if (st.designing || st.showing || !st.game) return
+      if (!st.game) return
       const action = actionFor(e, ['Game', 'Screens'])
       if (!action) return
+      if (fn) e.preventDefault()
+      // saving is always allowed while there is a game to save: in the designer, behind a dialog, during a keynote
+      if (action === 'save' && !st.game.gameOver) {
+        e.preventDefault()
+        if (!e.repeat) quickSave()
+        return
+      }
+      // nothing else runs behind a dialog that is waiting for an answer, or once the game is over
+      if (st.designing || st.showing || st.game.gameOver || st.yearEnd !== null || modalOpen()) return
+      // someone moving through the controls with Tab presses them with Space and Enter: that press is theirs
+      if ((e.code === 'Space' || e.code === 'Enter') && (tag === 'BUTTON' || tag === 'A' || tag === 'SUMMARY') && el.matches(':focus-visible')) return
       e.preventDefault()
+      if (e.repeat) return
+      eaten = e.code
       if (action === 'pause') {
         if (st.speed) (lastSpeed.current = st.speed), st.setSpeed(0)
         else st.setSpeed(lastSpeed.current)
       } else if (action === 'speed1') st.setSpeed(1)
       else if (action === 'speed2') st.setSpeed(2)
       else if (action === 'speed3') st.setSpeed(4)
-      else if (action === 'save') void saveGame('quick', st.game).then(() => (sfx.confirm(), st.say('Saved to the Quick slot.')))
+      else if (action === 'save') quickSave()
       else if (action === 'newDevice') st.openDesigner()
       else if (action === 'feed') st.toggleFeed()
       else if (action.startsWith('tab:')) {
@@ -146,8 +177,46 @@ function useHotkeys() {
       }
     }
     window.addEventListener('keydown', key)
-    return () => window.removeEventListener('keydown', key)
+    window.addEventListener('keyup', up)
+    return () => (window.removeEventListener('keydown', key), window.removeEventListener('keyup', up))
   }, [])
+}
+
+/** The end of the game: bankrupt, or removed by the board. */
+function GameOver() {
+  const g = useGame()
+  const checkpoint = useStore((s) => s.checkpoint)
+  const { quit, rewind } = useStore.getState()
+  const box = useRef<HTMLDivElement>(null)
+  useLayer(true, undefined, { modal: true, box })
+  const me = player(g)
+  return (
+    <div className="absolute inset-0 z-50 flex items-center justify-center bg-carbon/85 p-4">
+      <div ref={box} role="alertdialog" aria-label={g.overReason === 'ousted' ? 'Removed by the board' : 'Bankrupt'} className="w-[420px] max-w-full border border-neg bg-panel p-4 outline-none">
+        <div className="label text-neg">{g.overReason === 'ousted' ? 'Removed by the board' : 'Bankrupt'}</div>
+        <div className="mt-2 text-lg text-fg">{g.overReason === 'ousted' ? `The board of ${me.name} has replaced you.` : `${me.name} has run out of credit.`}</div>
+        <div className="num mt-2 text-[11px] text-dim">
+          Survived until {fmtDate(g.day)}. Sold {num(me.unitsTotal)} devices for {money(me.revenueTotal)}.
+        </div>
+        {checkpoint && (
+          <div className="mt-3 border border-line p-2">
+            <div className="text-[11px] leading-snug text-dim">
+              The game kept a copy from <span className="num text-fg">{fmtDate(checkpoint.day)}</span>, just before the company went into debt. You can pick it up from there and try a different path.
+            </div>
+            <Btn tone="primary" className="mt-2 h-9 w-full" onClick={() => (rewind(), sfx.confirm())}>
+              Go back to {fmtDate(checkpoint.day)}
+            </Btn>
+          </div>
+        )}
+        <div className="mt-3 flex gap-2">
+          <Btn className="flex-1" onClick={quit}>
+            Main menu
+          </Btn>
+        </div>
+        <div className="mt-2 text-[10px] text-faint">{checkpoint ? 'The same copy is in the load menu as "Before the debt", along with the monthly autosave.' : 'Your saves and the monthly autosave are in the load menu.'}</div>
+      </div>
+    </div>
+  )
 }
 
 export function Shell() {
@@ -157,11 +226,11 @@ export function Shell() {
   const designing = useStore((s) => s.designing)
   const railOpen = useStore((s) => s.railOpen)
   const feedOpen = useStore((s) => s.feedOpen)
-  const checkpoint = useStore((s) => s.checkpoint)
   const showing = useStore((s) => s.showing)
   const freshTabs = useStore((s) => s.freshTabs)
   const lockCard = useStore((s) => s.lockCard)
-  const { setTab, setSpeed, focus, say, quit, toggleRail, toggleFeed, openDesigner, rewind, showLock, go } = useStore.getState()
+  const kept = useStore((s) => s.kept)
+  const { setTab, setSpeed, focus, toggleRail, toggleFeed, openDesigner, showLock, go } = useStore.getState()
   const stage = stageOf(g)
   useSettings((s) => s.binds)
   const keyOf = (tab: Tab) => {
@@ -218,7 +287,7 @@ export function Shell() {
     const n = badge(g, t.id)
     const isNew = freshTabs.includes(t.id)
     return (
-      <button key={t.id} onClick={() => setTab(t.id)} title={railOpen ? undefined : t.label} className={`relative flex h-8 w-full items-center justify-between border-l-2 text-left transition-colors ${railOpen ? 'px-3' : 'justify-center px-0'} ${on ? 'border-l-accent bg-accent/10 text-accent' : 'border-l-transparent text-dim hover:bg-hover hover:text-fg'}`}>
+      <button key={t.id} onClick={() => setTab(t.id)} title={railOpen ? undefined : `${t.label}${keyOf(t.id) ? ` (${keyOf(t.id)})` : ''}`} aria-label={n > 0 ? `${t.label}, ${n} need attention` : isNew ? `${t.label}, new` : t.label} aria-current={on ? 'page' : undefined} className={`relative flex h-8 w-full items-center justify-between border-l-2 text-left transition-colors ${railOpen ? 'px-3' : 'justify-center px-0'} ${on ? 'border-l-accent bg-accent/10 text-accent' : 'border-l-transparent text-dim hover:bg-hover hover:text-fg'}`}>
         <span className="flex items-center gap-2">
           <Icon name={TAB_ICON[t.id] ?? 'system'} size={railOpen ? 14 : 17} />
           {railOpen && <span className="text-xs uppercase tracking-wider">{t.label}</span>}
@@ -266,7 +335,7 @@ export function Shell() {
           <FeedbackButton small />
         </div>
         <div className="flex items-center gap-1 border-l border-line px-2">
-          <Btn small className="flex items-center justify-center !px-2" title="Quick save" onClick={() => void saveGame('quick', g).then(() => (sfx.confirm(), say('Saved to the Quick slot.')))}>
+          <Btn small className="flex items-center justify-center !px-2" title={`Quick save${keysFor('save')[0] ? ` (${keyName(keysFor('save')[0])})` : ''}`} onClick={quickSave}>
             <Icon name="save" />
           </Btn>
           <Btn small className="flex items-center justify-center !px-2" active={feedOpen} onClick={toggleFeed} title="Show or hide the news feed">
@@ -281,11 +350,12 @@ export function Shell() {
           <div className="border-b border-line p-2">
             <button
               onClick={() => openDesigner()}
-              title="Design a new device"
+              title={designing ? 'The designer is open' : kept ? 'Go back to the design you set aside' : 'Design a new device'}
+              aria-label={designing ? 'Designing' : kept ? 'Resume design' : 'New device'}
               className={`flex h-11 w-full items-center border text-left text-[12px] font-semibold uppercase tracking-wider transition-colors ${railOpen ? 'justify-between px-3' : 'justify-center'} ${designing ? 'border-accent bg-transparent text-accent' : 'border-accent bg-accent text-carbon hover:bg-transparent hover:text-accent'}`}
             >
-              {railOpen && (designing ? 'Designing' : 'New device')}
-              <Icon name="plus" size={16} />
+              {railOpen && (designing ? 'Designing' : kept ? 'Resume design' : 'New device')}
+              <Icon name={kept && !designing ? 'design' : 'plus'} size={16} />
             </button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
@@ -301,6 +371,7 @@ export function Shell() {
               <button
                 onClick={() => go({ tab: 'goals', view: 'growth' })}
                 title={`${later} more ${later === 1 ? 'part' : 'parts'} of the company to open as it grows. See them all.`}
+                aria-label={`More to unlock: ${later}`}
                 className={`flex h-8 w-full items-center justify-between text-left text-faint transition-colors hover:bg-hover hover:text-fg ${railOpen ? 'px-3' : 'justify-center px-0'}`}
               >
                 <span className="flex items-center gap-2">
@@ -313,7 +384,7 @@ export function Shell() {
           </div>
           <div className="border-t border-line py-1">
             {navButton({ id: 'system', label: 'System', code: 'SYS' })}
-            <button onClick={toggleRail} className={`flex h-7 w-full items-center text-[10px] uppercase tracking-wider text-faint hover:text-fg ${railOpen ? 'px-3' : 'justify-center'}`} title={railOpen ? 'Collapse the menu' : 'Expand the menu'}>
+            <button onClick={toggleRail} className={`flex h-7 w-full items-center text-[10px] uppercase tracking-wider text-faint hover:text-fg ${railOpen ? 'px-3' : 'justify-center'}`} title={railOpen ? 'Collapse the menu' : 'Expand the menu'} aria-label={railOpen ? 'Collapse the menu' : 'Expand the menu'} aria-expanded={railOpen}>
               <Icon name={railOpen ? 'collapse' : 'expand'} size={12} />
               {railOpen && <span className="ml-2">Collapse</span>}
             </button>
@@ -360,7 +431,7 @@ export function Shell() {
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
               {g.news.map((n) => (
-                <div key={n.id} role={n.productId ? 'button' : undefined} onClick={() => n.productId && focus(n.productId)} className={`border-b border-line px-2 py-[5px] ${n.productId ? 'cursor-pointer hover:bg-hover' : ''}`}>
+                <div key={n.id} {...(n.productId ? { role: 'button', ...pressable(() => focus(n.productId!)) } : {})} className={`border-b border-line px-2 py-[5px] ${n.productId ? 'cursor-pointer hover:bg-hover' : ''}`}>
                   <div className="num flex justify-between text-[9px] text-faint">
                     <span>{fmtDate(n.day)}</span>
                     <span className={NEWS_TONE[n.kind]}>{n.kind.toUpperCase()}</span>
@@ -379,33 +450,7 @@ export function Shell() {
       {!g.gameOver && !showing && !designing && <Decision />}
       {!g.gameOver && !showing && <YearEnd />}
 
-      {g.gameOver && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-carbon/85">
-          <div className="w-[420px] border border-neg bg-panel p-4">
-            <div className="label text-neg">{g.overReason === 'ousted' ? 'Removed by the board' : 'Bankrupt'}</div>
-            <div className="mt-2 text-lg text-fg">{g.overReason === 'ousted' ? `The board of ${me.name} has replaced you.` : `${me.name} has run out of credit.`}</div>
-            <div className="num mt-2 text-[11px] text-dim">
-              Survived until {fmtDate(g.day)}. Sold {me.unitsTotal.toLocaleString()} devices for {money(me.revenueTotal)}.
-            </div>
-            {checkpoint && (
-              <div className="mt-3 border border-line p-2">
-                <div className="text-[11px] leading-snug text-dim">
-                  The game kept a copy from <span className="num text-fg">{fmtDate(checkpoint.day)}</span>, just before the company went into debt. You can pick it up from there and try a different path.
-                </div>
-                <Btn tone="primary" className="mt-2 h-9 w-full" onClick={() => (rewind(), sfx.confirm())}>
-                  Go back to {fmtDate(checkpoint.day)}
-                </Btn>
-              </div>
-            )}
-            <div className="mt-3 flex gap-2">
-              <Btn className="flex-1" onClick={quit}>
-                Main menu
-              </Btn>
-            </div>
-            <div className="mt-2 text-[10px] text-faint">The same copy is in the load menu as "Before the debt", along with the monthly autosave.</div>
-          </div>
-        </div>
-      )}
+      {g.gameOver && <GameOver />}
     </div>
   )
 }

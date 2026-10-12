@@ -16,7 +16,8 @@ import { batteryLabel, chargeWatts, chipFor, foldedThickness, panelName } from '
 import { type DeviceDesign, type DeviceType, type GameState, type Product, type ProductionOrder, SUBS, SUPPLY_CATS } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { Icon, type IconName, supplyIcon, typeIcon } from './icons'
-import { Btn, Drawer, Head, Lead, Meter, Mini, NumInput, Row, Tabs, Tag, chart, money, num, pct } from './ui'
+import { MAX_PRICE, MAX_RUN } from './format'
+import { Btn, ConfirmBtn, Drawer, Head, Lead, Meter, Mini, NumInput, Row, Tabs, Tag, chart, money, num, pct, reducedMotion } from './ui'
 
 /** Where to look from when a device is opened up: at the side that comes off. */
 const TEAR_VIEW: Partial<Record<DeviceType, ViewName>> = { laptop: 'front', console: 'front', earbuds: 'front', headset: 'front', speaker: 'front' }
@@ -214,6 +215,16 @@ function Manage({ p }: { p: Product }) {
   const pending = pendingUnits(g, p.id)
   const orders = g.orders.filter((o) => o.productId === p.id)
   const ended = p.status === 'ended'
+  const order = () => {
+    const err = act((s) => orderProduction(s, p.id, qty, mode))
+    if (err) say(err === 'Enter a quantity' ? 'Enter how many units to build.' : err, 'bad')
+    else (sfx.cash(), say(`Ordered ${num(qty)} units. You pay as they are built.`))
+  }
+  const reprice = () => {
+    if (price === p.price || price <= 0) return
+    act((s) => setPrice(s, p.id, price))
+    say(`${p.name} now costs ${money(price)}.`)
+  }
   return (
     <div className="space-y-3 p-2">
       <div className="grid grid-cols-3 gap-1">
@@ -235,18 +246,9 @@ function Manage({ p }: { p: Product }) {
             ))}
           </div>
           <div className="mt-2 flex items-center gap-2">
-            <NumInput value={qty} onChange={setQty} step={1000} className="h-7 w-28 text-right" />
+            <NumInput value={qty} onChange={setQty} step={1000} max={MAX_RUN} onEnter={order} aria-label="Units to build" className="h-7 w-28 text-right" />
             <span className="num flex-1 text-[11px] text-dim">x {money(cost)}</span>
-            <Btn
-              small
-              tone="primary"
-              icon="package"
-              onClick={() => {
-                const err = act((s) => orderProduction(s, p.id, qty, mode))
-                if (err) say(err, 'bad')
-                else (sfx.cash(), say(`Ordered ${num(qty)} units. You pay as they are built.`))
-              }}
-            >
+            <Btn small tone="primary" icon="package" disabled={qty <= 0} title={qty <= 0 ? 'Enter how many units to build' : undefined} onClick={order}>
               Order {money(qty * cost, 1)}
             </Btn>
           </div>
@@ -276,9 +278,9 @@ function Manage({ p }: { p: Product }) {
             Retail price
           </Head>
           <div className="flex items-center gap-2">
-            <NumInput value={price} onChange={setP} step={10} className="h-7 w-28 text-right" />
-            <span className="flex-1 text-[10px] text-faint">{p.tiers.length ? `Storage options move with it (avg paid ${money(avg.price)})` : 'Retailers keep 15%'}</span>
-            <Btn small icon="check" disabled={price === p.price || price <= 0} onClick={() => (act((s) => setPrice(s, p.id, price)), say(`${p.name} now costs ${money(price)}.`))}>
+            <NumInput value={price} onChange={setP} step={10} max={MAX_PRICE} onEnter={reprice} aria-label="Retail price" className="h-7 w-28 text-right" />
+            <span className="flex-1 text-[10px] text-faint">{p.tiers.length ? `Storage options move with it (avg paid ${money(avg.price)})` : `Retailers keep ${pct(RETAIL_CUT, 0)}`}</span>
+            <Btn small icon="check" disabled={price === p.price || price <= 0} title={price <= 0 ? 'Enter a price above zero' : price === p.price ? 'This is the price already' : undefined} onClick={reprice}>
               Apply
             </Btn>
           </div>
@@ -314,9 +316,9 @@ function Manage({ p }: { p: Product }) {
       </div>
 
       {!ended && (
-        <Btn small tone="danger" icon="ban" className="w-full" onClick={() => act((s) => discontinue(s, p.id))}>
+        <ConfirmBtn small icon="ban" className="w-full" confirm={`Stop selling ${p.name} for good?`} title="Takes the device off sale. Unsold stock is written off and orders for it are cancelled. This cannot be undone." onClick={() => (act((s) => discontinue(s, p.id)), say(`${p.name} is discontinued.`))}>
           Discontinue {p.name}
-        </Btn>
+        </ConfirmBtn>
       )}
     </div>
   )
@@ -342,12 +344,11 @@ export function ProductDrawer() {
     setTab('overview')
     setTorn(false)
   }, [id])
+  // (Esc closes it: the drawer is the top layer while it is open)
+  // a device that no longer exists (another game was loaded) leaves nothing selected behind
   useEffect(() => {
-    if (!id) return
-    const key = (e: KeyboardEvent) => e.key === 'Escape' && focus(null)
-    window.addEventListener('keydown', key)
-    return () => window.removeEventListener('keydown', key)
-  }, [id, focus])
+    if (id && !product) focus(null)
+  }, [id, product, focus])
 
   if (!product) return null
   const company = companyOf(g, product.companyId)
@@ -367,7 +368,7 @@ export function ProductDrawer() {
       }
     >
       <div className="relative h-[270px] border-b border-line">
-        <DeviceView key={product.id} design={product.design} view={view} viewNonce={nonce} autoRotate={!torn} logo={player(g).logo} colorIndex={color} teardown={torn} />
+        <DeviceView key={product.id} design={product.design} view={view} viewNonce={nonce} autoRotate={!torn && !reducedMotion()} logo={player(g).logo} colorIndex={color} teardown={torn} />
         <div className="absolute left-2 top-2 flex border border-line bg-panel/90">
           {(['back', 'front', 'side'] as ViewName[]).map((v) => (
             <Btn key={v} small tone="ghost" active={view === v} onClick={() => (setView(v), setNonce((x) => x + 1))}>
@@ -381,7 +382,7 @@ export function ProductDrawer() {
         {!!product.design.colors?.length && (
           <div className="absolute bottom-2 left-2 flex gap-1">
             {[{ back: product.design.body.backColor, name: 'Standard' }, ...product.design.colors].map((c, i) => (
-              <button key={i} title={c.name} onClick={() => setColor(i - 1)} className={`h-4 w-4 border ${color === i - 1 ? 'border-accent' : 'border-line2'}`} style={{ background: c.back }} />
+              <button key={i} title={c.name} aria-label={`Show it in ${c.name}`} aria-pressed={color === i - 1} onClick={() => setColor(i - 1)} className={`h-4 w-4 border ${color === i - 1 ? 'border-accent' : 'border-line2'}`} style={{ background: c.back }} />
             ))}
           </div>
         )}
@@ -464,6 +465,7 @@ export function ProductDrawer() {
             onClick={() => {
               const err = useStore.getState().act((s) => recallProduct(s, product.id))
               if (err) useStore.getState().say(err, 'bad')
+              else (sfx.confirm(), useStore.getState().say(`${product.name} is being recalled and repaired.`))
             }}
           >
             Recall and repair ({money(product.recall.cost, 1)})

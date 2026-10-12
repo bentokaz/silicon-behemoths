@@ -5,7 +5,7 @@ import { chooseFolder, cloudBuiltIn, cloudConfig, cloudUser, folderState, forget
 import { ACTIONS, type Action, QUALITY, type Quality, keyName, keysFor, useSettings } from '../store/settings'
 import { ThemePicker } from './System'
 import { Icon, type IconName } from './icons'
-import { Btn, Head, Lead, Panel, Slider, TextInput } from './ui'
+import { Btn, ConfirmBtn, Head, Lead, Panel, Slider, TextInput, useLayer } from './ui'
 
 function Toggle({ on, onChange, title, note, icon }: { on: boolean; onChange: (v: boolean) => void; title: string; note: string; icon?: IconName }) {
   return (
@@ -186,28 +186,51 @@ export function KeysPanel() {
   const { bind, resetKeys } = useSettings()
   useSettings((s) => s.binds)
   const [waiting, setWaiting] = useState<{ action: string; slot: number } | null>(null)
+  /** What the last change did besides the obvious: whose key it took, or why nothing changed. */
+  const [note, setNote] = useState('')
+  // while a key is being chosen every key press is the answer, Esc included: nothing else may act on it
+  useLayer(!!waiting, undefined, { modal: true })
 
   useEffect(() => {
     if (!waiting) return
+    const label = (id: string) => ACTIONS.find((a) => a.id === id)?.label ?? id
     const key = (e: KeyboardEvent) => {
+      // a modifier on its own is the start of a combination, not a key; the game's keys are single keys
+      if (['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight'].includes(e.code)) return
       e.preventDefault()
       e.stopPropagation()
-      if (e.code !== 'Escape' || waiting.action === 'cancel') {
-        const keys = [...keysFor(waiting.action)]
+      const mine = keysFor(waiting.action)
+      if (e.code === 'Escape' && waiting.action !== 'cancel') setNote('')
+      else if (e.code === 'Backspace') {
+        // Backspace clears a second key; the last key an action has stays, so nothing is left unreachable by accident
+        if (!mine[waiting.slot]) setNote('')
+        else if (mine.length < 2) setNote(`"${label(waiting.action)}" keeps at least one key. Press another key to change it.`)
+        else (bind(waiting.action, mine.filter((_, i) => i !== waiting.slot)), setNote(`Removed ${keyName(mine[waiting.slot])} from ${label(waiting.action)}.`), sfx.toggle())
+      } else if (!e.code || e.code === 'Unidentified') setNote('That key cannot be used: the browser does not say which one it is.')
+      else if (mine[waiting.slot] === e.code) setNote('')
+      else {
+        const keys = [...mine]
         keys[waiting.slot] = e.code
-        // a key does one thing at a time: take it away from anything else that had it
+        // a key does one thing at a time: take it away from anything else that had it, and say so
+        const taken: string[] = []
         for (const other of ACTIONS) {
           if (other.id === waiting.action) continue
           const theirs = keysFor(other.id)
-          if (theirs.includes(e.code)) bind(other.id, theirs.filter((k) => k !== e.code))
+          if (theirs.includes(e.code)) (bind(other.id, theirs.filter((k) => k !== e.code)), taken.push(other.label))
         }
         bind(waiting.action, [...new Set(keys.filter(Boolean))])
+        setNote(taken.length ? `${keyName(e.code)} now does "${label(waiting.action)}". It was taken from "${taken.join('", "')}".` : `${keyName(e.code)} now does "${label(waiting.action)}".`)
         sfx.confirm()
       }
       setWaiting(null)
     }
+    // clicking anywhere else gives up on the change
+    const away = (e: PointerEvent) => {
+      if (!(e.target as HTMLElement).closest?.('[data-keyslot]')) setWaiting(null)
+    }
     window.addEventListener('keydown', key, true)
-    return () => window.removeEventListener('keydown', key, true)
+    window.addEventListener('pointerdown', away, true)
+    return () => (window.removeEventListener('keydown', key, true), window.removeEventListener('pointerdown', away, true))
   }, [waiting, bind])
 
   const groups: Action['group'][] = ['Game', 'Screens', 'Building']
@@ -216,11 +239,11 @@ export function KeysPanel() {
       <div className="flex shrink-0 items-center justify-between border border-line bg-panel px-2 py-[6px]">
         <span className="flex items-center gap-2 text-[11px] text-dim">
           <Icon name="keys" size={13} className={waiting ? 'text-accent' : 'text-faint'} />
-          {waiting ? 'Press the key to use. Esc cancels.' : 'Click a key to change it. Each action can have two keys.'}
+          {waiting ? (waiting.action === 'cancel' ? 'Press the key to use. Click elsewhere to cancel.' : 'Press the key to use. Esc cancels, Backspace clears a second key.') : note || 'Click a key to change it. Each action can have two keys.'}
         </span>
-        <Btn small icon="reset" onClick={() => (resetKeys(), sfx.confirm())}>
+        <ConfirmBtn small tone="default" icon="reset" confirm="Reset every key?" onClick={() => (resetKeys(), setNote('Every key is back to its default.'), sfx.confirm())}>
           Reset to defaults
-        </Btn>
+        </ConfirmBtn>
       </div>
       <div className="grid min-h-0 flex-1 grid-cols-3 gap-2">
         {groups.map((group) => (
@@ -234,7 +257,7 @@ export function KeysPanel() {
                     {[0, 1].map((slot) => {
                       const on = waiting?.action === a.id && waiting.slot === slot
                       return (
-                        <button key={slot} onClick={() => setWaiting({ action: a.id, slot })} className={`num h-6 min-w-12 border px-2 text-[10px] uppercase ${on ? 'border-accent bg-accent/10 text-accent' : keys[slot] ? 'border-line2 text-fg hover:border-accent' : 'border-line text-faint hover:border-line2'}`}>
+                        <button key={slot} data-keyslot aria-label={`${a.label}, ${slot ? 'second' : 'first'} key: ${on ? 'press a key' : keys[slot] ? keyName(keys[slot]) : 'not set'}`} onClick={() => (setNote(''), setWaiting(on ? null : { action: a.id, slot: Math.min(slot, keys.length) }))} className={`num h-6 min-w-12 border px-2 text-[10px] uppercase ${on ? 'border-accent bg-accent/10 text-accent' : keys[slot] ? 'border-line2 text-fg hover:border-accent' : 'border-line text-faint hover:border-line2'}`}>
                           {on ? '...' : keys[slot] ? keyName(keys[slot]) : '--'}
                         </button>
                       )

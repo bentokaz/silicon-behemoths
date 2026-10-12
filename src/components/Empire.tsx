@@ -1,6 +1,6 @@
 // The company as an institution: who owns it, where in the world it sells,
 // how it looks after owners, and the goals on the way to becoming a behemoth.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { sfx } from '../audio/sfx'
 import { RECALL_DEADLINE, acquire, buyBackShares, buyRivalStake, enterRegion, fmtDate, fundingRound, listCompany, monthLabel, player, recallProduct, sellRivalStake, sellShares, setCare, setPayout, setRegionPrice } from '../sim/game'
@@ -13,9 +13,9 @@ import { takeAim } from '../store/focus'
 import { useGame, useStore } from '../store/game'
 import { LockNote, lockProps } from './Progress'
 import { Icon, type IconName } from './icons'
-import { Btn, Empty, Head, Kpi, Lead, type LockProps, Meter, Mini, Panel, Row, Slider, Tabs, Tag, chart, money, num, pct } from './ui'
+import { Btn, ConfirmBtn, Empty, Head, Kpi, Lead, type LockProps, Meter, Mini, Panel, Row, Slider, Tabs, Tag, chart, money, num, pct, pressable, useKept } from './ui'
 
-const big = (v: number) => (Math.abs(v) >= 1e9 ? `$${(v / 1e9).toFixed(2)}B` : money(v, 1))
+const big = (v: number) => money(v, 1)
 
 // ------------------------------------------------------------------ shares
 
@@ -69,9 +69,9 @@ function Raise() {
           {ipo ? (
             <div className="mt-2 border border-line px-2 py-[7px] text-[11px] text-faint">{ipo}</div>
           ) : (
-            <Btn tone="primary" icon="bell" className="mt-2 h-9 w-full" onClick={() => run(act((s) => listCompany(s, float)), () => (sfx.bell(), say('The opening bell rang. You are a public company.')))}>
+            <ConfirmBtn tone="primary" icon="bell" className="mt-2 h-9 w-full" confirm={`Float ${pct(float, 0)}? A listing cannot be undone.`} onClick={() => run(act((s) => listCompany(s, float)), () => (sfx.bell(), say('The opening bell rang. You are a public company.')))}>
               List the company
-            </Btn>
+            </ConfirmBtn>
           )}
         </div>
       </div>
@@ -182,16 +182,16 @@ export function SharesScreen() {
                         {!c.acquired && (
                           <>
                             {own > 0 && (
-                              <Btn small tone="ghost" title="Sell your whole stake at today's price" onClick={() => (act((s) => sellRivalStake(s, c.id)), sfx.cash())}>
+                              <Btn small tone="ghost" title="Sell your whole stake at today's price" onClick={() => (act((s) => sellRivalStake(s, c.id)), sfx.cash(), say(`Sold your stake in ${c.name}.`))}>
                                 Sell
                               </Btn>
                             )}
                             <Btn small className="ml-1" disabled={own >= 0.489} onClick={() => run(act((s) => buyRivalStake(s, c.id, 0.05)), sfx.confirm)} title="Buy 5% on the market">
                               +5% {big(stakePrice(c, 0.05))}
                             </Btn>
-                            <Btn small tone="primary" className="ml-1" onClick={() => run(act((s) => acquire(s, c.id)), () => (sfx.bell(), say(`${c.name} is now part of ${me.name}.`)))} title="Buy the whole company. Its devices are withdrawn; its customers and know-how come to you.">
+                            <ConfirmBtn small tone="primary" className="ml-1" confirm={`Pay ${big(takeoverPrice(g, c))}?`} onClick={() => run(act((s) => acquire(s, c.id)), () => (sfx.bell(), say(`${c.name} is now part of ${me.name}.`)))} title="Buy the whole company. Its devices are withdrawn; its customers and know-how come to you. This cannot be undone.">
                               Buy out {big(takeoverPrice(g, c))}
-                            </Btn>
+                            </ConfirmBtn>
                           </>
                         )}
                       </td>
@@ -395,7 +395,12 @@ function RegionPanel({ r }: { r: RegionDef }) {
 export function WorldScreen() {
   const g = useGame()
   // a region picked in the city view is the one shown first
-  const [selected, setSelected] = useState(() => takeAim('region') ?? homeRegion(g))
+  const [selected, setSelected] = useKept('world:region', () => homeRegion(g))
+  // a region picked in the city wins over the one last looked at
+  useEffect(() => {
+    const aimed = takeAim('region')
+    if (aimed) setSelected(aimed)
+  }, [setSelected])
   const open = REGIONS.filter((r) => g.regions[r.id].open)
   const total = open.reduce((a, r) => a + (g.regions[r.id].history.at(-1) ?? 0), 0)
   const region = REGIONS.find((r) => r.id === selected) ?? REGIONS[0]
@@ -428,7 +433,7 @@ export function WorldScreen() {
                 {REGIONS.map((r) => {
                   const st = g.regions[r.id]
                   return (
-                    <tr key={r.id} className={`row cursor-pointer ${selected === r.id ? 'bg-accent/10' : ''}`} onClick={() => setSelected(r.id)}>
+                    <tr key={r.id} className={`row cursor-pointer ${selected === r.id ? 'bg-accent/10' : ''}`} {...pressable(() => setSelected(r.id))}>
                       <td className={st.open ? 'text-fg' : 'text-faint'}>
                         {r.name}
                         {homeRegion(g) === r.id && (
@@ -615,7 +620,7 @@ export function GoalsScreen() {
   const g = useGame()
   const stage = stageOf(g)
   const groups: Goal['group'][] = ['Products', 'Company', 'Reach', 'Money']
-  const [view, setView] = useState<'open' | 'all'>('open')
+  const [view, setView] = useKept<'open' | 'all'>('goals:list', 'open')
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-2">
       <div className="shrink-0 border border-line bg-panel p-3">

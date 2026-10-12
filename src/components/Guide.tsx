@@ -13,7 +13,7 @@ import { type GameState, monthCosts } from '../sim/types'
 import { INCIDENTS, INCIDENT_WAIT } from '../sim/world'
 import { type Tab, useGame, useStore } from '../store/game'
 import { Icon, type IconName, TAB_ICON } from './icons'
-import { Btn, IconBtn, Lead, money, num, pct } from './ui'
+import { Btn, IconBtn, Lead, money, num, pct, useLayer } from './ui'
 
 // ---------------------------------------------------------------- guided start
 
@@ -367,11 +367,14 @@ export function Decision() {
   useEffect(() => {
     if (i) useStore.getState().setSpeed(0)
   }, [i?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  // it has to be answered: there is no Esc out of it, and the game's keys wait
+  const box = useRef<HTMLDivElement>(null)
+  useLayer(!!i && !!def, undefined, { modal: true, box })
   if (!i || !def) return null
   const options = def.choices(g, i)
   return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center bg-carbon/70">
-      <div className="w-[460px] border border-warn bg-panel">
+    <div className="absolute inset-0 z-40 flex items-center justify-center bg-carbon/70 p-4">
+      <div ref={box} role="alertdialog" aria-label={def.title} className="max-h-full w-[460px] max-w-full overflow-y-auto border border-warn bg-panel outline-none">
         <div className="flex items-center gap-2 border-b border-line px-3 py-2">
           <Icon name={INCIDENT_ICON[i.kind] ?? 'alert'} className="text-warn" />
           <span className="text-[12px] font-semibold uppercase tracking-[0.14em] text-fg">{def.title}</span>
@@ -411,8 +414,10 @@ export function Decision() {
 export function YearEnd() {
   const g = useGame()
   const year = useStore((s) => s.yearEnd)
-  if (year === null) return null
   const close = () => useStore.getState().closeYear()
+  const box = useRef<HTMLDivElement>(null)
+  useLayer(year !== null, close, { modal: true, box })
+  if (year === null) return null
   const months = g.reports.slice(-12)
   const before = g.reports.slice(-24, -12)
   const sum = (rows: typeof months, f: (r: (typeof months)[number]) => number) => rows.reduce((a, r) => a + f(r), 0)
@@ -430,13 +435,13 @@ export function YearEnd() {
     ['Income', money(revenue, 1), before.length === 12 && lastRevenue > 0 ? `${revenue >= lastRevenue ? '+' : ''}${pct(revenue / lastRevenue - 1, 0)} on last year` : undefined, 'coins'],
     ['Profit', money(profit, 1), profit >= 0 ? 'in the black' : 'a loss', profit >= 0 ? 'trendUp' : 'trendDown'],
     ['Devices sold', num(units), `${pct((all[0]?.units ?? 0) / total)} of the market, ranked ${rank} of ${all.filter((t) => t.company.alive).length}`, 'package'],
-    ['Company value', marketCap(g) >= 1e9 ? `$${(marketCap(g) / 1e9).toFixed(2)}B` : money(marketCap(g), 1), g.stock.listed ? `$${g.stock.price.toFixed(2)} a share` : 'private', 'chart'],
+    ['Company value', money(marketCap(g), 1), g.stock.listed ? `$${g.stock.price.toFixed(2)} a share` : 'private', 'chart'],
     ['Fans', num(g.fans), `${num(g.owners)} owners`, 'heart'],
     ['People', String(g.staff.length), `${goals} goal${goals === 1 ? '' : 's'} reached this year`, 'staff'],
   ]
   return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center bg-carbon/80">
-      <div className="w-[560px] border border-line2 bg-panel">
+    <div className="absolute inset-0 z-40 flex items-center justify-center bg-carbon/80 p-4">
+      <div ref={box} role="dialog" aria-label={`${year}: the year in review`} className="max-h-full w-[560px] max-w-full overflow-y-auto border border-line2 bg-panel outline-none">
         <div className="border-b border-line px-4 py-3">
           <div className="label text-faint">{player(g).name}</div>
           <div className="text-2xl font-semibold tracking-[0.12em] text-fg">
@@ -465,7 +470,7 @@ export function YearEnd() {
           <Btn icon="goals" onClick={() => (close(), useStore.getState().setTab('goals'))}>
             See goals
           </Btn>
-          <Btn tone="primary" icon="arrowRight" onClick={() => (close(), sfx.confirm())}>
+          <Btn tone="primary" icon="arrowRight" autoFocus onClick={() => (close(), sfx.confirm())}>
             On to {year + 1}
           </Btn>
         </div>

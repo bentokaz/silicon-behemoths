@@ -75,13 +75,44 @@ export const ACTIONS: Action[] = [
 const KEY = 'sb-settings'
 const BIND = 'sb-keys'
 
-function read<T>(key: string, fallback: T): T {
+function read(key: string): Record<string, unknown> {
   try {
-    const raw = localStorage.getItem(key)
-    return raw ? { ...fallback, ...JSON.parse(raw) } : fallback
+    const raw = JSON.parse(localStorage.getItem(key) ?? 'null') as unknown
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
   } catch {
-    return fallback
+    return {}
   }
+}
+
+const within = (v: unknown, min: number, max: number, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(min, Math.min(max, v)) : fallback)
+const flag = (v: unknown, fallback: boolean) => (typeof v === 'boolean' ? v : fallback)
+
+/**
+ * Settings as stored, made safe to use: anything missing, of the wrong kind
+ * or out of range (an older build, a hand-edited or damaged entry) falls back
+ * to its default instead of reaching the 3D views.
+ */
+export function cleanSettings(raw: Record<string, unknown>): Settings {
+  const d = DEFAULT_SETTINGS
+  return {
+    quality: typeof raw.quality === 'string' && raw.quality in QUALITY ? (raw.quality as Quality) : d.quality,
+    cameraSpeed: within(raw.cameraSpeed, 0.4, 2.5, d.cameraSpeed),
+    zoomToPointer: flag(raw.zoomToPointer, d.zoomToPointer),
+    autosave: flag(raw.autosave, d.autosave),
+    pauseOnAlert: flag(raw.pauseOnAlert, d.pauseOnAlert),
+    walkers: flag(raw.walkers, d.walkers),
+    ambience: within(raw.ambience, 0, 1, d.ambience),
+  }
+}
+
+/** Key bindings as stored, keeping only known actions with a list of key codes each, two at most. */
+export function cleanBinds(raw: Record<string, unknown>): Record<string, string[]> {
+  const out: Record<string, string[]> = {}
+  for (const a of ACTIONS) {
+    const keys = raw[a.id]
+    if (Array.isArray(keys)) out[a.id] = [...new Set(keys.filter((k): k is string => typeof k === 'string' && k.length > 0))].slice(0, 2)
+  }
+  return out
 }
 function write(key: string, value: unknown) {
   try {
@@ -102,10 +133,10 @@ interface Store {
 }
 
 export const useSettings = create<Store>((set, get) => ({
-  settings: read(KEY, DEFAULT_SETTINGS),
-  binds: read(BIND, {} as Record<string, string[]>),
+  settings: cleanSettings(read(KEY)),
+  binds: cleanBinds(read(BIND)),
   set(patch) {
-    const settings = { ...get().settings, ...patch }
+    const settings = cleanSettings({ ...get().settings, ...patch })
     write(KEY, settings)
     set({ settings })
   },
@@ -126,8 +157,11 @@ export const useSettings = create<Store>((set, get) => ({
 
 export const keysFor = (action: string): string[] => useSettings.getState().binds[action] ?? ACTIONS.find((a) => a.id === action)?.keys ?? []
 
+/** The other actions that already use a key, by label: what binding it somewhere else would take it from. */
+export const holdersOf = (code: string, except: string): string[] => ACTIONS.filter((a) => a.id !== except && keysFor(a.id).includes(code)).map((a) => a.label)
+
 /** The action a key press means within the given groups, if any. */
-export function actionFor(e: KeyboardEvent, groups: Action['group'][]): string | null {
+export function actionFor(e: Pick<KeyboardEvent, 'code' | 'ctrlKey' | 'metaKey' | 'altKey'>, groups: Action['group'][]): string | null {
   if (e.ctrlKey || e.metaKey || e.altKey) return null
   for (const a of ACTIONS) if (groups.includes(a.group) && keysFor(a.id).includes(e.code)) return a.id
   return null
@@ -140,6 +174,34 @@ export const isHeld = (held: Set<string>, action: string) => keysFor(action).som
 export function keyName(code: string): string {
   if (code.startsWith('Key')) return code.slice(3)
   if (code.startsWith('Digit')) return code.slice(5)
-  if (code.startsWith('Numpad')) return 'Num ' + code.slice(6)
-  return ({ Space: 'Space', Escape: 'Esc', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', Equal: '=', Minus: '-', Delete: 'Del', Backquote: '`' } as Record<string, string>)[code] ?? code
+  if (code.startsWith('Numpad')) return 'Num ' + (NUMPAD[code.slice(6)] ?? code.slice(6))
+  return KEY_NAMES[code] ?? code
+}
+const NUMPAD: Record<string, string> = { Add: '+', Subtract: '-', Multiply: '*', Divide: '/', Decimal: '.', Enter: 'Enter', Equal: '=' }
+const KEY_NAMES: Record<string, string> = {
+  Space: 'Space',
+  Escape: 'Esc',
+  ArrowUp: 'Up',
+  ArrowDown: 'Down',
+  ArrowLeft: 'Left',
+  ArrowRight: 'Right',
+  Equal: '=',
+  Minus: '-',
+  Delete: 'Del',
+  Insert: 'Ins',
+  Backquote: '`',
+  Comma: ',',
+  Period: '.',
+  Slash: '/',
+  Backslash: '\\',
+  IntlBackslash: '\\',
+  Semicolon: ';',
+  Quote: "'",
+  BracketLeft: '[',
+  BracketRight: ']',
+  PageUp: 'PgUp',
+  PageDown: 'PgDn',
+  Backspace: 'Bksp',
+  CapsLock: 'Caps',
+  ContextMenu: 'Menu',
 }
