@@ -134,7 +134,12 @@ function useHotkeys() {
     const up = (e: KeyboardEvent) => {
       if (e.code === eaten) (e.preventDefault(), (eaten = ''))
     }
+    // How focus got where it is: by Tab, or by a click. (The browser's own :focus-visible cannot say:
+    // it starts matching a clicked button the moment any key goes down.)
+    let tabbed = false
+    const pointed = () => void (tabbed = false)
     const key = (e: KeyboardEvent) => {
+      if (e.key === 'Tab') tabbed = true
       const el = e.target as HTMLElement
       const tag = el.tagName
       // function keys are never typing, and left to the browser they reload or search the page
@@ -155,7 +160,7 @@ function useHotkeys() {
       // nothing else runs while typing, behind a dialog that is waiting for an answer, or once the game is over
       if (typing || st.designing || st.showing || st.game.gameOver || st.yearEnd !== null || modalOpen()) return
       // someone moving through the controls with Tab presses them with Space and Enter: that press is theirs
-      if ((e.code === 'Space' || e.code === 'Enter') && (tag === 'BUTTON' || tag === 'A' || tag === 'SUMMARY') && el.matches(':focus-visible')) return
+      if ((e.code === 'Space' || e.code === 'Enter') && tabbed && (tag === 'BUTTON' || tag === 'A' || tag === 'SUMMARY' || el.getAttribute('role') === 'button' || el.tabIndex === 0)) return
       e.preventDefault()
       if (e.repeat) return
       eaten = e.code
@@ -179,7 +184,8 @@ function useHotkeys() {
     }
     window.addEventListener('keydown', key)
     window.addEventListener('keyup', up)
-    return () => (window.removeEventListener('keydown', key), window.removeEventListener('keyup', up))
+    window.addEventListener('pointerdown', pointed, true)
+    return () => (window.removeEventListener('keydown', key), window.removeEventListener('keyup', up), window.removeEventListener('pointerdown', pointed, true))
   }, [])
 }
 
@@ -245,9 +251,11 @@ export function Shell() {
   useEffect(() => {
     setAmbienceLevel(ambience)
     const place: Ambience = designing || showing ? 'none' : tab === 'office' || tab === 'staff' ? 'office' : tab === 'factory' ? 'factory' : tab === 'stores' ? 'store' : tab === 'venue' ? 'venue' : (tab as string) === 'city' || tab === 'world' ? 'outdoors' : 'none'
+    // (two screens of the same place, Staff and Campus, share one bed: it plays on between them)
     setAmbience(place)
-    return () => setAmbience('none')
   }, [tab, designing, showing, ambience])
+  // it stops when the game is left
+  useEffect(() => () => setAmbience('none'), [])
   const me = player(g)
   const showFeed = feedOpen && !designing && !WIDE.includes(tab)
   const railW = railOpen ? 'w-[172px]' : 'w-[52px]'

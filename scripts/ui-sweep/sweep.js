@@ -327,6 +327,16 @@ const SEEDS = {
 const START_TYPES = ['phone', 'tablet', 'watch', 'laptop', 'desktop', 'console', 'earbuds', 'tv', 'foldable', 'headset', 'speaker', 'handheld']
 for (const t of START_TYPES) SEEDS[`type:${t}`] = () => st().begin(cfg({ startType: t, progression: 'guided' }))
 
+/**
+ * One of the app's own modules, the very instance the app is running. After a
+ * hot update Vite serves a module under a new address (?t=...), and importing
+ * the plain path would hand back a second, separate copy with its own state.
+ */
+async function mod(path) {
+  const hits = performance.getEntriesByType('resource').map((r) => r.name).filter((n) => n.includes(path))
+  return import(/* @vite-ignore */ hits.filter((n) => n.includes('?t=')).pop() ?? hits[0] ?? path)
+}
+
 const snapshots = {}
 /** Put the named state on screen. Built once, then restored from a copy. */
 async function seed(name, { tab, rebuild } = {}) {
@@ -341,7 +351,7 @@ async function seed(name, { tab, rebuild } = {}) {
     await settle(10)
   }
   const snap = snapshots[name]
-  const fb = (S.feedback ??= (await import('/src/store/trouble.ts')).useFeedback)
+  const fb = (S.feedback ??= (await mod('/src/store/trouble.ts')).useFeedback)
   fb.setState({ form: null, ask: null, flagged: false })
   // all in one go, so the screen wanted is the only one drawn
   st().resume(G().migrate(JSON.parse(snap.json)))
@@ -1056,6 +1066,6 @@ function earlier() {
 }
 
 S.done ??= []
-Object.assign(S, { crawlMenu, lookMenu, earlier, run, install, seed, SEEDS, snapshots, audit, auditRows, auditColours, crawl, crawlState, lookState, hotkeys, soak, vitals, summary, report, reset, click, key, setValue, listControls, describe, stopsOf, settle, TABS, THEMES, START_TYPES })
+Object.assign(S, { mod, crawlMenu, lookMenu, earlier, run, install, seed, SEEDS, snapshots, audit, auditRows, auditColours, crawl, crawlState, lookState, hotkeys, soak, vitals, summary, report, reset, click, key, setValue, listControls, describe, stopsOf, settle, TABS, THEMES, START_TYPES })
 install()
 export default S

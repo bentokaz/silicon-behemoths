@@ -4,14 +4,17 @@ let ctx: AudioContext | null = null
 let volume = 0.5
 try {
   const saved = localStorage.getItem('sb-volume')
-  if (saved !== null) volume = Number(saved)
+  // (a damaged entry must not become a volume of NaN, which silences everything for good)
+  if (saved !== null && Number.isFinite(Number(saved))) volume = Math.max(0, Math.min(1, Number(saved)))
 } catch {
   /* storage unavailable */
 }
 
 export const getVolume = () => volume
 export function setVolume(v: number) {
-  volume = v
+  volume = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0.5
+  // the background sound of the place on screen follows the volume at once, not at the next change of screen
+  ambient?.level()
   try {
     localStorage.setItem('sb-volume', String(v))
   } catch {
@@ -232,15 +235,13 @@ export const sfx = {
 // ---------------------------------------------------------------- ambience
 
 export type Ambience = 'none' | 'office' | 'factory' | 'store' | 'venue' | 'outdoors'
-let ambient: { kind: Ambience; stop: () => void } | null = null
+let ambient: { kind: Ambience; stop: () => void; /** Bring its loudness into line with the volume and ambience settings. */ level: () => void } | null = null
 let ambienceLevel = 0.5
 export const setAmbienceLevel = (v: number) => {
-  ambienceLevel = v
-  const kind = ambient?.kind
-  if (kind) {
-    setAmbience('none')
-    setAmbience(kind)
-  }
+  ambienceLevel = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0.5
+  // turned off, the bed stops; otherwise the one that is playing is turned up or down, not started again
+  if (ambienceLevel <= 0) setAmbience('none')
+  else ambient?.level()
 }
 
 /** A looping bed of filtered noise for a place, with small sounds scattered over it. */
@@ -259,6 +260,8 @@ export function setAmbience(kind: Ambience) {
   master.gain.setValueAtTime(0, a.currentTime)
   master.gain.linearRampToValueAtTime(volume * ambienceLevel, a.currentTime + 1.2)
   master.connect(a.destination)
+  // everything that keeps sounding until it is told to stop: the looping beds and the slow oscillators that swell them
+  const running: AudioScheduledSourceNode[] = []
   const bed = (freq: number, q: number, gain: number, type: BiquadFilterType, wobble = 0) => {
     const src = a.createBufferSource()
     src.buffer = noiseBuffer
@@ -277,9 +280,11 @@ export function setAmbience(kind: Ambience) {
       depth.gain.value = gain * 0.5
       lfo.connect(depth).connect(amp.gain)
       lfo.start()
+      running.push(lfo)
     }
     src.connect(filter).connect(amp).connect(master)
     src.start(0, Math.random())
+    running.push(src)
     return src
   }
   const blip = (freq: number, len: number, gain: number, type: BiquadFilterType = 'bandpass') => {
@@ -320,19 +325,33 @@ export function setAmbience(kind: Ambience) {
     beds.push(bed(380, 0.3, 0.05, 'lowpass', 0.06), bed(3800, 0.8, 0.006, 'bandpass', 0.09))
     every = 2600
     // a bird now and then
-    scatter = () => (Math.random() < 0.35 ? (blip(4200, 0.07, 0.02), window.setTimeout(() => blip(4700, 0.06, 0.018), 110)) : undefined)
+    scatter = () => (Math.random() < 0.35 ? (blip(4200, 0.07, 0.02), window.setTimeout(() => stopped || blip(4700, 0.06, 0.018), 110)) : undefined)
   }
-  const timer = window.setInterval(() => scatter(), every)
+  let stopped = false
+  // nothing is scattered while the page is in the background: timers there fire in bursts
+  const timer = window.setInterval(() => document.visibilityState === 'visible' && scatter(), every)
   ambient = {
     kind,
+    level() {
+      master.gain.cancelScheduledValues(a.currentTime)
+      master.gain.setTargetAtTime(volume * ambienceLevel, a.currentTime, 0.12)
+    },
     stop() {
+      stopped = true
       window.clearInterval(timer)
       master.gain.cancelScheduledValues(a.currentTime)
       master.gain.setTargetAtTime(0, a.currentTime, 0.25)
-      window.setTimeout(() => {
-        for (const b of beds) b.stop()
-        master.disconnect()
-      }, 1200)
+      // every source is told when to stop on the audio clock itself, so none is left running if the page is
+      // hidden and its timers held back; the bed's own nodes then fall away with it
+      for (const node of running) {
+        try {
+          node.stop(a.currentTime + 1.2)
+        } catch {
+          /* already stopped */
+        }
+      }
+      beds.length = 0
+      window.setTimeout(() => master.disconnect(), 1400)
     },
   }
 }

@@ -125,14 +125,14 @@ export function NewGame() {
                 <Lead icon="theme" />
                 Brand colour
               </span>
-              <input type="color" value={cfg.color} onChange={(e) => up({ color: e.target.value })} />
+              <input type="color" aria-label="Brand colour" value={cfg.color} onChange={(e) => up({ color: e.target.value })} />
             </label>
             <label className="flex items-center justify-between gap-2 py-1">
               <span className="text-[11px] text-dim">
                 <Lead icon="home" />
                 Home market
               </span>
-              <select value={cfg.home ?? 'na'} onChange={(e) => up({ home: e.target.value })} className="h-7 w-48 rounded-none border border-line2 bg-raise px-2 text-xs text-fg outline-none focus:border-accent">
+              <select aria-label="Home market" value={cfg.home ?? "na"} onChange={(e) => up({ home: e.target.value })} className="h-7 w-48 rounded-none border border-line2 bg-raise px-2 text-xs text-fg outline-none focus:border-accent">
                 {REGIONS.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.name}
@@ -145,7 +145,7 @@ export function NewGame() {
                 <Lead icon="dice" />
                 World seed
               </span>
-              <NumInput value={cfg.seed} min={1} max={2147483647} onChange={(seed) => up({ seed })} onEnter={found} className="w-48" title="The same seed gives the same rivals and the same world" />
+              <NumInput aria-label="World seed" value={cfg.seed} min={1} max={2147483647} onChange={(seed) => up({ seed })} onEnter={found} className="w-48" title="The same seed gives the same rivals and the same world" />
             </label>
           </Panel>
 

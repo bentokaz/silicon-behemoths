@@ -27,7 +27,11 @@ function savedWhen(at: number): string {
 /** Why a save could not be opened, in words that say what to do. */
 const loadError = (e: unknown) => {
   const text = e instanceof Error ? e.message : String(e)
-  return e instanceof SyntaxError || /JSON|Unexpected (token|end)/i.test(text) ? 'That file is not a save: it is damaged or is some other kind of file. Choose a .sbsave.json file exported from the game.' : text || 'That save could not be read.'
+  if (e instanceof SyntaxError || /JSON|Unexpected (token|end)/i.test(text)) return 'That file is not a save: it is damaged or is some other kind of file. Choose a .sbsave.json file exported from the game.'
+  // the checks on a save say what is wrong; these lines add what to do about it
+  if (/not a Silicon Behemoths save/i.test(text)) return `${text.replace(/\.$/, '')}. Choose a .sbsave.json file exported from the game.`
+  if (/newer version/i.test(text)) return `${text.replace(/\.$/, '')}. Reload the page to get the latest build, then load it again.`
+  return text || 'That save could not be read.'
 }
 
 export function SaveList({ onChange, nonce = 0, inGame = false }: { onChange?: () => void; nonce?: number; /** A game is running: loading another leaves it, so it asks first. */ inGame?: boolean }) {

@@ -29,7 +29,16 @@ const layers: Layer[] = []
 /** True while a dialog that must be answered is on screen: the game's hotkeys wait. */
 export const modalOpen = () => layers.some((l) => l.modal)
 
-const FOCUSABLE = 'button:not(:disabled), a[href], input:not(:disabled):not([type=hidden]), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+/** The element that has focus, and the one that had it before: where focus goes back to when a layer that took it closes. */
+const focusTrail: [HTMLElement | null, HTMLElement | null] = [null, null]
+if (typeof document !== 'undefined') {
+  document.addEventListener('focusin', (e) => {
+    const to = e.target as HTMLElement
+    if (to !== focusTrail[1]) (focusTrail[0] = focusTrail[1]), (focusTrail[1] = to)
+  })
+}
+
+const FOCUSABLE ='button:not(:disabled), a[href], input:not(:disabled):not([type=hidden]), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
 
 if (typeof window !== 'undefined') {
   window.addEventListener(
@@ -72,8 +81,11 @@ export function useLayer(active: boolean, esc?: () => void, { modal = false, box
     if (!active) return
     const layer: Layer = { esc: hasEsc ? () => fn.current?.() : undefined, modal, box }
     layers.push(layer)
-    const before = document.activeElement as HTMLElement | null
     const el = box?.current
+    // where focus was before the layer took it; a field in the layer that focuses itself as it appears has already
+    // taken it by now, and what had it before that is what to go back to
+    const focused = document.activeElement as HTMLElement | null
+    const before = el && focused && el.contains(focused) ? focusTrail[0] : focused
     if (el && !el.contains(document.activeElement)) {
       if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1')
       el.focus({ preventScroll: true })
@@ -407,7 +419,7 @@ export function Slider({ label, icon, value, min, max, step = 1, onChange, forma
         </span>
         <span className="num text-[11px] text-fg">{format ? format(value) : value}</span>
       </div>
-      <input type="range" className={`w-full ${locked ? 'pointer-events-none' : ''}`} min={min} max={max} step={step} value={value} disabled={disabled || !!locked} onChange={(e) => onChange(Number(e.target.value))} />
+      <input type="range" aria-label={label} aria-valuetext={format ? format(value) : undefined} className={`w-full ${locked ? 'pointer-events-none' : ''}`} min={min} max={max} step={step} value={value} disabled={disabled || !!locked} onChange={(e) => onChange(Number(e.target.value))} />
     </label>
   )
 }
