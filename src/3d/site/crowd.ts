@@ -34,8 +34,11 @@ export function meetingSlot(team: number, tables: number): { table: number; star
   return { table: team % Math.max(1, tables), start, end: start + 0.7 }
 }
 
+/** The length of one step at a walking speed, in metres: short when shuffling, long when striding out. */
+export const strideFor = (speed: number) => Math.max(0.3, Math.min(0.74, 0.34 + 0.225 * speed))
+
 const SHIRTS = ['#c9553d', '#31506b', '#e9e4da', '#3f7d4d', '#d6a24f', '#6a5a7a', '#2c3036', '#7a8f9c']
-const WALK_SPEED = 1.8
+const WALK_SPEED = 1.6
 const ENTER_TIME = 0.42
 /** Speed along a row of seats or up a flight of steps. */
 const SIDLE_SPEED = 1.25
@@ -82,6 +85,8 @@ export class Body {
   /** Phase of the walking or working motion, and how fast they are moving. */
   cycle = 0
   speed = 0
+  /** Length of the step they are taking, in metres. */
+  stride = 0.6
   /** Seconds left of whatever they are doing, where that is timed. */
   wait = 0
   thinkIn = 0
@@ -1214,7 +1219,7 @@ export class Crowd {
     b.x = this.cx
     b.z = this.cz
     b.speed = moved / Math.max(1e-6, dt)
-    b.cycle += moved * 4.2
+    this.pace(b, moved, dt)
     // turn to face the way they are going, quickly but not instantly
     if (moved > 1e-5 || d > 0.2) {
       const want = moved > v * dt * 0.3 ? Math.atan2(-(mx + ux * moved), -(mz + uz * moved)) : Math.atan2(-ux, -uz)
@@ -1223,6 +1228,12 @@ export class Crowd {
       b.yaw += diff * Math.min(1, dt * 10)
     }
     return Math.hypot(tx - b.x, tz - b.z) <= near
+  }
+
+  /** Moves the walking motion on by the ground just covered: a step is as long as the pace asks, so feet do not slide. */
+  private pace(b: Body, moved: number, dt: number) {
+    b.stride += (strideFor(b.speed) - b.stride) * Math.min(1, dt * 5)
+    b.cycle += (moved * Math.PI) / b.stride
   }
 
   /** Someone held up for a while tries the other side, then another route, and at the very last walks through. */
@@ -1375,7 +1386,7 @@ export class Crowd {
       left -= len
     }
     b.speed = SIDLE_SPEED
-    b.cycle += step * 4.6
+    this.pace(b, step, dt)
     return b.wayAt >= b.wayLen
   }
 

@@ -32,6 +32,15 @@ const HAND = 2
 /** Lengths of the upper arm and the forearm. */
 const UPPER = 0.25
 const FORE = 0.22
+/** Hip to knee, and knee to ankle. */
+const THIGH_L = 0.42
+const SHIN_L = 0.405
+/** Share of a stride a foot spends on the ground: a little over half, so both are down as the weight changes over. */
+const STANCE = 0.56
+/** How far a planted foot can be from the hip before the hip has to come down. */
+const REACH = 0.812
+const FOOT_F = [0, 0]
+const FOOT_UP = [0, 0]
 
 // What someone has in their hands.
 const Prop = { None: 0, Box: 1, Bag: 2, Tray: 3, Cup: 4, Device: 5, Phone: 6, Weights: 7, Broom: 8, Clipboard: 9 } as const
@@ -242,28 +251,69 @@ function pose(m: Meshes, i: number, b: Body, dt: number): boolean {
   let bob = 0
   const t = b.cycle
   const p = b.seed
+  let stance = 0.08
   if (c[AMP] > 0.02) {
-    const a = c[AMP] * (slump ? 0.6 : 1)
-    const s = Math.sin(t)
-    thighL += 0.5 * s * a
-    thighR -= 0.5 * s * a
-    kneeL += Math.max(0, Math.sin(t + 2.2)) * 0.75 * a
-    kneeR += Math.max(0, Math.sin(t + 2.2 + Math.PI)) * 0.75 * a
+    const a = c[AMP]
+    // ---- the gait: each foot is planted while it bears weight and swung through while it does not, and the hip and
+    // knee follow from where the foot is. The step is as long as the ground covered, so a planted foot stays put.
+    const S = b.stride
+    const u = t / (Math.PI * 2)
+    let low = 0.86
+    for (let leg = 0; leg < 2; leg++) {
+      let ph = u + leg * 0.5
+      ph -= Math.floor(ph)
+      let f: number
+      let lift = 0
+      if (ph < STANCE) {
+        f = S * (STANCE - 2 * ph)
+        // the heel comes down first and the toe leaves last: the ankle is a little off the ground at both ends
+        const edge = Math.abs(f) / 0.4
+        lift = 0.07 * edge * edge
+        const reach = 0.035 + lift + Math.sqrt(Math.max(0.01, REACH * REACH - f * f))
+        if (reach < low) low = reach
+      } else {
+        const k = (ph - STANCE) / (1 - STANCE)
+        f = S * STANCE * (2 * (k * k * (3 - 2 * k)) - 1)
+        lift = 0.035 + 0.1 * Math.sin(Math.PI * Math.pow(k, 0.8)) * Math.min(1, S / 0.5)
+      }
+      FOOT_F[leg] = f * a
+      FOOT_UP[leg] = lift * a
+    }
+    const drop = (0.86 - low) * a
+    for (let leg = 0; leg < 2; leg++) {
+      const down = c[HIP] - drop - 0.035 - FOOT_UP[leg]
+      const f = FOOT_F[leg]
+      const d = Math.min(THIGH_L + SHIN_L - 0.002, Math.hypot(f, down))
+      const knee = Math.PI - Math.acos(Math.max(-1, Math.min(1, (THIGH_L * THIGH_L + SHIN_L * SHIN_L - d * d) / (2 * THIGH_L * SHIN_L))))
+      const thigh = Math.atan2(f, down) + Math.acos(Math.max(-1, Math.min(1, (THIGH_L * THIGH_L + d * d - SHIN_L * SHIN_L) / (2 * THIGH_L * d))))
+      if (leg) {
+        thighR += (thigh - thighR) * a
+        kneeR += (knee - kneeR) * a
+      } else {
+        thighL += (thigh - thighL) * a
+        kneeL += (knee - kneeL) * a
+      }
+    }
+    bob = -drop
+    stance = 0.08 - 0.012 * a
+    lean += 0.025 * a * Math.min(1, b.speed / 1.6)
+    // how far forward the left foot is, -1 to 1: the arms swing against the legs, less on a short step
+    const s = Math.cos(t)
+    const swing = Math.min(1, S / 0.7)
     if (!arms) {
-      // arms swing against the legs, the elbow closing a little as the hand comes forward
+      // the elbow closes a little as the hand comes forward
       const one = prop === Prop.Bag || prop === Prop.Cup || prop === Prop.Broom
-      shL -= 0.42 * s * a
-      elL += (0.18 + 0.28 * Math.max(0, -s)) * a
+      shL -= 0.34 * s * a * swing
+      elL += (0.16 + 0.24 * Math.max(0, -s)) * a
       if (prop === Prop.Cup) {
         shR += (0.15 - shR) * a
         elR += (1.5 - elR) * a
         inR += (0.3 - inR) * a
       } else {
-        shR += (one ? 0.12 : 0.42) * s * a
-        elR += (0.18 + (one ? 0.05 : 0.28) * Math.max(0, s)) * a
+        shR += (one ? 0.1 : 0.34) * s * a * swing
+        elR += (0.16 + (one ? 0.05 : 0.24) * Math.max(0, s)) * a
       }
     }
-    bob = Math.abs(Math.cos(t)) * 0.035 * a
   } else if (b.cheer) {
     const s = Math.sin(t * 7 + p)
     shL += 0.18 * s
@@ -412,16 +462,16 @@ function pose(m: Meshes, i: number, b: Body, dt: number): boolean {
   if (elL < 0) elL = 0
   if (elR < 0) elR = 0
 
-  const hip = c[HIP]
+  const hip = c[HIP] + bob
   const cy = Math.cos(b.yaw)
   const sy = Math.sin(b.yaw)
-  R.makeRotationY(b.yaw).setPosition(b.x + side * cy, b.y + bob, b.z - side * sy)
+  R.makeRotationY(b.yaw).setPosition(b.x + side * cy, b.y, b.z - side * sy)
   const bx = i * BOXES
   const sx = i * BALLS
 
   for (let leg = 0; leg < 2; leg++) {
     const sgn = leg ? 1 : -1
-    F1.multiplyMatrices(R, A.makeRotationX(leg ? thighR : thighL).setPosition(sgn * 0.08, hip, 0))
+    F1.multiplyMatrices(R, A.makeRotationX(leg ? thighR : thighL).setPosition(sgn * stance, hip, 0))
     box(m, bx + THIGH + leg, F1, 0.125, 0.44, 0.135, 0, -0.2, 0)
     F2.multiplyMatrices(F1, A.makeRotationX(-(leg ? kneeR : kneeL)).setPosition(0, -0.42, 0))
     box(m, bx + SHIN + leg, F2, 0.108, 0.4, 0.112, 0, -0.18, 0)
