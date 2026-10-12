@@ -54,6 +54,9 @@ export interface RunResult {
   /** Milliseconds per simulated day in the first year, around year 50 and around year 100. */
   msPerDay: Record<string, number>
   wallMs: number
+  /** Where the time went: simulating, checking the rules, and inside the actions. */
+  spent: { tick: number; check: number; act: number }
+  stores: number
   hash: string
   tally: Tally
   findings: Finding[]
@@ -145,6 +148,8 @@ export function runGame(spec: RunSpec, trace?: (line: string) => void): RunResul
     jsonBytes: json.length,
     msPerDay: ms,
     wallMs: performance.now() - started,
+    spent: { tick: Math.round(p.tickMs), check: Math.round(p.checkMs), act: Math.round(p.actMs) },
+    stores: s.stores.length,
     hash: hashOf(canon(s)),
     tally: p.tally,
     findings: [...p.findings.values()],

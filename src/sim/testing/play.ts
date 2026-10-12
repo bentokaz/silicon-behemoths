@@ -59,6 +59,9 @@ export class Play {
   serial = 0
   /** Time spent inside tick, in milliseconds. */
   tickMs = 0
+  /** Time spent checking the rules, and inside the actions themselves. */
+  checkMs = 0
+  actMs = 0
 
   constructor(cfg: GameConfig, label: string, botSeed = cfg.seed) {
     this.label = label
@@ -82,11 +85,13 @@ export class Play {
 
   check(light = false) {
     let found: string[]
+    const t0 = performance.now()
     try {
-      found = checkState(this.s, { light, offBooks: this.offBooks })
+      found = checkState(this.s, { light, offBooks: this.offBooks, noJson: this.s.day % 30 !== 0 && !this.strict })
     } catch (e) {
       found = [`check-threw: ${String((e as Error)?.stack ?? e).slice(0, 400)}`]
     }
+    this.checkMs += performance.now() - t0
     for (const f of found) this.flag(f)
     return found.length
   }
@@ -103,9 +108,11 @@ export class Play {
     const row = (this.tally.byAction[name] ??= { ok: 0, no: 0 })
     this.tally.actions++
     let out: T | undefined
+    const t0 = performance.now()
     try {
       out = fn(this.s)
       stepProgress(this.s)
+      this.actMs += performance.now() - t0
     } catch (e) {
       this.tally.threw++
       row.no++

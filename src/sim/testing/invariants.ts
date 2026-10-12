@@ -159,6 +159,8 @@ const net = (r: MonthReport) => r.revenue + r.other + r.funding - monthCosts(r)
 export interface CheckOpts {
   /** Skip the checks of the plots (the slowest part), for the checks made after every single action. */
   light?: boolean
+  /** Skip the round trip through JSON, which costs as much as several days of simulation. */
+  noJson?: boolean
   /** Cash moved outside the books on purpose (a migration refund). */
   offBooks?: number
 }
@@ -391,8 +393,8 @@ export function checkState(s: GameState, opts: CheckOpts = {}): string[] {
     if (s.venue) out.push(...checkSite(s.venue, 'venue'))
     for (const st of s.stores) out.push(...checkSite(st.site, `store ${st.id}`))
     // a save is the state as JSON: nothing may be lost or changed by the trip
-    const json = JSON.stringify(s)
-    if (JSON.stringify(JSON.parse(json)) !== json) bad('json', 'the state does not survive a round trip through JSON')
+    const json = opts.noJson ? '' : JSON.stringify(s)
+    if (!opts.noJson && JSON.stringify(JSON.parse(json)) !== json) bad('json', 'the state does not survive a round trip through JSON')
   }
   return out
 }

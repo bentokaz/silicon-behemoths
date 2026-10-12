@@ -36,9 +36,8 @@ export const BUZZ_DECAY = 0.03
  * Daily effect of one campaign, given what it spends today.
  * Returns the awareness gained as a fraction of the audience not yet reached.
  */
-export function campaignDay(s: GameState, c: Pick<Campaign, 'channel'>, spend: number, product: Product | undefined): number {
+export function campaignDay(s: GameState, c: Pick<Campaign, 'channel'>, spend: number, product: Product | undefined, skill = staffEffects(s).marketing): number {
   const def = CHANNELS[c.channel]
-  const skill = staffEffects(s).marketing
   if (product) {
     for (const seg of segmentsOf(product.type)) {
       const gain = 1 - Math.exp((-spend * channelFit(c.channel, seg) * skill) / 330e3)

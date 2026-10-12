@@ -390,6 +390,7 @@ export function startProduct(s: GameState, o: LaunchOrder): string | null {
   if (!num(o.quantity) || o.quantity < 0) return 'Enter how many to build first: zero or more'
   if (o.quantity > MAX_ORDER) return `A single production run can be at most ${MAX_ORDER.toLocaleString('en-US')} units`
   if (!num(o.marketing) || o.marketing < 0) return 'The launch budget cannot be less than zero'
+  if (o.marketing > MAX_CAMPAIGN) return `A launch budget can be at most ${dollars(MAX_CAMPAIGN)}`
   if (o.mode === 'factory' && !factoryLine(s)?.running) return 'Your factory has no working line. Use a contract manufacturer or finish the line.'
   const venue = o.keynote === undefined ? undefined : EVENTS.keynote.venues[o.keynote]
   if (o.keynote !== undefined) {
@@ -553,6 +554,7 @@ export function toggleResearch(s: GameState, id: string): string | null {
 /** Set what research gets each month. Returns why not, or null. */
 export function setResearchBudget(s: GameState, monthly: number): string | null {
   if (!num(monthly) || monthly < 0) return 'A research budget is zero or more a month'
+  if (monthly > MAX_CAMPAIGN) return `A research budget can be at most ${dollars(MAX_CAMPAIGN)} a month`
   s.rdBudget = Math.round(monthly)
   return null
 }
@@ -1678,6 +1680,8 @@ function stepEvents(s: GameState) {
 
 function stepCampaigns(s: GameState) {
   const gain = DIFFICULTY[s.config.difficulty].awareness
+  // what the marketing team adds is the same for every campaign today: worked out once, when the first one runs
+  let skill: number | undefined
   for (const p of ownProducts(s)) for (const k of Object.keys(p.buzz)) p.buzz[k] *= 1 - BUZZ_DECAY
   for (const c of [...s.campaigns]) {
     const product = c.target === 'brand' ? undefined : s.products.find((p) => p.id === c.target)
@@ -1689,7 +1693,7 @@ function stepCampaigns(s: GameState) {
     if (!canAfford(s, daily)) continue
     spend(s, daily, 'marketing')
     c.spent += daily
-    addAwareness(s, campaignDay(s, c, daily, product) * gain, c.region)
+    addAwareness(s, campaignDay(s, c, daily, product, (skill ??= staffEffects(s).marketing)) * gain, c.region)
   }
 }
 

@@ -514,8 +514,42 @@ export function isBoundary(site: Site, x: number, y: number, side: 'n' | 'w', cu
 }
 export const wallAt = (site: Site, x: number, y: number, side: 'n' | 'w') => site.walls.find((w) => w.x === x && w.y === y && w.side === side)
 
-/** Rooms people can get into: those with a door or an opening somewhere on their walls. */
+/**
+ * What has been worked out about a plot, kept until the plot next changes.
+ * Which rooms have a way in, and so which furniture can be reached, is asked
+ * many times in every simulated day (once for each campaign, each store and
+ * each of the staff's effects), and with curved walls it is slow to work out.
+ * Every change to a plot moves its `rev` on; the lists of walls, furniture and
+ * curves are watched too, so that a plot changed without going through an
+ * action (a test, a migration) is never answered for from memory.
+ */
+interface Memo {
+  rev: number
+  walls: unknown
+  nWalls: number
+  items: unknown
+  nItems: number
+  curves: unknown
+  nCurves: number
+  grid: unknown
+  open?: Set<number>
+  reach?: SiteItem[]
+}
+const MEMO = new WeakMap<Site, Memo>()
+function memoOf(site: Site): Memo {
+  const m = MEMO.get(site)
+  if (m && m.rev === site.rev && m.walls === site.walls && m.nWalls === site.walls.length && m.items === site.items && m.nItems === site.items.length && m.curves === site.curves && m.nCurves === (site.curves?.length ?? 0) && m.grid === site.grid) return m
+  const fresh: Memo = { rev: site.rev, walls: site.walls, nWalls: site.walls.length, items: site.items, nItems: site.items.length, curves: site.curves, nCurves: site.curves?.length ?? 0, grid: site.grid }
+  MEMO.set(site, fresh)
+  return fresh
+}
+
+/** Rooms people can get into: those with a door or an opening somewhere on their walls. The set is shared: read it, do not change it. */
 export function openRooms(site: Site): Set<number> {
+  const memo = memoOf(site)
+  return (memo.open ??= findOpenRooms(site))
+}
+function findOpenRooms(site: Site): Set<number> {
   const open = new Set<number>()
   const curved = site.curves?.length ? curveTiles(site) : NO_CURVES
   for (const w of site.walls) {
@@ -830,6 +864,8 @@ export function tidy(site: Site) {
   // a door or an opening goes with its wall, and also when a curved wall built beside it cuts its metre short
   const curved = site.curves?.length ? curveTiles(site) : NO_CURVES
   site.walls = site.walls.filter((w) => isBoundary(site, w.x, w.y, w.side, curved) && (w.kind === 'glass' || doorFits(site, w.x, w.y, w.side, curved)))
+  // the plot may have changed: nothing remembered about it holds any longer
+  site.rev++
 }
 
 // ---------------------------------------------------------------- courtyards
@@ -1031,6 +1067,10 @@ export const countItems = (site: Site, kind: string) => site.items.filter((i) =>
 
 /** Items standing in rooms people can actually reach (or outdoors). */
 export function reachable(site: Site): SiteItem[] {
+  const memo = memoOf(site)
+  return (memo.reach ??= findReachable(site))
+}
+function findReachable(site: Site): SiteItem[] {
   const open = openRooms(site)
   return site.items.filter((it) => {
     const n = gridAt(site, it.x, it.y)
