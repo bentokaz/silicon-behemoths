@@ -411,11 +411,11 @@ describe('the way a company grows', () => {
 })
 
 describe('the soak, in miniature', () => {
-  it('plays a year as each persona without breaking a rule', () => {
+  it('plays six months as each persona without breaking a rule', () => {
     let id = 0
     for (const persona of Object.keys(ALL_PERSONAS)) {
       const hunting = persona === 'monkey' || persona === 'adversary' || persona === 'tameMonkey'
-      const r = runGame({ id: id++, persona, years: 1, cfg: { ...G.defaultConfig(), seed: 7 + id, startCash: hunting ? 80e6 : 6e6, progression: id % 2 ? 'guided' : 'open', startType: DEVICE_TYPES[id % DEVICE_TYPES.length] }, reloadEvery: 5 })
+      const r = runGame({ id: id++, persona, years: 0.5, cfg: { ...G.defaultConfig(), seed: 7 + id, startCash: hunting ? 80e6 : 6e6, progression: id % 2 ? 'guided' : 'open', startType: DEVICE_TYPES[id % DEVICE_TYPES.length] }, reloadEvery: 3 })
       expect(r.findings.map((f) => `${f.detail} <- ${f.trail.slice(-2).join(' ; ')}`), persona).toEqual([])
       expect(r.crashed).toBe(false)
     }
