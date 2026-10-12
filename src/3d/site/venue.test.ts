@@ -7,7 +7,7 @@ import type { GameState, Site } from '../../sim/types'
 import { Kind, Mode } from './crowd'
 import { buildNav } from './nav'
 import { placeBeside } from './pick'
-import { buildSpots, seatPlaces } from './spots'
+import { buildSpots, seatPlaces, seatRank } from './spots'
 import { SHOW, VenueCrowd, phaseAt } from './venuecrowd'
 
 function house(site: Site, booked = true, draw = 0.9) {
@@ -83,6 +83,83 @@ describe('a venue on a show day', () => {
     expect(crowd.bodies.filter((b) => b.kind === Kind.Guest).length).toBe(0)
     expect(crowd.house).toBe(0)
     expect(crowd.reserved.size).toBe(0)
+  })
+
+  it('fills row by row from the front as the guests walk in, and empties from the back', () => {
+    const s = ownVenue()
+    const site = s.venue!
+    const { crowd } = house(site, true, 0.9)
+    crowd.walkers = 60
+    const rank = seatRank(crowd.seats)
+    const place = new Map(crowd.seats.map((seat, i) => [seat.key, rank[i]]))
+    // the order follows the rows: the first third of it is nearer the stage than the last third
+    const depth = (from: number, to: number) => {
+      const zs = crowd.seats.filter((_, i) => rank[i] >= from && rank[i] < to).map((seat) => seat.z)
+      return zs.reduce((a, z) => a + z, 0) / zs.length
+    }
+    const n = crowd.seats.length
+    expect(depth(0, n / 3)).toBeLessThan(depth((2 * n) / 3, n) - 2)
+    /** Seats with someone in them or on their way to them, by place in the order. */
+    const taken = () => [...crowd.seated, ...crowd.reserved].map((key) => place.get(key)!)
+    let walkedIn = 0
+    let jump = 0
+    let last = 0
+    run(crowd, SHOW.doors - 0.1, SHOW.start - 0.05, (t) => {
+      const now = crowd.seated.size
+      jump = Math.max(jump, now - last)
+      last = now
+      walkedIn = Math.max(walkedIn, crowd.bodies.filter((b) => b.kind === Kind.Guest).length)
+      // half-way through: what is taken is the front of the house, with nothing skipped behind the line
+      if (Math.abs(t - (SHOW.doors + 0.5)) < 1 / 30 / 45) {
+        const got = taken()
+        expect(got.length).toBeGreaterThan(20)
+        expect(Math.max(...got)).toBe(got.length - 1)
+      }
+    })
+    // nobody is counted twice, the people who are only ever seen seated arrive one at a time, and plenty walk in
+    for (const key of crowd.seated) expect(crowd.reserved.has(key)).toBe(false)
+    expect(jump).toBeLessThanOrEqual(1)
+    expect(walkedIn).toBeGreaterThan(40)
+    expect(crowd.seated.size + crowd.reserved.size).toBe(Math.round(n * 0.9))
+    // everyone who walked in has found their seat by the time the show starts
+    const guests = crowd.bodies.filter((b) => b.kind === Kind.Guest)
+    expect(guests.filter((b) => b.spot === b.seat).length).toBeGreaterThanOrEqual(guests.length - 2)
+    // afterwards the back rows go first
+    let checked = false
+    run(crowd, SHOW.start - 0.05, SHOW.cleared, (t) => {
+      if (Math.abs(t - (SHOW.end + 0.25)) > 1 / 30 / 45) return
+      const stay = [...crowd.seated].map((key) => place.get(key)!)
+      for (const b of crowd.bodies) if (b.kind === Kind.Guest && b.spot === b.seat) stay.push(place.get(b.seat!.key)!)
+      expect(stay.length).toBeGreaterThan(10)
+      expect(Math.max(...stay)).toBeLessThan(n * 0.9 * 0.75)
+      checked = true
+    })
+    expect(checked).toBe(true)
+    expect(crowd.ghosts).toBe(0)
+  })
+
+  it('takes guests up the aisle steps and along the row in front of the seats, never through them', () => {
+    const s = ownVenue()
+    const site = s.venue!
+    const { crowd, nav } = house(site)
+    for (const seat of crowd.seats) {
+      expect(seat.row).toBe(true)
+      const via = seat.via!
+      expect(via.length % 3).toBe(0)
+      // from the tile they step in from, the way only ever climbs, and it starts on the ground
+      expect(via[1]).toBe(0)
+      for (let k = 4; k < via.length; k += 3) expect(via[k]).toBeGreaterThanOrEqual(via[k - 3])
+      expect(via[via.length - 2]).toBe(seat.y)
+      expect(Math.hypot(via[0] - nav.cx(seat.access), via[2] - nav.cz(seat.access))).toBeLessThan(0.75)
+      // the last stretch runs along the row a step in front of the seats: clear of every seat in it
+      const k = via.length - 3
+      for (const other of crowd.seats) {
+        if (other === seat || other.y !== seat.y || Math.abs(other.z - seat.z) > 0.01) continue
+        expect(Math.abs(via[k + 2] - other.z)).toBeGreaterThan(0.4)
+      }
+    }
+    // a raised row is reached by the steps: more than one point on the way up
+    expect(crowd.seats.filter((seat) => seat.y > 0.6).every((seat) => seat.via!.length >= 9)).toBe(true)
   })
 
   it('has only a small crew about on an ordinary day', () => {

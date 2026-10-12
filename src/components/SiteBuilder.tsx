@@ -2,13 +2,13 @@
 // the space, with a floating palette for zoning rooms, furnishing them and
 // choosing how the building looks, plus whatever stats the screen passes in.
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
-import { type AreaShape, type EdgeRun, type RunInfo, type ShowState, type SiteLife, type SiteTool, SiteView, type Target, seatOwners } from '../3d/SiteView'
+import { type AreaNote, type AreaShape, type EdgeRun, type RunInfo, type ShowState, type SiteLife, type SiteTool, SiteView, type Target, seatOwners } from '../3d/SiteView'
 import { campus, clockText, firstLook, hourOf, moodAt } from '../3d/site/clock'
 import type { Mood } from '../3d/site/env'
 import type { ViewMode } from '../3d/site/structure'
 import { sfx } from '../audio/sfx'
 import { MIN_THICK } from '../sim/curves'
-import { clearZone, lookCost, paintArea, placeItems, player, removeItems, removeRoom, roomCost, rotateItem, setEdges, setLook, setRoomStyle, zoneRoom } from '../sim/game'
+import { clearZone, fillRoom, lookCost, paintArea, placeItems, player, removeItems, removeRoom, roomCost, rotateItem, setEdges, setLook, setRoomStyle, zoneRoom } from '../sim/game'
 import { factoryLife, officeLife, storeLife, venueLife } from '../sim/life'
 import { type CapId, has } from '../sim/progress'
 import { FACADES, GROUNDS, ITEMS, type LineStats, MAX_FLOORS, OUT, ROOFS, ROOMS, builtTiles, gridAt, groundsFor, itemAllowed, needsOf, roomNames, roomOf, roomTiles, sealedRooms, tierOf } from '../sim/sites'
@@ -43,14 +43,18 @@ const VIEWS: { id: ViewMode; label: string; icon: IconName }[] = [
   { id: 'full', label: 'Outside', icon: 'outside' },
 ]
 const TAB_ICONS: Record<Tab, IconName> = { Rooms: 'rooms', Furnish: 'furnish', Walls: 'walls', Grounds: 'grounds', Look: 'look' }
-const SHAPE_ICONS: Record<AreaShape, IconName> = { rect: 'box', round: 'round', ring: 'ring', diag: 'diagonal' }
-const SHAPE_NAMES: Record<AreaShape, string> = { rect: 'Box', round: 'Round', ring: 'Ring', diag: 'Slant' }
+const SHAPE_ICONS: Record<AreaShape, IconName> = { rect: 'box', round: 'round', ring: 'ring', diag: 'diagonal', fill: 'fill' }
+const SHAPE_NAMES: Record<AreaShape, string> = { rect: 'Box', round: 'Round', ring: 'Ring', diag: 'Slant', fill: 'Fill' }
 const SHAPE_NOTES: Record<AreaShape, string> = {
-  rect: 'A plain rectangle',
+  rect: 'A plain rectangle. Drawn across most of a round courtyard, it takes the whole courtyard',
   round: 'A circle or oval with a smooth curved wall, inside the box you mark out',
   ring: 'A curved building round an open courtyard',
   diag: 'A triangle: the square corner sits where you click first',
+  fill: 'One click fills a courtyard: all the open ground walled in with the tile you click, up to every wall and round every curve',
 }
+/** The shapes each tab offers. Only rooms are built by filling a courtyard. */
+const ROOM_SHAPES: AreaShape[] = ['rect', 'round', 'ring', 'diag', 'fill']
+const GROUND_SHAPES: AreaShape[] = ['rect', 'round', 'ring', 'diag']
 /** How much of a full turn a round shape covers. */
 const ARCS: { sweep: number; name: string; icon: IconName; note: string }[] = [
   { sweep: 360, name: 'Full', icon: 'round', note: 'The whole circle' },
@@ -117,11 +121,18 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
   const [selected, setSelected] = useState(0)
   const [pending, setPending] = useState(0)
   const me = player(g)
-  const curvy = shape === 'round' || shape === 'ring'
-  const active: SiteTool = tool?.type === 'item' ? { ...tool, rot } : tool && 'shape' in tool ? { ...tool, shape, opts: curvy ? { thick, sweep, turn: rot } : undefined } : tool
+  /** The shape in hand for the tool in hand: demolishing and laying ground are drawn, never filled, so Fill falls back to a box there. */
+  const drawn: AreaShape = shape === 'fill' && (tool ? tool.type !== 'room' : tab !== 'Rooms') ? 'rect' : shape
+  const curvy = drawn === 'round' || drawn === 'ring'
+  const active: SiteTool = tool?.type === 'item' ? { ...tool, rot } : tool && 'shape' in tool ? { ...tool, shape: drawn, opts: curvy ? { thick, sweep, turn: rot } : undefined } : tool
   const room = selected ? roomOf(site, selected) : undefined
   const sealed = sealedRooms(site)
-  const onPreview = useCallback((n: number) => setPending(n), [])
+  /** What the area tool says about the ground under it: that it would fill a courtyard, or why it cannot. */
+  const [note, setNote] = useState<AreaNote | undefined>(undefined)
+  const onPreview = useCallback((n: number, about?: AreaNote) => {
+    setPending(n)
+    setNote(about)
+  }, [])
   /** What the tool being dragged across the plot would do right now. */
   const [run, setRun] = useState<RunInfo | null>(null)
   const onRun = useCallback((info: RunInfo | null) => setRun(info), [])
@@ -180,12 +191,17 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
   }
   const onArea = (x0: number, y0: number, x1: number, y1: number, apart: boolean) => {
     if (!active) return
-    if (active.type === 'room') {
+    // (demolishing and laying ground never fill: see `drawn`)
+    const box = active.type !== 'item' && 'shape' in active && active.shape !== 'fill' ? active.shape : 'rect'
+    if (active.type === 'room' && active.shape === 'fill') {
+      // one click on a courtyard: the room takes all of it
+      report(act((s) => fillRoom(s, siteRef, active.room, x0, y0, apart)), sfx.zone)
+    } else if (active.type === 'room') {
       // starting inside a room of the same kind extends it; floor laid against one joins it, unless it is asked to stand apart
       const start = roomOf(site, gridAt(site, x0, y0))
-      report(act((s) => zoneRoom(s, siteRef, active.room, x0, y0, x1, y1, active.shape, !apart && start?.type === active.room ? start.n : undefined, active.opts, apart)), sfx.zone)
-    } else if (active.type === 'clear') (act((s) => clearZone(s, siteRef, x0, y0, x1, y1, active.shape, active.opts)), sfx.demolish())
-    else if (active.type === 'ground') (act((s) => paintArea(s, siteRef, x0, y0, x1, y1, active.shape, active.id, active.opts)), sfx.toggle())
+      report(act((s) => zoneRoom(s, siteRef, active.room, x0, y0, x1, y1, box, !apart && start?.type === active.room ? start.n : undefined, active.opts, apart)), sfx.zone)
+    } else if (active.type === 'clear') (act((s) => clearZone(s, siteRef, x0, y0, x1, y1, box, active.opts)), sfx.demolish())
+    else if (active.type === 'ground') (act((s) => paintArea(s, siteRef, x0, y0, x1, y1, box, active.id, active.opts)), sfx.toggle())
   }
 
   const turnKey = keyName(keysFor('rotate')[0] ?? 'KeyR')
@@ -197,15 +213,34 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
   const camHint = `While this tool is in hand a left-drag is the tool's: right-drag or ${keyOf('camForward')}${keyOf('camLeft')}${keyOf('camBack')}${keyOf('camRight')} moves the view, ${keyOf('camTurnLeft')} and ${keyOf('camTurnRight')} (or a middle-drag) turn it, scroll zooms.`
   const blocked = run?.blocked ? ` ${run.blocked} ${run.blocked === 1 ? 'spot is' : 'spots are'} in the way and will be skipped.` : ''
   const edgeDef = tool?.type === 'edge' ? EDGES.find((e) => e.kind === tool.kind) : undefined
+  // what a run of wall passes over, and why: stretches that are no wall, stretches a curve cuts too short for a door, and doors that glazing leaves alone
+  const cutShort = run?.short ?? 0
+  const notWall = (run?.blocked ?? 0) - cutShort
+  const passed =
+    (notWall > 0 ? ` ${notWall} of the line ${notWall === 1 ? 'is' : 'are'} not wall.` : '') +
+    (cutShort ? ` ${cutShort} ${cutShort === 1 ? 'stretch is' : 'stretches are'} cut short by a curved wall and cannot take ${tool?.type === 'edge' && tool.kind === 'open' ? 'an opening' : 'a door'}.` : '') +
+    (run?.kept ? ` ${run.kept === 1 ? 'The door in the run stays' : `The ${run.kept} doors in the run stay`} as ${run.kept === 1 ? 'it is' : 'they are'}.` : '')
+  /** Said with the wall tool in hand, before anything is dragged: what each kind does that is not obvious. */
+  const edgeTip = tool?.type !== 'edge' ? '' : tool.kind === 'glass' ? ' Glazing a run leaves the doors in it standing, so a front can be glazed in one sweep without losing its way in; click a door on its own to glaze over it.' : tool.kind === 'door' || tool.kind === 'open' ? ` ${tool.kind === 'door' ? 'A door' : 'An opening'} needs a full metre of straight wall or a bay of curved wall: a straight stretch that a curve cuts short cannot take one.` : ''
+  const roomTool = tool?.type === 'room' ? rooms[tool.room] : undefined
+  const apartTip = 'Hold Alt as you click to keep it a room of its own.'
   const info =
     tool?.type === 'item'
       ? run
         ? `${defs[tool.kind].name}: ${run.count} for ${money(run.cost, 0)}.${blocked} Let go to place ${run.count === 1 ? 'it' : 'them'}. Esc cancels.`
         : `${defs[tool.kind].name}: ${defs[tool.kind].note} Goes in: ${roomNames(site.kind, defs[tool.kind])}. Facing ${FACING[rot]} (${turnKey} turns it). Click to place one, or press and drag to lay a row. ${camHint}`
-      : tool?.type === 'room'
-        ? pending
-          ? `${rooms[tool.room].name}: ${pending} m² for ${money(roomCost(site, tool.room, pending), 0)}. Click to build. Hold Alt as you click to keep it a room of its own.`
-          : `${rooms[tool.room].name}: ${rooms[tool.room].note} ${areaHint} Floor laid against a room of the same kind joins it into one room; hold Alt on the second click for a separate room.`
+      : tool?.type === 'room' && roomTool
+        ? drawn === 'fill'
+          ? pending
+            ? `${roomTool.name}: fill this courtyard, ${pending} m² for ${money(roomCost(site, tool.room, pending), 0)}. The room takes all the open ground walled in here and shares every wall round it, curved ones included. Click to build. ${apartTip}`
+            : note?.error
+              ? `${roomTool.name}: ${note.error}`
+              : `${roomTool.name}: ${roomTool.note} Click open ground that is walled in all the way round, such as the courtyard of a ring, to fill it with this room in one go. Esc cancels.`
+          : pending
+            ? note?.filled
+              ? `${roomTool.name}: this box covers most of the courtyard, so the room takes all of it and shares the curved wall all round: ${pending} m² for ${money(roomCost(site, tool.room, pending), 0)}. Click to build, or draw a smaller box for a room that stands clear of the curve. ${apartTip}`
+              : `${roomTool.name}: ${pending} m² for ${money(roomCost(site, tool.room, pending), 0)}. Click to build. ${apartTip}`
+            : `${roomTool.name}: ${roomTool.note} ${areaHint} Floor laid against a room of the same kind joins it into one room; hold Alt on the second click for a separate room.`
         : tool?.type === 'clear'
           ? pending
             ? `Demolish ${pending} m² of rooms. Anything inside is sold for half its price.`
@@ -214,8 +249,8 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
             ? `${GROUNDS.find((x) => x.id === tool.id)?.name}: lay it on open land. Free. ${areaHint}`
             : tool?.type === 'edge'
               ? run
-                ? `${edgeDef?.name}: ${run.count} ${run.count === 1 ? 'stretch' : 'stretches'} of wall${run.cost ? ` for ${money(run.cost, 0)}` : ', free'}.${run.blocked ? ` ${run.blocked} of the line ${run.blocked === 1 ? 'is' : 'are'} not wall.` : ''} Let go to build. Esc cancels.`
-                : `${edgeDef?.name}: click a stretch of wall, or press and drag along a wall to do a run of it; on a curved wall the run follows the curve. ${edgeDef?.note} ${camHint}`
+                ? `${edgeDef?.name}: ${run.count} ${run.count === 1 ? 'stretch' : 'stretches'} of wall${run.cost ? ` for ${money(run.cost, 0)}` : ', free'}.${passed} Let go to build. Esc cancels.`
+                : `${edgeDef?.name}: click a stretch of wall, or press and drag along a wall to do a run of it; on a curved wall the run follows the curve. ${edgeDef?.note}${edgeTip} ${camHint}`
               : tool?.type === 'rotate'
                 ? 'Click an item to turn it a quarter turn.'
                 : tool?.type === 'remove'
@@ -334,9 +369,9 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
             }))} onChange={setTab} className="flex-wrap" />
           {(tab === 'Rooms' || tab === 'Grounds') && (
             <div className="border-b border-line px-2 py-[6px]">
-              <div className="grid grid-cols-4 gap-1">
-                {(['rect', 'round', 'ring', 'diag'] as AreaShape[]).map((sh) => (
-                  <Btn key={sh} small className="!h-[34px] !px-0" active={shape === sh} onClick={() => setShape(sh)} title={SHAPE_NOTES[sh]}>
+              <div className={`grid gap-1 ${tab === 'Rooms' ? 'grid-cols-5' : 'grid-cols-4'}`}>
+                {(tab === 'Rooms' ? ROOM_SHAPES : GROUND_SHAPES).map((sh) => (
+                  <Btn key={sh} small className="!h-[34px] !px-0" active={(tab === 'Rooms' ? shape : drawn) === sh} onClick={() => setShape(sh)} title={SHAPE_NOTES[sh]}>
                     <span className="flex flex-col items-center gap-[3px] py-[2px] text-[9px] leading-none">
                       <Icon name={SHAPE_ICONS[sh]} size={14} />
                       {SHAPE_NAMES[sh]}
@@ -549,14 +584,14 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
         {cutOff > 0 && (
           <div
             className="pointer-events-auto flex shrink-0 items-center gap-[6px] border border-warn bg-panel/95 px-2 py-[7px] text-[11px] text-warn"
-            title="A door is blocked by furniture, or only leads to another closed-off room. People who work there appear at their desks instead of walking in. Add or clear a door from the Walls tab."
+            title="Nobody can walk to these rooms from the street: a room has no door, its door is blocked by furniture, or it only leads into another closed-off room. People who work there appear at their desks instead of walking in. Add or clear a door from the Walls tab."
           >
             <Icon name="alert" size={13} />
             <span className="num">{cutOff}</span>
             <span className="uppercase tracking-wider">{cutOff === 1 ? 'room cut off' : 'rooms cut off'}</span>
           </div>
         )}
-        <div className={`pointer-events-auto inline-block min-w-0 max-w-full border bg-panel/95 px-3 py-[7px] text-[11px] ${sealed.length && !tool ? 'border-warn text-warn' : pending || (run && tool) ? 'border-accent text-fg' : 'border-line2 text-dim'}`}>{info}</div>
+        <div className={`pointer-events-auto inline-block min-w-0 max-w-full border bg-panel/95 px-3 py-[7px] text-[11px] ${(sealed.length && !tool) || (tool?.type === 'room' && drawn === 'fill' && note?.error) ? 'border-warn text-warn' : pending || (run && tool) ? 'border-accent text-fg' : 'border-line2 text-dim'}`}>{info}</div>
       </div>
     </div>
   )

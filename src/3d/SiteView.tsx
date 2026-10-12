@@ -6,9 +6,9 @@ import { EffectComposer, N8AO } from '@react-three/postprocessing'
 import { type ReactNode, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { type Pt, bayRun, bayStands, curveTiles, nearestBay } from '../sim/curves'
-import { EDGE_COST, keepsDoors } from '../sim/game'
+import { EDGE_COST, keepsDoors, zonePlan } from '../sim/game'
 import type { FactoryLife, OfficeLife, StoreLife, VenueLife } from '../sim/life'
-import { ITEMS, type LineStats, SITE_TIERS, type ShapeOpts, areaOf, areaTiles, canPlace, curveFor, cutAt, gridAt, inPlot, isBoundary, itemAt, lineTiles, reachable, roomOf, rowSpots, tilesOf, wallAt } from '../sim/sites'
+import { ITEMS, type LineStats, SITE_TIERS, type Shape, type ShapeOpts, areaOf, areaTiles, canPlace, curveFor, cutAt, doorFits, fillError, gridAt, inPlot, isBoundary, itemAt, lineTiles, pocketAt, reachable, roomOf, rowSpots, tilesOf, wallAt } from '../sim/sites'
 import { ROLE_INFO, inTraining, jobTitle } from '../sim/staff'
 import type { Employee, Product, Site, SiteItem, SiteKind } from '../sim/types'
 import { QUALITY, type Quality, isHeld, useSettings } from '../store/settings'
@@ -19,17 +19,19 @@ import { type BoardPlace, type BoardText, CallLights, Face, type Palette, RackLi
 import { advanceClock, campus, hourOf } from './site/clock'
 import { type Body, Crowd, Kind, type StaffEntry, describe, meetingSlot } from './site/crowd'
 import { BayCursor, CurveOutline } from './site/curved'
-import { Environs, INDOOR_SKY, MOODS, type Mood, isIndoor } from './site/env'
+import { Environs, type Mood, isIndoor, moodOf } from './site/env'
 import { FactoryItem } from './site/factory'
+import { FactoryCrowd } from './site/factorycrowd'
 import { FactoryFloor, shippingDocks } from './site/factorylife'
+import { Jacks } from './site/jacks'
 import { Doors, Dropping, Sparks, SparksView, WallFx, type WallPiece, snapshot, wallChanges, wallHeight } from './site/fx'
 import { Baked, type PersonLook, hash } from './site/kit'
-import { DeskScreens, RoomLights } from './site/lights'
-import { buildNav } from './site/nav'
+import { DeskScreens, RoomLights, StageLights } from './site/lights'
+import { buildNav, cutOffRooms } from './site/nav'
 import { OfficeItem } from './site/office'
 import { type Target, itemTarget, placeBeside, rayBox } from './site/pick'
 import { seatOwners } from './site/seats'
-import { buildSpots } from './site/spots'
+import { buildSpots, seatAisles } from './site/spots'
 import { Shoppers, StoreItem } from './site/store'
 import { Batch, CUT_H, Ground, STOREY, Structure, type ViewMode, WALL_T } from './site/structure'
 import { Heartbeat, type Pulse, useTick } from './site/tick'
@@ -40,7 +42,8 @@ import { planYard } from './site/yard'
 export { seatOwners }
 export type { Target }
 
-export type AreaShape = 'rect' | 'round' | 'ring' | 'diag'
+/** How an area tool marks out its ground: the four drawn shapes, and (for rooms) filling the courtyard under the pointer in one click. */
+export type AreaShape = 'rect' | 'round' | 'ring' | 'diag' | 'fill'
 export type SiteTool =
   | { type: 'item'; kind: string; rot: number }
   | { type: 'room'; room: string; shape: AreaShape; opts?: ShapeOpts }
@@ -75,6 +78,18 @@ export interface RunInfo {
   blocked: number
   /** What it would cost, or for a sale what would come back. */
   cost: number
+  /** Wall tool: doors in the run that glazing it would leave standing. */
+  kept?: number
+  /** Wall tool: stretches a curved wall cuts too short for a door or an opening. */
+  short?: number
+}
+
+/** What the area tool would do where the pointer is, beyond how much ground it covers. */
+export interface AreaNote {
+  /** The room would take the whole courtyard: a box that covers most of it, or the fill tool. */
+  filled?: boolean
+  /** Why the fill tool cannot be used here. */
+  error?: string
 }
 
 /** A show in progress at a venue. */
@@ -116,8 +131,8 @@ interface Props {
   onRun?: (info: RunInfo | null) => void
   /** An area tool was marked out from one corner to the other. `apart` is set when the key for a separate room was held. */
   onArea?: (x0: number, y0: number, x1: number, y1: number, apart: boolean) => void
-  /** Tiles the area tool would cover right now (0 when not dragging one out). */
-  onPreview?: (tiles: number) => void
+  /** Tiles the area tool would cover right now (0 when not dragging one out), and anything worth saying about it. */
+  onPreview?: (tiles: number, note?: AreaNote) => void
   /** Office: seated employees, in desk order, and everyone without a desk. */
   seated?: Employee[]
   idle?: Employee[]
@@ -149,6 +164,8 @@ interface Props {
 const CHUNK = 8
 /** People drawn walking about at each quality setting; the rest stay seated. */
 const LIVE_CAP: Record<Quality, number> = { low: 24, medium: 60, high: 90 }
+/** Guests drawn walking to their seats at a venue at each quality setting; the rest of the house is drawn seated. */
+const VENUE_WALKERS: Record<Quality, number> = { low: 40, medium: 110, high: 180 }
 /** Real lamps handed round the lit rooms after dark at each quality setting. */
 const ROOM_LAMPS: Record<Quality, number> = { low: 3, medium: 5, high: 7 }
 /** What a venue's fittings look like while a show (or a run-through) is on, before anyone has a picture for the screen. */
@@ -178,14 +195,15 @@ interface ItemCtx {
   busy?: boolean
   soldOut?: Set<string>
   away?: boolean
+  aisles?: number
 }
 
 /** The model for one placed item of any kind of site. */
 function ItemModel({ kind, item, c }: { kind: SiteKind; item: string; c: ItemCtx }) {
   if (kind === 'office') return <OfficeItem kind={item} c={{ who: c.who, glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, devices: c.devices, on: c.on, live: c.live, progress: c.progress, busy: c.busy }} />
-  if (kind === 'factory') return <FactoryItem kind={item} c={{ running: !!c.running, flow: c.flow, glow: c.glow, seed: c.seed, fill: c.fill, away: c.away }} />
+  if (kind === 'factory') return <FactoryItem kind={item} c={{ running: !!c.running, flow: c.flow, glow: c.glow, seed: c.seed, fill: c.fill, away: c.away, live: c.live }} />
   if (kind === 'store') return <StoreItem kind={item} c={{ products: c.products, glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, soldOut: c.soldOut }} />
-  return <VenueItem kind={item} c={{ glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, crowd: c.show?.crowd ?? 0, cheer: c.show?.cheer ?? false, show: !!c.show, screen: c.show?.screen, products: c.products }} />
+  return <VenueItem kind={item} c={{ glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, crowd: c.show?.crowd ?? 0, cheer: c.show?.cheer ?? false, show: !!c.show, screen: c.show?.screen, products: c.products, aisles: c.aisles }} />
 }
 
 /** One block of furniture, merged into a few meshes. Only looked at again when its signature changes. */
@@ -304,14 +322,19 @@ function DevHandle({ pulse, crowd }: { pulse: React.RefObject<Pulse | null>; cro
   return null
 }
 
-/** A flat tint over a set of tiles, drawn as one mesh. `shapes` are odd-shaped pieces of floor, in metres from the plot's corner. */
-function Tint({ tiles, shapes, w, h, color, opacity, y = 0.02 }: { tiles: [number, number][]; shapes?: Pt[][]; w: number; h: number; color: string; opacity: number; y?: number }) {
+/**
+ * A flat tint over a set of tiles, drawn as one mesh. `shapes` are odd-shaped
+ * pieces of floor, in metres from the plot's corner. Each tile is drawn a
+ * little short of its edges so the tiles can be counted; with `inset` at 0
+ * they meet, and the tint is one unbroken sheet with the shapes beside it.
+ */
+function Tint({ tiles, shapes, w, h, color, opacity, y = 0.02, inset = 0.04 }: { tiles: [number, number][]; shapes?: Pt[][]; w: number; h: number; color: string; opacity: number; y?: number; inset?: number }) {
   const geo = useMemo(() => {
     const b = new Batch()
-    for (const [x, z] of tiles) b.quad('t', x - w / 2 + 0.04, z - h / 2 + 0.04, x - w / 2 + 0.96, z - h / 2 + 0.96, y, '#ffffff')
+    for (const [x, z] of tiles) b.quad('t', x - w / 2 + inset, z - h / 2 + inset, x - w / 2 + 1 - inset, z - h / 2 + 1 - inset, y, '#ffffff')
     for (const p of shapes ?? []) b.poly('t', p.map(([x, z]): Pt => [x - w / 2, z - h / 2]), y, '#ffffff')
     return b.build(() => ({ material: new THREE.MeshBasicMaterial() }))[0]?.geometry ?? null
-  }, [tiles, shapes, w, h, y])
+  }, [tiles, shapes, w, h, y, inset])
   useEffect(() => () => geo?.dispose(), [geo])
   if (!geo) return null
   return (
@@ -355,25 +378,129 @@ function floorOf(site: Site, rooms: Set<number>): { tiles: [number, number][]; s
   return { tiles, shapes }
 }
 
-/** Shows whatever is inside in one flat, see-through colour: an item that cannot go where it is being held. */
-function Tinted({ color, children }: { color: string; children: ReactNode }) {
-  const ref = useRef<THREE.Group>(null)
-  const material = useMemo(() => new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.45, roughness: 0.8, transparent: true, opacity: 0.62, depthWrite: false }), [color])
-  useEffect(() => () => material.dispose(), [material])
-  useLayoutEffect(() => {
-    ref.current?.traverse((o) => {
-      const mesh = o as THREE.Mesh
-      if (mesh.isMesh) {
-        mesh.material = material
-        mesh.castShadow = false
-      }
-    })
-  })
-  return <group ref={ref}>{children}</group>
+/**
+ * Most models shown for a row being dragged out. A row is one straight line
+ * of tiles, so this is more than the widest plot can hold: every spot of a
+ * run is previewed.
+ */
+const GHOSTS = 256
+const ghostAt = new THREE.Matrix4()
+const ghostTurn = new THREE.Matrix4()
+const ghostInv = new THREE.Matrix4()
+const ghostPart = new THREE.Matrix4()
+const ghostEach = new THREE.Matrix4()
+
+interface GhostPart {
+  mesh: THREE.InstancedMesh
+  /** Where the part sits in the model. */
+  rel: THREE.Matrix4
+  /** The pattern's own instanced mesh, when the part is one: each of its instances is drawn at every spot. */
+  from: THREE.InstancedMesh | null
+  each: number
 }
 
-/** Most models shown at once for a row being dragged out; a longer row shows the rest as tinted tiles. */
-const GHOSTS = 36
+/**
+ * The item in hand, shown at every spot it would go: one under the pointer,
+ * or a whole row being dragged out. The model is built once, out of sight, as
+ * a pattern; each of its meshes is then drawn for all the spots together as
+ * one instanced mesh, so a row of sixty costs the same few draw calls as a
+ * single item. Spots where it cannot go are drawn in one flat, see-through
+ * warning colour.
+ */
+function RowGhosts({ spots, rot, ox, oz, warn, children }: { spots: { x: number; y: number; ok: boolean }[]; rot: number; ox: number; oz: number; warn: string; children: ReactNode }) {
+  const pattern = useRef<THREE.Group>(null)
+  const holder = useRef<THREE.Group>(null)
+  const built = useRef<{ sig: string; room: number; good: GhostPart[]; bad: GhostPart[] }>({ sig: '', room: 0, good: [], bad: [] })
+  const tint = useMemo(() => new THREE.MeshStandardMaterial({ color: warn, emissive: warn, emissiveIntensity: 0.45, roughness: 0.8, transparent: true, opacity: 0.62, depthWrite: false }), [warn])
+  useEffect(() => () => tint.dispose(), [tint])
+  const clear = () => {
+    const b = built.current
+    for (const part of [...b.good, ...b.bad]) {
+      holder.current?.remove(part.mesh)
+      // the geometry and the materials belong to the pattern (or are shared): only the instances are this mesh's own
+      part.mesh.dispose()
+    }
+    built.current = { sig: '', room: 0, good: [], bad: [] }
+  }
+  useEffect(() => clear, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    const root = pattern.current
+    const out = holder.current
+    if (!root || !out) return
+    // ---- the meshes of the pattern that would be seen, and where each sits in the model
+    root.updateWorldMatrix(true, true)
+    ghostInv.copy(root.matrixWorld).invert()
+    const sources: THREE.Mesh[] = []
+    const walk = (o: THREE.Object3D) => {
+      for (const child of o.children) {
+        if (!child.visible) continue
+        const mesh = child as THREE.Mesh
+        if (mesh.isMesh && mesh.geometry?.attributes.position) sources.push(mesh)
+        walk(child)
+      }
+    }
+    walk(root)
+    const matOf = (m: THREE.Mesh) => (Array.isArray(m.material) ? m.material.map((x) => x.uuid).join('+') : m.material.uuid)
+    const sig = sources.map((m) => `${m.geometry.uuid}:${matOf(m)}:${(m as THREE.InstancedMesh).count ?? 1}:${m.matrixWorld.elements.map((v) => Math.round(v * 1000)).join(',')}`).join('|') + `#${tint.uuid}`
+    const need = Math.max(1, spots.length)
+    let b = built.current
+    if (b.sig !== sig || b.room < need) {
+      clear()
+      // room for the row to grow without building everything again at each tile
+      const room = Math.min(GHOSTS, Math.max(8, 2 ** Math.ceil(Math.log2(need))))
+      const make = (src: THREE.Mesh, material: THREE.Material | THREE.Material[]): GhostPart => {
+        const from = (src as THREE.InstancedMesh).isInstancedMesh ? (src as THREE.InstancedMesh) : null
+        const each = from ? from.count : 1
+        const mesh = new THREE.InstancedMesh(src.geometry, material, room * each)
+        mesh.count = 0
+        mesh.frustumCulled = false
+        mesh.castShadow = false
+        mesh.receiveShadow = false
+        mesh.userData.live = true
+        mesh.raycast = () => {}
+        out.add(mesh)
+        return { mesh, rel: new THREE.Matrix4().multiplyMatrices(ghostInv, src.matrixWorld), from, each }
+      }
+      b = built.current = { sig, room, good: sources.map((m) => make(m, m.material)), bad: sources.map((m) => make(m, tint)) }
+      for (const part of b.bad) part.mesh.renderOrder = 4
+    }
+    // ---- one instance of every part at every spot
+    ghostTurn.makeRotationY((-rot * Math.PI) / 2)
+    const fill = (parts: GhostPart[], ok: boolean) => {
+      let n = 0
+      for (const spot of spots) {
+        if (spot.ok !== ok || n >= b.room) continue
+        ghostAt.makeTranslation(spot.x + ox, 0.03, spot.y + oz).multiply(ghostTurn)
+        for (const part of parts) {
+          if (!part.from) part.mesh.setMatrixAt(n, ghostPart.multiplyMatrices(ghostAt, part.rel))
+          else {
+            ghostPart.multiplyMatrices(ghostAt, part.rel)
+            for (let k = 0; k < part.each; k++) {
+              part.from.getMatrixAt(k, ghostEach)
+              part.mesh.setMatrixAt(n * part.each + k, ghostEach.premultiply(ghostPart))
+            }
+          }
+        }
+        n++
+      }
+      for (const part of parts) {
+        part.mesh.count = n * part.each
+        part.mesh.visible = n > 0
+        part.mesh.instanceMatrix.needsUpdate = true
+      }
+    }
+    fill(b.good, true)
+    fill(b.bad, false)
+  })
+  return (
+    <>
+      <group ref={pattern} visible={false}>
+        {children}
+      </group>
+      <group ref={holder} />
+    </>
+  )
+}
 /** Most items in one go that still drop in (or puff away) one by one. */
 const WAVE_MAX = 48
 
@@ -477,7 +604,7 @@ function Pointer({ enabled, targets, crowd, titles, hover, onHover, onPick, cons
       const staff = b.kind === Kind.Staff || b.kind === Kind.Applicant
       const hint = !staff ? describe(b) : b.kind === Kind.Applicant ? (b.hired ? describe(b) : `Applicant, ${ROLE_INFO[b.role!].name.toLowerCase()}`) : `${titles.get(String(b.id)) ?? ROLE_INFO[b.role!].name}. ${describe(b)}`
       if (hover.current?.target.key !== key || hover.current.target.hint !== hint) {
-        onHover({ target: { key, kind: !staff ? 'venue' : b.kind === Kind.Applicant ? 'applicants' : 'person', id: staff ? b.id : 'people', label: b.name, hint, box: [0, 0, 0, 0, 0, 0], anchor: [b.x, b.y + b.hip + 1.0, b.z] }, body: b })
+        onHover({ target: { key, kind: !staff ? (b.kind === Kind.Hand ? 'orders' : b.kind === Kind.Front && !(crowd instanceof VenueCrowd) ? 'applicants' : 'venue') : b.kind === Kind.Applicant ? 'applicants' : 'person', id: staff ? b.id : 'people', label: b.name, hint, box: [0, 0, 0, 0, 0, 0], anchor: [b.x, b.y + b.hip + 1.0, b.z] }, body: b })
       }
       return
     }
@@ -585,9 +712,13 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
   const Q = QUALITY[prefs.quality]
   const { w, h } = site
   const tier = SITE_TIERS[site.kind][site.tier]
-  const M = MOODS[mood]
-  // inside a mall there is no sky: what shows past the walls is the dim upper part of the building
-  const sky = isIndoor(tier.env) ? INDOOR_SKY[mood] : M.sky
+  // inside a mall there is no sky and no night: what shows past the walls is the dim upper part of the building,
+  // and the hall keeps its own lamps on, so the hour only warms and lowers the light a little
+  const indoor = isIndoor(tier.env)
+  const M = moodOf(tier.env, mood)
+  const sky = M.sky
+  /** Dark out: the moon for a sun, a cold sky, and the picture lifted a little to make up for it. */
+  const dark = mood === 'night' && !indoor
   const span = Math.max(w, h)
   const [hover, setHover] = useState<{ x: number; y: number; edge: Edge } | null>(null)
   const [anchor, setAnchor] = useState<[number, number] | null>(null)
@@ -599,7 +730,9 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
   const neg = themeColor('neg', '#ff4d4f')
   const palette = useMemo<Palette>(() => ({ accent, neg, pos: themeColor('pos', '#5fd08a'), warn: themeColor('warn', '#f2b631') }), [accent, neg])
   const areaTool = tool?.type === 'room' || tool?.type === 'clear' || tool?.type === 'ground'
-  const shape: AreaShape = tool && 'shape' in tool ? tool.shape : 'rect'
+  /** Filling a courtyard is one click on it, and only rooms are built that way: any other area tool draws a box instead. */
+  const filling = tool?.type === 'room' && tool.shape === 'fill'
+  const shape: Shape = tool && 'shape' in tool && tool.shape !== 'fill' ? tool.shape : 'rect'
   /** The site shows what the company is doing: clocks run, screens are live, things can be clicked. */
   const lively = !!life && !autoRotate
   const office = site.kind === 'office' ? life?.office : undefined
@@ -632,8 +765,8 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
   const owners = useMemo(() => seatOwners(site, seated), [site, site.rev, seatedKey]) // eslint-disable-line react-hooks/exhaustive-deps
   // what each person is called: an executive goes by the seat they hold, not their desk job
   const titles = useMemo(() => new Map([...seated, ...idle].map((e) => [String(e.id), jobTitle(e)])), [seatedKey, idle.length]) // eslint-disable-line react-hooks/exhaustive-deps
-  const crowdOn = lively && prefs.walkers && site.kind !== 'factory'
-  const crowd = useMemo(() => (crowdOn ? (site.kind === 'venue' ? new VenueCrowd() : new Crowd()) : null), [crowdOn, site.kind])
+  const crowdOn = lively && prefs.walkers && (site.kind !== 'factory' || !!life?.factory)
+  const crowd = useMemo(() => (crowdOn ? (site.kind === 'venue' ? new VenueCrowd() : site.kind === 'factory' ? new FactoryCrowd() : new Crowd()) : null), [crowdOn, site.kind])
   /** Whether the site is in its working day, and where a venue is in its programme: told by the clock when either turns over. */
   const [turn, setTurn] = useState<{ working: boolean; phase: Phase }>({ working: true, phase: 'closed' })
   const onTurn = useCallback((working: boolean, phase: Phase) => setTurn({ working, phase }), [])
@@ -641,17 +774,9 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
   const nav = useMemo(() => buildNav(site), [site, site.rev]) // eslint-disable-line react-hooks/exhaustive-deps
   const spots = useMemo(() => (crowdOn ? buildSpots(site, nav) : []), [site, nav, crowdOn])
   const cutOff = useMemo(() => {
-    if (!crowdOn || nav.entry < 0) return 0
-    // a room counts as reachable if any of its floor can be walked to from the way in
-    const ok = new Set<number>()
-    const any = new Set<number>()
-    for (let i = 0; i < site.grid.length; i++) {
-      const room = site.grid[i]
-      if (!room) continue
-      any.add(room)
-      if (nav.reach[i]) ok.add(room)
-    }
-    return any.size - ok.size
+    if (!crowdOn) return 0
+    // a room counts as reachable if any of its floor can be walked to from the way in; with no way in at all, none is
+    return cutOffRooms(site, nav).length
   }, [site, nav, crowdOn])
   useEffect(() => onCutOff?.(cutOff), [cutOff, onCutOff])
   const cap = LIVE_CAP[prefs.quality]
@@ -687,11 +812,17 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
     crowd.setShop(open ? Math.min(cap, Math.round(busy * Math.min(16, spotsFor * 0.6))) : 0, open && shopFloor ? Math.min(5, Math.ceil(shopFloor.perDay / 30)) : 0)
   })
 
+  // a factory's shift follows the line: how much of it there is, and whether it has orders to work through
+  const shift = life?.factory
+  useLayoutEffect(() => {
+    if (crowd instanceof FactoryCrowd) crowd.setLine(shift?.line?.linked, !!shift?.producing, cap)
+  })
+
   const atDesks = !lively || turn.working
   const venue = site.kind === 'venue' ? life?.venue : undefined
   useLayoutEffect(() => {
     if (!(crowd instanceof VenueCrowd)) return
-    crowd.walkers = Math.min(cap, 44)
+    crowd.walkers = VENUE_WALKERS[prefs.quality]
     // a show handed in from outside (the rehearse switch) is on now, whatever the clock says
     crowd.setProgramme({ booked: !!venue?.booked, live: !!show, draw: show ? show.crowd : (venue?.draw ?? 0.8) })
   })
@@ -711,7 +842,7 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
     }
     return hs
   }
-  const skipSeat = (key: string) => crowd instanceof VenueCrowd && crowd.reserved.has(key)
+  const filledSeat = (key: string) => crowd instanceof VenueCrowd && crowd.seated.has(key)
 
   // ---- factory: how the lorries come and go
   const linkedKey = life?.factory?.line ? [...life.factory.line.linked].join(',') : ''
@@ -874,7 +1005,7 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
     return {
       who: item.id ? occupant.get(item.id) : undefined,
       on: !!item.id && liveSeats.has(item.id),
-      live: liveKinds && (item.kind === 'server' || item.kind === 'helpdesk' || item.kind === 'screen' || item.kind === 'showcase'),
+      live: site.kind === 'factory' ? crowdOn : liveKinds && (item.kind === 'server' || item.kind === 'helpdesk' || item.kind === 'screen' || item.kind === 'showcase'),
       glow,
       company,
       logo,
@@ -890,6 +1021,7 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
       show: staged,
       fill: Math.round(busy * 5) / 5,
       away: !!item.id && yard.managed.has(item.id),
+      aisles: site.kind === 'venue' && 'x' in item ? seatAisles(site, item as SiteItem) : 0,
     }
   }
   const sigOf = (items: { item: SiteItem }[], glow: number) =>
@@ -897,9 +1029,9 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
       .map(({ item }) => {
         const who = occupant.get(item.id)
         const on = shown.get(item.id)
-        return `${item.id}:${item.x},${item.y},${item.rot}:${who ? who.look + who.color : liveSeats.has(item.id) ? 'L' : ''}:${line?.linked.has(item.id) ? 1 : 0}${line?.flow.get(item.id)?.join('') ?? ''}${on ? on.devices.map((p) => p.id).join('') + (on.progress ?? '') : ''}${yard.managed.has(item.id) ? 'A' : ''}`
+        return `${item.id}:${item.x},${item.y},${item.rot}:${who ? who.look + who.color : liveSeats.has(item.id) ? 'L' : ''}:${line?.linked.has(item.id) ? 1 : 0}${line?.flow.get(item.id)?.join('') ?? ''}${on ? on.devices.map((p) => p.id).join('') + (on.progress ?? '') : ''}${yard.managed.has(item.id) ? 'A' : ''}${site.kind === 'venue' ? seatAisles(site, item) || '' : ''}`
       })
-      .join('|') + `#${Math.round(glow * 10)}${running ? 'r' : ''}${site.kind === 'factory' ? Math.round(busy * 5) : ''}${company}${logo?.length ?? 0}${color}${productKey}${soldKey}${liveKinds ? 'v' : ''}${researching ? 'R' : ''}${showcaseList[0]?.id ?? ''}${staged ? `s${staged.screen?.uuid ?? ''}` : ''}`
+      .join('|') + `#${Math.round(glow * 10)}${running ? 'r' : ''}${site.kind === 'factory' ? `${Math.round(busy * 5)}${crowdOn ? 'w' : ''}` : ''}${company}${logo?.length ?? 0}${color}${productKey}${soldKey}${liveKinds ? 'v' : ''}${researching ? 'R' : ''}${showcaseList[0]?.id ?? ''}${staged ? `s${staged.screen?.uuid ?? ''}` : ''}`
 
   const place = (item: SiteItem): [number, number, number] => {
     const def = ITEMS[site.kind][item.kind]
@@ -974,7 +1106,22 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
   const preview = useMemo(() => {
     if (!hover || !tool) return null
     if (areaTool) {
+      /** A whole courtyard, shown in its true shape: its open tiles and the corners its curved walls leave over. */
+      const yard = (tiles: [number, number][], live = curveTiles(site)) => {
+        const pocket = tiles.length ? pocketAt(site, tiles[0][0], tiles[0][1], live) : null
+        return { good: tiles, bad: [] as [number, number][], curve: null, area: tiles.length, shapes: (pocket?.curved ?? []).flatMap((key) => live.get(key)?.shape.outside ?? []), note: { filled: true } as AreaNote }
+      }
+      if (filling) {
+        const live = curveTiles(site)
+        const pocket = pocketAt(site, hover.x, hover.y, live)
+        const error = fillError(pocket)
+        if (error || !pocket) return { good: [], bad: [[hover.x, hover.y]] as [number, number][], curve: null, area: 0, note: { error: error ?? '' } as AreaNote }
+        return yard(pocket.tiles, live)
+      }
       const from = anchor ?? [hover.x, hover.y]
+      // a box that covers most of a curved courtyard takes the whole of it
+      const plan = tool.type === 'room' && anchor && shape === 'rect' ? zonePlan(site, from[0], from[1], hover.x, hover.y, shape, opts) : null
+      if (plan?.filled) return yard(plan.tiles)
       // a room with a curved wall takes every tile the curve touches
       const all = areaTiles(from[0], from[1], hover.x, hover.y, shape, opts, tool.type === 'room').filter(([x, y]) => inPlot(site, x, y))
       const good = all.filter(([x, y]) => (tool.type === 'clear' ? !!gridAt(site, x, y) : !gridAt(site, x, y) && !(tool.type === 'room' && itemAt(site, x, y))))
@@ -1010,18 +1157,27 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
       // each stretch: a wall that would change, one that is already so, or no wall at all
       const spare = keepsDoors(tool.kind, (run.edges?.length ?? 0) + (run.bays?.length ?? 0))
       const kept = (now: string) => now === tool.kind || (spare && now === 'door')
-      const edges = (run.edges ?? []).map((e) => ({ ...e, ok: isBoundary(site, e.x, e.y, e.side), same: kept(wallAt(site, e.x, e.y, e.side)?.kind ?? 'wall') }))
-      const bays = (run.bays ?? []).map((bay) => ({ bay, ok: bayStands(site, run.curve!, bay), same: kept(c?.walls?.[bay] ?? 'wall') }))
+      // a door or an opening needs its whole metre: a stretch a curved wall cuts short cannot take one
+      const way = tool.kind === 'door' || tool.kind === 'open'
+      const live = way && site.curves?.length ? curveTiles(site) : undefined
+      const edges = (run.edges ?? []).map((e) => {
+        const wall = isBoundary(site, e.x, e.y, e.side)
+        const short = wall && !!live && !doorFits(site, e.x, e.y, e.side, live)
+        const now = wallAt(site, e.x, e.y, e.side)?.kind ?? 'wall'
+        return { ...e, ok: wall && !short, short, same: kept(now), door: now === 'door' }
+      })
+      const bays = (run.bays ?? []).map((bay) => ({ bay, ok: bayStands(site, run.curve!, bay), same: kept(c?.walls?.[bay] ?? 'wall'), door: c?.walls?.[bay] === 'door' }))
       const count = edges.filter((e) => e.ok && !e.same).length + bays.filter((b) => b.ok && !b.same).length
-      return { good: [], bad: [], wall: { run, edges, bays }, run: { tool: 'edge' as const, count, blocked: edges.filter((e) => !e.ok).length + bays.filter((b) => !b.ok).length, cost: count * EDGE_COST[tool.kind] } }
+      const left = spare ? edges.filter((e) => e.ok && e.door).length + bays.filter((b) => b.ok && b.door).length : 0
+      return { good: [], bad: [], wall: { run, edges, bays }, run: { tool: 'edge' as const, count, blocked: edges.filter((e) => !e.ok).length + bays.filter((b) => !b.ok).length, cost: count * EDGE_COST[tool.kind], kept: left, short: edges.filter((e) => e.short).length } }
     }
     return null
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hover?.x, hover?.y, hover?.edge.x, hover?.edge.y, hover?.edge.side, hover?.edge.bay, hover?.edge.curve, anchor, drag, tool, site, site.rev, areaTool, shape, optsKey])
+  }, [hover?.x, hover?.y, hover?.edge.x, hover?.edge.y, hover?.edge.side, hover?.edge.bay, hover?.edge.curve, anchor, drag, tool, site, site.rev, areaTool, shape, filling, optsKey])
 
   // ---- a tool being dragged: say what it would do, and do it when the button comes up
   const runInfo = drag && preview && 'run' in preview && preview.run ? preview.run : null
-  const runKey = runInfo ? `${runInfo.tool}|${runInfo.count}|${runInfo.blocked}|${runInfo.cost}` : ''
+  const runKey = runInfo ? `${runInfo.tool}|${runInfo.count}|${runInfo.blocked}|${runInfo.cost}|${runInfo.kept ?? 0}|${runInfo.short ?? 0}` : ''
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => onRun?.(runInfo), [runKey, onRun])
   const finish = useRef<() => void>(() => {})
@@ -1049,8 +1205,11 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
     }
   }, [dragging])
 
-  const previewCount = areaTool && anchor && preview ? ('area' in preview && preview.area !== undefined ? preview.area : preview.good.length) : 0
-  useEffect(() => onPreview?.(previewCount), [previewCount, onPreview])
+  const previewCount = areaTool && (anchor || filling) && preview ? ('area' in preview && preview.area !== undefined ? preview.area : preview.good.length) : 0
+  const areaNote = areaTool && preview && 'note' in preview ? preview.note : undefined
+  const noteKey = areaNote ? `${areaNote.filled ? 1 : 0}|${areaNote.error ?? ''}` : ''
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => onPreview?.(previewCount, areaNote), [previewCount, noteKey, onPreview])
 
   // the tint over a picked room, and over rooms with no way in, follows slanted and curved walls
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1066,17 +1225,11 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
     const turned = tool.rot % 2 === 1
     const fw = turned ? def.h : def.w
     const fh = turned ? def.w : def.h
-    ghost = preview.spots.slice(0, GHOSTS).map((s) => (
-      <group key={`${s.x},${s.y},${s.ok ? 1 : 0},${tool.kind},${tool.rot}`} position={[s.x - w / 2 + fw / 2, 0.03, s.y - h / 2 + fh / 2]} rotation-y={(-tool.rot * Math.PI) / 2}>
-        {s.ok ? (
-          <ItemModel kind={site.kind} item={tool.kind} c={ctxFor({ kind: tool.kind }, 7)} />
-        ) : (
-          <Tinted color={neg}>
-            <ItemModel kind={site.kind} item={tool.kind} c={ctxFor({ kind: tool.kind }, 7)} />
-          </Tinted>
-        )}
-      </group>
-    ))
+    ghost = (
+      <RowGhosts key={tool.kind} spots={preview.spots} rot={tool.rot} ox={-w / 2 + fw / 2} oz={-h / 2 + fh / 2} warn={neg}>
+        <ItemModel kind={site.kind} item={tool.kind} c={ctxFor({ kind: tool.kind }, 7)} />
+      </RowGhosts>
+    )
   }
 
   // every stretch of wall the wall tool would change: straight edges as boxes, curved bays in their own shape
@@ -1312,10 +1465,10 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
   const touches = useMemo(() => ({ ONE: dragTool ? (-1 as THREE.TOUCH) : THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN }), [dragTool])
   const shadowSig = `${site.rev}|${standing.rev}|${dropping.size}|${mood}|${mode}|${seated.length}|${liveSeats.size}|${day > 0 ? Math.floor(day / 30) : 0}|${show ? show.crowd.toFixed(1) + show.cheer : ''}|${glowKey}`
   return (
-    <Canvas shadows={Q.shadows > 0} dpr={[1, Q.dpr]} camera={{ fov: 30, near, far, position: home }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: mood === 'night' ? 1.25 : 1, powerPreference: 'high-performance' }}>
+    <Canvas shadows={Q.shadows > 0} dpr={[1, Q.dpr]} camera={{ fov: 30, near, far, position: home }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: dark ? 1.25 : 1, powerPreference: 'high-performance' }}>
       <color attach="background" args={[sky]} />
       <fog attach="fog" args={[sky, span * 3 + 80, far * 0.9]} />
-      <hemisphereLight args={[mood === 'night' ? '#6a7fa8' : '#fff4e6', mood === 'night' ? '#14161c' : '#4a4338', M.hemi + (mood === 'night' ? 0.35 : 0)]} />
+      <hemisphereLight args={[dark ? '#6a7fa8' : '#fff4e6', dark ? '#14161c' : '#4a4338', M.hemi + (dark ? 0.35 : 0)]} />
       <directionalLight
         color={M.sunColor}
         intensity={M.sun}
@@ -1331,16 +1484,16 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
         shadow-camera-near={1}
         shadow-camera-far={span * 5 + 60}
       />
-      {/* a venue is lit from the stage outward */}
-      {mood !== 'day' && site.kind === 'venue' && <pointLight position={venueStage ? [venueStage.x - w / 2 + 3, 9, venueStage.y - h / 2 + 7] : [0, 9, 0]} color="#ffe2bd" intensity={(mood === 'night' ? 9 : 4) * span} distance={span * 2} decay={1.2} />}
-      <Environment resolution={128} frames={1} environmentIntensity={mood === 'night' ? 0.12 : 0.4}>
+      {/* a venue has a wash on its stage and house lights over the seats, which go down for a show */}
+      {site.kind === 'venue' && <StageLights site={site} mood={mood} show={!!staged} />}
+      <Environment resolution={128} frames={1} environmentIntensity={dark ? 0.12 : 0.4}>
         <color attach="background" args={[sky]} />
         <Lightformer form="rect" intensity={3} color="#fff1e0" position={[0, 8, 0]} rotation-x={Math.PI / 2} scale={[14, 14, 1]} />
         <Lightformer form="rect" intensity={1.4} color="#cfe0ff" position={[-8, 2, 0]} scale={[4, 6, 1]} target={[0, 0, 0]} />
       </Environment>
 
       <Environs env={tier.env} w={w} h={h} mood={mood} />
-      <Ground site={site} dim={mood === 'night' ? 0.6 : mood === 'dusk' ? 0.85 : 1} />
+      <Ground site={site} dim={indoor ? M.ground : mood === 'night' ? 0.6 : mood === 'dusk' ? 0.85 : 1} />
       <Structure site={standing} mode={mode} glow={mood === 'day' ? 0 : M.glow * 0.6} leaves={false} dark={mode === 'cut' ? undefined : darkRooms} />
 
       {/* invisible pick surface over the whole plot */}
@@ -1368,7 +1521,10 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
           // something standing on the floor was clicked, not the floor itself
           if (performance.now() - consumed.current < 250) return
           const t = locate(e)
-          if (areaTool) {
+          if (filling) {
+            // one click fills the courtyard under the pointer
+            onArea?.(t.x, t.y, t.x, t.y, e.altKey)
+          } else if (areaTool) {
             if (!anchor) setAnchor([t.x, t.y])
             else {
               onArea?.(anchor[0], anchor[1], t.x, t.y, e.altKey)
@@ -1395,11 +1551,12 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
         }}
       >
         {lively && <Day crowd={crowd} speed={speed} onTurn={onTurn} />}
-        {crowd && <People crowd={crowd} cap={site.kind === 'store' ? cap : cap + 8} neg={neg} />}
+        {crowd && <People crowd={crowd} cap={site.kind === 'store' ? cap : site.kind === 'venue' ? VENUE_WALKERS[prefs.quality] + 10 : cap + 8} neg={neg} />}
+        {crowd instanceof FactoryCrowd && <Jacks crowd={crowd} />}
         {crowd && site.kind === 'office' && <DeskScreens site={site} items={liveDesks} crowd={crowd} glow={M.glow} />}
         {/* after dark the rooms are lit from within, the ones with people in them brightest */}
-        <RoomLights site={site} crowd={crowd} mood={mood} lamps={site.kind === 'venue' ? 0 : ROOM_LAMPS[prefs.quality]} gain={site.kind === 'venue' ? 0.15 : 1} busy={lively && site.kind === 'factory' ? () => running : undefined} onDark={mode === 'cut' ? undefined : setDarkRooms} />
-        {site.kind === 'venue' && <Audience site={site} state={houseState} skip={crowd ? skipSeat : undefined} />}
+        <RoomLights site={site} crowd={crowd} mood={indoor && mood === 'night' ? 'dusk' : mood} lamps={site.kind === 'venue' ? 0 : ROOM_LAMPS[prefs.quality]} gain={site.kind === 'venue' ? (staged ? 0.05 : 0.15) : indoor ? 0.5 : 1} busy={lively && site.kind === 'factory' && !crowd ? () => running : undefined} onDark={mode === 'cut' ? undefined : setDarkRooms} />
+        {site.kind === 'venue' && <Audience site={site} state={houseState} filled={crowd ? filledSeat : undefined} />}
         {stage && !crowd && <Presenter site={site} cheer={!!show?.cheer} />}
         <SparksView sparks={sparks} />
         {site.items.map((item, index) =>
@@ -1466,9 +1623,9 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
 
       {site.kind === 'store' && !crowdOn && <Shoppers spots={shopperSpots} count={Math.round(busy * shopperSpots.length)} />}
 
-      {roomFloor.tiles.length + roomFloor.shapes.length > 0 && <Tint tiles={roomFloor.tiles} shapes={roomFloor.shapes} w={w} h={h} color={accent} opacity={0.16} y={0.014} />}
-      {sealedFloor.tiles.length + sealedFloor.shapes.length > 0 && <Tint tiles={sealedFloor.tiles} shapes={sealedFloor.shapes} w={w} h={h} color={neg} opacity={0.22} y={0.016} />}
-      {preview && preview.good.length > 0 && <Tint tiles={preview.good} w={w} h={h} color={accent} opacity={ghost ? 0.22 : 0.45} />}
+      {roomFloor.tiles.length + roomFloor.shapes.length > 0 && <Tint tiles={roomFloor.tiles} shapes={roomFloor.shapes} w={w} h={h} color={accent} opacity={0.16} y={0.014} inset={0} />}
+      {sealedFloor.tiles.length + sealedFloor.shapes.length > 0 && <Tint tiles={sealedFloor.tiles} shapes={sealedFloor.shapes} w={w} h={h} color={neg} opacity={0.22} y={0.016} inset={0} />}
+      {preview && preview.good.length > 0 && <Tint tiles={preview.good} shapes={'shapes' in preview ? preview.shapes : undefined} w={w} h={h} color={accent} opacity={ghost ? 0.22 : 0.45} inset={'shapes' in preview && preview.shapes ? 0 : undefined} />}
       {preview && preview.bad.length > 0 && <Tint tiles={preview.bad} w={w} h={h} color={neg} opacity={0.5} />}
       {preview && 'curve' in preview && preview.curve && <CurveOutline spec={preview.curve} w={w} h={h} color={accent} />}
       {ghost}

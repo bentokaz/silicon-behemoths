@@ -62,9 +62,43 @@ const ICON_TONES: Record<Tone, string> = {
   ghost: 'text-dim group-hover/btn:text-fg',
 }
 
-type BtnProps = ButtonHTMLAttributes<HTMLButtonElement> & { tone?: Tone; active?: boolean; small?: boolean; icon?: IconName }
-/** A button. With `icon`, the icon sits left of the label and is a touch dimmer than it until the button is hovered or active. */
-export function Btn({ tone = 'default', active, small, icon, className = '', children, ...rest }: BtnProps) {
+/**
+ * A control that belongs to a part of the company not open yet. `locked` is
+ * the sentence saying what opens it (the tooltip); `onLocked`, if given, is
+ * what a click does instead of the control's own action, usually opening the
+ * card that explains it.
+ */
+export interface LockProps {
+  locked?: string | null
+  onLocked?: () => void
+  /** Where a locked button wears its lock: before the label, or in the corner where a row of narrow buttons has no room to spare. */
+  lockMark?: 'inline' | 'corner'
+}
+/** How a locked control looks: dimmed, and plainly not something to press. */
+const LOCKED = 'cursor-not-allowed opacity-45'
+
+type BtnProps = ButtonHTMLAttributes<HTMLButtonElement> & { tone?: Tone; active?: boolean; small?: boolean; icon?: IconName } & LockProps
+/**
+ * A button. With `icon`, the icon sits left of the label and is a touch dimmer than it until the button is hovered or active.
+ * With `locked` it is dimmed behind a lock and does nothing of its own; it stays hoverable so the tooltip can say why.
+ */
+export function Btn({ tone = 'default', active, small, icon, locked, onLocked, lockMark = 'inline', className = '', children, ...rest }: BtnProps) {
+  if (locked) {
+    const corner = lockMark === 'corner'
+    return (
+      <button
+        {...rest}
+        type="button"
+        aria-disabled
+        title={locked}
+        onClick={(e) => (e.preventDefault(), e.stopPropagation(), onLocked?.())}
+        className={`rounded-none border ${small ? 'h-6 px-2 text-[11px]' : 'h-7 px-3 text-xs'} uppercase tracking-wider ${corner ? 'relative' : 'inline-flex items-center justify-center gap-[5px] whitespace-nowrap'} ${LOCKED} ${active ? BTN_ON : tone === 'ghost' ? 'border-transparent bg-transparent text-dim' : 'border-line2 bg-raise text-dim'} ${className}`}
+      >
+        <Icon name="lock" size={corner ? 8 : small ? 10 : 11} className={`${corner ? 'absolute right-[3px] top-[3px]' : 'shrink-0'} ${active ? 'text-accent' : 'text-dim'}`} />
+        {children}
+      </button>
+    )
+  }
   return (
     <button
       {...rest}
@@ -160,17 +194,17 @@ export function Stat({ label, icon, value, sub, tone }: { label: string; icon?: 
   )
 }
 
-export function Slider({ label, icon, value, min, max, step = 1, onChange, format, disabled, hint }: { label: string; icon?: IconName; value: number; min: number; max: number; step?: number; onChange: (v: number) => void; format?: (v: number) => string; disabled?: boolean; hint?: string }) {
+export function Slider({ label, icon, value, min, max, step = 1, onChange, format, disabled, hint, locked, onLocked }: { label: string; icon?: IconName; value: number; min: number; max: number; step?: number; onChange: (v: number) => void; format?: (v: number) => string; disabled?: boolean; hint?: string } & LockProps) {
   return (
-    <label className="block py-1" title={hint}>
+    <label className={`block py-1 ${locked ? LOCKED : ''}`} title={locked || hint} onClick={locked ? (e) => (e.preventDefault(), onLocked?.()) : undefined}>
       <div className="flex items-baseline justify-between">
         <span className="text-[11px] text-dim">
-          <Lead icon={icon} />
+          <Lead icon={locked ? 'lock' : icon} />
           {label}
         </span>
         <span className="num text-[11px] text-fg">{format ? format(value) : value}</span>
       </div>
-      <input type="range" className="w-full" min={min} max={max} step={step} value={value} disabled={disabled} onChange={(e) => onChange(Number(e.target.value))} />
+      <input type="range" className={`w-full ${locked ? 'pointer-events-none' : ''}`} min={min} max={max} step={step} value={value} disabled={disabled || !!locked} onChange={(e) => onChange(Number(e.target.value))} />
     </label>
   )
 }

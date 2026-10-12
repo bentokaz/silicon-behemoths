@@ -4,6 +4,8 @@ import { factoryLife, officeLife } from '../../sim/life'
 import { refreshCandidates, seatedStaff } from '../../sim/staff'
 import type { GameState } from '../../sim/types'
 import { Act, Crowd, Kind, Mode } from './crowd'
+import { bigOffice, crowdFor as officeCrowd } from './scene.fixture'
+import { Pose, USE } from './spots'
 import { buildNav } from './nav'
 import { seatOwners } from './seats'
 import { buildSpots } from './spots'
@@ -112,6 +114,73 @@ describe('the crowd', () => {
     expect(crowd.bodies.includes(ghost)).toBe(false)
     // nobody else moved desks because of it
     expect(crowd.bodies.filter((b) => b.kind === Kind.Staff).length).toBe(2)
+  })
+})
+
+describe('the front desk', () => {
+  it('is manned through the working day, and a new hire shakes hands with whoever is on it', () => {
+    const s = bigOffice(60)
+    const { crowd, site, spots } = officeCrowd(s)
+    const desk = spots.find((sp) => sp.use & USE.front)!
+    expect(desk.item.kind).toBe('reception')
+    const entries = () => {
+      const owners = seatOwners(site, seatedStaff(s))
+      const list: { e: (typeof s.staff)[number]; seat?: string }[] = site.items.filter((i) => owners.has(i.id)).map((i) => ({ e: owners.get(i.id)!, seat: i.id }))
+      for (const e of s.staff) if (!list.some((x) => x.e === e)) list.push({ e })
+      return list
+    }
+    const on = () => crowd.bodies.find((b) => b.spot === desk && b.mode === Mode.Do)
+    let t = 7
+    let manned = 0
+    let steps = 0
+    for (; t < 11; t += 1 / 30 / 45) {
+      crowd.step(1 / 30, 1, t)
+      if (t > 9.3) {
+        steps++
+        if (on()) manned++
+      }
+    }
+    // someone is behind the counter nearly all morning (whoever it is may slip out for a coffee)
+    expect(manned / steps).toBeGreaterThan(0.7)
+    const who = crowd.bodies.find((b) => b.post === desk)!
+    expect(who).toBeDefined()
+    // there is at most one of them: one of the support team, or else a receptionist of the building's own
+    expect(crowd.bodies.filter((b) => b.post === desk && !b.quit).length).toBe(1)
+    expect(who.kind === Kind.Front || who.role === 'support').toBe(true)
+    // someone comes about a job and waits in the lobby
+    refreshCandidates(s)
+    const applicant = s.candidates[0]
+    crowd.setApplicants([applicant])
+    for (let k = 0; k < 30 * 40; k++) crowd.step(1 / 30, 1, (t += 1 / 30 / 45))
+    const body = crowd.bodies.find((b) => b.kind === Kind.Applicant && b.id === applicant.id)!
+    expect(body.mode).toBe(Mode.Do)
+    // wait for the desk to be manned, then hire them
+    for (let k = 0; k < 30 * 120 && !on(); k++) crowd.step(1 / 30, 1, (t += 1 / 30 / 45))
+    expect(on()).toBeDefined()
+    expect(hire(s, applicant.id)).toBeNull()
+    crowd.setStaff(entries(), officeLife(s), s.day, new Set(s.staff.map((e) => e.id)))
+    crowd.setApplicants(s.candidates.filter((c) => c.id !== applicant.id).slice(0, 0))
+    expect(body.hired).toBe(true)
+    let shook = false
+    let alone = false
+    for (let k = 0; k < 30 * 60 && crowd.bodies.includes(body); k++) {
+      crowd.step(1 / 30, 1, (t += 1 / 30 / 45))
+      if (body.pose === Pose.Shake && body.mode === Mode.Do) {
+        const r = on()
+        // a hand is only ever held out to someone who is there to take it, across the counter
+        if (!r || r.pose !== Pose.Shake || r.partner !== body) alone = true
+        else {
+          shook = true
+          expect(body.spot?.item).toBe(desk.item)
+          expect(Math.hypot(r.x - body.x, r.z - body.z)).toBeLessThan(1.4)
+        }
+      }
+    }
+    expect(shook).toBe(true)
+    expect(alone).toBe(false)
+    // and then they go home until the morning
+    expect(crowd.bodies.includes(body)).toBe(false)
+    expect(crowd.ghosts).toBe(0)
   })
 })
 

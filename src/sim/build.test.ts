@@ -2,11 +2,10 @@
 // join, curved walls shared between rooms, ground finishes that suit the plot,
 // and copying a store's layout.
 import { describe, expect, it } from 'vitest'
-import { SHOP_LOT, SHOP_SLOTS, places, shopLots, shopScale } from '../3d/city/plan'
-import { buildNav } from '../3d/site/nav'
+import { buildNav, cutOffRooms } from '../3d/site/nav'
 import { bayBeyond, bayRun, bayStands, curveAt, curveTiles, geomOf } from './curves'
-import { DIFFICULTY, EDGE_COST, clearZone, copyLayout, defaultConfig, layoutQuote, layoutValue, newGame, newLayoutQuote, openStore, paintArea, paintFloor, placeItem, placeItems, removeItems, removeRoom, setEdge, setEdges, setLook, setRoomStyle, upgradeOffice, zoneRoom } from './game'
-import { ITEMS, SITE_TIERS, canPlace, defaultGround, edgeRuns, gridAt, groundAt, groundsFor, hasGround, isBoundary, newSite, openRooms, roomTiles, rowSpots, sealedRooms, storeStats, wallAt, wholeRun } from './sites'
+import { DIFFICULTY, EDGE_COST, SAME_LAYOUT, clearZone, copyLayout, defaultConfig, fillRoom, layoutQuote, layoutSig, layoutValue, newGame, newLayoutQuote, openStore, paintArea, paintFloor, placeItem, placeItems, removeItems, removeRoom, setEdge, setEdges, setLook, setRoomStyle, upgradeOffice, zonePlan, zoneRoom, zoneable } from './game'
+import { FILL_MAX, ITEMS, SHORT_WALL, SITE_TIERS, canPlace, defaultGround, doorFits, edgeRuns, fillError, gridAt, groundAt, groundsFor, hasGround, isBoundary, newSite, openRooms, pocketAt, roomTiles, rowSpots, sealedRooms, storeStats, tidy, wallAt, wholeRun } from './sites'
 import type { GameState, Site } from './types'
 
 const fresh = (seed = 7, extra: Partial<ReturnType<typeof defaultConfig>> = {}) => newGame({ ...defaultConfig(), seed, ...extra })
@@ -430,11 +429,123 @@ describe('curved walls between rooms', () => {
     clearZone(t, 'office', 13, 4, 16, 10)
     expect([...curveTiles(t.office).values()].every((x) => x.beyond === 0)).toBe(true)
     expect(curveTiles(t.office).size).toBe(live.length)
-    // two different rooms against the same stretch of curve cannot both share it: those tiles square off
+    // two different rooms side by side against the curve each share the stretch they stand against
     expect(zoneRoom(t, 'office', 'lounge', 13, 2, 16, 6)).toBeNull()
     expect(zoneRoom(t, 'office', 'gym', 13, 7, 16, 12)).toBeNull()
+    expect(t.office.curves![0].square).toBeUndefined()
+    expect(curveTiles(t.office).size).toBe(live.length)
+    const far = new Set([...curveTiles(t.office).values()].map((x) => x.beyond))
+    expect([...far].sort()).toEqual([0, t.office.rooms[1].n, t.office.rooms[2].n])
     wallsClose(t.office)
     expect(sealedRooms(t.office)).toEqual([])
+  })
+
+  it('keeps the curve where two rooms, a slanted corner or a second curve stand against one tile', () => {
+    /** Straight walls with open ground on one side and nothing built on either tile: there must be none. */
+    const sound = (site: Site, count: number) => {
+      expect(site.curves!.every((c) => !c.square)).toBe(true)
+      expect(curveTiles(site).size).toBe(count)
+      wallsClose(site)
+      expect(sealedRooms(site)).toEqual([])
+      expect(JSON.parse(JSON.stringify(site))).toEqual(site)
+    }
+    // ---- two different rooms against the one tile: the round room's tile at 11,3 has open tiles to its north and its east
+    let s = campus()
+    let site = s.office
+    expect(zoneRoom(s, 'office', 'atrium', 2, 2, 12, 12, 'round')).toBeNull()
+    const round = site.rooms[0].n
+    const count = curveTiles(site).size
+    expect(curveAt(site, 11, 3)).toMatchObject({ beyond: 0 })
+    expect(gridAt(site, 11, 2)).toBe(0)
+    expect(gridAt(site, 12, 3)).toBe(0)
+    expect(zoneRoom(s, 'office', 'lounge', 3, 0, 11, 2)).toBeNull()
+    expect(zoneRoom(s, 'office', 'gym', 12, 0, 16, 12)).toBeNull()
+    const [, lounge, gym] = site.rooms.map((r) => r.n)
+    expect([gridAt(site, 11, 2), gridAt(site, 12, 3)]).toEqual([lounge, gym])
+    sound(site, count)
+    // the corner the curve leaves goes to one of them (they hold a metre each, so the older), and a straight wall shuts it off from the other
+    expect(curveAt(site, 11, 3)!.beyond).toBe(lounge)
+    expect(edgeRuns(site, 12, 3, 'w')).toEqual([{ a: gym, c: lounge, u0: 0, u1: 1 }])
+    expect(edgeRuns(site, 11, 3, 'n')).toEqual([])
+    expect(hasGround(site, 11, 3)).toBe(false)
+    // further round, each room has the wall to itself
+    expect(curveAt(site, 12, 7)!.beyond).toBe(gym)
+    expect(curveAt(site, 7, 2)!.beyond).toBe(lounge)
+    // a door in the bay over that tile joins the round room and the lounge, and nobody walks through it into the gym
+    site.walls = []
+    for (const c of site.curves!) delete c.walls
+    const bay = [...geomOf(site.curves![0]).bays.values()].find((b) => b.tiles.length === 1 && b.tiles[0] === '11,3')!
+    expect(bay).toBeDefined()
+    expect(setEdges(s, 'office', { curve: 0, bays: [bay.key] }, 'door').done).toBe(1)
+    expect(bayBeyond(site, 0, bay.key)).toEqual([lounge])
+    expect([...openRooms(site)].sort()).toEqual([round, lounge])
+    expect(sealedRooms(site).map((r) => r.n)).toEqual([gym])
+    let nav = buildNav(site)
+    expect(nav.walk[3 * site.w + 11]).toBe(1)
+    expect(nav.zone[3 * site.w + 11]).toBe(nav.zone[1 * site.w + 11])
+    expect(nav.zone[3 * site.w + 13]).not.toBe(nav.zone[3 * site.w + 11])
+    expect(nav.zone[3 * site.w + 13]).not.toBe(nav.zone[1 * site.w + 11])
+    // every room the game calls sealed is one the walking map cannot reach either
+    expect(cutOffRooms(site, nav)).toEqual([round, lounge, gym])
+    // taking the lounge away hands the corner to the gym; taking both gives it back to the ground
+    removeRoom(s, 'office', lounge)
+    expect(curveAt(site, 11, 3)!.beyond).toBe(gym)
+    removeRoom(s, 'office', gym)
+    expect(curveAt(site, 11, 3)!.beyond).toBe(0)
+    expect(curveTiles(site).size).toBe(count)
+
+    // ---- a slanted room whose cut corners stand against the curve: both keep their shape
+    s = campus()
+    site = s.office
+    expect(zoneRoom(s, 'office', 'atrium', 2, 2, 12, 12, 'round')).toBeNull()
+    expect(zoneRoom(s, 'office', 'lounge', 15, 1, 10, 6, 'diag')).toBeNull()
+    expect(site.rooms).toHaveLength(2)
+    // the stepped edge runs 11,2 / 12,3 / 13,4 / 14,5: the first three have the curved wall on the sides they open to
+    expect(site.cuts).toMatchObject({ '11,2': 'sw', '12,3': 'sw', '13,4': 'sw', '14,5': 'sw' })
+    sound(site, count)
+    // the ground between the slant and the curve is still ground
+    expect(curveAt(site, 11, 3)!.beyond).toBe(0)
+    expect(curveAt(site, 12, 4)!.beyond).toBe(0)
+    expect(hasGround(site, 11, 3)).toBe(true)
+    expect(hasGround(site, 12, 3)).toBe(true)
+    // the other way round: the slant first, the round room drawn against it afterwards
+    const back = campus()
+    expect(zoneRoom(back, 'office', 'lounge', 15, 1, 10, 6, 'diag')).toBeNull()
+    expect(zoneRoom(back, 'office', 'atrium', 2, 2, 12, 12, 'round')).toBeNull()
+    expect(back.office.cuts).toEqual(site.cuts)
+    expect(back.office.grid.map((n) => (n ? 4 - n : 0))).toEqual(site.grid.map((n) => (n ? n - 1 : 0)))
+    sound(back.office, count)
+    // a cut still gives way to a plain room built against its open side
+    expect(zoneRoom(s, 'office', 'gym', 13, 5, 13, 8)).toBeNull()
+    expect(site.cuts!['13,4']).toBeUndefined()
+    expect(site.cuts!['14,5']).toBeUndefined()
+    expect(site.cuts!['12,3']).toBe('sw')
+    wallsClose(site)
+
+    // ---- a second round room drawn over the corner of the first: its floor runs along the first one's cut-away side
+    s = campus()
+    site = s.office
+    expect(zoneRoom(s, 'office', 'atrium', 2, 2, 12, 12, 'round')).toBeNull()
+    expect(zoneRoom(s, 'office', 'lounge', 11, 0, 15, 4, 'round')).toBeNull()
+    expect(site.curves).toHaveLength(2)
+    const small = site.rooms[1].n
+    const both = curveTiles(site)
+    expect([...both.values()].filter((t) => t.curve === 0)).toHaveLength(count)
+    expect(site.curves!.every((c) => !c.square)).toBe(true)
+    // the first room's tiles there keep their curve, and the corners it leaves are the second room's floor
+    for (const key of ['11,3', '11,4', '12,4']) expect(both.get(key), key).toMatchObject({ curve: 0, beyond: small })
+    expect(gridAt(site, 12, 3)).toBe(small)
+    expect(gridAt(site, 11, 2)).toBe(small)
+    expect(both.get('11,2')).toMatchObject({ curve: 1 })
+    wallsClose(site)
+    expect(sealedRooms(site)).toEqual([])
+    // two round rooms of one kind drawn the same way still become one room, squared where their floors meet
+    const one = campus()
+    expect(zoneRoom(one, 'office', 'atrium', 2, 2, 12, 12, 'round')).toBeNull()
+    expect(zoneRoom(one, 'office', 'atrium', 11, 0, 15, 4, 'round')).toBeNull()
+    expect(one.office.rooms).toHaveLength(1)
+    expect(Object.keys(one.office.curves![0].square ?? {}).length).toBeGreaterThan(0)
+    wallsClose(one.office)
   })
 
   it('draws every stretch of a curved wall, with no slivers where it clips a corner', () => {
@@ -462,6 +573,301 @@ describe('curved walls between rooms', () => {
     }
     // the case exists, or the test would prove nothing
     expect(clipped).toBeGreaterThan(0)
+  })
+})
+
+describe('filling a courtyard', () => {
+  /** A ring 40 m across and 6 m deep on a full campus: its courtyard is 556 open tiles. */
+  function ringed() {
+    const s = campus(4)
+    expect(zoneRoom(s, 'office', 'work', 20, 4, 59, 43, 'ring', undefined, { thick: 6 })).toBeNull()
+    return s
+  }
+  const innerWall = (site: Site) => [...curveTiles(site).values()].filter((t) => Math.hypot(t.shape.x + 0.5 - 40, t.shape.y + 0.5 - 24) < 16.5)
+
+  it('finds the open ground shut in with a tile, and says when it is not shut in', () => {
+    const s = ringed()
+    const site = s.office
+    const yard = pocketAt(site, 40, 24)!
+    expect(yard.enclosed).toBe(true)
+    expect(yard.tiles).toHaveLength(556)
+    expect(yard.tiles.every(([x, y]) => gridAt(site, x, y) === 0 && Math.hypot(x + 0.5 - 40, y + 0.5 - 24) < 14)).toBe(true)
+    // the corners the ring's inner wall leaves are part of it, all the way round
+    expect(yard.curved).toHaveLength(innerWall(site).length)
+    expect(pocketAt(site, 31, 16)).toEqual(yard)
+    expect(fillError(yard)).toBeNull()
+    // outside the ring the ground runs to the edge of the plot; a room tile is no ground at all
+    const out = pocketAt(site, 2, 2)!
+    expect(out.enclosed).toBe(false)
+    expect(out.tiles.length).toBe(site.w * site.h - site.grid.filter(Boolean).length - 556)
+    expect(fillError(out)).toMatch(/not closed in.*edge of the plot/)
+    expect(pocketAt(site, 22, 24)).toBeNull()
+    expect(fillError(null)).toMatch(/already built on/)
+    expect(pocketAt(site, -1, 0)).toBeNull()
+    // an arc leaves its courtyard open to the plot
+    const arc = campus(4)
+    expect(zoneRoom(arc, 'office', 'work', 20, 4, 59, 43, 'ring', undefined, { thick: 6, sweep: 270 })).toBeNull()
+    expect(pocketAt(arc.office, 40, 24)!.enclosed).toBe(false)
+    expect(fillRoom(arc, 'office', 'lounge', 40, 24)).toMatch(/not closed in/)
+    expect(arc.office.rooms).toHaveLength(1)
+    // a gap one tile wide is enough to let it out; a wall across the gap closes it
+    const box = campus()
+    for (const [x0, y0, x1, y1] of [[4, 4, 14, 4], [4, 12, 14, 12], [4, 5, 4, 11], [14, 5, 14, 7], [14, 9, 14, 11]]) expect(zoneRoom(box, 'office', 'work', x0, y0, x1, y1)).toBeNull()
+    expect(pocketAt(box.office, 9, 8)!.enclosed).toBe(false)
+    expect(zoneRoom(box, 'office', 'lounge', 14, 8, 14, 8)).toBeNull()
+    expect(pocketAt(box.office, 9, 8)).toMatchObject({ enclosed: true, curved: [] })
+    expect(pocketAt(box.office, 9, 8)!.tiles).toHaveLength(9 * 7)
+  })
+
+  it('fills a courtyard with a room that shares the curved wall all round, at the usual price', () => {
+    const s = ringed()
+    const site = s.office
+    const ring = site.rooms[0].n
+    const edge = curveTiles(site).size
+    expect(placeItem(s, 'office', 'otree', 40, 24, 0)).toBeNull()
+    s.config.unlimitedMoney = false
+    s.cash = 1e9
+    expect(fillRoom(s, 'office', 'nothing', 40, 24)).toMatch(/Unknown room/)
+    expect(fillRoom(s, 'office', 'lounge', 22, 24)).toMatch(/already built on/)
+    expect(fillRoom(s, 'office', 'lounge', 2, 2)).toMatch(/not closed in/)
+    expect(s.cash).toBe(1e9)
+    expect(site.rooms).toHaveLength(1)
+    expect(fillRoom(s, 'office', 'lounge', 33, 20)).toBeNull()
+    const lounge = site.rooms[1]
+    expect(lounge.type).toBe('lounge')
+    expect(roomTiles(site, lounge.n)).toBe(556)
+    // charged by the tile like any room; the tree that stood there was sold on
+    expect(s.cash).toBe(1e9 - 556 * 420 + 450)
+    expect(site.items).toHaveLength(0)
+    // the ring keeps all of its curve, the whole inner wall is shared, and not a sliver of ground is left inside
+    expect(site.curves![0].square).toBeUndefined()
+    expect(curveTiles(site).size).toBe(edge)
+    expect(innerWall(site).length).toBeGreaterThan(100)
+    expect(innerWall(site).every((t) => t.beyond === lounge.n)).toBe(true)
+    for (let y = 8; y <= 40; y++) for (let x = 24; x <= 56; x++) if (Math.hypot(x + 0.5 - 40, y + 0.5 - 24) < 15) expect(hasGround(site, x, y), `${x},${y}`).toBe(false)
+    expect(pocketAt(site, 40, 24)).toBeNull()
+    wallsClose(site)
+    const curved = curveTiles(site)
+    for (const t of innerWall(site)) for (const side of ['n', 'w'] as const) for (const r of edgeRuns(site, t.shape.x, t.shape.y, side, curved)) expect(r.a === 0 || r.c === 0, `${t.shape.x},${t.shape.y}`).toBe(false)
+    // it was given a way in through the shared wall, and people can walk to it from the street
+    expect(sealedRooms(site)).toEqual([])
+    expect(cutOffRooms(site, buildNav(site))).toEqual([])
+    expect(JSON.parse(JSON.stringify(site))).toEqual(site)
+    // not enough money: said so, and nothing is built
+    removeRoom(s, 'office', lounge.n)
+    s.cash = -DIFFICULTY.normal.overdraft + 1000
+    expect(fillRoom(s, 'office', 'lounge', 40, 24)).toMatch(/Not enough cash: that would cost \$233,520/)
+    expect(site.rooms).toHaveLength(1)
+    // floor of the ring's own kind joins the ring, unless it is asked to stand apart
+    s.cash = 1e9
+    expect(fillRoom(s, 'office', 'work', 40, 24, true)).toBeNull()
+    expect(site.rooms).toHaveLength(2)
+    expect(innerWall(site).every((t) => t.beyond === site.rooms[1].n)).toBe(true)
+    removeRoom(s, 'office', site.rooms[1].n)
+    expect(fillRoom(s, 'office', 'work', 40, 24)).toBeNull()
+    expect(site.rooms.map((r) => r.n)).toEqual([ring])
+    expect(innerWall(site)).toHaveLength(0)
+    wallsClose(site)
+  })
+
+  it('lets a box across most of a curved courtyard take all of it, and leaves a smaller box a box', () => {
+    const s = ringed()
+    const site = s.office
+    // a square set inside the circle covers under three quarters of it: it stays a square
+    const pavilion = zonePlan(site, 31, 15, 48, 32)
+    expect(pavilion).toMatchObject({ filled: false, area: 324, curve: null })
+    // a box that reaches the ring on every side would leave four thin slivers: it takes the whole courtyard instead
+    const most = zonePlan(site, 28, 12, 51, 35)
+    expect(most.filled).toBe(true)
+    expect(most.tiles).toHaveLength(556)
+    expect(most.area).toBe(556)
+    expect(zoneable(site, 28, 12, 51, 35, 'rect').length).toBeGreaterThan(556 * 0.75)
+    expect(zoneable(site, 28, 12, 51, 35, 'rect').length).toBeLessThan(556)
+    // a round room, a slant or a box that also takes land outside the ring is built as drawn
+    expect(zonePlan(site, 28, 12, 51, 35, 'diag').filled).toBe(false)
+    expect(zonePlan(site, 28, 12, 51, 35, 'round').filled).toBe(false)
+    expect(zonePlan(site, 2, 2, 69, 53).filled).toBe(false)
+    s.config.unlimitedMoney = false
+    s.cash = 1e9
+    expect(zoneRoom(s, 'office', 'lounge', 28, 12, 51, 35)).toBeNull()
+    const lounge = site.rooms[1].n
+    expect(roomTiles(site, lounge)).toBe(556)
+    expect(s.cash).toBe(1e9 - 556 * 420)
+    expect(innerWall(site).every((t) => t.beyond === lounge)).toBe(true)
+    expect(site.curves![0].square).toBeUndefined()
+    wallsClose(site)
+    expect(sealedRooms(site)).toEqual([])
+    // the smaller box really is left as drawn, with ground between it and the ring
+    const t = ringed()
+    expect(zoneRoom(t, 'office', 'lounge', 31, 15, 48, 32)).toBeNull()
+    expect(roomTiles(t.office, t.office.rooms[1].n)).toBe(324)
+    expect(hasGround(t.office, 40, 12)).toBe(true)
+    expect(innerWall(t.office).every((x) => x.beyond === 0)).toBe(true)
+    // and a courtyard with straight walls all round is never widened: a box in it is what was asked for
+    const box = campus()
+    for (const [x0, y0, x1, y1] of [[4, 4, 14, 4], [4, 12, 14, 12], [4, 5, 4, 11], [14, 5, 14, 11]]) expect(zoneRoom(box, 'office', 'work', x0, y0, x1, y1)).toBeNull()
+    expect(zonePlan(box.office, 5, 5, 13, 10).filled).toBe(false)
+    expect(fillRoom(box, 'office', 'lounge', 6, 6, true)).toBeNull()
+    expect(roomTiles(box.office, box.office.rooms[box.office.rooms.length - 1].n)).toBe(63)
+    wallsClose(box.office)
+  })
+
+  it('refuses a courtyard too large to fill in one go', () => {
+    const s = campus(4)
+    const site = s.office
+    for (const [x0, y0, x1, y1] of [[1, 1, 70, 1], [1, 54, 70, 54], [1, 2, 1, 53], [70, 2, 70, 53]]) expect(zoneRoom(s, 'office', 'work', x0, y0, x1, y1)).toBeNull()
+    const yard = pocketAt(site, 30, 30)!
+    expect(yard.enclosed).toBe(true)
+    expect(yard.tiles.length).toBe(68 * 52)
+    expect(yard.tiles.length).toBeGreaterThan(FILL_MAX)
+    const rooms = site.rooms.length
+    expect(fillRoom(s, 'office', 'lounge', 30, 30)).toMatch(/3,536 m², too large to fill in one go/)
+    expect(site.rooms).toHaveLength(rooms)
+  })
+})
+
+describe('doors, and who can get in', () => {
+  it('gives a joined room a door when the join swallowed its only one', () => {
+    const s = campus()
+    const site = s.office
+    expect(zoneRoom(s, 'office', 'work', 3, 3, 6, 6)).toBeNull()
+    const first = site.walls.find((w) => w.kind === 'door')!
+    expect(first).toMatchObject({ y: 7, side: 'n' })
+    // more floor laid along the south side joins the room, and takes the wall the door was in
+    expect(zoneRoom(s, 'office', 'work', 3, 7, 6, 9)).toBeNull()
+    expect(site.rooms).toHaveLength(1)
+    expect(isBoundary(site, first.x, first.y, 'n')).toBe(false)
+    expect(doors(site)).toBe(1)
+    expect(site.walls[0]).toMatchObject({ y: 10, side: 'n', kind: 'door' })
+    expect(sealedRooms(site)).toEqual([])
+    expect(cutOffRooms(site, buildNav(site))).toEqual([])
+    // three rooms made one by the floor between them: every door stood on a wall that went, and the one room gets one
+    const t = campus()
+    expect(zoneRoom(t, 'office', 'work', 3, 3, 5, 5)).toBeNull()
+    expect(zoneRoom(t, 'office', 'work', 9, 3, 11, 5)).toBeNull()
+    expect(zoneRoom(t, 'office', 'lounge', 3, 6, 11, 8)).toBeNull()
+    t.office.walls = t.office.walls.filter((w) => w.y === 6)
+    expect(sealedRooms(t.office).map((r) => r.type)).toEqual([])
+    expect(zoneRoom(t, 'office', 'work', 6, 3, 8, 5)).toBeNull()
+    expect(t.office.rooms).toHaveLength(2)
+    expect(sealedRooms(t.office)).toEqual([])
+    expect(doors(t.office)).toBeGreaterThan(0)
+  })
+
+  it('gives a room another door when a curved wall built against it takes the one it had', () => {
+    const s = campus()
+    const site = s.office
+    expect(zoneRoom(s, 'office', 'work', 4, 2, 10, 4)).toBeNull()
+    const work = site.rooms[0].n
+    expect(site.walls).toEqual([expect.objectContaining({ x: 7, y: 5, side: 'n', kind: 'door' })])
+    // a round lounge drawn against its south side: the top of the circle swallows the stretch of wall the door was in
+    expect(zoneRoom(s, 'office', 'lounge', 3, 5, 11, 13, 'round')).toBeNull()
+    const lounge = site.rooms[1].n
+    expect(isBoundary(site, 7, 5, 'n')).toBe(false)
+    expect(wallAt(site, 7, 5, 'n')).toBeUndefined()
+    // both rooms have a way in, and both can be walked to
+    expect([...openRooms(site)].sort()).toEqual([work, lounge])
+    expect(sealedRooms(site)).toEqual([])
+    expect(doors(site)).toBe(2)
+    expect(cutOffRooms(site, buildNav(site))).toEqual([])
+    wallsClose(site)
+  })
+
+  it('counts a room as cut off exactly where the walking map cannot reach it', () => {
+    // a round server room, then a studio wrapped about it: the server room's door now opens into the studio,
+    // so both count as having a way in and the studio is given no street door of its own
+    const s = campus()
+    const site = s.office
+    expect(zoneRoom(s, 'office', 'server', 5, 5, 11, 11, 'round')).toBeNull()
+    expect(zoneRoom(s, 'office', 'soft', 3, 3, 13, 13)).toBeNull()
+    const [server, soft] = site.rooms.map((r) => r.n)
+    expect(doors(site)).toBe(1)
+    expect(sealedRooms(site)).toEqual([])
+    // nobody can walk to either from the street, and the chip says so for both
+    let nav = buildNav(site)
+    expect(nav.entry).toBeGreaterThanOrEqual(0)
+    expect(cutOffRooms(site, nav)).toEqual([server, soft])
+    expect(nav.zone[8 * site.w + 8]).toBe(nav.zone[4 * site.w + 4])
+    // a street door for the studio opens both
+    expect(setEdge(s, 'office', 8, 14, 'n', 'door')).toBeNull()
+    nav = buildNav(site)
+    expect(cutOffRooms(site, nav)).toEqual([])
+    // glaze the server room's door and it alone is shut: sealed for the game, cut off for the walkers
+    const bay = Object.keys(site.curves![0].walls!)[0]
+    expect(setEdges(s, 'office', { curve: 0, bays: [bay] }, 'glass').done).toBe(1)
+    expect(sealedRooms(site).map((r) => r.n)).toEqual([server])
+    expect(cutOffRooms(site, buildNav(site))).toEqual([server])
+    expect(setEdges(s, 'office', { curve: 0, bays: [bay] }, 'open').done).toBe(1)
+    // a door blocked by furniture is cut off though it is not sealed
+    expect(placeItem(s, 'office', 'plant', 8, 13, 0)).toBeNull()
+    expect(sealedRooms(site)).toEqual([])
+    expect(cutOffRooms(site, buildNav(site))).toEqual([server, soft])
+    // whatever is done to the walls, a sealed room is always among the cut-off ones
+    for (const kind of ['wall', 'glass', 'door', 'open'] as const) {
+      setEdge(s, 'office', 8, 14, 'n', kind)
+      for (const k2 of ['wall', 'glass', 'door', 'open'] as const) {
+        setEdges(s, 'office', { curve: 0, bays: [bay] }, k2)
+        const cut = cutOffRooms(site, buildNav(site))
+        for (const r of sealedRooms(site)) expect(cut, `${kind}/${k2}`).toContain(r.n)
+      }
+    }
+    // a plot built right up to its edges with no door in them has no way in: every room is cut off
+    const mall = rich()
+    expect(openStore(mall, 0)).toBeNull()
+    const shop = mall.stores[0]
+    const ref = `store:${shop.id}`
+    expect(cutOffRooms(shop.site, buildNav(shop.site))).toEqual([])
+    expect(zoneRoom(mall, ref, 'stock', 0, 0, shop.site.w - 1, shop.site.h - 1)).toBeNull()
+    shop.site.walls = []
+    expect(buildNav(shop.site).entry).toBe(-1)
+    expect(cutOffRooms(shop.site, buildNav(shop.site))).toEqual(shop.site.rooms.map((r) => r.n).sort((a, b) => a - b))
+  })
+
+  it('refuses a door on a stretch of wall that a curve cuts short', () => {
+    const s = campus()
+    const site = s.office
+    expect(zoneRoom(s, 'office', 'atrium', 2, 2, 12, 12, 'round')).toBeNull()
+    const atrium = site.rooms[0].n
+    // knock the top of the circle off: the room is left with a straight north wall whose two ends the curve cuts short
+    clearZone(s, 'office', 2, 2, 12, 4)
+    expect(edgeRuns(site, 7, 5, 'n')).toEqual([{ a: atrium, c: 0, u0: 0, u1: 1 }])
+    const short = edgeRuns(site, 12, 5, 'n')
+    expect(short).toHaveLength(1)
+    expect(short[0].u1 - short[0].u0).toBeCloseTo(0.393, 2)
+    expect(isBoundary(site, 12, 5, 'n')).toBe(true)
+    expect(doorFits(site, 7, 5, 'n')).toBe(true)
+    expect(doorFits(site, 12, 5, 'n')).toBe(false)
+    expect(doorFits(site, 2, 5, 'n')).toBe(false)
+    expect(doorFits(site, 7, 3, 'n')).toBe(false)
+    // a wall whose ends are only clipped by a centimetre or two still counts as whole
+    expect(wholeRun({ a: 1, c: 0, u0: 0.02, u1: 1 })).toBe(true)
+    expect(wholeRun({ a: 1, c: 0, u0: 0.05, u1: 1 })).toBe(false)
+    s.config.unlimitedMoney = false
+    s.cash = 1e6
+    for (const c of site.curves!) delete c.walls
+    site.walls = []
+    // a door or an opening there is refused, with the reason, and costs nothing; glass and plain wall are fine
+    expect(setEdge(s, 'office', 12, 5, 'n', 'door')).toBe(SHORT_WALL)
+    expect(setEdge(s, 'office', 12, 5, 'n', 'open')).toBe(SHORT_WALL)
+    expect(SHORT_WALL).toMatch(/full metre of straight wall/)
+    expect(setEdges(s, 'office', { edges: [{ x: 12, y: 5, side: 'n' }] }, 'door')).toEqual({ done: 0, skipped: 1, short: 0, cost: 0, error: SHORT_WALL })
+    expect(s.cash).toBe(1e6)
+    expect(site.walls).toEqual([])
+    expect(setEdge(s, 'office', 12, 5, 'n', 'glass')).toBeNull()
+    expect(setEdge(s, 'office', 12, 5, 'n', 'wall')).toBeNull()
+    // a run of doors along the whole wall passes over the two short ends and says nothing more
+    const north = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((x) => ({ x, y: 5, side: 'n' as const }))
+    expect(setEdges(s, 'office', { edges: north }, 'door')).toEqual({ done: 9, skipped: 2, short: 0, cost: 9 * EDGE_COST.door, error: null })
+    expect(sealedRooms(site)).toEqual([])
+    expect(setEdges(s, 'office', { edges: north }, 'wall').done).toBe(9)
+    expect(sealedRooms(site).map((r) => r.n)).toEqual([atrium])
+    // one left over from an older save is no way in, is not walked through, and goes at the next tidy
+    site.walls.push({ id: 'old', x: 12, y: 5, side: 'n', kind: 'door' })
+    expect(sealedRooms(site).map((r) => r.n)).toEqual([atrium])
+    expect(cutOffRooms(site, buildNav(site))).toEqual([atrium])
+    site.walls.push({ id: 'pane', x: 2, y: 5, side: 'n', kind: 'glass' })
+    tidy(site)
+    expect(site.walls.map((w) => w.id)).toEqual(['pane'])
   })
 })
 
@@ -593,10 +999,45 @@ describe('copying a store layout', () => {
     expect(model.site.curves![0].walls!.o1).toBeUndefined()
     delete copy.curves![0].walls!.o1
     expect(JSON.parse(JSON.stringify(s.stores))).toEqual(s.stores)
-    // copying again costs less: the cladding, roof and storeys are already there
+    // copying again is nothing to do: the two stores already stand alike, so it is free and nothing is touched
+    expect(layoutSig(copy)).not.toBe(layoutSig(model.site))
     const again = layoutQuote(s, model.id, flagship.id)
-    expect(again.build).toBeLessThan(quote.build)
-    expect(again.resale).toBe(copy.items.reduce((a, i) => a + ITEMS.store[i.kind].cost / 2, 0))
+    expect(again).toMatchObject({ error: null, same: true, build: 0, resale: 0, cost: 0, needs: [14, 11] })
+    expect(quote.same).toBe(false)
+    const cash = s.cash
+    const rev = copy.rev
+    const kept = JSON.stringify(s.stores)
+    expect(copyLayout(s, model.id, flagship.id)).toBe(SAME_LAYOUT)
+    expect(s.cash).toBe(cash)
+    expect(s.cur.facilities).toBe(facilities + quote.cost)
+    expect(s.stores[1].site).toBe(copy)
+    expect(copy.rev).toBe(rev)
+    expect(JSON.stringify(s.stores)).toBe(kept)
+    // even with no money at all it is not refused for the price of a rebuild
+    s.cash = -DIFFICULTY.normal.overdraft
+    expect(layoutQuote(s, model.id, flagship.id)).toMatchObject({ error: null, same: true, cost: 0 })
+    s.cash = cash
+    // one plant more at either store and they differ again: now the cladding, roof and storeys are already paid for
+    expect(placeItem(s, `store:${flagship.id}`, 'plant', 6, 9, 0)).toBeNull()
+    const changed = layoutQuote(s, model.id, flagship.id)
+    expect(changed.same).toBe(false)
+    expect(changed.build).toBeLessThan(quote.build)
+    expect(changed.build).toBeGreaterThan(0)
+    expect(changed.resale).toBe(copy.items.reduce((a, i) => a + ITEMS.store[i.kind].cost / 2, 0))
+    expect(copyLayout(s, model.id, flagship.id)).toBeNull()
+    expect(s.cash).toBe(cash - 250 - changed.cost)
+    expect(layoutQuote(s, model.id, flagship.id).same).toBe(true)
+    // a layout built by hand to match counts too, whatever its rooms are numbered and its furniture is called
+    const twin = JSON.parse(JSON.stringify(s.stores[1].site)) as Site
+    const renumber = (n: number) => (n ? n + 40 : 0)
+    twin.grid = twin.grid.map(renumber)
+    twin.rooms = twin.rooms.map((r) => ({ ...r, n: renumber(r.n) })).reverse()
+    twin.curves = twin.curves!.map((c) => ({ ...c, room: renumber(c.room) }))
+    twin.items = twin.items.map((it, i) => ({ ...it, id: `x${i}` })).reverse()
+    twin.walls = twin.walls.map((w, i) => ({ ...w, id: `y${i}` })).reverse()
+    expect(layoutSig(twin)).toBe(layoutSig(s.stores[1].site))
+    twin.walls.pop()
+    expect(layoutSig(twin)).not.toBe(layoutSig(s.stores[1].site))
   })
 
   it('refuses a layout that does not fit, or that there is no money for', () => {
@@ -687,56 +1128,5 @@ describe('copying a store layout', () => {
     expect(openStore(s, 1)).toBeNull()
     expect(s.stores[3].site.items.map((i) => i.kind)).toEqual(['table', 'counter'])
     expect(s.cash).toBe(cash - SITE_TIERS.store[1].cost)
-  })
-})
-
-describe('the city map', () => {
-  it('finds a place for every store, sharing plots once each has one', () => {
-    const slots = SHOP_SLOTS
-    expect(slots).toHaveLength(13)
-    // up to one store a plot, each has the whole plot and stands where it always did
-    const few = shopLots(slots, 13)
-    expect(few.map((l) => [l!.x, l!.z])).toEqual(slots)
-    expect(few.every((l) => l!.size === SHOP_LOT.w && l!.shared === 1)).toBe(true)
-    expect(shopScale({ w: 22, h: 18 }, SHOP_LOT.w)).toBe(1)
-    // the fourteenth shares the first plot: both of those shrink to a quarter of it, the rest stay as they were
-    const more = shopLots(slots, 14)
-    expect(more[0]).toMatchObject({ size: 12, shared: 2, lot: more[13]!.lot })
-    expect(more[13]!.z).toBe(more[0]!.z)
-    expect(more[13]!.x - more[0]!.x).toBe(12)
-    expect(more[5]).toEqual(few[5])
-    expect(shopScale({ w: 10, h: 8 }, 12)).toBe(1)
-    expect(shopScale({ w: 22, h: 18 }, 12)).toBeCloseTo(10.8 / 22)
-    // every count up to the limit gives every store its own ground, inside its plot, overlapping nobody
-    for (const count of [1, 13, 14, 31, 52, 53, 117, 118, 208]) {
-      const lots = shopLots(slots, count)
-      expect(lots).toHaveLength(count)
-      const seen = new Set<string>()
-      for (const l of lots) {
-        expect(l, String(count)).not.toBeNull()
-        const [sx, sz] = l!.lot.split(',').map(Number)
-        expect(Math.abs(l!.x - sx) + l!.size / 2).toBeLessThanOrEqual(SHOP_LOT.w / 2 + 1e-9)
-        expect(Math.abs(l!.z - sz) + l!.size / 2).toBeLessThanOrEqual(SHOP_LOT.d / 2 + 1e-9)
-        const key = `${l!.x.toFixed(3)},${l!.z.toFixed(3)}`
-        expect(seen.has(key), `${count} ${key}`).toBe(false)
-        seen.add(key)
-      }
-    }
-    // past sixteen to a plot there is no more room: the extra ones are left off the map
-    const over = shopLots(slots, 210)
-    expect(over.filter((l) => !l)).toHaveLength(2)
-    // in a game: thirty-one stores at home are thirty-one places to click, none on top of another
-    const s = rich()
-    for (let i = 0; i < 31; i++) expect(openStore(s, i % 3)).toBeNull()
-    const shops = places(s).filter((p) => p.kind === 'store')
-    expect(shops).toHaveLength(31)
-    expect(new Set(shops.map((p) => `${p.x},${p.z}`)).size).toBe(31)
-    for (const p of shops) {
-      expect(p.w).toBeGreaterThanOrEqual(8)
-      expect(p.site!.w * p.scale!).toBeLessThanOrEqual(p.w)
-      expect(p.site!.h * p.scale!).toBeLessThanOrEqual(p.d)
-      expect(p.crowded).toBe(true)
-    }
-    for (const a of shops) for (const b of shops) if (a !== b) expect(Math.abs(a.x - b.x) >= (a.w + b.w) / 2 - 1e-9 || Math.abs(a.z - b.z) >= (a.d + b.d) / 2 - 1e-9, `${a.id} ${b.id}`).toBe(true)
   })
 })

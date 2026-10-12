@@ -43,7 +43,7 @@ export const Pose = {
 export type Pose = (typeof Pose)[keyof typeof Pose]
 
 /** What a spot is for. A spot can serve several purposes. */
-export const USE = { seat: 1, station: 2, meet: 4, lunch: 8, coffee: 16, gym: 32, think: 64, look: 128, visit: 256, wait: 512, browse: 1024, queue: 2048, help: 4096, guest: 8192, host: 16384, crew: 32768, press: 65536 } as const
+export const USE = { seat: 1, station: 2, meet: 4, lunch: 8, coffee: 16, gym: 32, think: 64, look: 128, visit: 256, wait: 512, browse: 1024, queue: 2048, help: 4096, guest: 8192, host: 16384, crew: 32768, press: 65536, front: 131072 } as const
 
 interface SpotDef {
   use: number
@@ -80,10 +80,24 @@ const meeting: SpotDef[] = [-0.5, 0, 0.5].flatMap((x) => [s(U.meet, x, 0.72, 0, 
 export const STAGE_H = 0.9
 /** Seat rows of a seating block on a riser `h` high: two rows of six, the back row a step up. */
 export const seatRows = (h: number) => [0, 1].map((row) => ({ z: row ? 0.56 : -0.44, y: h + (h > 0 ? row * 0.24 : 0) }))
+/** How far in front of a seat's middle the strip of floor is that people shuffle along to reach it. */
+export const LEGROOM = 0.43
+/** How far beyond the side of a seating block the middle of its aisle steps is, and how wide they are. */
+export const STAIR_X = 0.11
+export const STAIR_W = 0.22
+/** Height of the riser under each kind of seating block. */
+export const RISER: Record<string, number> = { seats: 0, seats_mid: 0.5, seats_high: 1.0 }
 const seating = (h: number): SpotDef[] => seatRows(h).flatMap((r) => Array.from({ length: 6 }, (_, i) => s(U.guest, -1.25 + i * 0.5, r.z, 0, Pose.Sit, i < 3 ? -2 : 2, r.z, { y: r.y, hip: 0.52, row: true })))
 const sofa = [s(U.coffee | U.lunch | U.wait, -0.45, -0.06, 0, Pose.Lounge, -0.5, -1, { hip: 0.47 }), s(U.coffee | U.lunch | U.wait, 0.45, -0.06, 0, Pose.Lounge, 0.5, -1, { hip: 0.47 })]
 const table = [s(U.browse, -0.5, 0.82, 0, Pose.Hold, -0.5, 1), s(U.browse, 0.5, 0.82, 0, Pose.Hold, 0.5, 1), s(U.browse, -0.5, -0.82, Math.PI, Pose.Hold, -0.5, -1), s(U.browse, 0.5, -0.82, Math.PI, Pose.Hold, 0.5, -1)]
-const reception = [s(U.visit, -0.5, 0.86, 0, Pose.Stand, -0.5, 1), s(U.visit, 0.5, 0.86, 0, Pose.Stand, 0.5, 1)]
+/** Where a visitor stands at a reception desk, measured from its middle: close enough to the counter for a handshake across it. */
+const VISIT_Z = 0.63
+const reception = [
+  s(U.visit, -0.5, VISIT_Z, 0, Pose.Stand, -0.5, 1),
+  s(U.visit, 0.5, VISIT_Z, 0, Pose.Stand, 0.5, 1),
+  // the receptionist's chair behind the counter, facing whoever comes in
+  s(U.front, 0, -0.45, Math.PI, Pose.Type, 0, -1, { hip: 0.5 }),
+]
 /** Up the two steps at stage left, then across the boards. */
 const STEPS: [number, number, number][] = [
   [-2.45, 0, 2.05],
@@ -101,7 +115,7 @@ const DEFS: Record<SiteKind, Record<string, SpotDef[]>> = {
     bench: [s(U.station, 0.1, 0.56, 0, Pose.Perch, 0.5, 1, { hip: 0.66, role: 'researcher' })],
     devrig: [s(U.station, 0, 0.56, 0, Pose.Tend, 0, 1, { role: 'engineer' })],
     printer3d: [s(U.look, 0, 0.72, 0, Pose.Look, 0, 1)],
-    server: [s(U.station, 0, 0.82, 0, Pose.Tend, 0, 1, { role: 'software' })],
+    server: [s(U.station, 0, 0.9, 0, Pose.Tend, 0, 1, { role: 'software' })],
     design: [s(U.station, -0.4, 0.62, 0, Pose.Perch, -0.5, 1, { hip: 0.72, role: 'designer' }), s(U.station, 0.4, 0.62, 0, Pose.Perch, 0.5, 1, { hip: 0.72, role: 'designer' })],
     media: [s(U.station, 0.2, 0.78, 0, Pose.Film, 0.5, 1, { role: 'marketer' })],
     meeting,
@@ -126,7 +140,26 @@ const DEFS: Record<SiteKind, Record<string, SpotDef[]>> = {
     fountain: [s(U.look, 0, 2, 0, Pose.Look, 0, 2), s(U.look, -2, 0, -HALF, Pose.Look, -2, 0)],
     gbench: [s(U.lunch | U.coffee | U.wait, -0.45, 0, Math.PI, Pose.Sit, -0.5, 1, { hip: 0.52 }), s(U.lunch | U.coffee | U.wait, 0.45, 0, Math.PI, Pose.Sit, 0.5, 1, { hip: 0.52 })],
   },
-  factory: {},
+  factory: {
+    // the people who work a line: at the front of each machine, where its controls are
+    smt: [s(U.station, -0.6, 0.88, 0, Pose.Tend, -1, 1)],
+    robot: [s(U.station, 0.5, 1.34, 0, Pose.Tend, 0.5, 1.5)],
+    manual: [s(U.station, 0, 0.3, 0, Pose.Perch, 0, 1, { hip: 0.54 })],
+    test: [s(U.station, -0.24, 0.88, 0, Pose.Tend, 0, 1)],
+    pack: [s(U.station, 0.48, 0.88, 0, Pose.Tend, 0.5, 1), s(U.press, -0.5, 1.4, 0, Pose.Stand, -0.5, 1)],
+    console: [s(U.station, -0.4, 0.5, 0, Pose.Type, -0.5, 1, { hip: 0.5 }), s(U.station, 0.4, 0.5, 0, Pose.Type, 0.5, 1, { hip: 0.5 })],
+    qa: [s(U.station, 0.2, 0.74, 0, Pose.Tend, 0.5, 1)],
+    // where a pallet truck is loaded, and where it is set down
+    rack: [s(U.press, 0.5, 1.4, 0, Pose.Stand, 0.5, 1)],
+    pallets: [s(U.press, 0, 1.4, 0, Pose.Stand, 0, 1)],
+    dock_out: [s(U.crew, 0.5, 1.4, 0, Pose.Stand, 0.5, 1)],
+    canteen: [
+      s(U.lunch, -0.5, 0.42, 0, Pose.Sit, -0.5, 1, { hip: 0.47 }),
+      s(U.lunch, 0.5, 0.42, 0, Pose.Sit, 0.5, 1, { hip: 0.47 }),
+      s(U.lunch, -0.5, -0.42, Math.PI, Pose.Sit, -0.5, -1, { hip: 0.47 }),
+      s(U.lunch, 0.5, -0.42, Math.PI, Pose.Sit, 0.5, -1, { hip: 0.47 }),
+    ],
+  },
   store: {
     table,
     demo: [s(U.browse, 0, 0.8, 0, Pose.Hold, 0, 1), s(U.browse, 0.8, 0, HALF, Pose.Hold, 1, 0)],
@@ -181,6 +214,8 @@ export interface Spot {
   q: number
   /** True when the person stands on open floor that others walk across, rather than in or on the furniture. */
   open: boolean
+  /** A seat in a row: reached by shuffling sideways along the row in front of the seats. */
+  row: boolean
   /** World points to pass on the way in from the access tile, as x, y, z triples. */
   via?: number[]
   /** Whoever is using or heading for the spot. */
@@ -217,6 +252,57 @@ export interface SeatPlace {
 
 const isSeating = (kind: string) => kind === 'seats' || kind === 'seats_mid' || kind === 'seats_high'
 
+/** The floor height of the row of seats at a point, given in an item's frame; -1 where there are no seats facing the same way. */
+function rowAt(site: Site, item: SiteItem, f: ItemFrame, lx: number, lz: number): number {
+  const wx = frameX(f, lx, lz)
+  const wz = frameZ(f, lx, lz)
+  const tx = Math.floor(wx + site.w / 2)
+  const ty = Math.floor(wz + site.h / 2)
+  if (tx < 0 || ty < 0 || tx >= site.w || ty >= site.h) return -1
+  const other = itemAt(site, tx, ty)
+  if (!other || !isSeating(other.kind) || other.rot % 4 !== item.rot % 4) return -1
+  const fo = frameOf(site, other)
+  const back = (wx - fo.cx) * fo.sin + (wz - fo.cz) * fo.cos > 0.06
+  return seatRows(RISER[other.kind])[back ? 1 : 0].y
+}
+
+/**
+ * Which sides of a seating block are open to an aisle: 1 for its left (-x in its own frame), 2 for its right.
+ * A raised block has a flight of steps down each open side.
+ */
+export function seatAisles(site: Site, item: SiteItem): number {
+  if (!isSeating(item.kind)) return 0
+  const f = frameOf(site, item)
+  let out = 0
+  for (const dir of [-1, 1]) {
+    let open = true
+    for (const lz of [-0.5, 0.5]) {
+      const tx = Math.floor(frameX(f, dir * 2, lz) + site.w / 2)
+      const ty = Math.floor(frameZ(f, dir * 2, lz) + site.h / 2)
+      if (tx < 0 || ty < 0 || tx >= site.w || ty >= site.h || itemAt(site, tx, ty)) open = false
+    }
+    if (open) out |= dir < 0 ? 1 : 2
+  }
+  return out
+}
+
+/**
+ * The order a house fills in: the rows nearest the stage first, each row in no particular order, with a little
+ * overlap between one row and the next. Returns, for each seat, its place in that order.
+ */
+export function seatRank(places: { x: number; z: number; face: number }[]): Int32Array {
+  const hash = (n: number) => {
+    const x = Math.sin(n * 127.1 + 311.7) * 43758.5453
+    return x - Math.floor(x)
+  }
+  // how far forward each seat is, along the way it faces
+  const key = places.map((p, i) => -(p.x * -Math.sin(p.face) + p.z * -Math.cos(p.face)) + hash(i * 7.31 + 1.7) * 1.35)
+  const by = places.map((_, i) => i).sort((a, b) => key[a] - key[b])
+  const rank = new Int32Array(places.length)
+  by.forEach((seat, k) => (rank[seat] = k))
+  return rank
+}
+
 /** Every audience seat of a venue, in world coordinates. Needs no walking map, so a show can be drawn without one. */
 export function seatPlaces(site: Site): SeatPlace[] {
   const out: SeatPlace[] = []
@@ -249,26 +335,54 @@ export function buildSpots(site: Site, nav: Nav): Spot[] {
       let access = -1
       let via: number[] | undefined
       if (d.row) {
-        // along the row to whichever end has floor to stand on, across any seating blocks set side by side
+        // from the aisle at whichever end of the row is nearer (across any seating blocks set side by side), then
+        // sideways along the strip of floor in front of the seats
+        const y = d.y ?? 0
+        const strip = d.z - LEGROOM
         let best = Infinity
         for (const dir of [-1, 1]) {
-          for (let k = 1; k < 40; k++) {
-            const px = frameX(f, d.x + dir * k * 0.5, d.z)
-            const pz = frameZ(f, d.x + dir * k * 0.5, d.z)
-            const t = nav.tileAt(px, pz)
+          let k = 1
+          let end = -1
+          for (; k < 40; k++) {
+            const t = nav.tileAt(frameX(f, d.x + dir * k * 0.5, d.z), frameZ(f, d.x + dir * k * 0.5, d.z))
             if (t < 0) break
-            if (nav.walk[t] === 1) {
-              if (k < best) {
-                best = k
-                access = t
-                // step up onto the row at its end, then sidle along it
-                via = [frameX(f, d.x + dir * (k - 1) * 0.5, d.z), d.y ?? 0, frameZ(f, d.x + dir * (k - 1) * 0.5, d.z)]
-              }
+            if (usable(t)) {
+              end = t
               break
             }
             const other = itemAt(site, t % w, (t / w) | 0)
             if (!other || !isSeating(other.kind) || other.rot % 4 !== item.rot % 4) break
           }
+          if (end < 0 || k >= best) continue
+          // the side of the last block in the row, and the middle of the steps that run down it
+          const edge = d.x + dir * ((k - 1) * 0.5 + 0.25)
+          const aisle = edge + dir * STAIR_X
+          const pts: number[] = []
+          let from = end
+          if (y > 0) {
+            // a raised row: up the steps from the foot of the bank of seating, one row at a time
+            const climb: [number, number][] = []
+            let foot = -1
+            let lz = d.z
+            for (let j = 0; j < 40; j++, lz -= 1) {
+              const t = nav.tileAt(frameX(f, aisle, lz - LEGROOM), frameZ(f, aisle, lz - LEGROOM))
+              if (!usable(t)) break
+              const floor = rowAt(site, item, f, edge - dir * 0.25, lz)
+              climb.push([lz - LEGROOM, Math.max(0, floor)])
+              if (floor <= 0) {
+                foot = t
+                break
+              }
+            }
+            if (foot >= 0) {
+              from = foot
+              for (let j = climb.length - 1; j >= 0; j--) pts.push(frameX(f, aisle, climb[j][0]), climb[j][1], frameZ(f, aisle, climb[j][0]))
+            } else pts.push(frameX(f, aisle, strip), y, frameZ(f, aisle, strip))
+          } else pts.push(frameX(f, aisle, strip), 0, frameZ(f, aisle, strip))
+          pts.push(frameX(f, d.x, strip), y, frameZ(f, d.x, strip))
+          best = k
+          access = from
+          via = pts
         }
       } else {
         access = nav.tileAt(frameX(f, d.ax, d.az), frameZ(f, d.ax, d.az))
@@ -302,7 +416,7 @@ export function buildSpots(site: Site, nav: Nav): Spot[] {
       // a queue only reaches as far back as there is clear floor
       if (d.q !== undefined && d.q > 0 && (access < 0 || nav.tileAt(x, z) !== access)) return
       const own = nav.tileAt(x, z)
-      out.push({ key: `${item.id}:${i}`, item, use: d.use, x, z, y: d.y ?? 0, face: f.a + d.face, pose: d.pose, hip: d.hip ?? 0.86, access, room, role: d.role, q: d.q ?? 0, open: own >= 0 && nav.walk[own] === 1, via, taken: null })
+      out.push({ key: `${item.id}:${i}`, item, use: d.use, x, z, y: d.y ?? 0, face: f.a + d.face, pose: d.pose, hip: d.hip ?? 0.86, access, room, role: d.role, q: d.q ?? 0, open: own >= 0 && nav.walk[own] === 1, row: !!d.row, via, taken: null })
     })
   }
   return out

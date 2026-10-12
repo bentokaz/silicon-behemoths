@@ -11,7 +11,7 @@ import type { GameState } from '../sim/types'
 import { QUALITY, useSettings } from '../store/settings'
 import { themeColor } from '../store/theme'
 import { CameraKeys } from './SiteView'
-import { type District, type Place, type Route, type Traffic, along } from './city/plan'
+import { type District, type Place, QUEUE, type Route, type Traffic, along } from './city/plan'
 import { type CityMats, CityModel, PLOT_Y, SiteModel, cityMats } from './city/scene'
 import { hash } from './site/kit'
 
@@ -161,7 +161,8 @@ const PEOPLE = ['#2c4a6e', '#7a1f24', '#3e5a48', '#c9c2b2', '#1d2023', '#c9a227'
 const CARGO = ['#b5462f', '#2f5d8a', '#3f7d4d', '#c9a227', '#8a8f95']
 const MAX_TRUCKS = 24
 const MAX_SHIPS = 12
-const MAX_PEOPLE = 260
+/** Enough for a full queue outside thirty stores; with more stores than that the queues are all drawn shorter. */
+const MAX_PEOPLE = 780
 const MAX_PINS = 256
 
 /** Lorries on the streets, ships in the bay and the queues outside the shops. Each kind is one instanced mesh or two. */
@@ -206,11 +207,17 @@ function Movers({ traffic, speed, color, pins }: { traffic: Traffic; speed: numb
   )
   // who stands where in the queues does not change from frame to frame
   const crowd = useMemo(() => {
-    const out: { x: number; z: number; c: THREE.Color; seed: number }[] = []
-    traffic.queues.forEach(([qx, qz], q) => {
-      for (let i = 0; i < 26 && out.length < MAX_PEOPLE; i++) {
+    const out: { x: number; z: number; k: number; c: THREE.Color; seed: number }[] = []
+    // with more stores than there are people to draw, every queue is shortened alike, so that none goes without
+    const wanted = traffic.queues.reduce((a, queue) => a + queue.people, 0)
+    const share = Math.min(1, MAX_PEOPLE / Math.max(1, wanted))
+    traffic.queues.forEach((queue, q) => {
+      // the people are drawn at their store's scale, and stand that much closer together
+      const k = queue.scale
+      const count = share < 1 ? Math.max(2, Math.floor((queue.people * share) / 2) * 2) : queue.people
+      for (let i = 0; i < count && out.length < MAX_PEOPLE; i++) {
         const row = i % 2
-        out.push({ x: qx + 3 - Math.floor(i / 2) * 0.95 + (hash(q * 31 + i) - 0.5) * 0.3, z: qz + row * 0.8 + (hash(q * 17 + i * 3) - 0.5) * 0.25, c: new THREE.Color(PEOPLE[Math.floor(hash(q * 7 + i * 5) * PEOPLE.length)]), seed: q * 40 + i })
+        out.push({ x: queue.x + (QUEUE.head - Math.floor(i / 2) * QUEUE.pitch + (hash(q * 31 + i) - 0.5) * 0.3) * k, z: queue.z + (row * 0.8 + (hash(q * 17 + i * 3) - 0.5) * 0.25) * k, k, c: new THREE.Color(PEOPLE[Math.floor(hash(q * 7 + i * 5) * PEOPLE.length)]), seed: q * 40 + i })
       }
     })
     return out
@@ -222,9 +229,9 @@ function Movers({ traffic, speed, color, pins }: { traffic: Traffic; speed: numb
     if (speed > 0) time.current += Math.min(0.1, dt) * (0.7 + speed * 0.12)
     const t = time.current
     const { m, q, p, s, up, c } = scratch
-    const place = (meshes: THREE.InstancedMesh[], i: number, x: number, y: number, z: number, heading: number) => {
+    const place = (meshes: THREE.InstancedMesh[], i: number, x: number, y: number, z: number, heading: number, k = 1) => {
       q.setFromAxisAngle(up, heading)
-      m.compose(p.set(x, y, z), q, s.set(1, 1, 1))
+      m.compose(p.set(x, y, z), q, s.set(k, k, k))
       for (const mesh of meshes) mesh.setMatrixAt(i, m)
     }
     /** Vehicles going out along a route and back again, keeping to the right. */
@@ -251,7 +258,7 @@ function Movers({ traffic, speed, color, pins }: { traffic: Traffic; speed: numb
     run(traffic.ships, [parts.hull, parts.cargo], MAX_SHIPS, 8, 0, -1.4, (i) => parts.cargo.setColorAt(i, c.set(CARGO[i % CARGO.length])))
     if (parts.cargo.instanceColor) parts.cargo.instanceColor.needsUpdate = true
     crowd.forEach((person, i) => {
-      place([parts.people], i, person.x, PLOT_Y + Math.abs(Math.sin(t * 3 + person.seed)) * 0.07, person.z, hash(person.seed) * 0.8 - 0.4)
+      place([parts.people], i, person.x, PLOT_Y + Math.abs(Math.sin(t * 3 + person.seed)) * 0.07 * person.k, person.z, hash(person.seed) * 0.8 - 0.4, person.k)
       parts.people.setColorAt(i, person.c)
     })
     parts.people.count = crowd.length
@@ -263,7 +270,8 @@ function Movers({ traffic, speed, color, pins }: { traffic: Traffic; speed: numb
       q.setFromAxisAngle(up, spin * 0.9 + i)
       // a store drawn small on a shared plot carries a marker to match
       const k = pin.kind === 'store' ? 0.9 * Math.max(0.45, pin.scale ?? 1) : 1.6
-      m.compose(p.set(pin.x, pin.h + 5 + k + Math.sin(spin * 1.6 + i) * 0.5, pin.z), q, s.set(k, k * 1.3, k))
+      // and carries it lower, so that among close neighbours it is plain whose it is
+      m.compose(p.set(pin.x, pin.h + (pin.crowded ? 2.5 : 5) + k + Math.sin(spin * 1.6 + i) * (pin.crowded ? 0.3 : 0.5), pin.z), q, s.set(k, k * 1.3, k))
       parts.pins.setMatrixAt(i, m)
       parts.pins.setColorAt(i, c.set(pin.warn ? '#f2b631' : color))
     })

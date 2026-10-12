@@ -7,7 +7,7 @@
 // All of it follows the site's clock and none of it is saved.
 import { Act, Body, Crowd, Kind, Mode, Tool, rnd } from './crowd'
 import type { Nav } from './nav'
-import { Pose, type Spot, USE } from './spots'
+import { Pose, type Spot, USE, seatRank } from './spots'
 import type { Site } from '../../sim/types'
 
 export interface Programme {
@@ -22,7 +22,7 @@ export interface Programme {
 export type Phase = 'closed' | 'crew' | 'rehearsal' | 'doors' | 'show' | 'ovation' | 'out'
 
 /** The run of a show day, in hours on the site clock. */
-export const SHOW = { crewIn: 7.6, rehearse: 10, rehearseEnd: 11.4, doors: 13, start: 14, ovation: 15.6, end: 15.8, cleared: 16.8, crewOut: 18.4 }
+export const SHOW = { crewIn: 7.6, rehearse: 10, rehearseEnd: 11.4, doors: 12.6, start: 14, ovation: 15.6, end: 15.8, cleared: 16.8, crewOut: 18.4 }
 /** Moments in the show that get a round of applause, in hours after it starts, and how long each lasts. */
 const BEATS = [0.28, 0.62, 0.96, 1.28]
 const BEAT_LEN = 0.075
@@ -72,8 +72,15 @@ export class VenueCrowd extends Crowd {
   seats: Spot[] = []
   /** Seats kept for the guests who walk in, so the seated audience is not drawn into them. */
   reserved = new Set<string>()
-  /** How many guests are drawn walking in and out; the rest of the house simply takes its seats. */
+  /** How many guests are drawn walking in and out; the rest of the house is drawn only once seated. */
   walkers = 36
+  /** Seats taken by someone who is drawn only in their seat: the seated audience is exactly these. */
+  seated = new Set<string>()
+  /** The seats in the order the house fills (front rows first) and empties (back rows first), and each seat's place in it. */
+  private order: Spot[] = []
+  private rank = new Map<string, number>()
+  /** How many seats, in that order, have been given to someone so far. */
+  private given = 0
   private hostSpots: Spot[] = []
   private aisles: number[] = []
   private seq = 0
@@ -83,6 +90,11 @@ export class VenueCrowd extends Crowd {
   setSite(site: Site, nav: Nav, spots: Spot[]) {
     super.setSite(site, nav, spots)
     this.seats = spots.filter((s) => s.use & USE.guest)
+    const rank = seatRank(this.seats)
+    this.order = this.seats.slice().sort((a, b) => rank[this.seats.indexOf(a)] - rank[this.seats.indexOf(b)])
+    this.rank = new Map(this.order.map((s, k) => [s.key, k]))
+    this.given = Math.min(this.given, this.order.length)
+    for (const key of [...this.seated]) if (!this.byKey.has(key)) this.seated.delete(key)
     this.hostSpots = spots.filter((s) => s.use & USE.host && s.access >= 0)
     // the floor a cleaner works over: the aisles and the foyer, clear of doors and of where people stand
     const rooms = new Set(site.rooms.filter((r) => r.type === 'hall' || r.type === 'foyer').map((r) => r.n))
@@ -137,6 +149,12 @@ export class VenueCrowd extends Crowd {
       this.bodies.push(b)
       this.version++
     }
+    // someone on the welcome desk on a show day
+    this.manFronts([])
+  }
+
+  protected frontHours(hour: number): boolean {
+    return this.programme.live || (this.programme.booked && hour >= SHOW.doors - 0.5 && hour < SHOW.cleared)
   }
 
   private guests(): number {
@@ -145,12 +163,8 @@ export class VenueCrowd extends Crowd {
     return n
   }
 
-  private spawnGuest(placed: boolean) {
-    // the next sold seat nobody has taken
-    const free = this.seats.filter((s) => !s.taken && !this.reserved.has(s.key))
-    if (!free.length) return
+  private spawnGuest(placed: boolean, seat: Spot) {
     const n = ++this.seq
-    const seat = free[Math.floor(rnd(n * 7.7 + 1) * free.length)]
     const b = new Body()
     b.id = `guest${n}`
     b.kind = Kind.Guest
@@ -184,8 +198,31 @@ export class VenueCrowd extends Crowd {
     if (this.phase === 'show' || this.phase === 'ovation') {
       this.sold = Math.round(this.seats.length * this.programme.draw)
       this.house = this.programme.draw
-      for (let k = 0; k < Math.min(this.walkers, this.sold); k++) this.spawnGuest(true)
+      this.fill(this.sold, true, 0)
     }
+  }
+
+  /**
+   * Gives out seats, in the order the house fills, until `target` of them are taken, or takes them back from the
+   * other end. A share of the people given one walk in from the street, as many as the view will draw, spread
+   * through the whole house so the stream keeps coming while the rows fill; the rest are simply seen in their seats.
+   */
+  private fill(target: number, placed: boolean, step: number) {
+    this.guestIn -= step
+    const share = Math.min(1, (this.walkers * 1.15) / Math.max(1, this.sold))
+    let live = this.guests()
+    while (this.given < target && this.given < this.order.length) {
+      const seat = this.order[this.given++]
+      if (seat.taken || this.reserved.has(seat.key)) continue
+      const walks = live < this.walkers && rnd(this.given * 5.3 + 0.7) < share && (placed || this.guestIn <= 0)
+      if (walks) {
+        if (!placed) this.guestIn = this.programme.live ? 0.2 : 0.3
+        this.spawnGuest(placed, seat)
+        live++
+      } else this.seated.add(seat.key)
+    }
+    // on the way out the back rows go first: the walkers among them get up when their seat is taken back
+    while (this.given > target && this.given > 0) this.seated.delete(this.order[--this.given].key)
   }
 
   protected after(step: number, hour: number, day: number) {
@@ -198,20 +235,14 @@ export class VenueCrowd extends Crowd {
     // ---- how full the house is
     const seats = this.seats.length
     let want = 0
-    if (phase === 'doors') want = p.draw * Math.min(1, (hour - SHOW.doors) / (SHOW.start - SHOW.doors - 0.12))
+    // the last guests are let in a while before the start, so that everyone has reached their seat when it does
+    if (phase === 'doors') want = p.draw * Math.min(1, (hour - SHOW.doors) / (SHOW.start - SHOW.doors - 0.4))
     else if (phase === 'show' || phase === 'ovation') want = p.draw
     else if (phase === 'out') want = p.draw * Math.max(0, 1 - (hour - SHOW.end) / 0.55)
     // the house fills and empties smoothly even when the switch is thrown mid-day
     this.house += Math.max(-step * 0.5, Math.min(step * 0.5, want - this.house))
-    this.sold = Math.round(seats * want)
-    if (want > 0 && (phase === 'doors' || phase === 'show')) {
-      this.guestIn -= step
-      const live = this.guests()
-      if (this.guestIn <= 0 && live < Math.min(this.walkers, Math.round(seats * p.draw)) && live < this.sold + 2) {
-        this.guestIn = p.live ? 0.25 : 0.5 + rnd(this.seq) * 0.6
-        this.spawnGuest(false)
-      }
-    }
+    this.sold = Math.round(seats * p.draw)
+    this.fill(Math.round(seats * this.house), false, step)
     if (this.house <= 0.001 && !this.guests() && this.reserved.size) this.reserved.clear()
     // ---- everyone in their seat claps with the house, and most get to their feet at the end
     for (const b of this.bodies) {
@@ -252,7 +283,9 @@ export class VenueCrowd extends Crowd {
       return this.leave(b)
     }
     const over = phase === 'out' || phase === 'crew' || phase === 'closed' || phase === 'rehearsal'
-    if (over && b.stage < 3 && (!seated || hour >= SHOW.end + rnd(b.seed + 5) * 0.6 || phase !== 'out')) {
+    // out with the row: a guest in their seat stays until the emptying house has reached it
+    void hour
+    if (over && b.stage < 3 && (!seated || phase !== 'out' || (this.rank.get(b.seat!.key) ?? 0) >= this.given)) {
       b.cheer = false
       b.clap = 0
       const demo = rnd(b.seed + 9) < 0.3 ? this.pick(b, USE.browse) : null

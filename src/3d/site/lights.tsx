@@ -119,6 +119,8 @@ export function DeskScreens({ site, items, crowd, glow }: { site: Site; items: S
 
 /** How brightly a room of each type is left lit when nobody is in it: receptions and shop floors keep a light on. */
 const STANDBY: Record<string, number> = { lobby: 0.45, atrium: 0.3, server: 0.28, sales: 0.5, forum: 0.4, service: 0.3, foyer: 0.45, hall: 0.3, control: 0.35 }
+/** A production hall with the shift gone home is left on a few safety lights: its windows go dark. */
+const FACTORY_HALL = 0.12
 /** Things that light the floor round them after dark, by item kind: reach in metres and strength. */
 const LIT_ITEMS: Record<string, [number, number]> = { lamp: [4.2, 1], sign: [2.6, 0.6], fountain: [3.2, 0.4], logowall: [2.2, 0.5], aquarium: [2.2, 0.5], vending: [1.8, 0.4], showcase: [1.6, 0.45], coffee: [2, 0.35] }
 const NIGHT: Record<Mood, number> = { day: 0, dusk: 0.5, night: 1 }
@@ -159,7 +161,7 @@ export function RoomLights({ site, crowd, mood, lamps, busy, onDark, gain = 1 }:
       const n = site.grid[i]
       if (!n) continue
       let r = rooms.get(n)
-      if (!r) rooms.set(n, (r = { n, tiles: [], x: 0, z: 0, radius: 1, standby: STANDBY[types.get(n) ?? ''] ?? 0 }))
+      if (!r) rooms.set(n, (r = { n, tiles: [], x: 0, z: 0, radius: 1, standby: site.kind === 'factory' && types.get(n) === 'hall' ? FACTORY_HALL : (STANDBY[types.get(n) ?? ''] ?? 0) }))
       r.tiles.push(i)
     }
     for (const r of rooms.values()) {
@@ -363,6 +365,70 @@ export function RoomLights({ site, crowd, mood, lamps, busy, onDark, gain = 1 }:
             distance={10}
           />
         ))}
+    </>
+  )
+}
+
+// ---------------------------------------------------------------- stages
+
+/** How strongly the stage is lit in each light, and the house lights with and without a show on. */
+const STAGE_WASH: Record<Mood, number> = { day: 40, dusk: 170, night: 250 }
+const HOUSE: Record<Mood, { up: number; down: number }> = { day: { up: 0, down: 0 }, dusk: { up: 26, down: 7 }, night: { up: 60, down: 11 } }
+
+/**
+ * The light on a venue. The stage has a wash of its own from the front, so whoever is on it reads clearly; the
+ * seating has house lights, which go down while a show is on. Nothing here lights the grounds: after dark they are
+ * left to the lamp posts.
+ */
+export function StageLights({ site, mood, show }: { site: Site; mood: Mood; show: boolean }) {
+  const plan = useMemo(() => {
+    const stage = site.items.find((i) => i.kind === 'stage')
+    const seats = site.items.filter((i) => i.kind.startsWith('seats'))
+    let house: [number, number] | null = null
+    if (seats.length) {
+      let x = 0
+      let z = 0
+      for (const s of seats) {
+        const fs = frameOf(site, s)
+        x += fs.cx
+        z += fs.cz
+      }
+      house = [x / seats.length, z / seats.length]
+    }
+    if (!stage) return { stage: null, house }
+    const fr = frameOf(site, stage)
+    // two lamps out in front of the stage and above it, one to each side, both on its middle
+    return { stage: { at: [frameX(fr, 0, 0.2), frameZ(fr, 0, 0.2)], lamps: [-1, 1].map((k) => [frameX(fr, k * 4.2, 7.5), frameZ(fr, k * 4.2, 7.5)]) }, house }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [site, site.rev])
+  const spots = useMemo(
+    () =>
+      [0, 1].map(() => {
+        const s = new THREE.SpotLight('#fff3e2', 0, 26, 0.5, 0.7, 1.6)
+        s.castShadow = false
+        return s
+      }),
+    [],
+  )
+  useEffect(() => () => spots.forEach((s) => s.dispose()), [spots])
+  const wash = STAGE_WASH[mood] * (show ? 1 : 0.45)
+  spots.forEach((s, k) => {
+    s.intensity = plan.stage ? wash : 0
+    if (!plan.stage) return
+    s.position.set(plan.stage.lamps[k][0], 8.5, plan.stage.lamps[k][1])
+    s.target.position.set(plan.stage.at[0], 1.6, plan.stage.at[1])
+    s.target.updateMatrixWorld()
+  })
+  const house = show ? HOUSE[mood].down : HOUSE[mood].up
+  return (
+    <>
+      {spots.map((s, k) => (
+        <group key={k}>
+          <primitive object={s} />
+          <primitive object={s.target} />
+        </group>
+      ))}
+      {plan.house && house > 0 && <pointLight position={[plan.house[0], 7.5, plan.house[1]]} color="#ffe6c8" intensity={house} distance={34} decay={1.5} />}
     </>
   )
 }

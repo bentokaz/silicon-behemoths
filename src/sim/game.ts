@@ -14,12 +14,12 @@ import { type VariantId, generateDesign, layoutParts } from './rivals'
 import { INCIDENT_WAIT, STARTUPS, economyNow, typeDemand, hasType, makeOriginal, originalName, priceIndex, rivalStrategy, rollIncident, settleIncident, unlockBlocked, unlockCost } from './world'
 import { clamp, int, pick, rand, range } from './rng'
 import { evaluate } from './scoring'
-import { bayStands, curveAt, onCurve } from './curves'
-import { FACADES, FLOOR_COST, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, areaOf, areaTiles, autoDoor, builtTiles, canPlace, curveFor, defaultGround, gridAt, groundsFor, hasGround, inPlot, isBoundary, itemAllowed, itemAt, itemTiles, mergeRooms, newSite, roomOf, rowSpots, shapeCuts, starterLine, storeStats, tidy, tierOf, touching, upkeep, wallAt, zone } from './sites'
+import { bayStands, curveAt, curveTiles, onCurve } from './curves'
+import { FACADES, FLOOR_COST, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, SHORT_WALL, areaOf, areaTiles, autoDoor, builtTiles, canPlace, courtyardFor, curveFor, defaultGround, doorFits, fillError, gridAt, groundsFor, hasGround, inPlot, isBoundary, itemAllowed, itemAt, itemTiles, mergeRooms, newSite, openRooms, pocketAt, roomOf, rowSpots, shapeCuts, starterLine, storeStats, tidy, tierOf, touching, upkeep, wallAt, zone } from './sites'
 import { capOfChannel, locked, refreshExecs, siteLocked, stepProgress } from './progress'
 import { EXECS, HEADHUNT_COST, TEAM_SPAN, dropFromTeams, execFx, inTraining, monthlySalaries, monthlyStaff, newPolicy, perksCost, refreshCandidates, staffEffects, stepStaff, trainingCost } from './staff'
 import { CHIP_BUDGET, OS_FEATURES, chipAdoption, chipBlocked, chipProjectCost, chipProjectDays, finishChip, newOs, osBlocked, osProjectCost, osProjectDays, osShipQuality, servicesPerMonth, softwareBonus } from './tech'
-import { type ChannelId, type Company, type CostKey, type DeviceDesign, type DeviceType, type Difficulty, type EventType, type GameConfig, type GameState, type Levels, type MonthReport, type NewsItem, type Product, type ProductionOrder, type SegmentId, type Site, type SiteKind, type StaffPolicy, type StorageTier, type SupplyCat, TRACKS, type Track, monthCosts } from './types'
+import { type ChannelId, type Company, type Corner, type CostKey, type DeviceDesign, type DeviceType, type Difficulty, type EventType, type GameConfig, type GameState, type Levels, type MonthReport, type NewsItem, type Product, type ProductionOrder, type SegmentId, type Site, type SiteKind, type StaffPolicy, type StorageTier, type SupplyCat, TRACKS, type Track, monthCosts } from './types'
 
 export const SAVE_VERSION = 5
 export const RETAIL_CUT = 0.15
@@ -642,29 +642,42 @@ export const zoneable = (site: Site, x0: number, y0: number, x1: number, y1: num
 /** Floor area, in square metres, that zoning an area would add: tiles a curved wall cuts count for the part inside it. */
 export const zoneArea = (site: Site, x0: number, y0: number, x1: number, y1: number, shape: Shape, opts?: ShapeOpts) => Math.max(1, Math.round(areaOf(zoneable(site, x0, y0, x1, y1, shape, opts), curveFor(x0, y0, x1, y1, shape, opts))))
 
+/** What marking out an area as a room would build. */
+export interface ZonePlan {
+  /** The open tiles the room takes. */
+  tiles: [number, number][]
+  /** The curved outline of a round or ring room, or null. */
+  curve: ReturnType<typeof curveFor>
+  /** Floor area charged for, in square metres. */
+  area: number
+  /** True when a box drawn across a curved courtyard was widened to take the whole courtyard. */
+  filled: boolean
+}
+
 /**
- * Build a room over an area of open ground. Floor laid against a room of the
- * same type joins it: the wall between them goes, and where the new floor
- * touches several such rooms they all become one, which keeps the number and
- * the finish of the oldest. Pass `into` to extend a room the new floor does
- * not touch, or `apart` to build a room of its own whatever stands next to
- * it. Round and ring shapes get a smooth curved wall; `opts` sets a ring's
- * depth and how much of a turn an arc covers.
+ * Works out what an area tool marked from one corner to the other would
+ * build. A plain box that covers most of a courtyard closed in by a curved
+ * wall takes the whole courtyard, so the room shares the curve all round
+ * instead of leaving slivers of ground beside its straight sides.
  */
-export function zoneRoom(s: GameState, ref: string, type: string, x0: number, y0: number, x1: number, y1: number, shape: Shape = 'rect', into?: number, opts?: ShapeOpts, apart = false): string | null {
-  const site = siteOf(s, ref)
-  if (!site) return 'Nothing to build on'
-  if (!ROOMS[site.kind][type]) return 'Unknown room'
-  const lock = siteLocked(s, site.kind, 'room', type)
-  if (lock) return lock
+export function zonePlan(site: Site, x0: number, y0: number, x1: number, y1: number, shape: Shape = 'rect', opts?: ShapeOpts): ZonePlan {
   const tiles = zoneable(site, x0, y0, x1, y1, shape, opts)
-  if (!tiles.length) return 'That land is already built on'
+  const curve = curveFor(x0, y0, x1, y1, shape, opts)
+  if (curve) return { tiles, curve, area: tiles.length ? zoneArea(site, x0, y0, x1, y1, shape, opts) : 0, filled: false }
+  const whole = shape === 'rect' ? courtyardFor(site, tiles) : null
+  return { tiles: whole ?? tiles, curve: null, area: (whole ?? tiles).length, filled: !!whole }
+}
+
+/**
+ * Builds a room on a set of open tiles, charged for: clears and sells what
+ * stands on them, joins the rooms it should join, and sees that neither the
+ * new room nor any room that had a way in is left without one.
+ */
+function raise(s: GameState, site: Site, type: string, tiles: [number, number][], cost: number, into: number | undefined, apart: boolean, cuts: Record<string, Corner>, curve: ReturnType<typeof curveFor>): string | null {
   const joined = apart ? [] : touching(site, type, tiles)
   const start = !apart && into !== undefined ? roomOf(site, into) : undefined
   if (start?.type === type && !joined.includes(start.n)) joined.push(start.n)
   joined.sort((a, b) => a - b)
-  const curve = curveFor(x0, y0, x1, y1, shape, opts)
-  const cost = roomCost(site, type, curve ? zoneArea(site, x0, y0, x1, y1, shape, opts) : tiles.length)
   if (!canAfford(s, cost)) return `Not enough cash: that would cost $${cost.toLocaleString()}`
   spend(s, cost, siteBucket(site))
   // trees, benches and anything else standing on the land are cleared and sold on
@@ -677,14 +690,57 @@ export function zoneRoom(s: GameState, ref: string, type: string, x0: number, y0
   })
   s.cash += back
   s.cur[siteBucket(site)] -= back
-  // diagonal rooms get their stepped edges cut to 45 degrees; round ones keep their true curve
-  const cuts = shape === 'diag' ? shapeCuts(areaTiles(x0, y0, x1, y1, shape)) : {}
+  const had = openRooms(site)
   const { room } = zone(site, type, tiles, joined[0], 0, cuts, curve)
   if (room && joined.length > 1) mergeRooms(site, room.n, joined)
+  tidy(site)
   // a room that already has a way in is not given another
   if (room) autoDoor(site, room.n)
-  tidy(site)
+  // a room whose only door went with a wall the new floor swallowed, or was cut short by a new curved wall, gets another
+  const open = openRooms(site)
+  for (const r of site.rooms) if (r.n !== room?.n && had.has(r.n) && !open.has(r.n)) autoDoor(site, r.n)
   return null
+}
+
+/**
+ * Build a room over an area of open ground. Floor laid against a room of the
+ * same type joins it: the wall between them goes, and where the new floor
+ * touches several such rooms they all become one, which keeps the number and
+ * the finish of the oldest. Pass `into` to extend a room the new floor does
+ * not touch, or `apart` to build a room of its own whatever stands next to
+ * it. Round and ring shapes get a smooth curved wall; `opts` sets a ring's
+ * depth and how much of a turn an arc covers. A box across most of a curved
+ * courtyard takes all of it (see zonePlan).
+ */
+export function zoneRoom(s: GameState, ref: string, type: string, x0: number, y0: number, x1: number, y1: number, shape: Shape = 'rect', into?: number, opts?: ShapeOpts, apart = false): string | null {
+  const site = siteOf(s, ref)
+  if (!site) return 'Nothing to build on'
+  if (!ROOMS[site.kind][type]) return 'Unknown room'
+  const lock = siteLocked(s, site.kind, 'room', type)
+  if (lock) return lock
+  const plan = zonePlan(site, x0, y0, x1, y1, shape, opts)
+  if (!plan.tiles.length) return 'That land is already built on'
+  // diagonal rooms get their stepped edges cut to 45 degrees; round ones keep their true curve
+  const cuts = shape === 'diag' ? shapeCuts(areaTiles(x0, y0, x1, y1, shape)) : {}
+  return raise(s, site, type, plan.tiles, roomCost(site, type, plan.area), into, apart, cuts, plan.curve)
+}
+
+/**
+ * Fill the courtyard a tile lies in with a room: every open tile shut in with
+ * it, up to the walls all round, curved ones included. Charged by the tile
+ * like any other room, and joined to rooms of the same type it touches unless
+ * `apart` is set. Refused where the ground is not closed in.
+ */
+export function fillRoom(s: GameState, ref: string, type: string, x: number, y: number, apart = false): string | null {
+  const site = siteOf(s, ref)
+  if (!site) return 'Nothing to build on'
+  if (!ROOMS[site.kind][type]) return 'Unknown room'
+  const lock = siteLocked(s, site.kind, 'room', type)
+  if (lock) return lock
+  const pocket = pocketAt(site, x, y)
+  const err = fillError(pocket)
+  if (err || !pocket) return err
+  return raise(s, site, type, pocket.tiles, roomCost(site, type, pocket.tiles.length), undefined, apart, {}, null)
 }
 
 /** Knock down every room tile in an area. Anything inside is sold for half its price. */
@@ -740,6 +796,7 @@ export function setEdge(s: GameState, ref: string, x: number, y: number, side: '
   const site = siteOf(s, ref)
   if (!site) return 'Nothing to build on'
   if (!isBoundary(site, x, y, side)) return 'There is no wall there'
+  if ((kind === 'door' || kind === 'open') && !doorFits(site, x, y, side)) return SHORT_WALL
   const cost = EDGE_COST[kind]
   if (!canAfford(s, cost)) return 'Not enough cash'
   spend(s, cost, siteBucket(site))
@@ -795,7 +852,8 @@ export const keepsDoors = (kind: 'wall' | 'glass' | 'door' | 'open', stretches: 
  * runs out part of the way the rest is left as it was. Glazing a run of
  * several stretches leaves the doors in it standing, so that a shopfront can
  * be glazed in one sweep without losing its way in; a single stretch is
- * changed whatever it was.
+ * changed whatever it was. A door or an opening is passed over on a stretch
+ * that a curved wall cuts short (see doorFits).
  */
 export function setEdges(s: GameState, ref: string, run: WallRun, kind: 'wall' | 'glass' | 'door' | 'open'): RunResult {
   const out: RunResult = { done: 0, skipped: 0, short: 0, cost: 0, error: null }
@@ -819,9 +877,17 @@ export function setEdges(s: GameState, ref: string, run: WallRun, kind: 'wall' |
     out.done++
     return true
   }
+  const way = kind === 'door' || kind === 'open'
+  const curved = way && site.curves?.length ? curveTiles(site) : undefined
+  let cutShort = 0
   for (const e of run.edges ?? []) {
     if (!isBoundary(site, e.x, e.y, e.side)) {
       out.skipped++
+      continue
+    }
+    if (curved && !doorFits(site, e.x, e.y, e.side, curved)) {
+      out.skipped++
+      cutShort++
       continue
     }
     if (!pay(wallAt(site, e.x, e.y, e.side)?.kind ?? 'wall')) continue
@@ -840,7 +906,7 @@ export function setEdges(s: GameState, ref: string, run: WallRun, kind: 'wall' |
   }
   if (out.done) site.rev++
   if (out.short) out.error = out.done ? `Changed ${out.done} of ${out.done + out.short}: not enough cash for the rest` : 'Not enough cash'
-  else if (!out.done && !same) out.error = 'There is no wall there'
+  else if (!out.done && !same) out.error = cutShort ? SHORT_WALL : 'There is no wall there'
   return out
 }
 
@@ -1077,11 +1143,39 @@ export interface LayoutQuote {
   resale: number
   /** What is charged: the build less the resale. Negative when the old fittings were worth more. */
   cost: number
+  /** True when the plot already stands exactly as the copy would: there is nothing to rebuild and nothing to pay. */
+  same: boolean
+}
+
+/**
+ * Everything about how a plot is built, as text: two plots built alike give
+ * the same text whatever their rooms are numbered and whatever ids their
+ * furniture and walls carry.
+ */
+export function layoutSig(site: Site): string {
+  const order = new Map<number, number>()
+  const grid = site.grid.map((n) => {
+    if (!n) return 0
+    if (!order.has(n)) order.set(n, order.size + 1)
+    return order.get(n)!
+  })
+  const pairs = (rec: Record<string, unknown> | undefined) => Object.entries(rec ?? {}).map(([k, v]) => `${k}=${v}`).sort()
+  return JSON.stringify({
+    plot: [site.kind, site.tier, site.w, site.h],
+    grid,
+    rooms: site.rooms.filter((r) => order.has(r.n)).map((r) => `${order.get(r.n)}:${r.type}:${r.style}`).sort(),
+    walls: site.walls.map((w) => `${w.x},${w.y},${w.side}:${w.kind}`).sort(),
+    cuts: pairs(site.cuts),
+    curves: (site.curves ?? []).map((c) => [order.get(c.room) ?? 0, c.cx, c.cy, c.rx, c.ry, c.t ?? 0, c.from ?? 0, c.sweep ?? 360, pairs(c.walls), Object.keys(c.square ?? {}).sort()].join('|')).sort(),
+    floor: pairs(site.floor),
+    items: site.items.filter((it) => ITEMS[site.kind][it.kind]).map((it) => `${it.kind}:${it.x},${it.y}:${((it.rot % 4) + 4) % 4}`).sort(),
+    look: [site.facade, site.roof, site.floors],
+  })
 }
 
 /** Works out a copy of one store's layout on another plot, and what it would cost. `to` is the plot as it stands. */
 function layoutPlan(s: GameState, from: Site, to: Site, charge = true): LayoutQuote & { site: Site | null } {
-  const fail = (error: string, needs: [number, number] = [0, 0]) => ({ error, needs, build: 0, resale: 0, cost: 0, site: null })
+  const fail = (error: string, needs: [number, number] = [0, 0]) => ({ error, needs, build: 0, resale: 0, cost: 0, same: false, site: null })
   let x0 = Infinity
   let y0 = Infinity
   let x1 = -Infinity
@@ -1105,11 +1199,13 @@ function layoutPlan(s: GameState, from: Site, to: Site, charge = true): LayoutQu
   const site = newSite(to.kind, to.tier)
   transplant({ ...from, items }, site, dx, dy)
   tidy(site)
+  // the plot already stands exactly so: nothing would be cleared, nothing built and nothing sold
+  if (layoutSig(site) === layoutSig(to)) return { error: null, needs, build: 0, resale: 0, cost: 0, same: true, site }
   const build = layoutValue(site, { facade: to.facade, roof: to.roof, floors: to.floors })
   const resale = to.items.reduce((a, it) => a + (ITEMS[to.kind][it.kind]?.cost ?? 0) / 2, 0)
   const cost = build - resale
   const error = charge && cost > 0 && !canAfford(s, cost) ? `Not enough cash: copying that layout here costs $${Math.round(cost).toLocaleString()}` : null
-  return { error, needs, build, resale, cost, site }
+  return { error, needs, build, resale, cost, same: false, site }
 }
 
 const storeOf = (s: GameState, id: string) => s.stores.find((st) => st.id === id)
@@ -1118,7 +1214,7 @@ const storeOf = (s: GameState, id: string) => s.stores.find((st) => st.id === id
 export function layoutQuote(s: GameState, fromId: string, toId: string): LayoutQuote {
   const from = storeOf(s, fromId)
   const to = storeOf(s, toId)
-  const none: LayoutQuote = { error: 'No such store', needs: [0, 0], build: 0, resale: 0, cost: 0 }
+  const none: LayoutQuote = { error: 'No such store', needs: [0, 0], build: 0, resale: 0, cost: 0, same: false }
   if (!from || !to) return none
   if (from === to) return { ...none, error: 'That is this store' }
   const { site: _site, ...quote } = layoutPlan(s, from.site, to.site)
@@ -1128,7 +1224,7 @@ export function layoutQuote(s: GameState, fromId: string, toId: string): LayoutQ
 /** The same for a store not yet opened, on a bare plot of the given tier. The plot itself is charged on top. */
 export function newLayoutQuote(s: GameState, fromId: string, tier: number): LayoutQuote {
   const from = storeOf(s, fromId)
-  if (!from || !SITE_TIERS.store[tier]) return { error: 'No such store', needs: [0, 0], build: 0, resale: 0, cost: 0 }
+  if (!from || !SITE_TIERS.store[tier]) return { error: 'No such store', needs: [0, 0], build: 0, resale: 0, cost: 0, same: false }
   const { site: _site, ...quote } = layoutPlan(s, from.site, newSite('store', tier), false)
   return quote
 }
@@ -1139,13 +1235,18 @@ function reissue(s: GameState, site: Site) {
   for (const w of site.walls) w.id = `w${s.nextId++}`
 }
 
+/** What copyLayout answers when the two stores are already built alike. */
+export const SAME_LAYOUT = 'These two stores already have the same layout: there is nothing to rebuild, and nothing was charged.'
+
 /**
  * Rebuild one store to another's layout: rooms, curved and slanted walls,
  * doors and glass, ground finishes, cladding, roof, storeys and every piece
  * of furniture. What stands on the plot now is cleared, its furniture sold
  * for half price as usual, and the copy is charged at what it would cost to
  * build by hand. Refused if the layout does not fit the plot or the money is
- * not there. Sales figures, name and location stay with the store.
+ * not there. Sales figures, name and location stay with the store. A store
+ * that already stands exactly as the copy would is left alone, free of
+ * charge, and the caller is told so.
  */
 export function copyLayout(s: GameState, fromId: string, toId: string): string | null {
   const from = storeOf(s, fromId)
@@ -1154,6 +1255,7 @@ export function copyLayout(s: GameState, fromId: string, toId: string): string |
   if (from === to) return 'That is this store'
   const plan = layoutPlan(s, from.site, to.site)
   if (plan.error || !plan.site) return plan.error ?? 'That layout cannot be copied'
+  if (plan.same) return SAME_LAYOUT
   spend(s, plan.build, 'facilities')
   s.cash += plan.resale
   s.cur.facilities -= plan.resale

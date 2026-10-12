@@ -7,7 +7,7 @@ import * as THREE from 'three'
 import type { Product } from '../../sim/types'
 import { B, C, DARK, S, STEEL, Sign, WALNUT } from './kit'
 import { OfficeItem } from './office'
-import { STAGE_H, seatRows } from './spots'
+import { LEGROOM, STAGE_H, STAIR_W, STAIR_X, seatRows } from './spots'
 import { DisplayTable } from './store'
 
 export interface VenueCtx {
@@ -24,6 +24,8 @@ export interface VenueCtx {
   /** What the big screen shows during a show. */
   screen?: THREE.Texture
   products: Product[]
+  /** Seating: which sides are open to an aisle (1 left, 2 right), where a raised block has steps. */
+  aisles?: number
 }
 
 export { STAGE_H }
@@ -35,6 +37,26 @@ function SeatBlock({ h, c }: { h: number; c: VenueCtx }) {
     <>
       {h > 0 && <B p={[0, h / 2, 0]} s={[2.98, h, 1.98]} c="#2b2d31" r={0.01} rough={0.8} />}
       {h > 0 && <B p={[0, (h + rows[1].y) / 2, 0.5]} s={[2.98, rows[1].y - h, 0.98]} c="#2b2d31" r={0.01} rough={0.8} />}
+      {/* steps down each side that is open to an aisle: a tread for each row and a half step up to it, each with a lit nosing */}
+      {h > 0 &&
+        [-1, 1].map((side) =>
+          (c.aisles ?? 0) & (side < 0 ? 1 : 2)
+            ? rows.map(({ y, z }, i) => {
+                const below = i ? rows[0].y : h >= 1 ? h - 0.26 : 0
+                const mid = (below + y) / 2
+                const x = side * (1.49 + STAIR_X)
+                const at = z - LEGROOM
+                return (
+                  <group key={`${side}${i}`}>
+                    <B p={[x, y / 2, at + 0.125]} s={[STAIR_W, y, 0.75]} c="#2b2d31" r={0.006} rough={0.8} />
+                    <B p={[x, mid / 2, at - 0.375]} s={[STAIR_W, mid, 0.25]} c="#2b2d31" r={0.006} rough={0.8} />
+                    <B p={[x, y + 0.004, at - 0.235]} s={[STAIR_W - 0.02, 0.008, 0.02]} c="#ffffff" r={0} glow="#ffd9a8" glowPower={0.5 + 0.9 * c.glow} cast={false} />
+                    <B p={[x, mid + 0.004, at - 0.485]} s={[STAIR_W - 0.02, 0.008, 0.02]} c="#ffffff" r={0} glow="#ffd9a8" glowPower={0.5 + 0.9 * c.glow} cast={false} />
+                  </group>
+                )
+              })
+            : null,
+        )}
       {rows.map(({ y: base, z }) => (
         <group key={z}>
           {Array.from({ length: 6 }, (_, i) => {

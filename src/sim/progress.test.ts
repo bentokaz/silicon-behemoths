@@ -41,7 +41,7 @@ import {
 import { GOALS, nextGoals } from './goals'
 import { bestSegment } from './market'
 import { pendingUnits } from './ops'
-import { CAPS, type CapId, capOfTab, execAvailable, frontier, has, isNear, locked, nearTabs, needText, openEverything, ratioOf, reqsOf, stepProgress, vacantSeats } from './progress'
+import { CAPS, type CapId, capOfTab, execAvailable, frontier, has, isNear, lockTip, locked, nearTabs, needText, openEverything, ratioOf, reqsOf, stepProgress, vacantSeats } from './progress'
 import { evaluate } from './scoring'
 import { EXECS, execFx, execOf, marketPay, salaryFor, staffEffects } from './staff'
 import { type Difficulty, EXEC_IDS, type ExecId, type GameState, ROLES, type Role, monthCosts } from './types'
@@ -152,6 +152,28 @@ describe('a guided company starts small', () => {
     // and the navigation shows no more than three locked screens, however many there are
     expect(nearTabs(s)).toEqual(['research', 'market', 'marketing'])
     expect(s.execPool).toEqual([])
+  })
+
+  it('says on a locked control everything that still has to happen, and nothing once it is open', () => {
+    const s = guidedGame()
+    // either of two things opens the design studio
+    expect(lockTip(s, 'studio')).toBe('Design studio is not open yet. To open it: hire a designer, or put your first device on sale.')
+    // care policies need all three, in order
+    expect(lockTip(s, 'carePolicy')).toBe('Care policies is not open yet. To open it: open After-sales, then reach 100,000 owners, then hire a Head of Support.')
+    for (const c of CAPS) {
+      const tip = lockTip(s, c.id)!
+      expect(tip.startsWith(`${c.name} is not open yet.`)).toBe(true)
+      // every unmet requirement is named, not only the next one
+      for (const r of reqsOf(s, c.id).filter((x) => !x.done)) expect(tip.toLowerCase()).toContain(r.label.toLowerCase())
+    }
+    // a step that is done drops out of the sentence
+    expect(take(s, 'support')).toBeNull()
+    stepProgress(s)
+    expect(has(s, 'care')).toBe(true)
+    expect(lockTip(s, 'care')).toBeNull()
+    expect(lockTip(s, 'carePolicy')).toBe('Care policies is not open yet. To open it: reach 100,000 owners, then hire a Head of Support.')
+    const open = openGame()
+    for (const c of CAPS) expect(lockTip(open, c.id)).toBeNull()
   })
 
   it('refuses the levers of what is locked, with a reason, and leaves the first device alone', () => {

@@ -307,24 +307,27 @@ export function buildTowers(list: Place[], mats: CityMats): THREE.Mesh[] {
       b.box('wall', p.x, 4.4, p.z + d / 2 + 0.4, 13, 3.6, 0.5, '#16181b')
       for (const sx of [-5, 5]) b.box('trim', p.x + sx, 1.5, p.z + d / 2 + 0.3, 0.4, 3, 0.4, '#2f3338')
     }
-    if (p.building !== undefined && p.site) scaffold(b, p.x, p.z, p.site.w * (p.scale ?? 1), p.site.h * (p.scale ?? 1), Math.max(7, p.site.floors * STOREY + 2) * (p.scale ?? 1), p.id.length)
+    // a store that shares its plot has the neighbours close by: its scaffolding keeps tight to the walls, to the
+    // store's own scale, and there is no room to stand a crane
+    if (p.building !== undefined && p.site) scaffold(b, p.x, p.z, p.site.w * (p.scale ?? 1), p.site.h * (p.scale ?? 1), Math.max(7, p.site.floors * STOREY + 2) * (p.scale ?? 1), p.id.length, p.crowded ? 0.55 * (p.scale ?? 1) : 1, !p.crowded)
   }
   return b.build(mats.of)
 }
 
-/** Scaffolding round a plot and a tower crane over it. */
-function scaffold(b: Batch, x: number, z: number, w: number, d: number, h: number, seed: number) {
+/** Scaffolding round a plot and, where there is room, a tower crane over it. `k` is how far out it stands and how wide its boards are, against the usual. */
+function scaffold(b: Batch, x: number, z: number, w: number, d: number, h: number, seed: number, k = 1, crane = true) {
   const pole = '#c9ccd1'
-  const hw = w / 2 + 1.2
-  const hd = d / 2 + 1.2
+  const hw = w / 2 + 1.2 * k
+  const hd = d / 2 + 1.2 * k
   const side = (ax: number, az: number, bx: number, bz: number) => {
     const len = Math.hypot(bx - ax, bz - az)
     const n = Math.max(2, Math.round(len / 3.2))
     for (let i = 0; i <= n; i++) b.box('trim', x + ax + ((bx - ax) * i) / n, h / 2, z + az + ((bz - az) * i) / n, 0.14, h, 0.14, pole)
-    for (let y = 2.2; y < h; y += 2.2) {
+    const lift = Math.max(1.1, 2.2 * Math.min(1, k * 1.8))
+    for (let y = lift; y < h; y += lift) {
       const alongX = Math.abs(bx - ax) > Math.abs(bz - az)
-      b.box('wall', x + (ax + bx) / 2, y, z + (az + bz) / 2, alongX ? len : 1, 0.1, alongX ? 1 : len, '#a67c52', 0.9)
-      b.box('trim', x + (ax + bx) / 2, y + 1, z + (az + bz) / 2, alongX ? len : 0.08, 0.08, alongX ? 0.08 : len, pole)
+      b.box('wall', x + (ax + bx) / 2, y, z + (az + bz) / 2, alongX ? len : k, 0.1, alongX ? k : len, '#a67c52', 0.9)
+      b.box('trim', x + (ax + bx) / 2, y + lift * 0.45, z + (az + bz) / 2, alongX ? len : 0.08, 0.08, alongX ? 0.08 : len, pole)
     }
   }
   side(-hw, hd, hw, hd)
@@ -333,6 +336,7 @@ function scaffold(b: Batch, x: number, z: number, w: number, d: number, h: numbe
   side(hw, -hd, hw, hd)
   // green netting over part of the front
   b.box('wall', x - hw / 2, h * 0.55, z + hd + 0.1, hw * 0.8, h * 0.7, 0.06, '#3f7d4d', 0.8)
+  if (!crane) return
   // tower crane
   const cx = x + hw + 4
   const cz = z - hd - 3

@@ -7,7 +7,7 @@ import * as THREE from 'three'
 import type { FactoryLife } from '../../sim/life'
 import type { Site, SiteItem } from '../../sim/types'
 import { rnd } from './crowd'
-import { Lorry } from './factory'
+import { LORRY_WHEELS, LiveWheel, Lorry } from './factory'
 import type { Sparks } from './fx'
 import { Baked } from './kit'
 import { frameOf, frameX, frameZ } from './spots'
@@ -32,7 +32,10 @@ const col = new THREE.Color()
 const POSE: [number, number, number] = [0, 0, 0]
 
 /** What a dock's lorry is doing. */
-const Go = { Rest: 0, Arrive: 1, Back: 2, Load: 3, Leave: 4, Away: 5 } as const
+const Go = { Rest: 0, Arrive: 1, Back: 2, Load: 3, Leave: 4, Away: 5, Swing: 6 } as const
+/** Distance between a lorry's front axle and the middle of its rear ones: what its steering has to work with. */
+const WHEELBASE = 4.7
+const AHEAD: [number, number, number] = [0, 0, 0]
 
 interface DockState {
   units: number
@@ -44,6 +47,9 @@ interface DockState {
   taking: number
   idle: number
   placed: boolean
+  /** How far the wheels have rolled, in radians, and how far the front ones are turned. */
+  roll: number
+  steer: number
 }
 
 /** How fast a lorry may go where it is: briskly on the road, slowly in the yard, and easing off toward the end of a run. */
@@ -59,7 +65,7 @@ export function FactoryFloor({ site, life, sparks, plan }: { site: Site; life: F
   const dockFrames = useMemo(() => docks.map((d) => frameOf(site, d)), [docks, site])
   const testFrames = useMemo(() => tests.map((d) => frameOf(site, d)), [tests, site])
   const moves = useMemo(() => docks.map((d) => plan.docks.get(d.id)), [docks, plan])
-  const lengths = useMemo(() => moves.map((m) => (m ? { arrive: lengthOf(m.arrive), back: lengthOf(m.back), leave: lengthOf(m.leave) } : { arrive: 0, back: 0, leave: 0 })), [moves])
+  const lengths = useMemo(() => moves.map((m) => (m ? { arrive: lengthOf(m.arrive), back: lengthOf(m.back), leave: lengthOf(m.leave), swing: lengthOf(m.swing) } : { arrive: 0, back: 0, leave: 0, swing: 0 })), [moves])
 
   const cartons = useMemo(() => {
     const m = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ roughness: 0.85 }), Math.max(1, docks.length * PILE + tests.length * (BIN + 1)))
@@ -87,14 +93,39 @@ export function FactoryFloor({ site, life, sparks, plan }: { site: Site; life: F
     state.current.docks = []
   }, [plan])
   const lorries = useRef<(THREE.Group | null)[]>([])
+  /** Each lorry's wheels: the group that steers, and inside it the one that rolls. */
+  const wheels = useRef<({ steer: THREE.Group | null; roll: THREE.Group | null }[] | undefined)[]>([])
   const live = useRef(life)
   live.current = life
 
-  /** Stands a lorry at a point along one of its routes. */
-  const put = (lorry: THREE.Group, m: Manoeuvre, route: 'arrive' | 'back' | 'leave', s: number) => {
+  /**
+   * Stands a lorry at a point along one of its routes, pointing along the route or (`tail`) back along it, and
+   * returns how sharply the route bends there as the lorry sees it: positive for a turn to its left.
+   */
+  const put = (lorry: THREE.Group, m: Manoeuvre, route: 'arrive' | 'back' | 'leave' | 'swing', s: number, tail = false): number => {
+    lorryAt(m[route], s + 0.6, AHEAD)
+    lorryAt(m[route], s - 0.6, POSE)
+    let bend = AHEAD[2] - POSE[2]
+    bend -= Math.round(bend / (Math.PI * 2)) * Math.PI * 2
     lorryAt(m[route], s, POSE)
     lorry.position.set(POSE[0], 0, POSE[1])
-    lorry.rotation.y = POSE[2]
+    lorry.rotation.y = POSE[2] + (tail ? Math.PI : 0)
+    return (tail ? -bend : bend) / 1.2
+  }
+
+  /** Turns a lorry's wheels for the ground it has just covered (negative when backing) and the bend it is on. */
+  const turnWheels = (i: number, d: DockState, moved: number, bend: number, dt: number) => {
+    d.roll += moved / LORRY_WHEELS.r
+    const want = Math.max(-0.62, Math.min(0.62, Math.atan(WHEELBASE * bend)))
+    d.steer += (want - d.steer) * Math.min(1, dt * 6)
+    const set = wheels.current[i]
+    if (!set) return
+    for (let k = 0; k < set.length; k++) {
+      const w = set[k]
+      // the cab is toward +Z, so rolling forwards turns a wheel about +X
+      if (w.roll) w.roll.rotation.x = d.roll
+      if (w.steer && k % LORRY_WHEELS.z.length === 0) w.steer.rotation.y = d.steer
+    }
   }
 
   /** Starts a lorry on its way in from the road (or, where there is no route, straight back up to the wall). */
@@ -111,7 +142,7 @@ export function FactoryFloor({ site, life, sparks, plan }: { site: Site; life: F
   useTick((dt) => {
     const s = state.current
     const lf = live.current
-    while (s.docks.length < docks.length) s.docks.push({ units: 0, phase: Go.Rest, s: 0, v: 0, t: 0, taking: 0, idle: 0, placed: false })
+    while (s.docks.length < docks.length) s.docks.push({ units: 0, phase: Go.Rest, s: 0, v: 0, t: 0, taking: 0, idle: 0, placed: false, roll: 0, steer: 0 })
     while (s.rejects.length < tests.length) s.rejects.push({ t: rnd(s.rejects.length * 3.1) * 1.6, fly: -1, bin: 0, n: s.rejects.length * 97 })
     // what came off the line since the last look, shared between the docks
     const made = s.built < 0 ? 0 : Math.max(0, lf.built - s.built)
@@ -126,12 +157,6 @@ export function FactoryFloor({ site, life, sparks, plan }: { site: Site; life: F
       d.idle = lf.producing ? 0 : d.idle + dt
       const lorry = lorries.current[i]
       const ready = d.units >= load || (d.idle > 2.5 && d.units > load * 0.12)
-      if (!m && ready) {
-        // no lorry can get to this dock: the load goes out by the door behind it, unseen
-        d.t += dt
-        if (d.t > 1.2) d.units = Math.max(0, d.units - (load * dt) / LOAD)
-        if (d.units <= 0) d.t = 0
-      }
       if (lorry && m) {
         // a lorry with a marked bay waits in it between loads; one without only turns up when there is a load
         const based = !!m.truck
@@ -156,9 +181,10 @@ export function FactoryFloor({ site, life, sparks, plan }: { site: Site; life: F
             } else setOff(d, lorry, m, len)
             break
           case Go.Arrive: {
-            put(lorry, m, 'arrive', d.s)
+            const bend = put(lorry, m, 'arrive', d.s)
             d.v += (speedFor(site, lorry.position.x, lorry.position.z, len.arrive - d.s) - d.v) * Math.min(1, dt * 2.5)
             d.s += d.v * dt
+            turnWheels(i, d, d.v * dt, bend, dt)
             if (d.s >= len.arrive) {
               d.s = noseIn ? len.arrive : len.back
               d.v = 0
@@ -174,7 +200,7 @@ export function FactoryFloor({ site, life, sparks, plan }: { site: Site; life: F
             if (d.t < 0.5) break
             d.v += (Math.min(1.9, Math.sqrt(2 * 1.1 * Math.max(0, d.s)) + 0.25) - d.v) * Math.min(1, dt * 2)
             d.s = Math.max(0, d.s - d.v * dt)
-            put(lorry, m, 'back', d.s)
+            turnWheels(i, d, -d.v * dt, put(lorry, m, 'back', d.s), dt)
             if (d.s <= 0) {
               d.v = 0
               d.t = 0
@@ -188,23 +214,46 @@ export function FactoryFloor({ site, life, sparks, plan }: { site: Site; life: F
             d.t += dt
             d.units = Math.max(0, d.units - (d.taking * dt) / LOAD)
             if (d.t >= LOAD + 0.4) {
-              d.phase = Go.Leave
-              d.s = noseIn ? len.arrive : 0
+              // a lorry that nosed in backs out and round, where there is room to, and then drives off forwards
+              d.phase = noseIn && len.swing > 0 ? Go.Swing : Go.Leave
+              d.s = noseIn && !len.swing ? len.arrive : 0
               d.v = 0
+              d.t = 0
             }
             break
+          case Go.Swing: {
+            d.t += dt
+            if (d.s >= len.swing) {
+              // a moment to find first gear
+              d.v = 0
+              turnWheels(i, d, 0, 0, dt)
+              if (d.t > 0.7) {
+                d.phase = Go.Leave
+                d.s = 0
+              }
+              break
+            }
+            if (d.t < 0.5) break
+            d.v += (Math.min(1.9, Math.sqrt(2 * 1.1 * Math.max(0, len.swing - d.s)) + 0.25) - d.v) * Math.min(1, dt * 2)
+            d.s = Math.min(len.swing, d.s + d.v * dt)
+            turnWheels(i, d, -d.v * dt, put(lorry, m, 'swing', d.s, true), dt)
+            if (d.s >= len.swing) d.t = 0
+            break
+          }
           case Go.Leave: {
-            if (noseIn) {
-              // back out the way it came
+            const backing = noseIn && !len.swing
+            if (backing) {
+              // no room to turn round: back out the way it came
               d.v += ((d.s > len.arrive - 14 ? 1.9 : 6) - d.v) * Math.min(1, dt * 1.5)
               d.s -= d.v * dt
-              put(lorry, m, 'arrive', d.s)
+              turnWheels(i, d, -d.v * dt, put(lorry, m, 'arrive', d.s), dt)
             } else {
-              put(lorry, m, 'leave', d.s)
+              const bend = put(lorry, m, 'leave', d.s)
               d.v += (speedFor(site, lorry.position.x, lorry.position.z, 1e3) - d.v) * Math.min(1, dt * 1.2)
               d.s += d.v * dt
+              turnWheels(i, d, d.v * dt, bend, dt)
             }
-            if (noseIn ? d.s <= 0 : d.s >= len.leave) {
+            if (backing ? d.s <= 0 : d.s >= len.leave) {
               lorry.visible = false
               d.phase = based ? Go.Away : Go.Rest
               d.t = 3 + rnd(i * 3.7 + d.units) * 4
@@ -292,8 +341,29 @@ export function FactoryFloor({ site, life, sparks, plan }: { site: Site; life: F
           visible={false}
         >
           <Baked sig={d.id}>
-            <Lorry seed={i + 1} />
+            <Lorry seed={i + 1} wheels={false} />
           </Baked>
+          {LORRY_WHEELS.x.map((x, a) =>
+            LORRY_WHEELS.z.map((z, k) => (
+              <group
+                key={`${x}${z}`}
+                position={[x, LORRY_WHEELS.r, z]}
+                ref={(g) => {
+                  const set = (wheels.current[i] ??= [])
+                  set[a * LORRY_WHEELS.z.length + k] = { ...(set[a * LORRY_WHEELS.z.length + k] ?? { roll: null }), steer: g }
+                }}
+              >
+                <group
+                  ref={(g) => {
+                    const set = (wheels.current[i] ??= [])
+                    set[a * LORRY_WHEELS.z.length + k] = { ...(set[a * LORRY_WHEELS.z.length + k] ?? { steer: null }), roll: g }
+                  }}
+                >
+                  <LiveWheel side={Math.sign(x)} />
+                </group>
+              </group>
+            )),
+          )}
           {/* a dark patch on the ground stands in for the shadow a moving lorry cannot cast */}
           <mesh rotation-x={-Math.PI / 2} position={[0, 0.03, 0.05]} userData={{ live: true }} renderOrder={2}>
             <planeGeometry args={[2.7, 7.9]} />

@@ -393,7 +393,22 @@ function LayoutPicker({ store, onClose }: { store: Store; onClose: () => void })
       width={440}
       title={`Copy a layout to ${store.name}`}
       footer={
-        chosen && quote && !quote.error ? (
+        chosen && quote && quote.same ? (
+          // already built alike: nothing to replace, nothing to pay
+          <div>
+            <div className="flex items-start gap-2 text-[11px] leading-snug text-dim">
+              <Icon name="check" size={13} className="mt-[1px] shrink-0 text-pos" />
+              <span>
+                {store.name} already has the layout of {chosen.name}, down to the last piece of furniture. There is nothing to rebuild and nothing to pay.
+              </span>
+            </div>
+            <div className="mt-2 flex gap-2">
+              <Btn icon="close" className="flex-1" onClick={() => setPick(null)}>
+                Choose another
+              </Btn>
+            </div>
+          </div>
+        ) : chosen && quote && !quote.error ? (
           <div>
             <div className="flex items-start gap-2 text-[11px] leading-snug text-warn">
               <Icon name="alert" size={13} className="mt-[1px] shrink-0" />
@@ -436,7 +451,7 @@ function LayoutPicker({ store, onClose }: { store: Store; onClose: () => void })
               <Mini label="Plot" icon="plot" value={`${s.site.w} x ${s.site.h} m`} />
               <Mini label="Layout" icon="rooms" value={q.needs[0] ? `${q.needs[0]} x ${q.needs[1]} m` : 'none'} tone={fits ? 'text-fg' : 'text-neg'} />
               <Mini label="Worth" icon="cash" value={money(layoutValue(s.site), 0)} />
-              <Mini label="To copy here" icon="receipt" value={fits ? copyCost(q.cost) : 'no room'} tone={!fits ? 'text-neg' : q.error ? 'text-warn' : 'text-fg'} />
+              <Mini label="To copy here" icon="receipt" value={!fits ? 'no room' : q.same ? 'same already' : copyCost(q.cost)} tone={!fits ? 'text-neg' : q.same ? 'text-dim' : q.error ? 'text-warn' : 'text-fg'} />
             </div>
             {q.error && <div className={`mt-1 text-[10px] leading-snug ${fits ? 'text-warn' : 'text-neg'}`}>{q.error}</div>}
           </button>

@@ -10,7 +10,7 @@ import { RETAIL_CUT, canAfford, devPlan, isVariantOf, player, productName, start
 import { faceLabel, facesFor, faceSize, isCoverCam, isEdge, isFlip, kindsFor, partLabel, speakerShape } from '../sim/geometry'
 import { specShares } from '../sim/internals'
 import { EVENTS, hasStage } from '../sim/growth'
-import { has } from '../sim/progress'
+import { has, lockTip } from '../sim/progress'
 import { appeal, bestSegment, normalised } from '../sim/market'
 import { CONTRACT, FACTORY_SAVING, costNow, factoryLine } from '../sim/ops'
 import { type FingerprintStyle, type FrontStyle, LAYOUT_NAMES } from '../sim/rivals'
@@ -871,7 +871,7 @@ function Workbench() {
           </div>
           <div className="flex border border-line2 bg-panel/95" title="Simple: choose from lists. Advanced: drag every part.">
             {(['simple', 'advanced'] as const).map((m) => (
-              <Btn key={m} small tone="ghost" active={editorMode === m} onClick={() => setEditorMode(m)}>
+              <Btn key={m} small tone="ghost" active={editorMode === m} onClick={() => setEditorMode(m)} locked={m === 'advanced' ? lockTip(g, 'studio') : null}>
                 {m}
               </Btn>
             ))}
