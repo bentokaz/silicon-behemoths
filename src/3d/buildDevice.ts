@@ -299,11 +299,12 @@ const luminance = (mat: THREE.Material) => {
 /**
  * How lettering is finished, by how light the surface under it is (0 to 1, linear). The same rule for every device:
  * a dark steel inlay on a pale surface, a bright one on a mid-tone, and on a dark surface a pale matt print, because
- * polished metal there only mirrors the dark around it and cannot be read.
+ * polished metal there only mirrors the dark around it and cannot be read. The bright inlay is satin, not a mirror,
+ * for the same reason: on a mid-grey lid lying flat under the lights a mirror showed as a darker grey than the lid.
  */
 export function logoFinish(light: number): { color: string; metalness: number; roughness: number; finish: 'dark inlay' | 'bright inlay' | 'print' } {
   if (light > 0.5) return { color: '#3a3d43', metalness: 0.6, roughness: 0.45, finish: 'dark inlay' }
-  if (light > 0.2) return { color: '#e9edf2', metalness: 1, roughness: 0.3, finish: 'bright inlay' }
+  if (light > 0.2) return { color: '#f1f3f6', metalness: 0.4, roughness: 0.5, finish: 'bright inlay' }
   return { color: '#aeb3ba', metalness: 0, roughness: 0.55, finish: 'print' }
 }
 

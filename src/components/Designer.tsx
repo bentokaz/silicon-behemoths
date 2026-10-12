@@ -900,13 +900,13 @@ function Workbench() {
               <Btn small tone="ghost" icon="lock" active={keepClosed} onClick={() => useStudio.setState({ keepClosed: true, tour: -1 })}>
                 Shut
               </Btn>
-              <Btn small tone="ghost" icon="layers" active={!keepClosed && explode < 0.5} onClick={() => useStudio.setState({ keepClosed: false, explode: 0, tour: -1 })}>
+              <Btn small tone="ghost" icon="layers" className="whitespace-nowrap" active={!keepClosed && explode < 0.5} onClick={() => useStudio.setState({ keepClosed: false, explode: 0, tour: -1 })}>
                 Lid off
               </Btn>
               <Btn small tone="ghost" icon="layers" active={!keepClosed && explode >= 0.5} onClick={() => useStudio.setState({ keepClosed: false, explode: 1, tour: -1 })}>
                 Exploded
               </Btn>
-              <input type="range" min={0} max={1} step={0.02} value={keepClosed ? 0 : explode} disabled={keepClosed} onChange={(e) => useStudio.setState({ explode: Number(e.target.value), tour: -1 })} className="mx-2 w-20 accent-accent" title="How far the layers are pulled apart" />
+              <input type="range" min={0} max={1} step={0.02} value={keepClosed ? 0 : explode} disabled={keepClosed} onChange={(e) => useStudio.setState({ explode: Number(e.target.value), tour: -1 })} className="mx-2 w-14 accent-accent" title="How far the layers are pulled apart" />
               {tour < 0 ? (
                 <Btn small tone="ghost" icon="play" className="border-l border-l-line2" disabled={tourSteps < 2 && !keepClosed} title="A short tour of what is inside: the camera stops at each of the main components in turn. Move the camera or click anything to end it." onClick={() => useStudio.setState({ keepClosed: false, tour: 0 })}>
                   Tour

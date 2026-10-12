@@ -356,6 +356,7 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
     if (V.type !== d.type) {
       // another kind of device: the view it came from was of something else
       V.type = d.type
+      V.moved = false
       V.home = null
       V.key = ''
       V.goal = null
@@ -399,7 +400,8 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
       }
     }
     const apart = stop ? stop.explode : st.explode >= 0.5 ? 1 : 0
-    const key = V.on ? `${apart}|${stop?.id ?? ''}|${st.pad[0]}|${st.pad[1]}|${Math.round(state.size.width / 40)}` : ''
+    const shape = d.type === 'console' && d.body.height > d.body.width ? 'tower' : (d.body.fold ?? d.body.form ?? '')
+    const key = V.on ? `${apart}|${stop?.id ?? ''}|${shape}|${st.pad[0]}|${st.pad[1]}|${Math.round(state.size.width / 40)}` : ''
     if (V.on && rig && key !== V.key && (!V.moved || stop)) {
       V.key = key
       // measure the device as it will be once it is open, with the model facing the way it was built

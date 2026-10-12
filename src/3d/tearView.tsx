@@ -57,7 +57,7 @@ export function CompLabel({ pick, compact, cost = 0, unitCost = 0, grams = 0, we
               )}
               {grams > 0 && (
                 <span>
-                  <span className="text-fg">{weigh(grams)}</span> {((grams / Math.max(weight, 0.01)) * 100).toFixed(grams / Math.max(weight, 0.01) < 0.1 ? 1 : 0)}% of weight
+                  <span className="text-fg">{weigh(grams)}</span> {grams / Math.max(weight, 0.01) < 0.0005 ? 'under 0.1' : ((grams / Math.max(weight, 0.01)) * 100).toFixed(grams / Math.max(weight, 0.01) < 0.1 ? 1 : 0)}% of weight
                 </span>
               )}
             </div>
@@ -222,7 +222,7 @@ const STOPS: Record<DeviceType, (string | [string, number, [number, number, numb
   tv: ['psu', 'board', 'tcon', 'pflex0', 'spk0', 'wifi', ['backlight', 1]],
   console: ['heatsink', 'psu', 'drive', 'fan0', ['chip', 1], ['board', 1]],
   earbuds: ['battery', 'wellL', 'driver', 'budboard', 'budcell', 'budtip'],
-  headset: ['board', 'battery', 'cam:', ['lensL', 1, [-0.5, 0.34, -0.8]], ['panelL', 1, [-0.86, 0.36, -0.36]]],
+  headset: ['board', 'battery', 'cam:', ['lensL', 1, [-0.42, 0.62, -0.66]], ['panelL', 1, [-0.72, 0.56, -0.42]]],
   foldable: ['hinge', 'battery', 'batteryb', 'chip', 'cam:', 'fold0', ['display', 1]],
   speaker: ['woofer', 'tweeter', 'tweeters', 'chamber', 'amp', 'psu', 'mics', 'ledring'],
   handheld: ['battery', 'chip', 'fan0', 'stickL', 'triggerL', ['display', 1]],

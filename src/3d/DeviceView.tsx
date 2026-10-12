@@ -91,6 +91,11 @@ function Device({ design, selectedId, logo, colorIndex = -1, teardown }: Props) 
   now.current = { over, pick }
   const hoverTip = useCompHover({ rig: () => group.userData.rig as Rig | undefined, on: () => !!teardown && opened.current > 0.6, turn, over: () => now.current.over, set: setOver })
   useEffect(() => setPick(null), [teardown, design])
+  const get = useThree((st) => st.get)
+  useEffect(() => {
+    // in development this view can be stepped and photographed from the console, as the designer's can
+    if (import.meta.env.DEV) Object.assign(window, { sbView: { three: get, rig: () => group.userData.rig as Rig | undefined, model: () => group } })
+  }, [get, group])
   // what each component weighs is worked out only once the device is open
   const weights = useMemo(() => (teardown ? weightShares(design, layoutInternals(design)) : null), [teardown, design])
   useFrame((state, dt) => {

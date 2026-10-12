@@ -283,6 +283,7 @@ function strand(g: THREE.Object3D, pts: THREE.Vector3[], t: number, mat: THREE.M
   const side = new THREE.Vector3()
   const upv = new THREE.Vector3()
   const m4 = new THREE.Matrix4()
+  const ties: [number, number, number, number, number, number][] = []
   for (let i = 0; i + 1 < pts.length; i++) {
     const len = pts[i].distanceTo(pts[i + 1])
     if (len < 0.05) continue
@@ -304,20 +305,22 @@ function strand(g: THREE.Object3D, pts: THREE.Vector3[], t: number, mat: THREE.M
     o.receiveShadow = true
     g.add(o)
     if (clips) {
+      // a loom runs square to the chassis, so a clip lies either across it or along it
       const every = Math.max(70, t * 34)
       const n = Math.floor(len / every)
+      const along = Math.abs(dir.x) > Math.abs(dir.y)
+      const cw = Math.max(t * 1.5, 3)
+      const cl = (wide || t) + Math.max(3, t * 1.6)
       for (let k = 1; k <= n; k++) {
-        const clip = bx(g, Math.max(t * 1.5, 3), (wide || t) + Math.max(3, t * 1.6), t + 0.5, M.black, 0, 0, 0, false)
-        clip.position.copy(pts[i]).addScaledVector(dir, (k * len) / (n + 1))
-        clip.rotation.z = Math.atan2(dir.y, dir.x)
+        const at = (k * len) / (n + 1)
+        ties.push([along ? cw : cl, along ? cl : cw, t + 0.5, pts[i].x + dir.x * at, pts[i].y + dir.y * at, pts[i].z + dir.z * at])
       }
     }
   }
   if (clips) {
-    for (const p of [pts[0], pts[pts.length - 1]]) {
-      const w = (wide || t * 2.4) + 2
-      bx(g, w, Math.max(4, t * 2.2), t + 3.2, M.white, p.x, p.y, p.z + 1.4, false)
-    }
+    if (ties.length) boxes(g, M.black, ties)
+    const w = (wide || t * 2.4) + 2
+    boxes(g, M.white, [pts[0], pts[pts.length - 1]].map((p) => [w, Math.max(4, t * 2.2), t + 3.2, p.x, p.y, p.z + 1.4]))
   }
 }
 
@@ -1343,7 +1346,11 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
     hidden.push(mesh)
     const coverG = new THREE.Group()
     at.add(coverG)
-    const lidMesh = new THREE.Mesh(cutGeometry(mesh.geometry, z.cut.axis, cutAt, z.cut.side, false), mesh.material as THREE.Material)
+    // Pressing the far side of the shell flat closes the cut, but keeps every triangle of the body in the cover as
+    // well as in the tray. Where the body is a plain rounded slab the cover keeps only its own side, and is closed
+    // with a flat cap of the same outline instead: a few dozen triangles for some thousands.
+    const capped = z.cut.axis === 2 && z.anchor !== 'pack' && d.type !== 'headset' && d.type !== 'console' && z.wall > 0.3 && depth > 0.3
+    const lidMesh = new THREE.Mesh(cutGeometry(mesh.geometry, z.cut.axis, cutAt, z.cut.side, capped), mesh.material as THREE.Material)
     lidMesh.castShadow = lidMesh.receiveShadow = true
     lidMesh.raycast = () => {}
     lidMesh.position.set(0, 0, -off)
@@ -1386,6 +1393,16 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
       lf.quaternion.copy(frame.quaternion)
       lf.position.copy(frame.position).addScaledVector(up, depth - 0.05 * layer)
       lf.add(liner)
+      if (capped) {
+        const capMat = (mesh.material as THREE.Material).clone()
+        capMat.side = THREE.DoubleSide
+        const cap = new THREE.Mesh(new THREE.ShapeGeometry(roundedRectShape(o.w, o.h, o.r), 10), capMat)
+        cap.position.z = 0.05 * layer - 0.004 * layer
+        cap.receiveShadow = true
+        cap.raycast = () => {}
+        cap.userData.cut = true
+        lf.add(cap)
+      }
       coverG.add(lf)
       shown.push(lf)
     }
@@ -1425,7 +1442,7 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
       const aside = pos0.clone().addScaledVector(up, -pos0.dot(up))
       // the back of a television comes away as the last of three sheets, each slid clear of the one before
       if (d.type === 'tv' || d.type === 'desktop') stack.copy(up).multiplyScalar(size * 0.06 * 4.4).add(new THREE.Vector3(b.width * 1.04, 0, 0))
-      else if (aside.lengthSq() > 1 && d.type !== 'console' && d.type !== 'headset' && d.type !== 'laptop') stack.addScaledVector(aside.normalize(), Math.min(b.width, b.height) * 0.9)
+      else if (aside.lengthSq() > 1 && d.type !== 'console' && d.type !== 'headset') stack.addScaledVector(aside.normalize(), Math.min(b.width, b.height) * 0.9)
     }
     let apart: Cover['apart']
     if ((d.type === 'tv' || d.type === 'desktop') && stack) {
@@ -1673,6 +1690,9 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
   const quat = new THREE.Quaternion()
   const ident = new THREE.Quaternion()
   const shut = model.userData.shut as ((k: number) => void) | undefined
+  let dock: THREE.Object3D | undefined
+  model.traverse((o) => o.userData.prop === 'dock' && (dock = o))
+  const dockY = (dock as THREE.Object3D | undefined)?.position.y ?? 0
   const tall = d.type !== 'foldable' && !(b.width > b.height * 1.15) && (d.type === 'phone' || d.type === 'tablet' || d.type === 'watch')
   const screenDir = mainZone ? dirVec(mainZone.up).negate() : new THREE.Vector3(0, 0, 1)
   const screenGap = mainZone ? mainZone.box.s[Math.abs(mainZone.up) - 1] * 2.2 + size * 0.05 : 0
@@ -1705,6 +1725,12 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
       if (tall) model.position.set((b.width / 2 + Math.max(2, size * 0.03)) * 0.25 * aside, 0, 0)
       else if (d.type === 'speaker') model.position.set(-b.width * 0.6 * smooth((open - 0.34) / 0.4), 0, 0)
       else model.position.set(0, 0, 0)
+      // a handheld is lifted out of its dock before it is opened: the wall of the dock stands where its back swings
+      if (dock) {
+        const out = (b.height * 0.5 + 6) * smooth(k / 0.16)
+        model.position.y = out
+        dock.position.y = dockY - out
+      }
       const ease = 1 - Math.exp(-dt * 9)
       for (const [id, it] of comps) {
         let cur = mem.boxes.get(id)
