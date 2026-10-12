@@ -83,7 +83,7 @@ export function SiteStatus({ items, children, open, onOpen }: { items: Figure[];
                   <Lead icon={f.icon} />
                   {f.label}
                 </span>
-                <span className={`num text-xs font-semibold ${f.tone ? tone[f.tone] : 'text-fg'}`}>{f.value}</span>
+                <span className={`${(typeof f.value === 'string' || typeof f.value === 'number') && /\d/.test(String(f.value)) ? 'num ' : ''}text-xs font-semibold ${f.tone ? tone[f.tone] : 'text-fg'}`}>{f.value}</span>
               </>
             )
             return f.onClick ? (

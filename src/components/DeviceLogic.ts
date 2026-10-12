@@ -8,7 +8,7 @@ import { RETAIL_CUT } from '../sim/game'
 import { OUTSIDE_OPTION, attraction, bestSegment, priceFactor, tierAverages } from '../sim/market'
 import { CONTRACT, factoryLine, orderLeft } from '../sim/ops'
 import { priceIndex } from '../sim/world'
-import type { Company, GameState, Product, ProductionOrder } from '../sim/types'
+import { type Company, type GameState, type Product, type ProductionOrder, hasStock } from '../sim/types'
 import { type SortDir, type SortKey, sortRows } from './tablesort'
 
 // ---------------------------------------------------------------- small things
@@ -81,7 +81,7 @@ export function marketView(g: GameState, type: string, segId?: string): MarketVi
     let total = OUTSIDE_OPTION
     for (const p of onSale) {
       const c = g.companies.find((x) => x.id === p.companyId)
-      const w = !c || p.stock <= 0 ? 0 : attraction(p, c, seg, g.day)
+      const w = !c || !hasStock(p) ? 0 : attraction(p, c, seg, g.day)
       win.set(p.id, w)
       total += w
     }
@@ -186,7 +186,7 @@ export function priceEffect(g: GameState, p: Product, next: number, unitCost: nu
   let total = OUTSIDE_OPTION
   let mine = 0
   for (const x of g.products) {
-    if (x.status !== 'sale' || x.type !== p.type || (x.stock <= 0 && x.id !== p.id)) continue
+    if (x.status !== 'sale' || x.type !== p.type || (!hasStock(x) && x.id !== p.id)) continue
     const c = g.companies.find((k) => k.id === x.companyId)
     if (!c) continue
     const w = attraction(x, c, seg, g.day)

@@ -1,0 +1,49 @@
+{
+ "url": "http://localhost:5214",
+ "date": "2026-10-12T23:28:52.695Z",
+ "browser": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+ "flags": [
+  "--headless=new",
+  "--remote-debugging-port=0",
+  "--window-size=1920,1200",
+  "--no-first-run",
+  "--no-default-browser-check",
+  "--disable-extensions",
+  "--disable-sync",
+  "--disable-default-apps",
+  "--disable-component-update",
+  "--disable-background-networking",
+  "--metrics-recording-only",
+  "--mute-audio",
+  "--hide-scrollbars",
+  "--disable-background-timer-throttling",
+  "--disable-renderer-backgrounding",
+  "--disable-backgrounding-occluded-windows",
+  "--disable-features=CalculateNativeWinOcclusion,Translate",
+  "--force-device-scale-factor=1",
+  "--force-color-profile=srgb",
+  "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1",
+  "--enable-gpu",
+  "--ignore-gpu-blocklist",
+  "--use-gl=angle",
+  "--use-angle=d3d11"
+ ],
+ "glMode": "gpu",
+ "webgl": {
+  "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
+  "renderer": "ANGLE (Intel, Intel(R) UHD Graphics (0x0000A788) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+ },
+ "sizes": [
+  "1440x900"
+ ],
+ "states": [
+  "fresh",
+  "late"
+ ],
+ "themes": [
+  "ember"
+ ],
+ "seconds": 0,
+ "skipped": [],
+ "pageErrors": []
+}

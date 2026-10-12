@@ -138,7 +138,13 @@ export function SavesBeyond() {
               <div className="text-xs leading-snug text-dim">Not set up. Online saves need a free Supabase project; the steps are in CLOUD.md in the game's folder. Paste the project address and public key here once you have them.</div>
               <TextInput value={url} onChange={setUrl} maxLength={200} aria-label="Project address" placeholder="Project address (https://...supabase.co)" className="mt-2 w-full" />
               <TextInput value={key} onChange={setKey} maxLength={600} aria-label="Public (anon) key" placeholder="Public (anon) key" className="mt-1 w-full" />
-              <Btn icon="check" className="mt-2" disabled={noProject} title={noProject ? 'Paste the project address and its public key first' : undefined} onClick={() => (setCloudConfig(url, key), setCfg(cloudConfig()), setNote({ text: 'Project saved. Now sign in or create an account.' }))}>
+              <Btn icon="check" className="mt-2" disabled={noProject} title={noProject ? 'Paste the project address and its public key first' : undefined} onClick={() => {
+                  const err = setCloudConfig(url, key)
+                  if (err) return (setNote({ text: err, bad: true }), sfx.error())
+                  setCfg(cloudConfig())
+                  setNote({ text: 'Project saved. Now sign in or create an account.' })
+                }}
+              >
                 Use this project
               </Btn>
             </>

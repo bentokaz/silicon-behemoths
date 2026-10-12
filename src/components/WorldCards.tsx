@@ -8,12 +8,12 @@ import type { Target } from '../3d/SiteView'
 import { meetingSlot } from '../3d/site/crowd'
 import { sfx } from '../audio/sfx'
 import { TYPES } from '../data/devices'
-import { fmtDate, hire, researchItem, setCampaignBudget, stopCampaign, toggleResearch } from '../sim/game'
+import { fmtDate, hire, researchItem, setCampaignBudget, setResearchBudget, stopCampaign, toggleResearch } from '../sim/game'
 import { devProgress, factoryLife, officeLife, researchLines, storeLife, venueLife } from '../sim/life'
 import { type CapId, capOfTab, lockTip } from '../sim/progress'
 import { ITEMS, ROOMS, roomTiles } from '../sim/sites'
 import { ROLE_INFO, staffEffects, titleFor } from '../sim/staff'
-import { type Room, type Site, TRACKS } from '../sim/types'
+import { type Room, type Site, TRACKS, hasStock, stockOf } from '../sim/types'
 import { type Tab, useGame, useStore } from '../store/game'
 import { ExecShortlist, lockProps } from './Progress'
 import { storeMonth } from './SiteInsight'
@@ -125,16 +125,20 @@ function ResearchCard({ target, close }: { target: Target; close: () => void }) 
     if (err) say(err, 'bad')
     else sfx.toggle()
   }
+  const budget = (by: number) => {
+    const err = act((s) => setResearchBudget(s, Math.max(0, s.rdBudget + by)))
+    if (err) say(err, 'bad')
+  }
   return (
     <Frame target={target} close={close} more={{ label: 'Open the research tree', tab: 'research' }}>
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="text-[11px] text-dim">Budget a month</span>
         <span className="flex items-center gap-1">
-          <Btn small className="!px-2" disabled={g.rdBudget <= 0} onClick={() => act((s) => void (s.rdBudget = Math.max(0, s.rdBudget - step)))} title="Spend less">
+          <Btn small className="!px-2" disabled={g.rdBudget <= 0} onClick={() => budget(-step)} title="Spend less">
             -
           </Btn>
           <span className="num w-16 text-center text-xs text-fg">{money(g.rdBudget)}</span>
-          <Btn small className="!px-2" {...lock} lockMark="corner" onClick={() => act((s) => void (s.rdBudget += step))} title="Spend more: research goes faster">
+          <Btn small className="!px-2" {...lock} lockMark="corner" onClick={() => budget(step)} title="Spend more: research goes faster">
             +
           </Btn>
         </span>
@@ -194,11 +198,12 @@ function ProductCard({ target, close }: { target: Target; close: () => void }) {
     )
   }
   const progress = devProgress(g, p)
+  const stock = stockOf(p)
   return (
     <Frame target={target} close={close} more={{ label: 'All devices', tab: 'products' }}>
       <div className="flex items-baseline justify-between gap-2">
         <span className="truncate text-[13px] text-fg">{p.name}</span>
-        <Tag tone={p.status === 'dev' ? 'accent' : p.stock <= 0 ? 'warn' : 'pos'}>{p.status === 'dev' ? 'in development' : p.stock <= 0 ? 'sold out' : 'on sale'}</Tag>
+        <Tag tone={p.status === 'dev' ? 'accent' : !hasStock(p) ? 'warn' : 'pos'}>{p.status === 'dev' ? 'in development' : !hasStock(p) ? 'sold out' : 'on sale'}</Tag>
       </div>
       <div className="mb-2 text-[11px] text-faint">{TYPES[p.type].name}</div>
       {p.status === 'dev' ? (
@@ -211,7 +216,7 @@ function ProductCard({ target, close }: { target: Target; close: () => void }) {
       ) : (
         <>
           <Row k="Price" v={price(p.price)} />
-          <Row k="In stock" v={num(p.stock)} tone={p.stock <= 0 ? 'text-warn' : undefined} />
+          {stock !== null && <Row k="In stock" v={num(stock)} tone={stock <= 0 ? 'text-warn' : undefined} />}
           <Row k="Sold" v={num(p.unitsSold)} />
           <Row k="Reviews" v={`${Math.round(p.reviewAvg * 10) / 10} of 10`} />
         </>

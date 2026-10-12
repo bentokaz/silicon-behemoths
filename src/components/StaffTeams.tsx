@@ -157,7 +157,7 @@ export function StaffTeams() {
               ))}
             </Panel>
           )}
-          <Btn icon="plus" className="!h-8" title="Start an empty team and add people to it" onClick={() => act((s) => createTeam(s, ''))}>
+          <Btn icon="plus" className="!h-8" title="Start an empty team and add people to it" onClick={() => act((s) => createTeam(s, '')) === '' && useStore.getState().say('There is room for 60 teams. Disband one first.', 'bad')}>
             New team
           </Btn>
         </div>

@@ -73,11 +73,12 @@ export function reorderMany(list: readonly { p: Product; units: number }[]) {
   say(`Ordered more of ${placed} ${placed === 1 ? 'device' : 'devices'}: about ${money(cost)}, paid as the units arrive.${refused ? ` Not all were taken: ${refused}` : ''}`)
 }
 
-/** Set a device's price through the simulation's own action, and say so. Does nothing when the price is the same or not a price. */
+/** Set a device's price through the simulation's own action, and say so. Does nothing when the price is the same or not a price; a price the simulation refuses is said and not kept. */
 export function applyPrice(p: Product, value: number): boolean {
   if (!(value > 0) || Math.round(value) === p.price) return false
   const { act, say } = useStore.getState()
-  act((s) => setPrice(s, p.id, value))
+  const err = act((s) => setPrice(s, p.id, value))
+  if (err) return (say(err, 'bad'), false)
   say(`Saved. ${p.name} now costs ${price(Math.round(value))}.`)
   return true
 }

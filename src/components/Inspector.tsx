@@ -9,7 +9,8 @@ import { deviceThumbnail } from '../3d/thumbnail'
 import { sfx } from '../audio/sfx'
 import { EXTRAS, LENSES, SUPPLY_LABELS, materialInfo, panelInfo, sensorInfo } from '../data/catalog'
 import { ANC, COOLERS, DRIVERS, GPUS, HINGES, INPUT_NAMES, MIC_ARRAYS, OPTICS, SPEAKERS, SPEAKER_DRIVERS, STRAPS, TYPES, headStrap, inputOptions, ioInfo, segmentInfo, standInfo, subLabel } from '../data/devices'
-import { RECALL_DEADLINE, companyOf, discontinue, fmtDate, monthLabel, player, productName, recallProduct } from '../sim/game'
+import { recallCost } from '../sim/care'
+import { RECALL_DEADLINE,companyOf, discontinue, fmtDate, monthLabel, player, productName, recallProduct } from '../sim/game'
 import { type Why, demandEstimate, productProfit, suggestReorder, whyLines } from '../sim/insight'
 import { normalised } from '../sim/market'
 import { supplyPrice } from '../sim/ops'
@@ -280,11 +281,13 @@ function PriceField({ g, p }: { g: GameState; p: Product }) {
   const dirty = draft > 0 && draft !== p.price
   // Esc puts the old price back before it closes anything
   useLayer(dirty, () => setDraft(p.price))
+  // a price that was refused (said by applyPrice) is not left in the field
+  const apply = () => void (applyPrice(p, draft) || setDraft(p.price))
   return (
     <section aria-label="Price" className="border-b border-line p-3">
       <div className="flex items-center gap-3">
         <span className="label w-14 shrink-0">Price</span>
-        <NumInput value={draft} onChange={setDraft} step={10} max={MAX_PRICE} onEnter={() => applyPrice(p, draft)} onBlur={() => applyPrice(p, draft)} aria-label="Retail price" title={p.tiers.length ? 'The storage options move with it' : undefined} className="w-28 text-right" />
+        <NumInput value={draft} onChange={setDraft} step={10} max={MAX_PRICE} onEnter={apply} onBlur={apply} aria-label="Retail price" title={p.tiers.length ? 'The storage options move with it' : undefined} className="w-28 text-right" />
         {dirty && (
           <span className="text-[11px] text-dim">
             <Key>Enter</Key> saves, <Key>Esc</Key> puts it back
@@ -308,14 +311,14 @@ function Recall({ g, p }: { g: GameState; p: Product }) {
       <ConfirmBtn
         icon="recall"
         className="mt-2"
-        confirm={`Click again: spend ${money(p.recall.cost)}`}
+        confirm={`Click again: spend ${money(recallCost(p))}`}
         onClick={() => {
           const err = useStore.getState().act((s) => recallProduct(s, p.id))
           if (err) useStore.getState().say(err, 'bad')
           else (sfx.confirm(), useStore.getState().say(`${p.name} is being recalled and repaired.`))
         }}
       >
-        Recall and repair for {money(p.recall.cost)}
+        Recall and repair for {money(recallCost(p))}
       </ConfirmBtn>
     </section>
   )

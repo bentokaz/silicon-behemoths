@@ -4,7 +4,7 @@
 import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { TYPES, segmentInfo, segmentsOf } from '../data/devices'
-import { companyOf, monthLabel, trailingUnits, valuation } from '../sim/game'
+import { companyOf, monthLabel, renameCompany, trailingUnits, valuation } from '../sim/game'
 import { type Why, productProfit, productTrend, reorderQuote, suggestReorder, whyLines } from '../sim/insight'
 import { segmentDemand } from '../sim/market'
 import { rivalValue } from '../sim/stock'
@@ -510,7 +510,10 @@ function CompanyDevices({ g, company, onClose }: { g: GameState; company: Compan
     <Panel
       selected
       className="shrink-0 self-start"
-      title={naming ? <NameInput autoFocus aria-label={`Rename ${company.name}`} value={company.name} maxLength={18} onChange={(v) => act(() => void (company.name = v))} onBlur={() => setNaming(false)} className="h-6 w-40" /> : <Swatch color={company.color}>{company.name}</Swatch>}
+      title={naming ? <NameInput autoFocus aria-label={`Rename ${company.name}`} value={company.name} maxLength={18} onChange={(v) => {
+            const err = act((s) => renameCompany(s, company.id, v))
+            if (err) useStore.getState().say(err, 'bad')
+          }} onBlur={() => setNaming(false)} className="h-6 w-40" /> : <Swatch color={company.color}>{company.name}</Swatch>}
       count={naming ? undefined : `${onSale.length} on sale`}
       right={
         <>

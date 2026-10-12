@@ -5,7 +5,7 @@
 import { type KeyboardEvent as ReactKeyboardEvent, type ReactNode, useLayoutEffect, useRef } from 'react'
 import { sfx } from '../audio/sfx'
 import { FEATURES, type FeatureInfo, MAX_LEVEL, TRACK_INFO, TRUNK_REQS, featureCost, marketLevel, researchCost } from '../data/catalog'
-import { researchItem, toggleResearch, trunkBlocked } from '../sim/game'
+import { researchItem, setResearchBudget, toggleResearch, trunkBlocked } from '../sim/game'
 import { staffEffects } from '../sim/staff'
 import { type GameState, TRACKS, type Track } from '../sim/types'
 import { useGame, useStore } from '../store/game'
@@ -414,7 +414,11 @@ export function Research() {
               <span className="num text-[13px] font-semibold text-fg">{money(g.rdBudget)}</span>
             </div>
             <div className="mt-1">
-              <BudgetSlider value={g.rdBudget} max={budgetMax} mark={mark} onChange={(v) => act((s) => void (s.rdBudget = v))} />
+              <BudgetSlider value={g.rdBudget} max={budgetMax} mark={mark} onChange={(v) => {
+                  const err = act((s) => setResearchBudget(s, v))
+                  if (err) useStore.getState().say(err, 'bad')
+                }}
+              />
             </div>
             <div className={`mt-1 min-h-[30px] text-[11px] leading-[15px] ${timeLine.warn ? 'text-warn' : 'text-dim'}`}>{timeLine.text}</div>
             {mark && (

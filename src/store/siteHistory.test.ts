@@ -175,7 +175,7 @@ describe('site history', () => {
     const room = s.office.rooms[0]
     const i = s.office.grid.indexOf(room.n)
     // on top of a room that is already there
-    expect(record(s, REF, 'Lounge', (g) => zoneRoom(g, REF, 'lounge', i % s.office.w, Math.floor(i / s.office.w), i % s.office.w, Math.floor(i / s.office.w)))).toBe('That land is already built on')
+    expect(record(s, REF, 'Lounge', (g) => zoneRoom(g, REF, 'lounge', i % s.office.w, Math.floor(i / s.office.w), i % s.office.w, Math.floor(i / s.office.w)))).toMatch(/already built on/)
     expect(historySize(s, REF)).toEqual([0, 0])
   })
 

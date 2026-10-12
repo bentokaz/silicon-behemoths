@@ -28,7 +28,7 @@ import { EXECS, execFx, staffEffects, unmanaged } from './staff'
 import { founderStake } from './stock'
 import { softwareBonus } from './tech'
 import { priceIndex, typeDemand } from './world'
-import { type Company, type DeviceDesign, type GameState, type Product, type ProductionOrder, SUBS, SUPPLY_CATS, type Store } from './types'
+import { type Company, type DeviceDesign, type GameState, type Product, type ProductionOrder, SUBS, SUPPLY_CATS, type Store, hasStock } from './types'
 
 // ---------------------------------------------------------------- small helpers
 
@@ -303,7 +303,7 @@ function strongerRival(g: GameState, p: Product, maker: Pick<Company, 'brand' | 
   let newest: { x: Product; c: Company } | undefined
   let best: { x: Product; c: Company; u: number } | undefined
   for (const x of g.products) {
-    if (x.status !== 'sale' || x.type !== p.type || x.companyId === p.companyId || x.stock <= 0) continue
+    if (x.status !== 'sale' || x.type !== p.type || x.companyId === p.companyId || !hasStock(x)) continue
     const c = g.companies.find((k) => k.id === x.companyId)
     if (!c) continue
     const u = utility(x, c, seg, g.day)
@@ -542,7 +542,7 @@ function forecast(g: GameState, p: Product, maker: Pick<Company, 'brand' | 'soft
   const gain = DIFFICULTY[g.config.difficulty].awareness
   const segs = segmentsOf(p.type)
   const companies = new Map(g.companies.map((c) => [c.id, c]))
-  const pool = g.products.filter((x) => x.status === 'sale' && x.type === p.type && x.stock > 0 && companies.has(x.companyId))
+  const pool = g.products.filter((x) => x.status === 'sale' && x.type === p.type && hasStock(x) && companies.has(x.companyId))
   const stocked = own(g).filter((x) => x.status === 'sale' && x.stock > 0)
 
   // what the campaigns now running add to awareness each day, by region ('' is every open region)

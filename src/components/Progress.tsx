@@ -13,7 +13,7 @@ import { capName } from '../store/game'
 import { type CardPlace, placeCard } from './CompanyFigures'
 import { Icon, type IconName } from './icons'
 import { Fold, Panel } from './ui'
-import { Btn, Head, IconBtn, type LockProps, Meter, Tag, money, num, pct, useLayer } from './ui'
+import { Btn, Head, Help, IconBtn, type LockProps, Meter, Tag, money, num, pct, price, useLayer } from './ui'
 
 const iconOf = (c: Capability) => c.icon as IconName
 /** Where "take me there" leads for something that is open. */
@@ -350,8 +350,6 @@ export function GrowthTree() {
 }
 
 // ---------------------------------------------------------------- executives
-
-import { Help, price } from './ui'
 
 function useHireExec() {
   const { act, say } = useStore.getState()

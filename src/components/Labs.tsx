@@ -6,7 +6,7 @@ import { canAfford, setLicenceFee, startChip, startOs } from '../sim/game'
 import { chipFor } from '../sim/scoring'
 import { staffEffects } from '../sim/staff'
 import { CHIP_BUDGET, OS_FEATURES, OS_FEATURES_PER_VERSION, STOCK_OS, chipAdoption, chipProjectCost, chipProjectDays, industryOs, osProjectCost, osProjectDays, osShipQuality, servicesPerMonth, softwareBonus } from '../sim/tech'
-import type { CustomChip } from '../sim/types'
+import type { CustomChip, GameState } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { Icon, type IconName } from './icons'
 import { timeSpan } from './researchNow'
@@ -18,6 +18,17 @@ const FEATURE_ICON: Record<string, IconName> = { fluid: 'swap', privacy: 'lock',
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
 /** A difference from a reference, as a signed percentage. */
 const rel = (a: number, b: number) => `${a >= b ? '+' : ''}${pct(a / b - 1, 0)}`
+
+/**
+ * The lowest licence fee at which no rival would take a chip, from the
+ * simulation's own adoption rule (asked as if it were the only chip on offer).
+ * The slider stops there: a higher fee earns nothing.
+ */
+function feeCap(g: GameState, c: CustomChip): number {
+  const alone = { ...g, chips: [] }
+  for (let fee = 1; fee <= 200; fee++) if (chipAdoption(alone, { ...c, licenceFee: fee }) <= 0) return fee
+  return 20
+}
 
 function Chips() {
   const g = useGame()
@@ -144,8 +155,8 @@ function Chips() {
             <Table label="Your chips" className="min-h-0 flex-1 overflow-y-auto" cols={cols} rows={chips} rowKey={(c) => c.id} keep="labs:chips" firstMin={130} selected={sel?.id ?? null} onRow={(c) => c.status === 'ready' && setPicked(c.id)} rowTitle={(c) => (c.status === 'ready' ? 'Set its licence fee below' : 'Still in development')} />
             {sel && (
               <div className="shrink-0 border-t border-line px-3 py-2">
-                <Slider label={`Licence ${sel.name} to rivals, per device`} icon="doc" value={sel.licenceFee} min={0} max={40} format={(v) => price(v)} onChange={(v) => act((s) => setLicenceFee(s, sel.id, v))} />
-                <div className="text-[11px] text-dim">{sel.licenceFee ? `At this fee ${pct(chipAdoption(g, sel))} of rival devices would use it. A lower fee is taken up by more of them.` : 'At $0 it is not offered. Set a fee and rivals take it up when it is good value against the chip they buy in.'}</div>
+                <Slider label={`Licence ${sel.name} to rivals, per device`} icon="doc" value={Math.min(sel.licenceFee, feeCap(g, sel))} min={0} max={feeCap(g, sel)} format={(v) => price(v)} onChange={(v) => act((s) => setLicenceFee(s, sel.id, v))} />
+                <div className="text-[11px] text-dim">{sel.licenceFee ? `At this fee ${pct(chipAdoption(g, sel))} of rival devices would use it. A lower fee is taken up by more of them.` : 'At $0 it is not offered. Set a fee and rivals take it up when it is good value against the chip they buy in.'} At {price(feeCap(g, sel))} a device or more no rival takes it. A rival device carries one chip: of the chips you offer, only the best buy earns.</div>
               </div>
             )}
           </>

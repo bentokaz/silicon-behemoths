@@ -105,12 +105,10 @@ export function visitorsNote(passers: number, capacity: number, open: boolean): 
 }
 
 /**
- * Which month a store's figures are for. `storeMonth` gives the month in
- * progress projected to its end (the simulation keeps no closed month per
- * store), and says so with `partial`.
+ * The name of the profit figure: it says that it is a projection whenever it
+ * is one. `storeMonth` gives the month in progress projected to its end (the
+ * simulation keeps no closed month per store), and says so with `partial`.
  */
-export const monthWord = (partial: boolean) => (partial ? 'this month' : 'last month')
-/** The name of the profit figure: it says that it is a projection whenever it is one. */
 export const profitLabel = (partial: boolean) => (partial ? 'Projected profit this month' : 'Profit last month')
 /** The same in a sentence, for a tooltip or a note. */
 export const monthNote = (partial: boolean) => (partial ? 'This month, projected to its end from what the store has sold so far and what it sells in a day now.' : 'The last full month.')

@@ -3,7 +3,7 @@
 // main menu shares. (Settings and keys are in Settings.tsx.)
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { sfx } from '../audio/sfx'
-import { DIFFICULTY, fmtDate, player } from '../sim/game'
+import { DIFFICULTY, fmtDate, player, renameCompany } from '../sim/game'
 import { openEverything } from '../sim/progress'
 import { REGIONS } from '../sim/regions'
 import { useGame, useStore, useView } from '../store/game'
@@ -276,12 +276,16 @@ function CompanyPage() {
             : `Autosave is off. Your last save, ${slotName(last.slot)}, is from ${fmtDate(last.day)}: everything since then is lost if you quit now.`
   const loses = !g.gameOver && !saves
   const home = REGIONS.find((r) => r.id === (g.config.home ?? 'na'))?.name
+  const rename = (id: string, name: string) => {
+    const err = act((s) => renameCompany(s, id, name))
+    if (err) useStore.getState().say(err, 'bad')
+  }
   return (
     <div className="grid shrink-0 grid-cols-2 items-start gap-2">
       <div className="flex min-w-0 flex-col gap-2">
         <Panel title="Your company" icon="campus" bodyClass="px-3 py-2">
           <Field label="Name">
-            <NameInput aria-label="Your company name" value={me.name} maxLength={18} onChange={(v) => act(() => void (me.name = v))} className="w-56 min-w-0" />
+            <NameInput aria-label="Your company name" value={me.name} maxLength={18} onChange={(v) => rename(me.id, v)} className="w-56 min-w-0" />
           </Field>
           <Field label="Brand colour">
             <input type="color" aria-label="Brand colour" value={me.color} onChange={(e) => act(() => void (me.color = e.target.value))} />
@@ -296,7 +300,7 @@ function CompanyPage() {
             {rivals.map((c) => (
               <div key={c.id} className="flex min-h-8 items-center gap-2">
                 <input type="color" aria-label={`Colour of ${c.name}`} value={c.color} onChange={(e) => act(() => void (c.color = e.target.value))} />
-                <NameInput aria-label={`Name of ${c.name}`} value={c.name} maxLength={18} onChange={(v) => act(() => void (c.name = v))} className="min-w-0 flex-1" />
+                <NameInput aria-label={`Name of ${c.name}`} value={c.name} maxLength={18} onChange={(v) => rename(c.id, v)} className="min-w-0 flex-1" />
               </div>
             ))}
           </div>

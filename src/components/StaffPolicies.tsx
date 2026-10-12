@@ -27,7 +27,11 @@ function Option({ on, name, note, effect, onPick }: { on: boolean; name: string;
 export function StaffPolicies() {
   const g = useGame()
   const { act } = useStore.getState()
-  const pick = (patch: Partial<StaffPolicy>) => (act((s) => setPolicy(s, patch)), sfx.toggle())
+  const pick = (patch: Partial<StaffPolicy>) => {
+    const err = act((s) => setPolicy(s, patch))
+    if (err) useStore.getState().say(err, 'bad')
+    else sfx.toggle()
+  }
   return (
     <div className="grid grid-cols-1 gap-x-6 gap-y-4 p-3 min-[900px]:grid-cols-2">
       <section>
