@@ -1,11 +1,13 @@
 // Regression tests for what the soak and fuzz harness found (src/sim/testing,
 // scripts/soak.mjs). Each one is the smallest game that showed the fault.
 import { describe, expect, it } from 'vitest'
-import { TYPES } from '../data/devices'
+import { MAX_LEVEL, marketLevel } from '../data/catalog'
+import { TYPES, segmentInfo } from '../data/devices'
 import * as G from './game'
 import { clampPart } from './geometry'
 import { GOALS } from './goals'
 import { EVENTS, resolveEvent } from './growth'
+import { priceFactor } from './market'
 import { CAPS, has, nextReq } from './progress'
 import { REGIONS, homeOf, rivalReach } from './regions'
 import { ITEMS, doorFits, isBoundary } from './sites'
@@ -19,7 +21,8 @@ import { ALL_PERSONAS, canon, runGame } from './testing/runner'
 import { fuzzSites } from './testing/sitefuzz'
 import { DEVICE_TYPES, type DeviceType, type GameState } from './types'
 import { designProblem } from './validate'
-import { INCIDENTS, rollIncident, settleIncident } from './world'
+import { MIN_FOUNDER, RAISE_GAP, founderStake, raiseBlocked } from './stock'
+import { INCIDENTS, PEAK_DAY, priceIndex, rollIncident, settleIncident } from './world'
 
 const game = (over: Partial<Parameters<typeof G.newGame>[0]> = {}) => G.newGame({ ...G.defaultConfig(), startCash: 500e6, ...over })
 const sound = (s: GameState) => expect(checkState(s)).toEqual([])
@@ -400,4 +403,74 @@ describe('the soak, in miniature', () => {
     expect(r.findings.map((f) => f.detail)).toEqual([])
     expect(r.designs).toBeGreaterThan(90)
   }, 120000)
+})
+
+describe('money that comes from nowhere', () => {
+  it('stops selling the company once its founder would hold less than a tenth of it', () => {
+    const { s } = selling({ unlimitedMoney: true })
+    let rounds = 0
+    let refusal: string | null = null
+    for (let i = 0; i < 40 && !refusal; i++) {
+      G.tick(s, RAISE_GAP + 1)
+      refusal = G.fundingRound(s, 0.3)
+      if (!refusal) rounds++
+      expect(founderStake(s)).toBeGreaterThanOrEqual(MIN_FOUNDER)
+    }
+    // 70%, 49%, 34%, 24%, 17%, 12%: the seventh third would leave 8%
+    expect(rounds).toBe(6)
+    expect(refusal).toMatch(/keep at least 10% of the company\. You hold 11\.8%, and this would leave you 8\.2%\. Sell less, or buy shares back first\./)
+    expect(s.stock.shares).toBeLessThan(1e8)
+    // a smaller stake still goes through, and buying shares back makes room again
+    G.tick(s, RAISE_GAP + 1)
+    expect(G.fundingRound(s, 0.1)).toBeNull()
+    G.tick(s, RAISE_GAP + 1)
+    expect(raiseBlocked(s)).toBeNull()
+    expect(G.fundingRound(s, 0.1)).toMatch(/keep at least 10%/)
+    const gift = 5e9 - s.cash
+    s.cash = 5e9
+    expect(G.buyBackShares(s, 2e9)).toBeNull()
+    expect(G.fundingRound(s, 0.1)).toBeNull()
+    expect(checkState(s, { offBooks: gift })).toEqual([])
+  })
+
+  it('lets the prices people expect climb while technology does, and no longer', () => {
+    expect(priceIndex(0)).toBe(1)
+    expect(priceIndex(360)).toBeCloseTo(1.035, 10)
+    expect(priceIndex(PEAK_DAY)).toBeCloseTo(Math.pow(1.035, 12.5), 10)
+    for (const years of [13, 30, 100, 500]) expect(priceIndex(years * 360)).toBe(priceIndex(PEAK_DAY))
+    expect(marketLevel(PEAK_DAY)).toBe(MAX_LEVEL)
+    expect(marketLevel(PEAK_DAY - 1)).toBeLessThan(MAX_LEVEL)
+  })
+
+  it('brings the prices in an older save from after the peak down together, so nothing sells better or worse for it', () => {
+    const { s } = selling()
+    // thirty years in, as the game before this version would have had it: every price had climbed with the years
+    const day = 30 * 360
+    const old = Math.pow(1.035, day / 360)
+    s.day = day
+    s.cur.month = day / 30
+    s.reports = []
+    for (const p of s.products) if (p.status === 'sale') p.price = Math.round(p.price * old)
+    const mine = s.products.find((p) => p.companyId === 'player')!
+    mine.tiers = [{ storage: mine.design.specs.storage * 2, price: mine.price + 200 }]
+    const before = s.products.filter((p) => p.status === 'sale').map((p) => priceFactor(p.price / old, segmentInfo(p.segment!)))
+    const saved = JSON.parse(JSON.stringify(s)) as GameState
+    saved.version = 5
+    const m = G.migrate(saved)
+    expect(m.version).toBe(G.SAVE_VERSION)
+    const after = m.products.filter((p) => p.status === 'sale').map((p) => priceFactor(p.price / priceIndex(m.day), segmentInfo(p.segment!)))
+    after.forEach((v, i) => expect(v / before[i]).toBeCloseTo(1, 1))
+    const now = m.products.find((p) => p.companyId === 'player')!
+    expect(now.price).toBe(Math.round(mine.price * (priceIndex(day) / old)))
+    expect(now.tiers[0].price).toBeGreaterThan(now.price)
+    expect(m.news[0].text).toMatch(/Prices across the market have settled/)
+    // once is enough: loading the save again leaves the prices where they are
+    const again = G.migrate(JSON.parse(JSON.stringify(m)))
+    expect(again.products.map((p) => p.price)).toEqual(m.products.map((p) => p.price))
+    // and a save from before the peak is not touched
+    const early = selling().s
+    const prices = early.products.map((p) => p.price)
+    early.version = 5
+    expect(G.migrate(early).products.map((p) => p.price)).toEqual(prices)
+  })
 })

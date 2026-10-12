@@ -11,7 +11,7 @@ import { DEFAULT_HOME, REGIONS, addAwareness, entryBlocked, homeRegion, newRegio
 import { buyBack, buyStake, goPublic, holdingIncome, issueShares, monthlyStock, moveSentiment, newStock, raiseRound, sellStake, stakeIn, stakePrice, stepStock, takeoverPrice, valuation } from './stock'
 import { CONTRACT, LOCK_DAYS, LOCK_FEE, buildCost, costNow, factoryLine, marketPrice, newSupply, stepProduction, stepSupply } from './ops'
 import { type VariantId, generateDesign, layoutParts } from './rivals'
-import { INCIDENT_WAIT, STARTUPS, economyNow, typeDemand, hasType, makeOriginal, originalName, priceIndex, rivalStrategy, rollIncident, settleIncident, unlockBlocked, unlockCost } from './world'
+import { INCIDENT_WAIT, PEAK_DAY, STARTUPS, economyNow, typeDemand, hasType, makeOriginal, originalName, priceIndex, rivalStrategy, rollIncident, settleIncident, unlockBlocked, unlockCost } from './world'
 import { clamp, int, pick, rand, range } from './rng'
 import { clampPart, coverScreen, isCoverCam, isFlip } from './geometry'
 import { evaluate, selfieMinDia } from './scoring'
@@ -23,7 +23,7 @@ import { EXECS, HEADHUNT_COST, HOURS, TEAM_SPAN, dropFromTeams, execFx, inTraini
 import { CHIP_BUDGET, OS_FEATURES, chipAdoption, chipBlocked, chipProjectCost, chipProjectDays, finishChip, newOs, osBlocked, osProjectCost, osProjectDays, osShipQuality, servicesPerMonth, softwareBonus } from './tech'
 import { type ChannelId, type Company, type Corner, type CostKey, type DeviceDesign, type DeviceType, type Difficulty, type EventType, type GameConfig, type GameState, type Levels, type MonthReport, type NewsItem, type Product, type ProductionOrder, type SegmentId, type Site, type SiteKind, type StaffPolicy, type StorageTier, SUPPLY_CATS, type SupplyCat, TRACKS, type Track, monthCosts, wasReleased } from './types'
 
-export const SAVE_VERSION = 5
+export const SAVE_VERSION = 6
 export const RETAIL_CUT = 0.15
 
 // ---------------------------------------------------------------- what an action will take
@@ -402,7 +402,10 @@ export function startProduct(s: GameState, o: LaunchOrder): string | null {
   }
   const plan = devPlan(o.design, s, isVariantOf(s, family, type))
   const total = plan.cost + o.marketing + (venue?.cost ?? 0)
-  if (!canAfford(s, total)) return `Not enough cash: development${o.marketing > 0 ? ', the launch budget' : ''}${venue ? ' and the keynote' : ''} come to ${dollars(total)}`
+  if (!canAfford(s, total)) {
+    const what = ['development', ...(o.marketing > 0 ? ['the launch budget'] : []), ...(venue ? ['the keynote'] : [])]
+    return `Not enough cash: ${what.length > 1 ? `${what.slice(0, -1).join(', ')} and ${what[what.length - 1]} come` : 'development comes'} to ${dollars(total)}`
+  }
   const c = player(s)
   const { product } = createProduct(s, c, { name, family, variant, design: JSON.parse(JSON.stringify(o.design)), price, tiers }, s.levels, true)
   product.devDaysLeft = plan.days
@@ -1072,7 +1075,7 @@ export function placeItem(s: GameState, ref: string, kind: string, x: number, y:
   const err = canPlace(site, kind, x, y, turn) ?? siteLocked(s, site.kind, 'item', kind)
   if (err) return err
   const cost = ITEMS[site.kind][kind].cost
-  if (!canAfford(s, cost)) return `Not enough cash: ${ITEMS[site.kind][kind].name.toLowerCase()} costs ${dollars(cost)}`
+  if (!canAfford(s, cost)) return `Not enough cash: that costs ${dollars(cost)}`
   spend(s, cost, siteBucket(site))
   site.items.push({ id: `o${s.nextId++}`, kind, x, y, rot: turn })
   site.rev++
@@ -1110,7 +1113,7 @@ export function placeItems(s: GameState, ref: string, kind: string, x0: number, 
     }
   }
   if (out.done) site.rev++
-  if (out.short) out.error = out.done ? `Placed ${out.done} of ${out.done + out.short}: not enough cash for the rest` : `Not enough cash: ${def.name.toLowerCase()} costs ${dollars(def.cost)}`
+  if (out.short) out.error = out.done ? `Placed ${out.done} of ${out.done + out.short}: not enough cash for the rest` : `Not enough cash: each one costs ${dollars(def.cost)}`
   else if (!out.done) out.error = why
   return out
 }
@@ -1349,7 +1352,7 @@ const storeOf = (s: GameState, id: string) => s.stores.find((st) => st.id === id
 export function layoutQuote(s: GameState, fromId: string, toId: string): LayoutQuote {
   const from = storeOf(s, fromId)
   const to = storeOf(s, toId)
-  const none: LayoutQuote = { error: 'No such store', needs: [0, 0], build: 0, resale: 0, cost: 0, same: false }
+  const none: LayoutQuote = { error: 'There is no such store', needs: [0, 0], build: 0, resale: 0, cost: 0, same: false }
   if (!from || !to) return none
   if (from === to) return { ...none, error: 'That is this store' }
   const { site: _site, ...quote } = layoutPlan(s, from.site, to.site)
@@ -1359,7 +1362,7 @@ export function layoutQuote(s: GameState, fromId: string, toId: string): LayoutQ
 /** The same for a store not yet opened, on a bare plot of the given tier. The plot itself is charged on top. */
 export function newLayoutQuote(s: GameState, fromId: string, tier: number): LayoutQuote {
   const from = storeOf(s, fromId)
-  if (!from || !SITE_TIERS.store[tier]) return { error: 'No such store', needs: [0, 0], build: 0, resale: 0, cost: 0, same: false }
+  if (!from || !SITE_TIERS.store[tier]) return { error: 'There is no such store', needs: [0, 0], build: 0, resale: 0, cost: 0, same: false }
   const { site: _site, ...quote } = layoutPlan(s, from.site, newSite('store', tier), false)
   return quote
 }
@@ -1386,8 +1389,8 @@ export const SAME_LAYOUT = 'These two stores already have the same layout: there
 export function copyLayout(s: GameState, fromId: string, toId: string): string | null {
   const from = storeOf(s, fromId)
   const to = storeOf(s, toId)
-  if (!from || !to) return 'No such store'
-  if (from === to) return 'That is this store'
+  if (!from || !to) return 'There is no such store'
+  if (from === to) return 'That is this store: pick another one to copy'
   const plan = layoutPlan(s, from.site, to.site)
   if (plan.error || !plan.site) return plan.error ?? 'That layout cannot be copied'
   if (plan.same) return SAME_LAYOUT
@@ -2155,6 +2158,8 @@ export function buyRivalStake(s: GameState, companyId: string, pct: number): str
   const c = s.companies.find((x) => x.id === companyId)
   if (!c) return 'There is no such company'
   if (locked(s, 'shares')) return locked(s, 'shares')
+  if (c.isPlayer) return 'That is your own company. Buy its shares back instead.'
+  if (!c.alive) return `${c.name} is no longer in business`
   if (!num(pct) || pct <= 0) return 'Choose how much of the company to buy'
   const take = Math.min(pct, 0.49 - stakeIn(s, companyId))
   if (take > 0.001 && s.cash < stakePrice(c, take)) return `Stakes must be paid from cash in hand: ${(take * 100).toFixed(0)}% of ${c.name} costs ${dollars(stakePrice(c, take))}`
@@ -2176,7 +2181,7 @@ export function acquire(s: GameState, companyId: string): string | null {
   if (!c || c.isPlayer || !c.alive) return 'That company cannot be bought'
   if (locked(s, 'shares')) return locked(s, 'shares')
   const price = takeoverPrice(s, c)
-  if (s.cash < price) return `A takeover must be paid from cash in hand: ${(price / 1e6).toFixed(0)}M`
+  if (s.cash < price) return `A takeover must be paid from cash in hand: ${c.name} costs ${dollars(price)}`
   fund(s, -price)
   const me = player(s)
   const theirs = rivalLevels(s, c)
@@ -2462,6 +2467,19 @@ export function migrate(input: GameState): GameState {
     s.config.progression = 'open'
     // the guided start gained steps; carry a half-finished one over to where it was
     if (s.guide >= 0) s.guide = OLD_GUIDE[s.guide] ?? -1
+  }
+  // ---- version 6: the prices people expect stop climbing once technology has peaked (see priceIndex).
+  // In a company already past that day, every price on sale had climbed with the old index; they are all
+  // brought back by the same share, so each device is exactly as attractive the day after as the day before
+  if (from < 6 && s.day > PEAK_DAY) {
+    const k = priceIndex(s.day) / Math.pow(1.035, s.day / DAYS_PER_YEAR)
+    for (const p of s.products) {
+      if (p.status === 'ended') continue
+      const was = p.price
+      p.price = Math.max(1, Math.round(p.price * k))
+      for (const t of p.tiers ?? []) t.price = p.price + Math.max(1, Math.round((t.price - was) * k))
+    }
+    news(s, 'finance', `Prices across the market have settled: now that technology has matured, devices no longer get dearer every year. Every list price, yours and your rivals', was brought down by ${Math.round((1 - k) * 100)}% together, so each device is as attractive as it was.`)
   }
   s.unlocks = s.unlocks ?? {}
   s.execSeats = s.execSeats ?? {}

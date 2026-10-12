@@ -422,6 +422,9 @@ export function nextReq(s: GameState, id: CapId, depth = 0): ReqState | undefine
 }
 
 const lower = (t: string) => t.charAt(0).toLowerCase() + t.slice(1)
+/** Capabilities whose names are plural, so that sentences about them agree: 'Stores are', 'Research is'. */
+const PLURAL: CapId[] = ['events', 'rivals', 'teams', 'people', 'shares', 'carePolicy', 'stores', 'world', 'labs']
+const isAre = (id: CapId) => (PLURAL.includes(id) ? 'are' : 'is')
 /** What is still to do, in a few words: "hire a researcher or build a research lab". */
 export function needText(s: GameState, id: CapId): string {
   const c = BY_ID[id]
@@ -432,7 +435,7 @@ export function needText(s: GameState, id: CapId): string {
 /** Why the player cannot use something that belongs to a capability, or null when they can. */
 export function locked(s: GameState, id: CapId): string | null {
   if (has(s, id)) return null
-  return `${BY_ID[id].name} is not open yet: ${needText(s, id)} first.`
+  return `${BY_ID[id].name} ${isAre(id)} not open yet: ${needText(s, id)} first.`
 }
 /**
  * Everything still to do before a capability opens, as a sentence for the
@@ -445,14 +448,16 @@ export function lockTip(s: GameState, id: CapId): string | null {
   const todo = reqsOf(s, id)
     .filter((r) => !r.done)
     .map((r) => lower(r.label))
-  if (!todo.length) return `${c.name} is not open yet.`
-  return `${c.name} is not open yet. To open it: ${todo.join(c.mode === 'any' ? ', or ' : ', then ')}.`
+  if (!todo.length) return `${c.name} ${isAre(id)} not open yet.`
+  return `${c.name} ${isAre(id)} not open yet. To open ${PLURAL.includes(id) ? 'them' : 'it'}: ${todo.join(c.mode === 'any' ? ', or ' : ', then ')}.`
 }
 /** The same for a room or a piece of furniture. */
 export function siteLocked(s: GameState, kind: SiteKind, what: 'room' | 'item', id: string): string | null {
   const cap = needsOf(kind, what, id) as CapId | undefined
   if (!cap || !BY_ID[cap] || has(s, cap)) return null
   const name = (what === 'room' ? ROOMS[kind][id]?.name : ITEMS[kind][id]?.name) ?? 'That'
+  // the design studio is both a room and the capability that brings it: said once, not twice
+  if (name === BY_ID[cap].name) return `The ${lower(name)} is not open yet: ${needText(s, cap)} first.`
   return `${name} comes with ${BY_ID[cap].name}: ${needText(s, cap)} first.`
 }
 
@@ -562,8 +567,9 @@ export function stepProgress(s: GameState): CapId[] {
     if (held && (!seat || seat.vacant !== undefined)) s.execSeats[id] = { since: s.day }
     else if (!held && seat && seat.vacant === undefined) {
       seat.vacant = s.day
-      const runs = capsOfExec(id).filter((c) => has(s, c.id)).map((c) => c.name)
-      post(s, 'alert', `The ${EXECS[id].title} has gone and the seat is empty.${runs.length ? ` ${runs.join(' and ')} ${runs.length > 1 ? 'stay' : 'stays'} open.` : ''} ${EXECS[id].gap} Find a successor under Staff, Executives.`)
+      const open = capsOfExec(id).filter((c) => has(s, c.id))
+      const runs = open.map((c) => c.name)
+      post(s, 'alert', `The ${EXECS[id].title} has gone and the seat is empty.${runs.length ? ` ${runs.join(' and ')} ${runs.length > 1 || PLURAL.includes(open[0].id) ? 'stay' : 'stays'} open.` : ''} ${EXECS[id].gap} Find a successor under Staff, Executives.`)
     }
   }
   topUp(s)

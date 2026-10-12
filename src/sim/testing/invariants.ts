@@ -4,14 +4,20 @@
 import { FEATURES, MAX_LEVEL } from '../../data/catalog'
 import { SEGMENTS } from '../../data/devices'
 import { bayStands, curveTiles } from '../curves'
-import { SAVE_VERSION } from '../game'
-import { nextGoals } from '../goals'
-import { CHANNELS, EVENTS } from '../growth'
-import { segmentDemand } from '../market'
-import { CAPS, capOfTab, guided, has, nextReq } from '../progress'
-import { REGIONS } from '../regions'
+import { careBonus, careSatisfaction, planAttach, recallCost, repairBenches, updatesCost, warrantyLoad } from '../care'
+import { SAVE_VERSION, dateOf, devPlan, fmtDate, layoutQuote, monthLabel, newLayoutQuote, researchItem, starterDesign, trailingUnits } from '../game'
+import { GOALS, nextGoals, stageOf } from '../goals'
+import { CHANNELS, EVENTS, dailyTickets, nextFair } from '../growth'
+import { devProgress, factoryLife, officeLife, researchLines, storeLife, venueLife } from '../life'
+import { bestSegment, launchHype, segmentDemand, tierAverages } from '../market'
+import { buildCost, factoryLine, pendingUnits, supplyPrice } from '../ops'
+import { CAPS, capOfTab, execAvailable, execNeeds, frontier, guided, has, lockTip, locked, nearTabs, needText, nextCaps, nextReq, ratioOf, reqsOf, vacantSeats } from '../progress'
+import { REGIONS, entryBlocked, regionIncome, regionOverheads, rivalReach, worldAwareness } from '../regions'
+import { execFx, meetingFactor, monthlySalaries, perksCost, staffEffects, teamBonus, unmanaged } from '../staff'
+import { founderStake, holdingIncome, ipoBlocked, issueBlocked, marketCap, netWorth, raiseBlocked, rivalValue, roundQuote, stakePrice, takeoverPrice, trailing, valuation } from '../stock'
+import { chipAdoption, chipProjectCost, chipProjectDays, industryOs, osProjectDays, osShipQuality, servicesPerMonth, softwareBonus } from '../tech'
 import { FACADES, GROUNDS, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, cutAt, doorFits, gridAt, inPlot, isBoundary, itemTiles, lineStats, storeStats, typeAt, venueStats } from '../sites'
-import { typeDemand } from '../world'
+import { INCIDENTS, economyNow, typeDemand, unlockBlocked, unlockCost } from '../world'
 import { COST_KEYS, DEVICE_TYPES, EXEC_IDS, type GameState, type MonthReport, ROLES, type Site, SUPPLY_CATS, TRACKS, monthCosts, wasReleased } from '../types'
 
 const own = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k)
@@ -151,6 +157,58 @@ export function checkSite(site: Site, label: string): string[] {
   } catch (e) {
     bad('stats-throw', String((e as Error)?.stack ?? e).slice(0, 300))
   }
+  return out
+}
+
+/** Numbers that are not finite, anywhere in a value: through arrays, plain objects, maps and sets. */
+function badNumbers(v: unknown, path: string, out: string[], depth = 0): void {
+  if (out.length >= 6 || depth > 8) return
+  if (typeof v === 'number') {
+    if (!Number.isFinite(v)) out.push(`${path} = ${v}`)
+  } else if (v instanceof Map) for (const [k, x] of v) badNumbers(x, `${path}.get(${String(k)})`, out, depth + 1)
+  else if (v instanceof Set) for (const x of v) badNumbers(x, `${path}{}`, out, depth + 1)
+  else if (Array.isArray(v)) v.forEach((x, i) => badNumbers(x, `${path}[${i > 2 ? 'n' : i}]`, out, depth + 1))
+  else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) badNumbers(x, `${path}.${k}`, out, depth + 1)
+}
+
+/**
+ * Everything the screens read from the game besides the state itself: none of
+ * it may fail or come out as something that is not a number, whatever state
+ * the company is in. Changes nothing (the state is the same text afterwards).
+ */
+export function checkReadouts(s: GameState): string[] {
+  const out: string[] = []
+  const ask = (name: string, fn: () => unknown) => {
+    try {
+      const bad: string[] = []
+      badNumbers(fn(), name, bad)
+      for (const b of bad) out.push(`readout: ${b}`)
+    } catch (e) {
+      out.push(`readout-threw: ${name}: ${String((e as Error)?.stack ?? e).split('\n').slice(0, 3).join(' | ').slice(0, 300)}`)
+    }
+  }
+  const mine = s.products.filter((p) => p.companyId === 'player')
+  ask('officeLife', () => officeLife(s))
+  ask('factoryLife', () => factoryLife(s))
+  ask('venueLife', () => venueLife(s))
+  ask('researchLines', () => researchLines(s))
+  for (const st of s.stores.slice(0, 4)) ask('storeLife', () => storeLife(s, st.id))
+  ask('devProgress', () => mine.slice(-8).map((p) => devProgress(s, p)))
+  ask('staffEffects', () => [staffEffects(s), execFx(s), unmanaged(s), meetingFactor(s), s.teams.map((t) => teamBonus(s, t)), monthlySalaries(s), perksCost(s)])
+  ask('stock', () => [valuation(s), marketCap(s), founderStake(s), netWorth(s), trailing(s), roundQuote(s, 0.1), raiseBlocked(s), ipoBlocked(s), issueBlocked(s), holdingIncome(s), s.companies.map((c) => [rivalValue(c), stakePrice(c, 0.1), takeoverPrice(s, c)])])
+  ask('progress', () => [frontier(s), nearTabs(s), nextCaps(s).map((c) => c.ratio), vacantSeats(s), CAPS.map((c) => [ratioOf(s, c.id), needText(s, c.id), lockTip(s, c.id), locked(s, c.id), reqsOf(s, c.id).map((r) => r.have)]), EXEC_IDS.map((id) => [execAvailable(s, id), execNeeds(s, id).length])])
+  ask('goals', () => [stageOf(s), nextGoals(s, 99).map((g) => g.progress), GOALS.map((g) => g.progress(s))])
+  ask('research', () => [...TRACKS, ...FEATURES.map((f) => `f:${f.id}`)].map((id) => researchItem(s, id).cost))
+  ask('lines', () => DEVICE_TYPES.map((t) => [unlockCost(s, t), unlockBlocked(s, t)]))
+  ask('care', () => [updatesCost(s), planAttach(s, 0.7), repairBenches(s), warrantyLoad(s), careBonus(s), careSatisfaction(s), mine.slice(-5).map((p) => recallCost(p))])
+  ask('tech', () => [chipProjectCost(s.levels.chipset), chipProjectDays(s), s.chips.map((c) => chipAdoption(s, c)), osProjectDays(s, !s.os.own), osShipQuality(s, s.os.features), softwareBonus(s), servicesPerMonth(s), industryOs(s.day)])
+  ask('ops', () => [factoryLine(s)?.throughput, SUPPLY_CATS.map((c) => supplyPrice(s, c)), mine.slice(-5).map((p) => [buildCost(s, p, 'contract'), buildCost(s, p, 'factory'), pendingUnits(s, p.id)])])
+  ask('regions', () => [worldAwareness(s), regionOverheads(s), REGIONS.map((r) => [regionIncome(s, r.id), entryBlocked(s, r.id)]), s.companies.map((c) => REGIONS.map((r) => rivalReach(c, r.id)))])
+  ask('market', () => [trailingUnits(s).map((x) => x.units), economyNow(s), dailyTickets(s), mine.filter((p) => p.status === 'sale').slice(-5).map((p) => [bestSegment(p, s.companies[0], s.day).u, launchHype(p, s.day), tierAverages(p)])])
+  ask('incidents', () => s.incidents.filter((i) => !i.done).map((i) => [INCIDENTS[i.kind].text(s, i), INCIDENTS[i.kind].choices(s, i).map((c) => c.cost ?? 0)]))
+  ask('dates', () => [dateOf(s.day).year, fmtDate(s.day).length, monthLabel(Math.floor(s.day / 30)).length, nextFair(s.day).day])
+  ask('designs', () => (s.day % 90 === 0 ? (s.types ?? DEVICE_TYPES).map((t) => devPlan(starterDesign(s, t), s).cost) : []))
+  if (s.stores.length > 1) ask('layoutQuote', () => [layoutQuote(s, s.stores[0].id, s.stores[1].id).cost, newLayoutQuote(s, s.stores[0].id, 0).cost])
   return out
 }
 
@@ -393,6 +451,8 @@ export function checkState(s: GameState, opts: CheckOpts = {}): string[] {
     if (s.venue) out.push(...checkSite(s.venue, 'venue'))
     for (const st of s.stores) out.push(...checkSite(st.site, `store ${st.id}`))
     // a save is the state as JSON: nothing may be lost or changed by the trip
+    // the screens' own sums, asked for once a month
+    if (!opts.noJson) out.push(...checkReadouts(s))
     const json = opts.noJson ? '' : JSON.stringify(s)
     if (!opts.noJson && JSON.stringify(JSON.parse(json)) !== json) bad('json', 'the state does not survive a round trip through JSON')
   }

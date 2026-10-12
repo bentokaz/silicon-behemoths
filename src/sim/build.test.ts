@@ -91,7 +91,7 @@ describe('rows of furniture and runs of wall', () => {
     expect(short.cost).toBe(3600)
     expect(short.error).toBe('Placed 3 of 8: not enough cash for the rest')
     expect(s.cash).toBe(-DIFFICULTY.normal.overdraft + 500)
-    expect(placeItems(s, 'office', 'desk', 6, 4, 10, 4, 0).error).toBe('Not enough cash: desk costs $1,200')
+    expect(placeItems(s, 'office', 'desk', 6, 4, 10, 4, 0).error).toBe('Not enough cash: each one costs $1,200')
     // a single tile is a single item, the same as a click
     s.cash = 1e6
     expect(placeItems(s, 'office', 'desk', 6, 4, 6, 4, 0)).toMatchObject({ done: 1, cost: 1200, error: null })
@@ -1229,7 +1229,7 @@ describe('copying a store layout', () => {
     expect(layoutQuote(s, model.id, mall.id).error).toMatch(/takes up 13 x 11 m.*mall unit is only 10 x 8 m/)
     expect(copyLayout(s, model.id, mall.id)).toMatch(/takes up 13 x 11 m/)
     expect(copyLayout(s, model.id, model.id)).toMatch(/this store/)
-    expect(copyLayout(s, model.id, 'nope')).toMatch(/No such store/)
+    expect(copyLayout(s, model.id, 'nope')).toMatch(/no such store/)
     // an empty plot has nothing to copy
     const bare = s.stores[2]
     const kept = bare.site

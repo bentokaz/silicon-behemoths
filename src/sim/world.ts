@@ -1,6 +1,6 @@
 // The wider world: invented company names, which kinds of device a company
 // may build, things that happen to it, and how rivals respond to what it does.
-import { DAYS_PER_YEAR, TRACK_INFO } from '../data/catalog'
+import { DAYS_PER_YEAR, MAX_LEVEL, TRACK_INFO } from '../data/catalog'
 import { type SegmentInfo, TYPES, segmentInfo } from '../data/devices'
 import { clamp, int, pick, rand, range } from './rng'
 import { type Company, DEVICE_TYPES, type DeviceType, type GameState, type Incident, type Levels, SUPPLY_CATS, TRACKS } from './types'
@@ -428,8 +428,16 @@ export const typeDemand = (type: DeviceType) => TYPE_DEMAND[type] ?? 1
 /** How many buyers there are this year, relative to normal. */
 export const economyNow = (s: GameState) => (s.economy && s.day <= s.economy.until ? s.economy.mult : 1)
 
-/** Prices people expect drift up over the years, as the devices themselves get dearer to make. */
-export const priceIndex = (day: number) => Math.pow(1.035, day / DAYS_PER_YEAR)
+/** The day the leading edge of the market reaches the last level of the tech tree (see marketLevel): twelve and a half years in. */
+export const PEAK_DAY = (MAX_LEVEL - 3) * 2.5 * DAYS_PER_YEAR
+/**
+ * Prices people expect drift up over the years, as the devices themselves get
+ * dearer to make. Once technology has gone as far as it goes, devices stop
+ * getting dearer to make, and so do the prices people expect: left to climb
+ * for ever, with costs standing still, they made every company's margin grow
+ * without end (a phone that costs 300 to build selling for 9,000 by year 100).
+ */
+export const priceIndex = (day: number) => Math.pow(1.035, Math.min(day, PEAK_DAY) / DAYS_PER_YEAR)
 
 // ---------------------------------------------------------------- rivals that react
 
