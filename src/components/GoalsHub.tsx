@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { CAPS, guided, has } from '../sim/progress'
 import { useGame, useStore, useView } from '../store/game'
-import { GoalsScreen } from './Empire'
+import { GoalsScreen } from './Goals'
 import { GrowthTree } from './Progress'
 import { Tabs } from './ui'
 

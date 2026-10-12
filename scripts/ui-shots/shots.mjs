@@ -3,7 +3,7 @@
 //
 //   node scripts/ui-shots/shots.mjs --url http://localhost:5214 --out ui-after-shots
 //
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -46,11 +46,11 @@ export const SCREENS = [
   { n: 6, name: 'lock-card', states: EARLY, gl: true, setup: `H.tab('city'); H.st().setTab('shares'); if (!H.st().lockCard) throw new Error('shares is not locked here')` },
   { n: 7, name: 'overview', states: FL, setup: `H.tab('dashboard')` },
   { n: 8, name: 'devices', states: FL, setup: `H.tab('products')` },
-  { n: 9, name: 'inspector', states: FL, setup: `H.tab('products'); H.st().focus(H.mine().id)` },
-  { n: 10, name: 'inspector-manage', states: FL, setup: `H.tab('products'); H.st().focus(H.mine().id); await H.press('Manage')` },
-  { n: 11, name: 'inspector-specs', states: FL, setup: `H.tab('products'); H.st().focus(H.mine().id); await H.press('Specs')` },
-  { n: 12, name: 'inspector-voices', states: FL, setup: `H.tab('products'); H.st().focus(H.mine().id); await H.press('Voices')` },
-  { n: 13, name: 'rival-device', states: FL, setup: `try { H.tab('market') } catch { H.tab('products') } H.st().focus(H.rival().id)` },
+  { n: 9, name: 'inspector', states: FL, gl: true, setup: `H.tab('products'); H.st().focus(H.mine().id)` },
+  { n: 10, name: 'inspector-manage', states: FL, gl: true, setup: `H.tab('products'); H.st().focus(H.mine().id); await H.press('Manage')` },
+  { n: 11, name: 'inspector-specs', states: FL, gl: true, setup: `H.tab('products'); H.st().focus(H.mine().id); await H.press('Specs')` },
+  { n: 12, name: 'inspector-reviews', states: FL, gl: true, setup: `H.tab('products'); H.st().focus(H.mine().id); await H.press('Reviews')` },
+  { n: 13, name: 'rival-device', states: FL, gl: true, setup: `try { H.tab('market') } catch { H.tab('products') } H.st().focus(H.rival().id)` },
 
   { n: 14, name: 'designer', states: FL, gl: true, setup: DESIGNER },
   { n: 15, name: 'designer-layout', states: FL, gl: true, setup: `${DESIGNER} await H.press('Layout')` },
@@ -92,7 +92,8 @@ export const SCREENS = [
   { n: 46, name: 'finance', states: FL, setup: `H.tab('finance')` },
   { n: 47, name: 'shares', states: FL, setup: `H.tab('shares')` },
   { n: 48, name: 'goals', states: FL, setup: `H.go('goals', 'goals')` },
-  { n: 49, name: 'company-growth', states: FL, setup: `H.go('goals', 'growth')` },
+  // (the growth tree is only there in a guided game, which the late seed is not)
+  { n: 49, name: 'company-growth', states: EARLY, setup: `H.go('goals', 'growth')` },
 
   { n: 50, name: 'system', states: FL, setup: `H.tab('system', { 'system:view': 'saves' })` },
   { n: 51, name: 'system-settings', states: FL, setup: `H.tab('system', { 'system:view': 'settings' })` },
@@ -102,7 +103,8 @@ export const SCREENS = [
 
   { n: 54, name: 'decision', states: L, seed: 'latePending', setup: `sb.setState({ yearEnd: null }); H.tab('dashboard'); if (!H.st().game.incidents.some((i) => !i.done)) throw new Error('no decision waiting')` },
   { n: 55, name: 'year-end', states: L, seed: 'latePending', setup: `H.st().act((g) => g.incidents.filter((i) => !i.done).forEach((i) => sbGame.decide(g, i.id, 0))); H.tab('dashboard'); if (H.st().yearEnd === null) throw new Error('no year-end summary')` },
-  { n: 56, name: 'keynote', states: L, gl: true, setup: `const g = H.st().game; const e = g.events.find((x) => x.done && x.productId) ?? g.events.find((x) => x.productId); if (!e) throw new Error('no keynote in this game'); H.st().watch(e.id)` },
+  // the late seed has a keynote booked two months out: run the clock until the show comes up by itself
+  { n: 56, name: 'keynote', states: L, gl: true, setup: `H.tab('dashboard'); for (let i = 0; i < 60 && !H.st().showing; i++) { H.st().advance(3); if (H.st().yearEnd !== null) H.st().closeYear(); H.st().act((g) => g.incidents.filter((x) => !x.done).forEach((x) => sbGame.decide(g, x.id, 0))) } if (!H.st().showing) throw new Error('no keynote came up'); await H.sleep(2500)` },
   { n: 57, name: 'gameover', states: L, seed: 'bankrupt', setup: `if (!H.st().game.gameOver) throw new Error('the bankrupt seed did not go bankrupt')` },
 ]
 
@@ -149,6 +151,10 @@ const HELPERS = String.raw`(() => {
       for (let i = 0; i < 20 && !hit; i++) {
         const all = Array.from(document.querySelectorAll('button, [role=button], [role=tab], summary')).filter((el) => shown(el) && !el.closest('[data-ruler]') && !el.hasAttribute('data-ruler'))
         const named = all.map((el) => ({ el, name: nameOf(el).toLowerCase(), title: (el.getAttribute('title') ?? '').toLowerCase() }))
+        // with a dialog or a drawer up, what is in the top one comes first; the frame (top bar, rail, feed) comes last
+        const top = Array.from(document.querySelectorAll('[role=dialog], [role=alertdialog]')).filter(shown).pop()
+        const rank = (c) => (top && top.contains(c.el) ? 0 : c.el.closest('[data-chrome]') ? 2 : 1)
+        named.sort((a, b) => rank(a) - rank(b))
         hit = named.find((c) => c.name === want) ?? named.find((c) => c.title === want) ?? named.find((c) => c.name.startsWith(want))
         if (!hit) await sleep(60)
       }
@@ -202,7 +208,7 @@ const HELPERS = String.raw`(() => {
       return best
     },
     /** Wait for the lazily loaded parts, fonts, images and the 3D loading mark. Says what it found. */
-    async ready(max = 15000) {
+    async ready(gl = false, max = 15000) {
       const t0 = performance.now()
       try { await Promise.race([document.fonts.ready, sleep(2000)]) } catch {}
       const loading = () =>
@@ -210,6 +216,8 @@ const HELPERS = String.raw`(() => {
         Array.from(document.querySelectorAll('[role=status]')).some((el) => { const r = el.getBoundingClientRect(); return r.width * r.height > innerWidth * innerHeight * 0.15 }) ||
         Array.from(document.images).some((img) => shown(img) && !img.complete)
       await frames(3)
+      // a 3D view comes in its own piece of the app, a few frames after the screen
+      if (gl) while (!H.canvas() && !document.querySelector('[data-3d=unavailable], [data-3d=broken]') && performance.now() - t0 < 8000) await sleep(50)
       while (loading() && performance.now() - t0 < max) await sleep(50)
       const stillLoading = loading()
       await frames(3)
@@ -261,11 +269,26 @@ const METRICS = String.raw`(() => {
   }
   const area = (c) => Math.max(0, c.r - c.l) * Math.max(0, c.b - c.t)
   const seen = (rect, clip) => { const m = meet(rect, clip); return m.r - m.l >= 1 && m.b - m.t >= 1 }
-  const elVisible = (el) => {
+  /**
+   * Under something opaque: a drawer, a full-screen layer. Whatever is hit at the point is not the
+   * element or a relative of it, and has a solid background between itself and what the two share.
+   * (A dimmed backdrop is not solid: what is behind a modal still counts, and the modal's own
+   * share is in regions.dialog. Text that takes no pointer cannot be tested this way and counts.)
+   */
+  const buried = (el, x, y) => {
+    if (x < 0 || y < 0 || x >= vw || y >= vh || cs(el).pointerEvents === 'none') return false
+    const hit = document.elementFromPoint(x, y)
+    if (!hit || hit === el || el.contains(hit) || hit.contains(el)) return false
+    for (let p = hit; p && !p.contains(el); p = p.parentElement) if (rgba(cs(p).backgroundColor).a >= 0.95) return true
+    return false
+  }
+  const elVisible = (el, deep = true) => {
     const i = info(el)
     if (i.hidden || i.opacity < 0.02) return false
     const r = rectOf(el)
-    return r.r - r.l >= 1 && r.b - r.t >= 1 && seen(r, i.clip)
+    if (!(r.r - r.l >= 1 && r.b - r.t >= 1 && seen(r, i.clip))) return false
+    const m = meet(r, i.clip)
+    return !deep || !buried(el, (m.l + m.r) / 2, (m.t + m.b) / 2)
   }
   const path = (el) => {
     const parts = []
@@ -314,7 +337,8 @@ const METRICS = String.raw`(() => {
   const hex = ({ r, g, b }) => '#' + [r, g, b].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')
 
   // ---- (a) (b) (d) (e): text
-  const regionOf = (el) => { const c = el.closest('[data-chrome]'); return c ? c.getAttribute('data-chrome') : 'screen' }
+  // where it sits: a dialog or drawer, the frame (top, nav, feed), or the screen itself
+  const regionOf = (el) => { if (el.closest('[role=dialog], [role=alertdialog]')) return 'dialog'; const c = el.closest('[data-chrome]'); return c ? c.getAttribute('data-chrome') : 'screen' }
   const regions = {}
   const reg = (name) => (regions[name] ??= { textNodes: 0, numerals: 0, controls: 0 })
   let textNodes = 0, numerals = 0, chars = 0
@@ -331,9 +355,9 @@ const METRICS = String.raw`(() => {
     const i = info(el)
     if (i.hidden || i.opacity < 0.02) continue
     range.selectNodeContents(node)
-    let on = false
-    for (const r of range.getClientRects()) if (r.width > 0.5 && r.height > 0.5 && seen({ l: r.left, t: r.top, r: r.right, b: r.bottom }, i.inner)) { on = true; break }
-    if (!on) continue
+    let on = null
+    for (const r of range.getClientRects()) if (r.width > 0.5 && r.height > 0.5 && seen({ l: r.left, t: r.top, r: r.right, b: r.bottom }, i.inner)) { on = meet({ l: r.left, t: r.top, r: r.right, b: r.bottom }, i.inner); break }
+    if (!on || buried(el, (on.l + on.r) / 2, (on.t + on.b) / 2)) continue
     const text = raw.replace(/\s+/g, ' ').trim()
     const n = text.replace(/\s/g, '').length
     const digits = (text.match(/\d/g) ?? []).length
@@ -378,6 +402,10 @@ const METRICS = String.raw`(() => {
     controlSet.add(el)
   }
   for (const el of controlSet) reg(regionOf(el)).controls++
+  // the same without rows and cards that are merely focusable: buttons, links and fields only
+  const widgets = Array.from(controlSet).filter((el) => el.matches('button, a[href], input, select, textarea, summary, [role=button]')).length
+  // every digit in the page's text, scrolled-away lists included
+  const numeralsAll = ((document.body.innerText ?? '').match(/\d/g) ?? []).length
 
   // ---- (f) (i): one pass over every element
   const overflow = []
@@ -385,8 +413,8 @@ const METRICS = String.raw`(() => {
   for (const el of document.body.querySelectorAll('*')) {
     if (el.namespaceURI !== 'http://www.w3.org/1999/xhtml') continue
     const s = cs(el)
-    if ((s.overflowX === 'auto' || s.overflowX === 'scroll') && el.scrollWidth > el.clientWidth + 1 && elVisible(el)) overflow.push({ path: path(el), scrollWidth: el.scrollWidth, clientWidth: el.clientWidth })
-    if ((s.position === 'fixed' || s.position === 'absolute') && Number(s.zIndex) >= 30 && elVisible(el)) layers.push({ el, z: Number(s.zIndex), rect: meet(rectOf(el), VIEW) })
+    if ((s.overflowX === 'auto' || s.overflowX === 'scroll') && el.scrollWidth > el.clientWidth + 1 && elVisible(el, false)) overflow.push({ path: path(el), scrollWidth: el.scrollWidth, clientWidth: el.clientWidth })
+    if ((s.position === 'fixed' || s.position === 'absolute') && Number(s.zIndex) >= 30 && elVisible(el, false)) layers.push({ el, z: Number(s.zIndex), rect: meet(rectOf(el), VIEW) })
   }
   const docOverflow = document.documentElement.scrollWidth > vw
   const overlaps = []
@@ -407,7 +435,7 @@ const METRICS = String.raw`(() => {
   const main = document.querySelector('main') ?? document.body
   let canvas = null
   for (const c of document.querySelectorAll('canvas')) {
-    if (!elVisible(c)) continue
+    if (!elVisible(c, false)) continue
     const r = c.getBoundingClientRect()
     if (r.width < 200 || r.height < 150) continue
     if (!canvas || r.width * r.height > canvas.getBoundingClientRect().width * canvas.getBoundingClientRect().height) canvas = c
@@ -452,7 +480,7 @@ const METRICS = String.raw`(() => {
   const smallChars = under11.reduce((a, s) => a + s.chars, 0)
   const s = window.sb?.getState?.()
   return {
-    textNodes, numerals, controls: controlSet.size, chars,
+    textNodes, numerals, controls: controlSet.size, chars, widgets, numeralsAll,
     sizes, under11,
     pctUnder11: { nodes: textNodes ? +((smallNodes / textNodes) * 100).toFixed(1) : 0, chars: chars ? +((smallChars / chars) * 100).toFixed(1) : 0 },
     lowContrast: Array.from(low.values()).sort((a, b) => b.count - a.count),
@@ -503,6 +531,14 @@ const BROWSERS = ['C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', 
 const GL_FLAGS = {
   gpu: ['--enable-gpu', '--ignore-gpu-blocklist', '--use-gl=angle', '--use-angle=d3d11'],
   swiftshader: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+}
+
+/** Browser processes still running on a profile folder (Windows: helpers can outlive the browser). */
+function leftovers(profile) {
+  if (process.platform !== 'win32') return []
+  const name = profile.split(/[\\/]/).pop()
+  const out = spawnSync('powershell', ['-NoProfile', '-Command', `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match '${name}' -and $_.Name -match 'chrome|msedge' } | ForEach-Object { $_.ProcessId }`], { encoding: 'utf8' })
+  return (out.stdout ?? '').split(/\s+/).map(Number).filter(Boolean)
 }
 
 async function launch(opts, glMode) {
@@ -561,11 +597,16 @@ async function launch(opts, glMode) {
       ws.send(JSON.stringify({ id: n, method, params }))
     })
   const close = async () => {
-    try { await send('Browser.close') } catch {}
-    await sleep(300)
-    try { child.kill() } catch {}
-    for (let i = 0; i < 10; i++) {
-      try { rmSync(profile, { recursive: true, force: true }); break } catch { await sleep(300) }
+    const gone = new Promise((r) => (child.exitCode !== null ? r() : child.once('exit', r)))
+    try { await Promise.race([send('Browser.close'), sleep(2000)]) } catch {}
+    await Promise.race([gone, sleep(4000)])
+    // whatever is left of it, helpers included
+    if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
+    else try { child.kill('SIGKILL') } catch {}
+    for (const p of leftovers(profile)) try { process.kill(p) } catch {}
+    for (let i = 0; i < 20; i++) {
+      try { rmSync(profile, { recursive: true, force: true }); if (!existsSync(profile)) break } catch {}
+      await sleep(300)
     }
   }
   return { send, close, listeners, exe, flags: flags.filter((f) => !f.startsWith('--user-data-dir') && f !== 'about:blank'), glMode }
@@ -705,7 +746,7 @@ function makePage(browser, opts) {
     },
     /** Wait for the page to be ready, and for its 3D view to have drawn and stopped moving. */
     async settle({ gl = false, max = 9000 } = {}) {
-      const ready = await run(`H.ready()`, { timeout: 60000 })
+      const ready = await run(`H.ready(${gl ? 'true' : 'false'})`, { timeout: 60000 })
       const out = { ...ready, canvasStats: null }
       if (!ready.canvas) {
         await sleep(gl ? 400 : 150)
@@ -966,7 +1007,10 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  console.error(e.stack ?? e)
-  process.exit(1)
-})
+main().then(
+  () => process.exit(0),
+  (e) => {
+    console.error(e.stack ?? e)
+    process.exit(1)
+  },
+)
