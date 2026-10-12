@@ -13,7 +13,8 @@ import { CONTRACT, LOCK_DAYS, LOCK_FEE, buildCost, costNow, factoryLine, marketP
 import { type VariantId, generateDesign, layoutParts } from './rivals'
 import { INCIDENT_WAIT, STARTUPS, economyNow, typeDemand, hasType, makeOriginal, originalName, priceIndex, rivalStrategy, rollIncident, settleIncident, unlockBlocked, unlockCost } from './world'
 import { clamp, int, pick, rand, range } from './rng'
-import { evaluate } from './scoring'
+import { clampPart, coverScreen, isCoverCam, isFlip } from './geometry'
+import { evaluate, selfieMinDia } from './scoring'
 import { bayStands, curveAt, onCurve } from './curves'
 import { FACADES, FLOOR_COST, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, areaOf, areaTiles, autoDoor, builtTiles, canPlace, curveFor, defaultGround, gridAt, groundsFor, hasGround, inPlot, isBoundary, itemAllowed, itemAt, itemTiles, mergeRooms, newSite, roomOf, rowSpots, shapeCuts, starterLine, storeStats, tidy, tierOf, touching, upkeep, wallAt, zone } from './sites'
 import { capOfChannel, locked, refreshExecs, siteLocked, stepProgress } from './progress'
@@ -2058,9 +2059,29 @@ function convertSite(s: GameState, old: OldSite | null | undefined, kind: SiteKi
 /** Where each step of the guided start as it was before version 5 sits in today's (see components/Guide.tsx). */
 const OLD_GUIDE = [1, 2, 3, 5, 7, 8, 9, 10, 12, 14, 15, 17, 18]
 
+/**
+ * A book foldable designed before the camera of its cover screen became a part of its own has none: it was
+ * drawn without being placed. Give it the part, where laying the device out again would put it. The camera
+ * was always counted as looks only, and a product's cost and scores were fixed at launch, so nothing else moves.
+ * Returns true if the design was changed.
+ */
+export function addCoverCamera(d: DeviceDesign): boolean {
+  if (d?.type !== 'foldable' || isFlip(d.body) || d.parts.some((p) => isCoverCam(d, p))) return false
+  const cov = coverScreen(d.body)
+  const rear = d.parts.filter((p) => p.kind === 'camera' && p.face === 'back')
+  const level = Math.max(0, Math.max(0, ...rear.map((p) => p.sensor ?? 0)) - 1)
+  const dia = selfieMinDia(level) + 0.4
+  let n = d.parts.length + 1
+  while (d.parts.some((p) => p.id === `k${n}`)) n++
+  d.parts.push(clampPart(d.body, { id: `k${n}`, kind: 'camera', face: 'back', x: cov.x, y: cov.y + cov.h / 2 - 5, rot: 0, w: dia, h: dia, sensor: level, lens: 'wide' }, 'foldable'))
+  return true
+}
+
 /** Bring a save from an older version up to date. */
 export function migrate(input: GameState): GameState {
   const s = input as GameState & Record<string, unknown>
+  // this one is checked on every load: saves of the current version were made both before and after the part existed
+  for (const p of s.products ?? []) addCoverCamera(p.design)
   if (s.version >= SAVE_VERSION && s.incidents && s.guide !== undefined && s.unlocks) return s
   const from = s.version ?? 0
   const max = Object.fromEntries(TRACKS.map((t) => [t, MAX_LEVEL])) as Levels

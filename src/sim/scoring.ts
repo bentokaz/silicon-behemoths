@@ -112,6 +112,34 @@ export function deviceWeight(d: DeviceDesign): number {
   return w
 }
 
+export type WeightKey = 'battery' | 'frame' | 'back' | 'display' | 'works' | 'gpu' | 'stand' | 'buds' | 'hinge' | 'optics' | 'strap' | 'driver'
+
+/**
+ * The same sum as deviceWeight(), term by term: what the cells, the frame, the back, the display and everything
+ * packed inside come to, and the extras some types carry. A breakdown only: nothing is scored from it.
+ */
+export function weightParts(d: DeviceDesign): { key: WeightKey; label: string; grams: number }[] {
+  const b = d.body
+  const t = TYPES[d.type]
+  const volume = d.type === 'speaker' ? speakerShape(b).litres * 1000 : (b.width * b.height * b.thickness) / 1000
+  const frameVol = ((2 * (b.width + b.height) * b.thickness * 1.5) / 1000) * (d.type === 'earbuds' ? 0.12 : 1)
+  const plateVol = (b.width * b.height * 0.7) / 1000
+  const out: { key: WeightKey; label: string; grams: number }[] = [
+    { key: 'battery', label: 'Battery', grams: d.specs.battery * 0.011 },
+    { key: 'frame', label: d.type === 'earbuds' ? 'Hinge and trim' : 'Frame', grams: frameVol * materialInfo(b.frameMat).density },
+    { key: 'back', label: d.type === 'earbuds' ? 'Case shell' : d.type === 'speaker' ? 'Sleeve and shell' : 'Back cover', grams: plateVol * materialInfo(b.backMat).density },
+    { key: 'display', label: 'Display and glass', grams: t.noScreen ? 0 : plateVol * 2.5 },
+    { key: 'works', label: 'Everything inside', grams: volume * t.density },
+  ]
+  if (t.gpu) out.push({ key: 'gpu', label: 'Graphics', grams: GPUS[d.specs.gpu ?? 0].weight })
+  if (d.type === 'desktop' || d.type === 'tv') out.push({ key: 'stand', label: 'Stand', grams: standInfo(d.type, b.stand).weight * areaScale(d) })
+  if (d.type === 'earbuds') out.push({ key: 'buds', label: 'Earbuds, the pair', grams: 2 * budWeight(d) })
+  if (d.type === 'foldable') out.push({ key: 'hinge', label: 'Hinge', grams: (HINGES[d.specs.hinge ?? 0] ?? HINGES[0]).weight })
+  if (d.type === 'headset') out.push({ key: 'optics', label: 'Lenses', grams: (OPTICS[d.specs.optics ?? 0] ?? OPTICS[0]).weight }, { key: 'strap', label: 'Head strap', grams: headStrap(b.strap).weight })
+  if (d.type === 'speaker') out.push({ key: 'driver', label: 'Drivers', grams: (SPEAKER_DRIVERS[d.specs.driver ?? 0] ?? SPEAKER_DRIVERS[0]).weight })
+  return out
+}
+
 /** Size of the body's face relative to the type's default, for costs and limits that grow with it. */
 const areaScale = (d: DeviceDesign) => (d.body.width * d.body.height) / (TYPES[d.type].width[2] * TYPES[d.type].height[2])
 
