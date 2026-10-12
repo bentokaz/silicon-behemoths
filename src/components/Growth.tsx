@@ -549,9 +549,9 @@ export function StoresScreen() {
                       {!fit.error && <span className="num shrink-0 text-fg">+ {money(fit.cost, 0)}</span>}
                     </div>
                   )}
-                  <Btn tone="primary" icon="plus" className="mt-3 w-full" disabled={!!fit?.error} onClick={() => open(i)}>
+                  <ConfirmBtn tone="primary" confirm={`Pay ${money(t.cost + (fit && !fit.error ? fit.cost : 0), 1)}?`} icon="plus" className="mt-3 w-full" disabled={!!fit?.error} onClick={() => open(i)}>
                     Open one for {money(t.cost + (fit && !fit.error ? fit.cost : 0), 1)}
-                  </Btn>
+                  </ConfirmBtn>
                 </div>
                 )
               })}
@@ -676,9 +676,9 @@ export function VenueScreen() {
             <Mini label="Size" icon="plot" value={`${next.w} x ${next.h} m`} />
             <Mini label="Upkeep / month" icon="receipt" value={money(next.rent, 1)} />
           </div>
-          <Btn tone="primary" icon="plot" className="mt-3 h-9 w-full" onClick={buy}>
+          <ConfirmBtn tone="primary" confirm={`Pay ${money(next.cost, 1)}?`} icon="plot" className="mt-3 h-9 w-full" onClick={buy}>
             Buy the plot for {money(next.cost, 1)}
-          </Btn>
+          </ConfirmBtn>
         </div>
       </div>
     )
@@ -740,9 +740,9 @@ export function VenueScreen() {
             <div className="num mt-1 text-[10px] text-faint">
               {next.w} x {next.h} m, upkeep {money(next.rent, 1)} / mo
             </div>
-            <Btn tone="primary" icon="truck" className="mt-2 w-full" onClick={buy}>
+            <ConfirmBtn tone="primary" confirm={`Pay ${money(next.cost, 1)}?`} icon="truck" className="mt-2 w-full" onClick={buy}>
               Move for {money(next.cost, 1)}
-            </Btn>
+            </ConfirmBtn>
             <div className="mt-1 text-[10px] text-faint">Everything you have built is moved across as it stands.</div>
           </>
         ) : (

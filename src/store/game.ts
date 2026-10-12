@@ -67,6 +67,22 @@ function remember(key: string, value: string) {
 /** Name offered for a new product line, e.g. "Acme Tab 2". */
 const defaultName = (company: string, type: DeviceType, count: number) => `${company} ${TYPES[type].series ? TYPES[type].series + ' ' : ''}${count}`
 
+/**
+ * A name for a new device that is not already taken: the one proposed, or the
+ * next number after it that is free. "Acme 2" when Acme 2 and 3 exist is "Acme 4".
+ * A name counts as taken while any of the company's devices, on sale or not,
+ * carries it with the same variant label.
+ */
+export function freeFamily(g: GameState, propose: string, variant = ''): string {
+  const taken = new Set(g.products.filter((p) => p.companyId === 'player' && (p.variant ?? '') === variant).map((p) => p.family.trim().toLowerCase()))
+  let name = propose.trim()
+  for (let i = 0; i < 500 && taken.has(name.trim().toLowerCase()); i++) {
+    const m = /^(.*?)(\d+)$/.exec(name)
+    name = m ? `${m[1]}${Number(m[2]) + 1}` : `${name} 2`
+  }
+  return name
+}
+
 function relayout(d: DeviceDesign, o: SimpleLayout, g: GameState): PlacedPart[] {
   return layoutParts(d.body, { ...o, type: d.type, periscope: g.features.includes('periscope') && o.sensor >= 3, stereo: d.specs.extras.includes('stereo'), logoImage: !!player(g).logo, io: d.specs.io })
 }
@@ -386,13 +402,13 @@ export const useStore = create<Store>((set, get) => {
         draft = JSON.parse(JSON.stringify(from.design))
         // the next generation: bump a trailing number if the name has one
         const m = /^(.*?)(\d+)$/.exec(from.family)
-        meta = opts.variant === 'next' ? { family: m ? `${m[1]}${Number(m[2]) + 1}` : `${from.family} 2`, variant: from.variant } : { family: `${from.family} copy`, variant: '' }
+        meta = opts.variant === 'next' ? { family: freeFamily(g, m ? `${m[1]}${Number(m[2]) + 1}` : `${from.family} 2`, from.variant), variant: from.variant } : { family: freeFamily(g, `${from.family} copy`), variant: "" }
       } else {
         const type = opts.type ?? 'phone'
         draft = starterDesign(g, type)
         const base = player(g).name.split(' ')[0]
         const count = own.filter((p) => p.type === type && !p.variant).length + 1
-        meta = { family: defaultName(base, type, count), variant: '' }
+        meta = { family: freeFamily(g, defaultName(base, type, count)), variant: '' }
       }
       lastEdit = 0
       set({ designing: true, kept: false, draft, meta, simple: readLayout(draft, g), selectedPart: null, speed: 0, past: [], future: [], inspect: null, person: null, lockCard: null })
@@ -410,7 +426,7 @@ export const useStore = create<Store>((set, get) => {
       const draft = starterDesign(g, type)
       const base = player(g).name.split(' ')[0]
       const count = g.products.filter((p) => p.companyId === 'player' && p.type === type && !p.variant).length + 1
-      set({ draft, simple: readLayout(draft, g), selectedPart: null, past: [], future: [], meta: { family: defaultName(base, type, count), variant: '' } })
+      set({ draft, simple: readLayout(draft, g), selectedPart: null, past: [], future: [], meta: { family: freeFamily(g, defaultName(base, type, count)), variant: '' } })
     },
     setMeta: (patch) => set({ meta: { ...get().meta, ...patch } }),
 

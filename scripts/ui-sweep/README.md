@@ -76,6 +76,17 @@ a request through on purpose, set `sweep.allowNetwork = true` first.
 
 ## Notes
 
+- `sweep.mod('/src/store/settings.ts')` gives the app's own instance of one of
+  its modules. Importing the plain path can hand back a second copy with its
+  own state once the file has been hot-updated.
+- When driving the page from an automation tool: load the page, import the
+  crawler in one call, and start long work with `sweep.run` in another. Building
+  a state blocks the page for a few seconds, and a call that is still waiting
+  on the import when that starts can time out.
+- The 3D views take their pointer input on frames. In a background page,
+  synthetic pointer events on a canvas do nothing useful: check dragging,
+  placing and zoning by hand in a visible tab.
+
 - A press on a button that asks to be pressed again (anything that cannot be
   undone) is followed by the second press, so those actions are exercised too.
 - When the page is in a background tab the browser gives it one frame a

@@ -1,7 +1,7 @@
 // In-game frame: top bar with the clock and speed controls, a grouped
 // navigation rail that can collapse, the active screen, the news feed and the
 // slide-over product inspector. Also runs the game loop.
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { type Ambience, setAmbience, setAmbienceLevel, sfx } from '../audio/sfx'
 import { fmtDate, player } from '../sim/game'
 import { factoryLine, pendingUnits } from '../sim/ops'
@@ -189,6 +189,37 @@ function useHotkeys() {
   }, [])
 }
 
+/**
+ * What the last thing the player did cost or brought in, shown for a moment
+ * under the cash figure: placing a desk, hiring, selling a stake. Money that
+ * moves because time passed is not shown; the figure itself says that.
+ */
+function CashDelta() {
+  const g = useGame()
+  const prev = useRef({ game: g, cash: g.cash, day: g.day })
+  const [delta, setDelta] = useState<{ amount: number; n: number } | null>(null)
+  useEffect(() => {
+    const was = prev.current
+    prev.current = { game: g, cash: g.cash, day: g.day }
+    // another game was loaded, or the clock moved: not something the player just paid for
+    if (was.game !== g || was.day !== g.day) return
+    const amount = g.cash - was.cash
+    if (Math.abs(amount) >= 1) setDelta((d) => ({ amount, n: (d?.n ?? 0) + 1 }))
+  })
+  useEffect(() => {
+    if (!delta) return
+    const t = window.setTimeout(() => setDelta(null), 1800)
+    return () => window.clearTimeout(t)
+  }, [delta])
+  if (!delta || g.config.unlimitedMoney) return null
+  return (
+    <span role="status" className={`num pointer-events-none absolute bottom-0 right-3 text-[9px] leading-[11px] ${delta.amount < 0 ? 'text-neg' : 'text-pos'}`}>
+      {delta.amount < 0 ? '-' : '+'}
+      {money(Math.abs(delta.amount), 1)}
+    </span>
+  )
+}
+
 /** The end of the game: bankrupt, or removed by the board. */
 function GameOver() {
   const g = useGame()
@@ -323,9 +354,10 @@ export function Shell() {
           <Icon name="calendar" className="text-faint" />
           <span className="num text-sm font-semibold text-fg">{fmtDate(g.day)}</span>
         </div>
-        <div className="flex items-center gap-2 border-r border-line px-3">
+        <div className="relative flex items-center gap-2 border-r border-line px-3">
           <Icon name="cash" className="text-faint" />
           <span className={`num min-w-[4.5rem] text-sm font-semibold ${g.cash < 0 && !g.config.unlimitedMoney ? "text-neg" : "text-accent"}`}>{g.config.unlimitedMoney ? 'UNLIMITED' : money(g.cash)}</span>
+          <CashDelta />
         </div>
         <div className="hidden items-center gap-2 border-r border-line px-3 lg:flex">
           <span className="label text-faint">This month</span>

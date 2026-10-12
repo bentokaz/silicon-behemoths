@@ -184,6 +184,40 @@ function useTight(ref: RefObject<HTMLElement | null>): boolean {
   return tight
 }
 
+/**
+ * A 3D view with a mark to look at while it is being built. Building a site
+ * takes the browser a second or more, during which nothing else can be drawn:
+ * so the mark is put on screen first, the view is started a frame later, and
+ * the mark is taken away once the view has had time to draw itself.
+ */
+export function Stage3D({ label, children }: { label: string; children: ReactNode }) {
+  // 0: only the mark; 1: the view is being built under the mark; 2: the view is up
+  const [phase, setPhase] = useState<0 | 1 | 2>(0)
+  useEffect(() => {
+    let frame = requestAnimationFrame(() => (frame = requestAnimationFrame(() => setPhase((p) => (p < 1 ? 1 : p)))))
+    // (a page in the background gets few frames: do not wait on them for long)
+    const t = window.setTimeout(() => setPhase((p) => (p < 1 ? 1 : p)), 200)
+    return () => (cancelAnimationFrame(frame), window.clearTimeout(t))
+  }, [])
+  useEffect(() => {
+    if (phase !== 1) return
+    let frame = requestAnimationFrame(() => (frame = requestAnimationFrame(() => (frame = requestAnimationFrame(() => setPhase(2))))))
+    const t = window.setTimeout(() => setPhase(2), 2500)
+    return () => (cancelAnimationFrame(frame), window.clearTimeout(t))
+  }, [phase])
+  return (
+    <>
+      {phase > 0 && children}
+      {phase < 2 && (
+        <div role="status" className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-carbon">
+          <Icon name="layers" size={22} className="text-line2" />
+          <span className="num text-[11px] uppercase tracking-[0.2em] text-faint">{label}</span>
+        </div>
+      )}
+    </>
+  )
+}
+
 /** True when the player has asked their system for less motion. */
 export const reducedMotion = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 

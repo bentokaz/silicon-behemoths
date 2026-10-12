@@ -397,6 +397,8 @@ export function ProductDrawer() {
     setColor(-1)
     setTab('overview')
     setTorn(false)
+    // the same view shows the next device: frame it afresh rather than build a new view for it
+    setNonce((x) => x + 1)
   }, [id])
   // (Esc closes it: the drawer is the top layer while it is open)
   // a device that no longer exists (another game was loaded) leaves nothing selected behind
@@ -422,7 +424,7 @@ export function ProductDrawer() {
       }
     >
       <div className="relative h-[270px] border-b border-line">
-        <DeviceView key={product.id} design={product.design} view={view} viewNonce={nonce} autoRotate={!torn && !reducedMotion()} logo={player(g).logo} colorIndex={color} teardown={torn} />
+        <DeviceView design={product.design} view={view} viewNonce={nonce} autoRotate={!torn && !reducedMotion()} logo={player(g).logo} colorIndex={color} teardown={torn} />
         <div className="absolute left-2 top-2 flex border border-line bg-panel/90">
           {(['back', 'front', 'side'] as ViewName[]).map((v) => (
             <Btn key={v} small tone="ghost" active={view === v} onClick={() => (setView(v), setNonce((x) => x + 1))}>

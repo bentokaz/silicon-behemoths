@@ -11,7 +11,7 @@ import { SUPPLY_CATS } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { SiteBuilder } from './SiteBuilder'
 import { Icon, type IconName, supplyIcon, typeIcon } from './icons'
-import { Btn, ConfirmIconBtn, Empty, Fold, Kpi, Lead, Meter, Mini, Panel, Tabs, Tag, Th, money, num, pct, pressable, useKept } from './ui'
+import { Btn, ConfirmBtn, ConfirmIconBtn, Empty, Fold, Kpi, Lead, Meter, Mini, Panel, Tabs, Tag, Th, money, num, pct, pressable, useKept } from './ui'
 
 type View = 'floor' | 'orders' | 'supply'
 
@@ -197,9 +197,9 @@ export function FactoryScreen() {
                   <Mini label="Floor" icon="plot" value={`${next.w} x ${next.h} m`} />
                   <Mini label="Upkeep / month" icon="receipt" value={money(next.rent, 1)} />
                 </div>
-                <Btn tone="primary" icon="build" className="mt-4 h-10 w-full" onClick={build}>
+                <ConfirmBtn tone="primary" confirm={`Pay ${money(next.cost, 1)}?`} icon="build" className="mt-4 h-10 w-full" onClick={build}>
                   Build a {next.name.toLowerCase()} for {money(next.cost, 1)}
-                </Btn>
+                </ConfirmBtn>
               </div>
             </div>
           ) : (
@@ -252,9 +252,9 @@ export function FactoryScreen() {
                   <Mini label="Upkeep / month" icon="receipt" value={money(upkeep(g.factory), 1)} />
                 </div>
                 {next ? (
-                  <Btn small icon="plot" className="mt-2 w-full" onClick={build}>
+                  <ConfirmBtn small tone="default" confirm={`Pay ${money(next.cost, 1)}?`} icon="plot" className="mt-2 w-full" onClick={build}>
                     Expand to {next.name.toLowerCase()} ({money(next.cost, 1)})
-                  </Btn>
+                  </ConfirmBtn>
                 ) : (
                   <div className="mt-2 text-[11px] text-dim">This is the largest factory.</div>
                 )}

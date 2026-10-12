@@ -17,7 +17,7 @@ import { useGame, useStore } from '../store/game'
 import { actionFor, keyName, keysFor } from '../store/settings'
 import { WorldCard } from './WorldCards'
 import { Icon, type IconName } from './icons'
-import { Btn, ConfirmBtn, Tabs, modalOpen, money } from './ui'
+import { Btn, ConfirmBtn, Stage3D, Tabs, modalOpen, money } from './ui'
 
 interface Props {
   /** 'office', 'factory', 'venue' or 'store:<id>'. */
@@ -262,8 +262,8 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
                     : `Click an item to sell it for half its price, or press and drag across several to sell them all. ${camHint}`
                   : sealed.length
                     ? `${sealed.length === 1 ? `The ${rooms[sealed[0].type].name.toLowerCase()} has` : `${sealed.length} rooms have`} no door, so nothing inside counts. Add one from the Walls tab.`
-                    : site.rooms.length
-                      ? `${pointAt} Click a room's floor to restyle it. Drag to turn, right-drag or ${keysFor('camForward').slice(0, 1).map(keyName).join('')}${keysFor('camLeft').slice(0, 1).map(keyName).join('')}${keysFor('camBack').slice(0, 1).map(keyName).join('')}${keysFor('camRight').slice(0, 1).map(keyName).join('')} to move, scroll to zoom.${legend}`
+                    : site.rooms.length || site.items.length
+                      ? `${pointAt} ${site.rooms.length ? "Click a room's floor to restyle it. " : ''}Drag to turn, right-drag or ${keysFor('camForward').slice(0, 1).map(keyName).join('')}${keysFor('camLeft').slice(0, 1).map(keyName).join('')}${keysFor('camBack').slice(0, 1).map(keyName).join('')}${keysFor('camRight').slice(0, 1).map(keyName).join('')} to move, scroll to zoom.${legend}`
                       : 'An empty plot. Open Rooms and mark out your first room.'
 
   const tiles = builtTiles(site)
@@ -272,7 +272,8 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
 
   return (
     <div className="relative h-full min-h-0 overflow-hidden">
-      <div className="absolute inset-0">
+      <div className="absolute inset-0 isolate">
+        <Stage3D label={`Drawing the ${site.kind === "office" ? "campus" : site.kind}`}>
         <SiteView
           key={`${site.kind}-${site.tier}`}
           site={site}
@@ -306,6 +307,7 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
           busy={busy}
           show={show}
         />
+        </Stage3D>
       </div>
 
       <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-start justify-between gap-2 p-2">
@@ -329,7 +331,7 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
             </Btn>
           </div>
           <span className="num border border-line2 bg-panel/95 px-2 py-[5px] text-[10px] uppercase tracking-wider text-dim">
-            {tierOf(site).name} <span className="text-faint">/ {site.w} x {site.h} m / {tiles} m² built</span>
+            {tierOf(site).name} <span className="text-faint">/ {site.w} x {site.h} m / {tiles ? `${tiles} m² built` : site.items.length ? `open air, ${site.items.length} ${site.items.length === 1 ? 'fitting' : 'fittings'}` : 'nothing built'}</span>
           </span>
         </div>
         <div className="pointer-events-auto flex gap-2">

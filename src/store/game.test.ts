@@ -4,7 +4,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { defaultConfig } from '../sim/game'
 import { keepView, viewKept } from './focus'
-import { useStore } from './game'
+import { freeFamily, useStore } from './game'
 
 const st = () => useStore.getState()
 const start = () => st().begin({ ...defaultConfig(), seed: 7, startType: 'phone', progression: 'open' })
@@ -75,6 +75,41 @@ describe('the design on the bench', () => {
     st().openDesigner()
     expect(st().draft).toBe(draft)
     expect(st().past.length).toBe(1)
+  })
+})
+
+describe('the name offered for a new device', () => {
+  beforeEach(start)
+
+  it('skips names the company has already used', () => {
+    const g = st().game!
+    const mine = (family: string, variant = '') => g.products.push({ ...g.products[0], id: `t${g.products.length}`, companyId: 'player', family, variant, name: `${family} ${variant}`.trim() })
+    expect(freeFamily(g, 'Acme 1')).toBe('Acme 1')
+    mine('Acme 1')
+    mine('Acme 2')
+    mine('Acme 3')
+    expect(freeFamily(g, 'Acme 1')).toBe('Acme 4')
+    expect(freeFamily(g, 'Acme 2')).toBe('Acme 4')
+    expect(freeFamily(g, 'acme 3 ')).toBe('acme 4')
+    mine('Slate')
+    expect(freeFamily(g, 'Slate')).toBe('Slate 2')
+    // a Pro of a later generation is a different name from the plain one
+    expect(freeFamily(g, 'Acme 3', 'Pro')).toBe('Acme 3')
+    // a rival using the name does not take it
+    g.products.push({ ...g.products[0], id: 'r-x', companyId: 'r0', family: 'Acme 4', variant: '', name: 'Acme 4' })
+    expect(freeFamily(g, 'Acme 4')).toBe('Acme 4')
+  })
+
+  it('is what the designer opens with', () => {
+    const g = st().game!
+    st().openDesigner()
+    const first = st().meta.family
+    st().closeDesigner(true)
+    g.products.push({ ...g.products[0], id: 'mine-1', companyId: 'player', family: first, variant: '', name: first })
+    g.products.push({ ...g.products[0], id: 'mine-2', companyId: 'player', family: first.replace(/\d+$/, (n) => String(Number(n) + 1)), variant: '', name: 'x' })
+    st().openDesigner()
+    expect(st().meta.family).not.toBe(first)
+    expect(g.products.some((p) => p.companyId === 'player' && p.family === st().meta.family)).toBe(false)
   })
 })
 

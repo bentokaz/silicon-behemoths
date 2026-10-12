@@ -1,5 +1,5 @@
-// Staff and office screens, plus the company logo uploader.
-import { useEffect, useRef, useState } from 'react'
+// Staff and office screens.
+import { useEffect } from 'react'
 import { sfx } from '../audio/sfx'
 import { assignTeam, autoTeams, createTeam, declineRaise, deleteTeam, fire, fmtDate, giveRaise, headhunt, hire, renameTeam, setLead, setPolicy, train, upgradeOffice } from '../sim/game'
 import { has, locked, vacantSeats } from '../sim/progress'
@@ -13,55 +13,6 @@ import { Executives, LockedPane } from './Progress'
 import { SiteBuilder } from './SiteBuilder'
 import { Icon, roleIcon } from './icons'
 import { Btn, Choice, ConfirmBtn, ConfirmIconBtn, Drawer, Empty, Fold, Head, IconBtn, Kpi, Meter, Mini, NameInput, Panel, Row, Tabs, Tag, Th, money, pct, pressable, useKept } from './ui'
-
-// ------------------------------------------------------------------ logo
-
-/** Read an image file and return it as a 256 px square PNG data URL. */
-export function readLogo(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    if (!file.type.startsWith('image/')) return reject(new Error('Choose an image file'))
-    if (file.size > 8e6) return reject(new Error('That image is larger than 8 MB'))
-    const url = URL.createObjectURL(file)
-    const img = new Image()
-    img.onload = () => {
-      const c = document.createElement('canvas')
-      c.width = c.height = 256
-      const scale = Math.min(256 / img.width, 256 / img.height)
-      const w = img.width * scale
-      const h = img.height * scale
-      c.getContext('2d')!.drawImage(img, (256 - w) / 2, (256 - h) / 2, w, h)
-      URL.revokeObjectURL(url)
-      resolve(c.toDataURL('image/png'))
-    }
-    img.onerror = () => (URL.revokeObjectURL(url), reject(new Error('That file could not be read as an image')))
-    img.src = url
-  })
-}
-
-export function LogoPicker({ value, onChange }: { value?: string; onChange: (logo: string | undefined) => void }) {
-  const input = useRef<HTMLInputElement>(null)
-  const { say } = useStore.getState()
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex h-12 w-12 shrink-0 items-center justify-center border border-line2 bg-raise">{value ? <img src={value} alt="Company logo" className="h-full w-full object-contain" /> : <span className="label text-faint">none</span>}</div>
-      <input
-        ref={input}
-        type="file"
-        accept="image/png,image/jpeg,image/webp,image/svg+xml"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0]
-          e.target.value = ''
-          if (file) readLogo(file).then(onChange, (err: Error) => say(err.message, 'bad'))
-        }}
-      />
-      <Btn small icon="export" onClick={() => input.current?.click()}>
-        {value ? 'Replace' : 'Upload logo'}
-      </Btn>
-      {value && <ConfirmIconBtn icon="bin" title="Remove the logo" onClick={() => onChange(undefined)} />}
-    </div>
-  )
-}
 
 // ------------------------------------------------------------------ staff
 
@@ -553,7 +504,8 @@ export function OfficeScreen() {
             <div className="num mt-1 text-[10px] text-faint">
               {next.w} x {next.h} m, land {money(next.rent, 1)} / mo
             </div>
-            <Btn
+            <ConfirmBtn
+              confirm={`Pay ${money(next.cost, 1)} and move?`}
               tone="primary"
               icon="truck"
               className="mt-2 h-9 w-full"
@@ -564,7 +516,7 @@ export function OfficeScreen() {
               }}
             >
               Move for {money(next.cost, 1)}
-            </Btn>
+            </ConfirmBtn>
             <div className="mt-1 text-[10px] text-faint">Every room and everything in it is rebuilt on the new plot as it stands, with open land all around to grow into.</div>
           </>
         ) : (
