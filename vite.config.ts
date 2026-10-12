@@ -6,6 +6,8 @@ export default defineConfig({
   // relative paths, so the build works from a sub-folder such as GitHub Pages
   base: './',
   plugins: [react(), tailwindcss()],
+  // the day the build was made, so a report says which version it came from
+  define: { __BUILD__: JSON.stringify(new Date().toISOString().slice(0, 10)) },
   server: { port: 5183, strictPort: true },
   build: {
     // the big libraries go in files of their own: they download side by side and stay cached between updates

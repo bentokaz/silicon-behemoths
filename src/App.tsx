@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect } from 'react'
 import { installUiSounds } from './audio/sfx'
 import { MainMenu, NewGame } from './components/Menu'
+import { FeedbackHost } from './components/Feedback'
 import { CrashGuard, SizeNotice } from './components/Safety'
 import { useStore } from './store/game'
 
@@ -28,6 +29,7 @@ export default function App() {
         <Suspense fallback={<Loading />}>{screen === 'game' && hasGame ? <Shell /> : screen === 'new' ? <NewGame /> : <MainMenu />}</Suspense>
       </CrashGuard>
       <SizeNotice />
+      <FeedbackHost />
       {toast && (
         <div className={`num pointer-events-none absolute bottom-4 left-1/2 z-[60] -translate-x-1/2 border bg-panel px-4 py-2 text-xs ${toast.tone === 'bad' ? 'border-neg text-neg' : 'border-accent text-fg'}`}>{toast.text}</div>
       )}

@@ -3,11 +3,11 @@
 import { Component, type ReactNode, useEffect, useState } from 'react'
 import { useStore } from '../store/game'
 import { AUTOSAVE, saveGame } from '../store/saves'
+import { noteTrouble, useFeedback } from '../store/trouble'
+import { FEEDBACK_URL, FeedbackButton, ISSUES_URL } from './Feedback'
 import { Icon } from './icons'
 import { Btn } from './ui'
 
-export const FEEDBACK_URL = 'https://bentokaz.itch.io/siliconbehemoths'
-export const ISSUES_URL = 'https://github.com/bentokaz/silicon-behemoths/issues'
 
 /** Narrowest window the screens are laid out for. */
 const MIN_WIDTH = 1180
@@ -26,7 +26,8 @@ export class CrashGuard extends Component<{ children: ReactNode }, CrashState> {
     return { error }
   }
 
-  componentDidCatch() {
+  componentDidCatch(error: Error) {
+    noteTrouble('error', `screen crashed: ${error.message}`)
     // the game itself is plain data and is still whole: put it in the autosave before anything else
     const { game } = useStore.getState()
     if (!game) return
@@ -58,10 +59,9 @@ export class CrashGuard extends Component<{ children: ReactNode }, CrashState> {
               <Btn icon="doc" onClick={() => void navigator.clipboard?.writeText(detail)}>
                 Copy the details
               </Btn>
-              <a href={FEEDBACK_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 border border-line2 bg-raise px-3 py-[6px] text-[11px] uppercase tracking-wider text-fg hover:border-accent">
-                <Icon name="review" size={13} />
+              <Btn icon="review" onClick={() => useFeedback.getState().open('bug')}>
                 Report it
-              </a>
+              </Btn>
             </div>
           </div>
         </div>
@@ -100,13 +100,14 @@ export function FeedbackLinks({ className = '' }: { className?: string }) {
   const link = 'inline-flex items-center gap-[6px] border border-line2 bg-raise px-2 py-[5px] text-[10px] uppercase tracking-wider text-dim hover:border-accent hover:text-fg'
   return (
     <div className={`flex flex-wrap items-center gap-2 ${className}`}>
+      <FeedbackButton small />
       <a href={FEEDBACK_URL} target="_blank" rel="noreferrer" className={link}>
         <Icon name="review" size={12} />
-        Leave feedback
+        itch.io comments
       </a>
       <a href={ISSUES_URL} target="_blank" rel="noreferrer" className={link}>
-        <Icon name="alert" size={12} />
-        Report a bug
+        <Icon name="code" size={12} />
+        GitHub issues
       </a>
     </div>
   )

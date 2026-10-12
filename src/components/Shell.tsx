@@ -14,6 +14,7 @@ import { DAYS_PER_SECOND, type Speed, type Tab, useGame, useStore } from '../sto
 import { saveGame } from '../store/saves'
 import { actionFor, keyName, keysFor, useSettings } from '../store/settings'
 import { CityScreen } from './City'
+import { FeedbackButton } from './Feedback'
 import { OfficeScreen, PersonCard, Staff } from './Company'
 import { Designer } from './Designer'
 import { CareScreen, SharesScreen, WorldScreen } from './Empire'
@@ -260,6 +261,9 @@ export function Shell() {
               <Icon name={s.icon} size={13} />
             </Btn>
           ))}
+        </div>
+        <div className="flex items-center border-l border-line px-2">
+          <FeedbackButton small />
         </div>
         <div className="flex items-center gap-1 border-l border-line px-2">
           <Btn small className="flex items-center justify-center !px-2" title="Quick save" onClick={() => void saveGame('quick', g).then(() => (sfx.confirm(), say('Saved to the Quick slot.')))}>

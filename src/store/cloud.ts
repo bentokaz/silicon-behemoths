@@ -181,3 +181,28 @@ export async function listRemote(): Promise<RemoteSave[]> {
 export async function deleteRemote(slot: string) {
   await Promise.allSettled([folderDelete(slot), cloudDelete(slot)])
 }
+
+// ---------------------------------------------------------------- feedback
+
+export interface FeedbackRow {
+  kind: string
+  message: string
+  contact: string | null
+  context: Record<string, unknown>
+}
+
+/** Sends a report to the maker. Needs no account: anyone may add a row, nobody but the owner can read them. */
+export async function sendFeedback(row: FeedbackRow): Promise<boolean> {
+  const cfg = cloudConfig()
+  if (!cfg) return false
+  try {
+    const res = await fetch(`${cfg.url}/rest/v1/feedback`, {
+      method: 'POST',
+      headers: { apikey: cfg.key, Authorization: `Bearer ${cfg.key}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify(row),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
