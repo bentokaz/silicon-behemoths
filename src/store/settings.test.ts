@@ -70,4 +70,25 @@ describe('key bindings', () => {
     expect(keyName('Comma')).toBe(',')
     expect(keyName('Backspace')).toBe('Bksp')
   })
+
+  it('gives the eight destinations F1 to F9 without the save key, and single pages no key until one is given', () => {
+    const keys = ['tab:city', 'tab:dashboard', 'tab:products', 'tab:research', 'tab:office', 'tab:factory', 'tab:marketing', 'tab:system'].map((id) => keysFor(id)[0])
+    expect(keys).toEqual(['F1', 'F2', 'F3', 'F4', 'F6', 'F7', 'F8', 'F9'])
+    for (const a of ACTIONS.filter((x) => x.group === 'Pages')) expect(keysFor(a.id), a.id).toEqual([])
+    expect(holdersOf('F1', 'tab:finance')).toEqual(['City'])
+  })
+
+  it('lets a single page be given a key and have it taken away again, and keeps that through a reload', () => {
+    useSettings.getState().bind('tab:finance', ['KeyK'])
+    expect(actionFor(press('KeyK'), ['Pages'])).toBe('tab:finance')
+    useSettings.getState().bind('tab:finance', [])
+    expect(keysFor('tab:finance')).toEqual([])
+    expect(cleanBinds({ 'tab:finance': [] })).toEqual({ 'tab:finance': [] })
+  })
+
+  it('has keys of its own for undo and redo in the builders', () => {
+    expect(ACTIONS.find((a) => a.id === 'undo')?.group).toBe('Building')
+    expect(ACTIONS.find((a) => a.id === 'redo')?.group).toBe('Building')
+    expect(actionFor(press('KeyU'), ['Building'])).toBe('undo')
+  })
 })

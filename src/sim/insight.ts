@@ -10,6 +10,9 @@
 import { DAYS_PER_MONTH, SUPPLY_LABELS, marketLevel } from '../data/catalog'
 import { OUTLETS, type SegmentInfo, TYPES, segmentInfo, segmentsOf } from '../data/devices'
 import { int, money, num, pct, price as exact } from '../components/format'
+
+/** A device's name with its maker in front, unless the name already starts with the maker's. */
+const fullName = (maker: string, device: string) => (device.toLowerCase().startsWith(maker.toLowerCase()) ? device : `${maker} ${device}`)
 import { TRADE_PULL, careBonus, careSatisfaction } from './care'
 import { DIFFICULTY, RETAIL_CUT, devPlan, fmtDate, player } from './game'
 import { CHANNELS, EVENTS, FAN_CYCLE, OWN_VENUE, dailyTickets, productSatisfaction } from './growth'
@@ -269,7 +272,7 @@ export function whyLines(g: GameState, p: Product): Why[] {
       const days = p.stock / (rate / DAYS_PER_MONTH)
       if (days < 14) out.push({ kind: 'soldout', tone: 'warn', text: `About ${qty(Math.max(1, Math.round(days)), 'day', 'days')} of stock left and nothing on order.` })
     }
-    if (p.recall?.state === 'open') out.push({ kind: 'recall', tone: 'neg', text: 'Faults are spreading: a recall is waiting for your decision under Marketing, Owners.' })
+    if (p.recall?.state === 'open') out.push({ kind: 'recall', tone: 'neg', text: 'Faults are spreading: a recall is waiting for your decision.' })
     else if (p.recall?.state === 'ignored') out.push({ kind: 'recall', tone: 'neg', text: 'Its faults were never put right: owners are unhappy with it.' })
   }
 
@@ -310,9 +313,9 @@ function strongerRival(g: GameState, p: Product, maker: Pick<Company, 'brand' | 
   }
   if (newest) {
     const ago = g.day - newest.x.launchDay
-    return `${newest.c.name} ${newest.x.name} launched ${ago < DAYS_PER_MONTH ? 'this month' : `${months(ago)} ${plural(months(ago), 'month', 'months')} ago`} and scores higher.`
+    return `${fullName(newest.c.name, newest.x.name)} launched ${ago < DAYS_PER_MONTH ? 'this month' : `${months(ago)} ${plural(months(ago), 'month', 'months')} ago`} and scores higher.`
   }
-  if (best) return `${best.c.name} ${best.x.name} is the stronger offer for ${seg.name.toLowerCase()} buyers at ${exact(best.x.price)}.`
+  if (best) return `${fullName(best.c.name, best.x.name)} is the stronger offer for ${seg.name.toLowerCase()} buyers at ${exact(best.x.price)}.`
   return undefined
 }
 
@@ -892,7 +895,7 @@ export function plates(g: GameState): Plate[] {
       place: 'exchange',
       title: 'Exchange',
       lines: [
-        { text: `${k.listed ? 'Share price' : 'A share is worth'} ${money(k.price)}` },
+        { text: `${k.listed ? 'Share price' : 'A share is worth'} ${k.price < 100 ? `$${k.price.toFixed(2)}` : money(k.price)}` },
         past ? { text: flat ? 'Unchanged this month' : `${change > 0 ? 'Up' : 'Down'} ${pct(Math.abs(change))} this month`, tone: flat ? 'dim' : change > 0 ? 'pos' : 'neg' } : { text: `You hold ${pct(founderStake(g), 0)}`, tone: 'dim' },
       ],
       needs: needs('exchange'),

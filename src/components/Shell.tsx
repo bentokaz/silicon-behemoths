@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react'
 import { type Ambience, setAmbience, setAmbienceLevel, sfx } from '../audio/sfx'
 import { fmtDate, player } from '../sim/game'
 import { factoryLine, pendingUnits } from '../sim/ops'
-import { type CapId, capOfTab, has, isNear, needText, vacantSeats } from '../sim/progress'
+import { type CapId, capOfTab, has, isNear, locked, vacantSeats } from '../sim/progress'
 import { sealedRooms } from '../sim/sites'
 import { staffEffects, unmanaged } from '../sim/staff'
 import { type GameState, type NewsItem, SUPPLY_CATS, monthCosts } from '../sim/types'
@@ -61,7 +61,9 @@ function badge(g: GameState, tab: Tab): number {
   if (tab === 'office') return staffEffects(g).idle + sealedRooms(g.office).length
   if (tab === 'care') return g.products.filter((p) => p.companyId === 'player' && p.recall?.state === 'open').length
   if (tab === 'shares') return g.stock.lowDays > 0 ? 1 : 0
-  if (tab === 'factory') return SUPPLY_CATS.filter((c) => g.supply.shockDays[c] > 0).length + (g.orders.some((o) => o.mode === 'factory') && !factoryLine(g)?.running ? 1 : 0)
+  // (a component shortage is the company's business, not the factory's: it shows under Finance)
+  if (tab === 'factory') return g.orders.some((o) => o.mode === 'factory') && !factoryLine(g)?.running ? 1 : 0
+  if (tab === 'finance') return SUPPLY_CATS.filter((c) => g.supply.shockDays[c] > 0 && !g.supply.locks[c]).length
   return 0
 }
 /** The same count for one page: a screen with several pages shares its count out between them. */
@@ -403,7 +405,7 @@ export function Shell() {
       const cap = locks.find((c) => c && isNear(g, c)) ?? locks[0]!
       const open = lockCard?.cap === cap
       return (
-        <button key={d.id} onClick={(e) => (open ? showLock(null) : showLock(cap, e.currentTarget.getBoundingClientRect().top))} title={`${d.label} is not open yet: ${needText(g, cap)}`} aria-label={`${d.label}, locked`} className={`${base} ${open ? 'border-l-line2 bg-hover text-dim' : 'border-l-transparent text-faint hover:bg-hover hover:text-dim'}`}>
+        <button key={d.id} onClick={(e) => (open ? showLock(null) : showLock(cap, e.currentTarget.getBoundingClientRect().top))} title={locked(g, cap) ?? undefined} aria-label={`${d.label}, locked`} className={`${base} ${open ? 'border-l-line2 bg-hover text-dim' : 'border-l-transparent text-faint hover:bg-hover hover:text-dim'}`}>
           {name}
           <Icon name="lock" size={railOpen ? 11 : 9} className={railOpen ? '' : 'absolute right-[6px] top-[5px]'} />
         </button>
@@ -498,7 +500,7 @@ export function Shell() {
                   options={pages.map((p) => {
                     const lock = pageLock(g, p)
                     const n = lock ? 0 : pageBadge(g, p)
-                    return { value: p.id, label: p.label, locked: lock ? `${p.label} is not open yet: ${needText(g, lock)}` : null, badge: n > 0 ? n : undefined, alert: true, fresh: !lock && freshTabs.includes(p.tab) && p.id !== page.id }
+                    return { value: p.id, label: p.label, locked: lock ? locked(g, lock) : null, badge: n > 0 ? n : undefined, alert: true, fresh: !lock && freshTabs.includes(p.tab) && p.id !== page.id }
                   })}
                   onChange={(id) => go(whereOf(here.pages.find((p) => p.id === id)!))}
                   onLocked={(id) => showLock(pageLock(g, here.pages.find((p) => p.id === id)!) ?? null)}

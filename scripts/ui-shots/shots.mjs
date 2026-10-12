@@ -46,11 +46,11 @@ export const SCREENS = [
   { n: 6, name: 'lock-card', states: EARLY, gl: true, setup: `H.tab('city'); H.st().setTab('shares'); if (!H.st().lockCard) throw new Error('shares is not locked here')` },
   { n: 7, name: 'overview', states: FL, setup: `H.tab('dashboard')` },
   { n: 8, name: 'devices', states: FL, setup: `H.tab('products')` },
-  { n: 9, name: 'inspector', states: FL, gl: true, setup: `H.tab('products'); H.st().focus(H.mine().id)` },
-  { n: 10, name: 'inspector-manage', states: FL, gl: true, setup: `H.tab('products'); H.st().focus(H.mine().id); await H.press('Manage')` },
-  { n: 11, name: 'inspector-specs', states: FL, gl: true, setup: `H.tab('products'); H.st().focus(H.mine().id); await H.press('Specs')` },
-  { n: 12, name: 'inspector-reviews', states: FL, gl: true, setup: `H.tab('products'); H.st().focus(H.mine().id); await H.press('Reviews')` },
-  { n: 13, name: 'rival-device', states: FL, gl: true, setup: `try { H.tab('market') } catch { H.tab('products') } H.st().focus(H.rival().id)` },
+  { n: 9, name: 'inspector', states: FL, setup: `H.tab('products'); H.st().focus(H.mine().id)` },
+  { n: 10, name: 'inspector-scores', states: FL, setup: `H.tab('products'); H.st().focus(H.mine().id); await H.press('Scores')` },
+  { n: 11, name: 'inspector-specs', states: FL, setup: `H.tab('products'); H.st().focus(H.mine().id); await H.press('Specs')` },
+  { n: 12, name: 'inspector-reviews', states: FL, setup: `H.tab('products'); H.st().focus(H.mine().id); await H.press('Reviews')` },
+  { n: 13, name: 'rival-device', states: FL, setup: `try { H.tab('market') } catch { H.tab('products') } H.st().focus(H.rival().id)` },
 
   { n: 14, name: 'designer', states: FL, gl: true, setup: DESIGNER },
   { n: 15, name: 'designer-layout', states: FL, gl: true, setup: `${DESIGNER} await H.press('Layout')` },
@@ -59,24 +59,21 @@ export const SCREENS = [
   { n: 18, name: 'designer-score', states: FL, gl: true, setup: `${DESIGNER} await H.press('Score')` },
   { n: 19, name: 'designer-market', states: FL, gl: true, setup: `${DESIGNER} await H.press('Market')` },
   { n: 20, name: 'designer-advanced', states: L, gl: true, setup: `H.st().setEditorMode('advanced'); H.st().openDesigner(); await H.sleep(150); await H.press('Parts')` },
-  { n: 21, name: 'launch-plan', states: FL, gl: true, setup: `${DESIGNER} await H.press('Proceed to launch')` },
+  { n: 21, name: 'launch-plan', states: FL, gl: true, setup: `${DESIGNER} await H.press('Launch plan')` },
 
-  { n: 22, name: 'research', states: FL, setup: `H.tab('research', { 'research:view': 'tech' })` },
-  { n: 23, name: 'research-lines', states: FL, setup: `H.tab('research', { 'research:view': 'lines' })` },
+  { n: 22, name: 'research', states: FL, setup: `H.go('research', 'tech')` },
+  { n: 23, name: 'research-lines', states: FL, setup: `H.go('research', 'lines')` },
   { n: 24, name: 'labs', states: FL, setup: `H.tab('labs', { 'labs:view': 'chips' })` },
   { n: 25, name: 'labs-os', states: FL, setup: `H.tab('labs', { 'labs:view': 'os' })` },
 
-  { n: 26, name: 'factory-floor', states: FL, gl: true, setup: `H.tab('factory', { 'factory:view': 'floor' })` },
-  { n: 27, name: 'factory-orders', states: FL, setup: `H.tab('factory', { 'factory:view': 'orders' })` },
-  { n: 28, name: 'factory-supply', states: FL, setup: `H.tab('factory', { 'factory:view': 'supply' })` },
+  { n: 26, name: 'factory-floor', states: FL, gl: true, setup: `H.tab('factory')` },
   { n: 29, name: 'stores', states: FL, setup: `H.tab('stores', { 'stores:open': 'list' })` },
   { n: 30, name: 'store-single', states: FL, gl: true, setup: `const s = H.st().game.stores[0]; if (!s) throw new Error('no store yet'); H.tab('stores', { 'stores:open': s.id })` },
   { n: 31, name: 'venue', states: FL, gl: true, setup: `H.tab('venue')` },
 
-  { n: 32, name: 'marketing', states: FL, setup: `H.tab('marketing', { 'marketing:view': 'campaigns' })` },
-  { n: 33, name: 'marketing-fans', states: FL, setup: `H.tab('marketing', { 'marketing:view': 'fans' })` },
-  { n: 34, name: 'marketing-events', states: FL, setup: `H.tab('marketing', { 'marketing:view': 'events' })` },
-  { n: 35, name: 'care', states: FL, setup: `H.tab('care')` },
+  { n: 32, name: 'marketing', states: FL, setup: `H.go('marketing', 'campaigns')` },
+  { n: 34, name: 'marketing-events', states: FL, setup: `H.go('marketing', 'events')` },
+  { n: 35, name: 'owners', states: FL, setup: `H.tab('care')` },
 
   { n: 36, name: 'staff', states: FL, setup: `H.go('staff', 'team')` },
   { n: 37, name: 'staff-teams', states: FL, setup: `H.go('staff', 'teams')` },
@@ -87,17 +84,18 @@ export const SCREENS = [
   { n: 42, name: 'campus', states: FL, gl: true, setup: `H.tab('office')` },
 
   { n: 43, name: 'market', states: FL, setup: `H.tab('market')` },
-  { n: 44, name: 'world', states: FL, setup: `H.tab('world')` },
+  { n: 44, name: 'regions', states: FL, gl: true, setup: `H.tab('world')` },
   { n: 45, name: 'rivals', states: FL, setup: `H.tab('rivals')` },
   { n: 46, name: 'finance', states: FL, setup: `H.tab('finance')` },
   { n: 47, name: 'shares', states: FL, setup: `H.tab('shares')` },
-  { n: 48, name: 'goals', states: FL, setup: `H.go('goals', 'goals')` },
+  { n: 48, name: 'growth', states: FL, setup: `H.go('goals', 'goals')` },
   // (the growth tree is only there in a guided game, which the late seed is not)
   { n: 49, name: 'company-growth', states: EARLY, setup: `H.go('goals', 'growth')` },
 
-  { n: 50, name: 'system', states: FL, setup: `H.tab('system', { 'system:view': 'saves' })` },
-  { n: 51, name: 'system-settings', states: FL, setup: `H.tab('system', { 'system:view': 'settings' })` },
-  { n: 52, name: 'system-keys', states: FL, setup: `H.tab('system', { 'system:view': 'keys' })` },
+  { n: 50, name: 'system', states: FL, setup: `H.go('system', 'saves')` },
+  { n: 58, name: 'system-company', states: FL, setup: `H.go('system', 'company')` },
+  { n: 51, name: 'system-settings', states: FL, setup: `H.go('system', 'settings')` },
+  { n: 52, name: 'system-keys', states: FL, setup: `H.go('system', 'keys')` },
   // the form is only opened. Nothing here presses Send, and H.press refuses to.
   { n: 53, name: 'feedback', states: FL, setup: `H.tab('dashboard'); (await sweep.mod('/src/store/trouble.ts')).useFeedback.getState().open('bug')` },
 
@@ -225,7 +223,7 @@ const HELPERS = String.raw`(() => {
       if (st().toast) window.sb.setState({ toast: null })
       await frames(2)
       const failed = document.querySelector('[data-3d=unavailable], [data-3d=broken], [data-3d=lost]')
-      return { canvas: H.canvas(), waited: Math.round(performance.now() - t0), stillLoading, gl3d: failed ? failed.getAttribute('data-3d') : null, crash: /Something broke/.test(document.body.innerText) }
+      return { canvas: H.canvas(), waited: Math.round(performance.now() - t0), stillLoading, gl3d: failed ? failed.getAttribute('data-3d') : null, crash: !!Array.from(document.querySelectorAll('[role=alert] .t-title, [role=alertdialog] .t-title, .t-title')).find((e) => e.textContent === 'Something broke' && !e.closest('[role=dialog]')) }
     },
     gl() {
       try {
@@ -414,7 +412,7 @@ const METRICS = String.raw`(() => {
     if (el.namespaceURI !== 'http://www.w3.org/1999/xhtml') continue
     const s = cs(el)
     if ((s.overflowX === 'auto' || s.overflowX === 'scroll') && el.scrollWidth > el.clientWidth + 1 && elVisible(el, false)) overflow.push({ path: path(el), scrollWidth: el.scrollWidth, clientWidth: el.clientWidth })
-    if ((s.position === 'fixed' || s.position === 'absolute') && Number(s.zIndex) >= 30 && elVisible(el, false)) layers.push({ el, z: Number(s.zIndex), rect: meet(rectOf(el), VIEW) })
+    if ((s.position === 'fixed' || s.position === 'absolute') && Number(s.zIndex) >= 30 && el.id !== 'sb-drawer' && s.pointerEvents !== 'none' && elVisible(el, false)) layers.push({ el, z: Number(s.zIndex), rect: meet(rectOf(el), VIEW) })
   }
   const docOverflow = document.documentElement.scrollWidth > vw
   const overlaps = []

@@ -124,7 +124,7 @@ export function SiteHint({ parts, tone = 'dim', help }: { parts: HintPart[]; ton
       <div ref={box} className="pointer-events-auto relative shrink-0 bg-panel/95">
         <IconBtn icon="help" title="Keys and how the view works" aria-expanded={open} active={open ? true : undefined} onClick={() => setOpen(!open)} />
         {open && (
-          <div role="note" className="absolute bottom-8 left-0 z-30 max-h-[70vh] w-[340px] max-w-[80vw] overflow-y-auto border border-line2 bg-panel p-3 text-xs leading-relaxed text-dim">
+          <div role="note" className="absolute bottom-8 left-0 z-30 max-h-[min(380px,calc(100vh-250px))] w-[400px] max-w-[80vw] overflow-y-auto border border-line2 bg-panel p-3 text-xs leading-relaxed text-dim">
             {help}
           </div>
         )}
@@ -150,7 +150,7 @@ export function SiteHint({ parts, tone = 'dim', help }: { parts: HintPart[]; ton
 export function HelpKeys({ keys, children }: { keys: string[]; children: ReactNode }) {
   return (
     <div className="flex items-baseline gap-2 py-[2px]">
-      <span className="flex w-[104px] shrink-0 flex-wrap gap-1">
+      <span className="flex w-[150px] shrink-0 flex-wrap gap-1">
         {keys.map((k) => (
           <Key key={k}>{k}</Key>
         ))}
