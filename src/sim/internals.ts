@@ -363,7 +363,7 @@ function loom(L: Lay, id: string, from: R, to: R, w: number, thick: number, o: P
     }
   }
   const r = join(best.map((p) => R4(p[0], p[1], thick, thick)))!
-  return L.add(id, 'cable', r, w, thick, { over: true, path: best.map((p) => L.f.point(p[0], p[1], w + thick / 2)), ...o }, false)
+  return L.add(id, 'cable', r, w, thick, { over: true, text: 'clips', n: thick, path: best.map((p) => L.f.point(p[0], p[1], w + thick / 2)), ...o }, false)
 }
 
 /** The memory and storage packages a design carries, as board items. */
@@ -1017,7 +1017,7 @@ function layoutPanel(g: Gen) {
     // ---- the looms: laid on the chassis, turning to keep clear of the boards, held down by clips
     const avoid = [...L.taken]
     const cw0 = z0 + 0.05
-    const thick = Math.min(2.6, Math.max(0.8, so + bt - 0.3))
+    const thick = clamp(tall * 0.22, 0.8, 4.5)
     if (psu && board) loom(L, 'cable1', psu, board, cw0, thick, { label: 'Power harness', figure: 'to the main board' }, avoid)
     if (psu && tcon) loom(L, 'cable0', psu, tcon, cw0, thick, { label: 'Power harness', figure: 'to the timing controller' }, avoid)
     if (psu && ledDrv) loom(L, 'cable2', psu, ledDrv, cw0, thick, { label: 'Backlight power', specs: ['panel'] }, avoid)
@@ -1029,7 +1029,7 @@ function layoutPanel(g: Gen) {
     for (const c of g.out.filter((x) => x.zone === 'main' && (x.kind === 'speaker' || x.id === 'woofer' || x.id.startsWith('exciter')))) {
       const at = L.f.at(c.box.c)
       const r = R4(at[0], at[1], c.box.s[0], c.box.s[1])
-      if (board) loom(L, `lead:${c.id}`, r, board, cw0, Math.min(thick, 1.6), { label: 'Speaker lead', figure: sound.name, specs: ['speakers'], v: 3 }, avoid)
+      if (board) loom(L, `lead:${c.id}`, r, board, cw0, Math.min(thick, 2.2), { label: 'Speaker lead', figure: sound.name, specs: ['speakers'], v: 3 }, avoid)
     }
   } else {
     // ---- an all-in-one: motherboard with its cooler, a graphics card, a power supply and a drive
@@ -1084,6 +1084,8 @@ function layoutPanel(g: Gen) {
     if (psu && boardC) run(L, 'cable0', 'cable', mid(psu), [L.f.at(boardC.box.c)[0], L.f.at(boardC.box.c)[1] - boardC.box.s[1] * 0.42], z0 + tall * 0.6, 4, { label: 'Power harness' })
     if (psu && gpuC) run(L, 'cable1', 'cable', [mid(psu)[0] + 10, mid(psu)[1]], [L.f.at(gpuC.box.c)[0], L.f.at(gpuC.box.c)[1] - gpuC.box.s[1] * 0.45], z0 + tall * 0.6, 4, { label: 'Graphics power', specs: ['gpu'] }, false)
   }
+  // pulled apart, it comes away in three sheets: the panel and what lights it, the chassis, and everything bolted to that
+  for (const c of g.out) if (c.zone === 'main' && c.id !== 'backlight' && c.id !== 'chassis') c.layer = c.kind === 'heatsink' || c.kind === 'pump' || c.kind === 'pipe' || c.id.startsWith('hose') ? 3 : 2
   const bev = edgeBevel(b)
   display(g, 0, 0, b.width - 2 * bev - 0.4, b.height - 2 * bev - 0.4, b.thickness / 2 - dm.disp / 2, dm.disp)
 }
@@ -1300,9 +1302,9 @@ function layoutHeadset(g: Gen) {
   const lr = Math.max(4, Math.min(eyes.lr, hy - 1, hx - eyes.apart - 0.5))
   for (const sx of [-1, 1]) {
     const tag = sx < 0 ? 'L' : 'R'
-    L.add(`lens${tag}`, 'lens', R4(sx * eyes.apart, 0, 2 * lr, 2 * lr), 0.2, barrel, { label: optics.name, figure: optics.depth ? `needs ${optics.depth} mm of depth` : 'flat waveguide', specs: ['optics'], v: s.optics ?? 0, axis: 2, fits: lensFits, layer: 0, back: 2 }, false)
-    L.add(`panel${tag}`, 'display', R4(sx * eyes.apart, 0, 2 * lr * 0.92, 2 * lr * 0.82), 0.2 + barrel + 0.2, 1.4, { label: 'Display', figure: `${panelName('headset', s.panel)}, ${s.refresh} Hz`, specs: ['panel', 'refresh'], v: s.panel, layer: 1, back: 1 }, false)
-    if (io.includes('eyes')) L.add(`eye${tag}`, 'sensor', R4(sx * eyes.apart, 0, 2 * lr + 3, 2 * lr + 3), 0.05, 0.14, { label: 'Eye-tracking ring', specs: ['io:eyes'], v: 3, over: true, layer: 0, back: 3 }, false)
+    L.add(`lens${tag}`, 'lens', R4(sx * eyes.apart, 0, 2 * lr, 2 * lr), 0.2, barrel, { label: optics.name, figure: optics.depth ? `needs ${optics.depth} mm of depth` : 'flat waveguide', specs: ['optics'], v: s.optics ?? 0, axis: 2, fits: lensFits, layer: 0, back: 3 }, false)
+    L.add(`panel${tag}`, 'display', R4(sx * eyes.apart, 0, 2 * lr * 0.92, 2 * lr * 0.82), 0.2 + barrel + 0.2, 1.4, { label: 'Display', figure: `${panelName('headset', s.panel)}, ${s.refresh} Hz`, specs: ['panel', 'refresh'], v: s.panel, layer: 1, back: 2 }, false)
+    if (io.includes('eyes')) L.add(`eye${tag}`, 'sensor', R4(sx * eyes.apart, 0, 2 * lr + 3, 2 * lr + 3), 0.05, 0.14, { label: 'Eye-tracking ring', specs: ['io:eyes'], v: 3, over: true, layer: 0, back: 4 }, false)
   }
   if (io.includes('ipd')) L.add('ipd', 'motor', R4(0, hy * 0.5, Math.min(2 * (eyes.apart - lr) - 1, 16), 6), 0.4, Math.min(barrel - 0.4, 6), { label: 'Lens spacing motor', specs: ['io:ipd'], v: 2, layer: 0, back: 1 }, false)
   // ---- in front of those: the board, its fan and the cells; and against the front plate, the cameras
@@ -1507,7 +1509,7 @@ function layoutSpeaker(g: Gen) {
   const wire = (id: string, pts: V3[], thick: number, o: Partial<Comp>) => {
     const lo = pts.reduce((m, p) => m.map((x, i) => Math.min(x, p[i])) as V3, pts[0])
     const hi = pts.reduce((m, p) => m.map((x, i) => Math.max(x, p[i])) as V3, pts[0])
-    g.out.push({ id, kind: 'cable', zone: 'main', host: 'tray', box: { c: [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2], s: [Math.max(thick, hi[0] - lo[0]), Math.max(thick, hi[1] - lo[1]), Math.max(thick, hi[2] - lo[2])] }, ax: f.ax, fits: true, layer: 1, specs: [], label: '', over: true, path: pts, ...o })
+    g.out.push({ id, kind: 'cable', zone: 'main', host: 'tray', box: { c: [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2], s: [Math.max(thick, hi[0] - lo[0]), Math.max(thick, hi[1] - lo[1]), Math.max(thick, hi[2] - lo[2])] }, ax: f.ax, fits: true, layer: 1, specs: [], label: '', over: true, path: pts, n: thick, ...o })
   }
   const pu = f.at(psuC.box.c)
   const au = f.at(ampC.box.c)
