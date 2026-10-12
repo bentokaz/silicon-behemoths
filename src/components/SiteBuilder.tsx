@@ -10,7 +10,7 @@ import { sfx } from '../audio/sfx'
 import { MIN_THICK } from '../sim/curves'
 import { clearZone, fillRoom, lookCost, paintArea, placeItems, player, removeItems, removeRoom, roomCost, rotateItem, setEdges, setLook, setRoomStyle, zoneRoom } from '../sim/game'
 import { factoryLife, officeLife, storeLife, venueLife } from '../sim/life'
-import { type CapId, has } from '../sim/progress'
+import { type CapId, has, lockTip } from '../sim/progress'
 import { FACADES, GROUNDS, ITEMS, type LineStats, MAX_FLOORS, OUT, ROOFS, ROOMS, builtTiles, gridAt, groundsFor, itemAllowed, needsOf, roomNames, roomOf, roomTiles, sealedRooms, tierOf } from '../sim/sites'
 import type { Employee, Product, Site, SiteItem } from '../sim/types'
 import { useGame, useStore } from '../store/game'
@@ -417,7 +417,7 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
                 const need = needsOf(site.kind, 'room', id) as CapId | undefined
                 const shut = !!need && !has(g, need)
                 return (
-                  <button key={id} onClick={() => (shut ? useStore.getState().showLock(need!) : pick(on ? null : { type: 'room', room: id, shape }))} className={`${row(on)} ${shut ? 'opacity-45' : ''}`}>
+                  <button key={id} aria-pressed={on} aria-disabled={shut ? true : undefined} title={shut ? (lockTip(g, need!) ?? undefined) : undefined} onClick={() => (shut ? useStore.getState().showLock(need!) : pick(on ? null : { type: 'room', room: id, shape }))} className={`${row(on)} ${shut ? 'opacity-45' : ''}`}>
                     <span className="min-w-0">
                       <span className="flex items-center gap-2 text-xs uppercase tracking-wider">
                         <span className="h-3 w-3 shrink-0 border border-line2" style={{ background: r.styles[0].floor }} />

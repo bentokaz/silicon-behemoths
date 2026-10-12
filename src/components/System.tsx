@@ -63,20 +63,24 @@ export function SaveList({ onChange, nonce = 0, inGame = false }: { onChange?: (
           <Th icon="cash" r className="@max-[600px]:hidden">
             Cash
           </Th>
-          <Th icon="clock">Saved</Th>
+          <Th icon="clock" className="@max-[430px]:hidden">Saved</Th>
           <th />
         </tr>
       </thead>
       <tbody>
         {saves.map((s) => (
           <tr key={s.slot} className="row">
-            <td className={s.slot === AUTOSAVE || s.slot === BEFORE_DEBT ? 'text-dim' : ''}>{slotName(s.slot)}</td>
+            <td className={`clip ${s.slot === AUTOSAVE || s.slot === BEFORE_DEBT ? 'text-dim' : ''}`} title={`${slotName(s.slot)}: ${s.company}`}>
+              {slotName(s.slot)}
+            </td>
             <td className="clip @max-[470px]:hidden" title={s.company}>
               {s.company}
             </td>
-            <td className="num">{fmtDate(s.day)}</td>
+            <td className="num" title={`Saved ${new Date(s.savedAt).toLocaleString()}`}>
+              {fmtDate(s.day)}
+            </td>
             <td className="num r @max-[600px]:hidden">{money(s.cash)}</td>
-            <td className="num text-dim" title={new Date(s.savedAt).toLocaleString()}>
+            <td className="num text-dim @max-[430px]:hidden" title={new Date(s.savedAt).toLocaleString()}>
               {savedWhen(s.savedAt)}
             </td>
             <td className="r">

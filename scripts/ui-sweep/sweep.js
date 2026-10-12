@@ -742,8 +742,12 @@ async function crawl(name, setup, { depth = 2, path = [], skip, budget = { left:
       if ((rowsSeen[table] = (rowsSeen[table] ?? 0) + 1) > 2) continue
     } else {
       // and so do buttons that repeat down a list ("Take Ana off this team", "Take Ravi off this team", "Hire", "Hire"): four of a kind
-      const m = /^(\w+) "([^"]*)"(.*?)( #\d+)?$/.exec(sig)
-      if (m && (m[1] === 'button' || m[1] === 'select')) {
+      const m = /^([\w[\]]+) "([^"]*)"(.*?)( #\d+)?$/.exec(sig)
+      if (m && /^input/.test(m[1])) {
+        // a column of fields of one kind in one panel (twenty-four company names): four
+        const kind = `${m[1]} ${m[2].split(/\s+/).slice(0, 2).join(' ')}${m[3]}`
+        if ((rowsSeen[kind] = (rowsSeen[kind] ?? 0) + 1) > 4) continue
+      } else if (m && (m[1] === 'button' || m[1] === 'select')) {
         const kind = `${m[1]} ${m[2].split(/\s+/).slice(0, 1).join(' ')} ${m[2].split(/\s+/).length > 3 ? m[2].split(/\s+/).slice(-2).join(' ') : ''}${m[3]}`
         if ((rowsSeen[kind] = (rowsSeen[kind] ?? 0) + 1) > 4) continue
       }
@@ -866,7 +870,7 @@ async function lookState(state, { themes = THEMES, only } = {}) {
     pass(stop.name)
     S.counters.stops++
     // sub-tabs and folds: anything that looks like a tab strip or a fold header
-    const subs = listControls().filter((c) => c.el.matches('button') && (c.el.parentElement?.className?.toString().includes('border-b border-line') || c.el.hasAttribute('aria-expanded')) && !forbidden(c.el))
+    const subs = listControls().filter((c) => c.el.matches('button') && !inChrome(c.el) && !c.el.closest('[data-coach]') && (c.el.parentElement?.className?.toString().includes('border-b border-line') || c.el.hasAttribute('aria-expanded')) && !forbidden(c.el))
     const base = uiStamp()
     for (const { sig } of subs) {
       const hit = listControls().find((c) => c.sig === sig)
@@ -918,7 +922,7 @@ async function hotkeys(state = 'mid') {
 }
 
 /** A long session: the clock at top speed while the crawler hops screens, opens the designer and the inspectors. */
-async function soak({ state = 'late', rounds = 10, designer = 20, speed = 4 } = {}) {
+async function soak({ state = 'late', rounds = 10, designer = 20, speed = 4, days = 10 } = {}) {
   await seed(state)
   const samples = [{ at: 'start', ...vitals() }]
   const t0 = performance.now()
@@ -938,6 +942,11 @@ async function soak({ state = 'late', rounds = 10, designer = 20, speed = 4 } = 
       st().setTab(tab)
       S.counters.tabSwitches++
       await settle(tab === 'city' || tab === 'office' || tab === 'factory' || tab === 'stores' || tab === 'venue' ? 160 : 50)
+      // the game's own clock runs on a timer, which a background page barely gets: move time on by hand as well,
+      // as much as the clock would in the second or so a player spends on a screen
+      st().advance(days)
+      S.counters.daysPlayed = (S.counters.daysPlayed ?? 0) + days
+      await settle(20)
       const s = st()
       if (s.yearEnd) s.closeYear()
       if (s.showing) s.watch(null)

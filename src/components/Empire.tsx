@@ -425,7 +425,7 @@ export function WorldScreen() {
                   <th className="r">World demand</th>
                   <th className="w-32">Awareness</th>
                   <th className="r">Units last month</th>
-                  <th className="r @max-[580px]:hidden">Share of your sales</th>
+                  <th className="r @max-[640px]:hidden">Share of your sales</th>
                   <th className="r">Local price</th>
                 </tr>
               </thead>
@@ -445,7 +445,7 @@ export function WorldScreen() {
                       <td className="num r text-dim">{pct(r.share, 0)}</td>
                       <td>{st.open ? <Meter value={st.awareness} tone="accent" /> : <span className="text-[10px] text-faint">not entered ({money(r.entry, 1)})</span>}</td>
                       <td className="num r text-fg">{st.open ? num(st.history.at(-1) ?? 0) : '--'}</td>
-                      <td className="num r text-dim @max-[580px]:hidden">{st.open && total > 0 ? pct((st.history.at(-1) ?? 0) / total, 0) : '--'}</td>
+                      <td className="num r text-dim @max-[640px]:hidden">{st.open && total > 0 ? pct((st.history.at(-1) ?? 0) / total, 0) : '--'}</td>
                       <td className="num r text-dim">{st.open ? `${st.priceAdj >= 1 ? '+' : ''}${Math.round((st.priceAdj - 1) * 100)}%` : '--'}</td>
                     </tr>
                   )
@@ -602,7 +602,7 @@ function GoalRow({ goal, g }: { goal: Goal; g: GameState }) {
   return (
     <div className={`border-b border-line px-2 py-[6px] ${done !== undefined ? 'opacity-70' : ''}`}>
       <div className="flex items-baseline justify-between gap-2">
-        <span className={`text-xs uppercase tracking-wider ${done !== undefined ? 'text-pos' : 'text-fg'}`}>
+        <span className={`min-w-0 break-words text-xs uppercase tracking-wider ${done !== undefined ? 'text-pos' : 'text-fg'}`}>
           {done !== undefined && <Lead icon="check" size={12} />}
           {goal.name}
         </span>
@@ -649,7 +649,7 @@ export function GoalsScreen() {
         {groups.map((group) => {
           const list = GOALS.filter((x) => x.group === group && (view === 'all' || g.goals[x.id] === undefined)).sort((a, b) => (g.goals[a.id] !== undefined ? 1 : 0) - (g.goals[b.id] !== undefined ? 1 : 0) || b.progress(g) - a.progress(g))
           return (
-            <Panel key={group} title={group} icon={GROUP_ICON[group]} bodyClass="overflow-y-auto" right={<span className="num text-[10px] text-faint">{GOALS.filter((x) => x.group === group && g.goals[x.id] !== undefined).length} / {GOALS.filter((x) => x.group === group).length}</span>}>
+            <Panel key={group} title={group} icon={GROUP_ICON[group]} bodyClass="overflow-y-auto overflow-x-hidden" right={<span className="num text-[10px] text-faint">{GOALS.filter((x) => x.group === group && g.goals[x.id] !== undefined).length} / {GOALS.filter((x) => x.group === group).length}</span>}>
               {list.length === 0 && <Empty icon="check" text="All done here." />}
               {list.map((goal) => (
                 <GoalRow key={goal.id} goal={goal} g={g} />

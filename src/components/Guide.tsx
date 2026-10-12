@@ -137,6 +137,32 @@ function seenBox(el: Element, within: Element): Box | null {
   return box
 }
 
+const PRESSABLE = 'button, a[href], input, select, textarea, [role=button], tr[tabindex]'
+/**
+ * How many controls of the screen lie under a box, counted by looking at a
+ * grid of points across it. The coach's own parts are looked through.
+ */
+function controlsUnder(box: Box, within: Element): number {
+  const seen = new Set<Element>()
+  const cols = 6
+  const rows = 4
+  for (let i = 0; i < cols; i++) {
+    for (let j = 0; j < rows; j++) {
+      const x = box.left + ((i + 0.5) / cols) * (box.right - box.left)
+      const y = box.top + ((j + 0.5) / rows) * (box.bottom - box.top)
+      for (const el of document.elementsFromPoint(x, y)) {
+        if (el.closest('[data-coach]')) continue
+        if (!within.contains(el)) break
+        const hit = el.closest(PRESSABLE)
+        if (hit) seen.add(hit)
+        // what is on top at this point is what would be covered; nothing beneath it matters
+        break
+      }
+    }
+  }
+  return seen.size
+}
+
 interface Placing {
   /** Where the card goes, or null when every place would cover what the step points at. */
   card: Slot | null
@@ -210,7 +236,20 @@ function usePlacing(card: React.RefObject<HTMLElement | null>, bar: React.RefObj
         if (ht > floor - m.top - EDGE) return null
         // a view with its own bar along the bottom has its tools along the top: there the coach keeps to the bottom
         const slots = bars.length ? SLOTS.filter((s) => s.startsWith('bottom')) : SLOTS
-        return slots.find((s) => !keepOff.some((k) => cut(k, boxAt(s, w, ht)))) ?? null
+        const free = slots.filter((s) => !keepOff.some((k) => cut(k, boxAt(s, w, ht))))
+        if (free.length < 2) return free[0] ?? null
+        // of the places that leave the step's target clear, take the one lying over the fewest other controls,
+        // so that the coach does not sit on a button on a screen it is not talking about
+        let best = free[0]
+        let least = Infinity
+        for (const s of free) {
+          const n = controlsUnder(boxAt(s, w, ht), main)
+          if (n < least) (least = n), (best = s)
+        }
+        // it stays where it is unless somewhere else is strictly better: a list scrolling under it must not make it hop about
+        const now = el.getAttribute('data-coach-slot') as Slot | null
+        if (now && now !== best && free.includes(now) && controlsUnder(boxAt(now, w, ht), main) <= least) return now
+        return best
       }
       const next: Placing = { card: find(card.current), bar: find(bar.current) ?? 'bottom', left: Math.round(m.left - h.left), right: Math.round(h.right - m.right), top: Math.round(m.top - h.top), width: Math.round(m.width), bottom: Math.round(h.bottom - floor) }
       setPlacing((was) => (was && JSON.stringify(was) === JSON.stringify(next) ? was : next))

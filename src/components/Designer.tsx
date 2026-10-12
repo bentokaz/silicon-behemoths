@@ -1048,7 +1048,9 @@ function Workbench() {
                 const a = appeal(probe, me, seg, g.day)
                 return (
                   <div key={seg.id} className="flex items-center gap-2 py-[3px]">
-                    <span className="w-28 truncate text-[11px] text-dim">{seg.name}</span>
+                    <span className="w-32 shrink-0 truncate text-[11px] text-dim" title={seg.name}>
+                      {seg.name}
+                    </span>
                     <Meter value={a} max={100} tone={a > 70 ? 'pos' : a > 40 ? 'accent' : 'dim'} />
                     <span className="num w-7 text-right text-[11px] text-fg">{Math.round(a)}</span>
                   </div>
@@ -1057,7 +1059,9 @@ function Workbench() {
               <div className="label mb-1 mt-2 text-faint">Against the best on sale today</div>
               {SUBS.map((k) => (
                 <div key={k} className="flex items-center gap-2 py-[3px]">
-                  <span className="w-28 truncate text-[11px] text-dim">{subLabel(type, k)}</span>
+                  <span className="w-32 shrink-0 truncate text-[11px] text-dim" title={subLabel(type, k)}>
+                    {subLabel(type, k)}
+                  </span>
                   <Meter value={n[k]} max={1.1} tone={n[k] > 0.9 ? 'pos' : n[k] > 0.6 ? 'accent' : 'warn'} />
                   <span className="num w-7 text-right text-[11px] text-fg">{Math.round(n[k] * 100)}</span>
                 </div>

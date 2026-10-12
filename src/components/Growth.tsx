@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { sfx } from '../audio/sfx'
 import { TYPES, segmentsOf } from '../data/devices'
 import { autoVenue, buildVenue, closeStore, copyLayout, fmtDate, layoutQuote, layoutValue, newLayoutQuote, openStore, player, scheduleEvent, setCampaignBudget, startCampaign, stopCampaign } from '../sim/game'
-import { capOfChannel, has } from '../sim/progress'
+import { capOfChannel, has, lockTip } from '../sim/progress'
 import { CHANNELS, EVENTS, EVENT_LEAD, OWN_VENUE, channelFit, dailyTickets, eventBlocked, hasStage, keynoteReach, nextFair } from '../sim/growth'
 import { homeRegion, openRegions, regionInfo } from '../sim/regions'
 import { SITE_TIERS, sitePrestige, storeStats, tierOf, upkeep, venueStats } from '../sim/sites'
@@ -40,7 +40,7 @@ function Campaigns() {
       <Panel title="New campaign" icon="plus" bodyClass="overflow-y-auto p-2">
         <div className="grid grid-cols-2 gap-1">
           {(Object.keys(CHANNELS) as ChannelId[]).map((id) => (
-            <button key={id} onClick={() => (has(g, capOfChannel(id)) ? setChannel(id) : useStore.getState().showLock(capOfChannel(id)))} className={`border p-2 text-left ${has(g, capOfChannel(id)) ? '' : 'opacity-45'} ${channel === id ? 'border-accent bg-accent/10' : 'border-line hover:border-line2'}`}>
+            <button key={id} aria-pressed={channel === id} aria-disabled={has(g, capOfChannel(id)) ? undefined : true} title={has(g, capOfChannel(id)) ? undefined : (lockTip(g, capOfChannel(id)) ?? undefined)} onClick={() => (has(g, capOfChannel(id)) ? setChannel(id) : useStore.getState().showLock(capOfChannel(id)))} className={`border p-2 text-left ${has(g, capOfChannel(id)) ? '' : 'opacity-45'} ${channel === id ? 'border-accent bg-accent/10' : 'border-line hover:border-line2'}`}>
               <div className={`flex items-center gap-[6px] text-[11px] font-semibold uppercase tracking-wider ${channel === id ? 'text-accent' : 'text-fg'}`}>
                 <Icon name={channelIcon(id)} size={13} className={channel === id ? '' : 'text-dim'} />
                 <span className="min-w-0 flex-1 truncate" title={CHANNELS[id].name}>
@@ -100,7 +100,7 @@ function Campaigns() {
                 <th>Channel</th>
                 <th className="@max-[520px]:hidden">Advertising</th>
                 <th className="w-32">Budget / month</th>
-                <th className="r @max-[500px]:hidden">Spent</th>
+                <th className="r @max-[600px]:hidden">Spent</th>
                 <th className="w-16 @max-[440px]:hidden">Interest</th>
                 <th />
               </tr>
@@ -133,7 +133,7 @@ function Campaigns() {
                         <span className="num w-14 text-right text-[11px] text-fg">{money(c.monthly, 1)}</span>
                       </div>
                     </td>
-                    <td className="num r text-dim @max-[500px]:hidden">{money(c.spent, 1)}</td>
+                    <td className="num r text-dim @max-[600px]:hidden">{money(c.spent, 1)}</td>
                     <td className="@max-[440px]:hidden">{p ? <Meter value={buzz} tone={buzz > 0.5 ? 'pos' : 'accent'} /> : <span className="text-[10px] text-faint">brand only</span>}</td>
                     <td className="r">
                       <IconBtn icon="stop" tone="ghost" title="Stop this campaign" onClick={() => (act((s) => stopCampaign(s, c.id)), say(`${CHANNELS[c.channel].name} campaign stopped.`))} />

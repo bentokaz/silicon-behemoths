@@ -301,7 +301,7 @@ function ProductTable({ g, rows, compact = false, showMaker = false, winRate }: 
           <Th iconClass="@max-[720px]:hidden" icon="devices">Device</Th>
           {showMaker && <Th iconClass="@max-[720px]:hidden" icon="campus">Maker</Th>}
           <Th iconClass="@max-[720px]:hidden" icon="info">Status</Th>
-          {!compact && <Th className="@max-[520px]:hidden" iconClass="@max-[720px]:hidden" icon="target">Segment</Th>}
+          {!compact && <Th className="@max-[590px]:hidden" iconClass="@max-[720px]:hidden" icon="target">Segment</Th>}
           <Th iconClass="@max-[720px]:hidden" icon="tag" r>
             Price
           </Th>
@@ -317,7 +317,7 @@ function ProductTable({ g, rows, compact = false, showMaker = false, winRate }: 
             Review
           </Th>
           {!compact && (
-            <Th className="@max-[470px]:hidden" iconClass="@max-[720px]:hidden" icon="design" r>
+            <Th className="@max-[510px]:hidden" iconClass="@max-[720px]:hidden" icon="design" r>
               Design
             </Th>
           )}
@@ -351,7 +351,7 @@ function ProductTable({ g, rows, compact = false, showMaker = false, winRate }: 
                 </Tag>
               </td>
               {!compact && (
-                <td className="clip text-dim @max-[520px]:hidden" title={p.segment ? segmentInfo(p.segment).name : undefined}>
+                <td className="clip text-dim @max-[590px]:hidden" title={p.segment ? segmentInfo(p.segment).name : undefined}>
                   {p.segment ? segmentInfo(p.segment).name : "--"}
                 </td>
               )}
@@ -359,7 +359,7 @@ function ProductTable({ g, rows, compact = false, showMaker = false, winRate }: 
               {showStock && <td className={`num r ${p.stock <= 0 && p.status === 'sale' ? 'text-neg' : 'text-dim'}`}>{num(p.stock)}</td>}
               <td className="num r text-dim">{num(showMaker ? (p.history.at(-1) ?? p.monthUnits) : p.unitsSold)}</td>
               <td className="num r text-fg">{p.reviewAvg ? p.reviewAvg.toFixed(1) : '--'}</td>
-              {!compact && <td className="num r text-dim @max-[470px]:hidden">{Math.round(p.designPct)}</td>}
+              {!compact && <td className="num r text-dim @max-[510px]:hidden">{Math.round(p.designPct)}</td>}
               {winRate && <td className="num r text-accent">{pct(winRate.get(p.id) ?? 0)}</td>}
             </tr>
           )
@@ -511,7 +511,7 @@ export function Rivals() {
             <tr>
               <th>Company</th>
               <th className="@max-[350px]:hidden">Makes</th>
-              <th className="r @max-[400px]:hidden">Brand</th>
+              <th className="r @max-[450px]:hidden">Brand</th>
               <th className="r">Units 12 mo</th>
               <th className="r">Share</th>
             </tr>
@@ -524,7 +524,7 @@ export function Rivals() {
                   {c.name}
                   {c.isPlayer && <span className="ml-2"><Tag tone="accent" icon="person">you</Tag></span>}
                 </td>
-                <td className="text-dim @max-[420px]:max-w-[7.5rem] @max-[420px]:whitespace-normal @max-[350px]:hidden">
+                <td className="text-dim @max-[470px]:max-w-[7.5rem] @max-[470px]:whitespace-normal @max-[350px]:hidden">
                   {c.isPlayer
                     ? '--'
                     : types(c.segments).map((t) => (
@@ -533,7 +533,7 @@ export function Rivals() {
                         </span>
                       ))}
                 </td>
-                <td className="num r text-dim @max-[400px]:hidden">{Math.round(c.brand * 100)}</td>
+                <td className="num r text-dim @max-[450px]:hidden">{Math.round(c.brand * 100)}</td>
                 <td className="num r text-dim">{num(units)}</td>
                 <td className="num r text-fg">{pct(units / total)}</td>
               </tr>
@@ -598,7 +598,7 @@ export function Finance() {
         <FinanceChart g={g} months={36} />
       </Panel>
       <Panel title="Monthly statement" icon="doc" className="flex-1" bodyClass="overflow-auto">
-        <table className="grid-table">
+        <table className="grid-table ledger">
           <thead>
             <tr>
               <th>Month</th>

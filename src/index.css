@@ -53,7 +53,7 @@
   --color-line2: #45383e;
   --color-fg: #f2e9ec;
   --color-dim: #a3959b;
-  --color-faint: #65575d;
+  --color-faint: #6c5e64;
   --color-accent: #ff4f81;
 }
 
@@ -216,6 +216,19 @@ table.grid-table td {
 }
 .tight table.grid-table td {
   font-size: 12px;
+}
+/* the monthly statement has fourteen columns: at the smallest window it goes one step tighter still */
+.tight table.grid-table.ledger th,
+.tight table.grid-table.ledger td {
+  padding-left: 3px;
+  padding-right: 3px;
+}
+.tight table.grid-table.ledger td {
+  font-size: 11px;
+}
+.tight table.grid-table.ledger th {
+  letter-spacing: 0;
+  font-size: 9px;
 }
 /* and its longer names are cut short there; the cell's tooltip has them in full */
 .tight table.grid-table td.clip {

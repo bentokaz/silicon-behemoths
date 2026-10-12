@@ -137,6 +137,8 @@ export function useKeptScroll(key: string | undefined) {
  * width draws its table tighter (see `.tight` in index.css) before it lets
  * it scroll sideways, and loosens it again when there is room.
  */
+/** Room a tight table must have to spare before it is drawn loose again: more than a scrollbar's width. */
+const SLACK = 28
 function useTight(ref: RefObject<HTMLElement | null>): boolean {
   const [tight, setTight] = useState(false)
   // the width the table wanted when it was last drawn loose
@@ -145,8 +147,11 @@ function useTight(ref: RefObject<HTMLElement | null>): boolean {
     const el = ref.current
     if (!el) return
     if (!el.querySelector(':scope table.grid-table')) return setTight(false)
-    if (!el.classList.contains('tight')) need.current = el.scrollWidth
-    setTight(need.current > el.clientWidth + 1)
+    const isTight = el.classList.contains('tight')
+    if (!isTight) need.current = el.scrollWidth
+    // Going tight changes the row heights, which can add or remove the panel's own scrollbar and with it a few
+    // pixels of width. Loosening therefore waits for clear room to spare, or the two states would chase each other.
+    setTight(isTight ? need.current > el.clientWidth - SLACK : need.current > el.clientWidth + 1)
   }, [ref])
   // when the panel changes size, and when a table arrives in it later (a list that had to be read first)
   useLayoutEffect(() => {
@@ -154,10 +159,13 @@ function useTight(ref: RefObject<HTMLElement | null>): boolean {
     if (!el || typeof ResizeObserver === 'undefined') return
     const watch = new ResizeObserver(check)
     watch.observe(el)
-    const arrivals = new MutationObserver(check)
+    // (looked at in a task of its own, never in the same breath as the change that was seen: an observer that
+    // answers a change with a change of its own must not be able to spin)
+    let queued = 0
+    const arrivals = new MutationObserver(() => void (queued ||= window.setTimeout(() => ((queued = 0), check()), 0)))
     arrivals.observe(el, { childList: true })
     if (el.firstElementChild && el.firstElementChild.tagName !== 'TABLE') arrivals.observe(el.firstElementChild, { childList: true })
-    return () => (watch.disconnect(), arrivals.disconnect())
+    return () => (watch.disconnect(), arrivals.disconnect(), window.clearTimeout(queued))
   }, [ref, check])
   // and whenever what is in it is drawn again: more rows, another view
   useLayoutEffect(check)
@@ -628,7 +636,7 @@ export function Drawer({ open, onClose, title, children, width = 420, footer }: 
   useLayer(open, onClose, { box })
   if (!open) return null
   return (
-    <div className="absolute inset-0 z-30 flex justify-end">
+    <div className="absolute inset-0 z-[35] flex justify-end">
       <div className="absolute inset-0 bg-carbon/60" onClick={onClose} />
       <aside ref={box} role="dialog" aria-label={typeof title === 'string' ? title : 'Details'} className="relative flex h-full min-h-0 flex-col border-l border-line2 bg-carbon outline-none" style={{ width, maxWidth: '100%' }}>
         <header className="flex h-9 shrink-0 items-center justify-between border-b border-line bg-panel px-3">
