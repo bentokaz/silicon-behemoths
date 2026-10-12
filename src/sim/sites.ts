@@ -1,7 +1,7 @@
 // Buildable sites: campuses, factories, stores and event venues share one
 // model. A site is an empty plot; the player zones rooms on it, the walls
 // follow the rooms, and each kind of room takes its own furniture.
-import { CLIP, type CurveSpec, type LiveTile, MIN_RADIUS, MIN_THICK, type Side, bayBeyond, bayStands, curveAt, curveTiles, geomOf, holeOf, onCurve, settle } from './curves'
+import { CLIP, type CurveSpec, type LiveTile, MIN_RADIUS, MIN_THICK, type Side, plotMark, bayBeyond, bayStands, curveAt, curveTiles, geomOf, holeOf, onCurve, settle } from './curves'
 import type { Corner, Role, Room, Site, SiteItem, SiteKind } from './types'
 
 export type Stage = 'in' | 'out' | 'belt' | 'smt' | 'assembly' | 'test' | 'pack'
@@ -537,9 +537,12 @@ interface Memo {
 }
 const MEMO = new WeakMap<Site, Memo>()
 function memoOf(site: Site): Memo {
+  // the grid, the curves and the doors in curved walls are changed in place, so they are read, not just compared
+  let mark = plotMark(site)
+  for (const c of site.curves ?? []) for (const k in c.walls) mark += `,${k}${c.walls[k]}`
   const m = MEMO.get(site)
-  if (m && m.rev === site.rev && m.walls === site.walls && m.nWalls === site.walls.length && m.items === site.items && m.nItems === site.items.length && m.curves === site.curves && m.nCurves === (site.curves?.length ?? 0) && m.grid === site.grid) return m
-  const fresh: Memo = { rev: site.rev, walls: site.walls, nWalls: site.walls.length, items: site.items, nItems: site.items.length, curves: site.curves, nCurves: site.curves?.length ?? 0, grid: site.grid }
+  if (m && m.rev === site.rev && m.grid === mark && m.walls === site.walls && m.nWalls === site.walls.length && m.items === site.items && m.nItems === site.items.length && m.curves === site.curves && m.nCurves === (site.curves?.length ?? 0)) return m
+  const fresh: Memo = { rev: site.rev, walls: site.walls, nWalls: site.walls.length, items: site.items, nItems: site.items.length, curves: site.curves, nCurves: site.curves?.length ?? 0, grid: mark }
   MEMO.set(site, fresh)
   return fresh
 }

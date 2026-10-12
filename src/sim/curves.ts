@@ -711,8 +711,45 @@ export function onCurve(site: Plot, x: number, y: number): boolean {
   return !!c && !c.squared
 }
 
-/** Every tile on the site with a curved edge through it, keyed "x,y". */
+/**
+ * Everything about a plot that decides where its curved walls run and what
+ * lies beyond them, as a short text: the grid, the curves and the tiles they
+ * have squared off, and the slanted corners. Two plots that give the same
+ * text have the same curved tiles. Read from the plot itself every time, so
+ * nothing remembered under it can outlive a change, however the change was
+ * made.
+ */
+export function plotMark(site: Plot): string {
+  let h = 2166136261
+  const g = site.grid
+  for (let i = 0; i < g.length; i++) h = Math.imul(h ^ g[i], 16777619)
+  let text = `${site.w}x${site.h}:${h >>> 0}`
+  for (const c of site.curves ?? []) {
+    text += `|${c.room},${c.cx},${c.cy},${c.rx},${c.ry},${c.t ?? ''},${c.from ?? ''},${c.sweep ?? ''}`
+    for (const k in c.square) text += `;${k}`
+  }
+  for (const k in site.cuts) text += `/${k}${site.cuts[k]}`
+  return text
+}
+
+const TILES = new WeakMap<object, { mark: string; tiles: Map<string, LiveTile> }>()
+
+/**
+ * Every tile on the site with a curved edge through it, keyed "x,y". Asked
+ * for many times a day and on every frame, and slow to work out on a campus
+ * of round buildings, so the answer is kept for as long as the plot stands as
+ * it did (see plotMark). The map is shared: read it, do not change it.
+ */
 export function curveTiles(site: Plot): Map<string, LiveTile> {
+  if (!site.curves?.length) return new Map()
+  const mark = plotMark(site)
+  const kept = TILES.get(site)
+  if (kept && kept.mark === mark) return kept.tiles
+  const tiles = findCurveTiles(site)
+  TILES.set(site, { mark, tiles })
+  return tiles
+}
+function findCurveTiles(site: Plot): Map<string, LiveTile> {
   const out = new Map<string, LiveTile>()
   site.curves?.forEach((c, i) => {
     for (const [key, shape] of geomOf(c).tiles) {

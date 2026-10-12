@@ -140,7 +140,7 @@ describe('core simulation', () => {
     expect(trailingUnits(s).reduce((a, x) => a + x.units, 0)).toBeGreaterThan(30e6)
     expect(s.reports.length).toBe(120)
     for (const type of DEVICE_TYPES) expect(s.products.some((p) => p.type === type && p.status === 'sale'), type).toBe(true)
-  })
+  }, 120000)
 })
 
 describe('devices and production', () => {

@@ -2,7 +2,8 @@
 // clearing, filling, curves, doors, furniture, copies and moves on every kind
 // of plot, with the plot checked after every single step.
 import * as G from '../game'
-import { ITEMS, SITE_TIERS } from '../sites'
+import { curveTiles } from '../curves'
+import { ITEMS, SITE_TIERS, openRooms, reachable } from '../sites'
 import type { Site } from '../types'
 import { siteOp, siteRefs } from './chaos'
 import { checkSite } from './invariants'
@@ -45,6 +46,10 @@ export function fuzzSites(seed: number, ops: number, wild: number, trace?: (line
     const now = G.siteOf(s, ref)
     if (now) {
       for (const f of checkSite(now, ref.startsWith('store:') ? 'store' : ref)) p.flag(f)
+      // what is remembered about the plot is what would be worked out afresh from a copy of it
+      const copy = JSON.parse(JSON.stringify(now)) as Site
+      const seen = (site: Site) => JSON.stringify([[...openRooms(site)].sort(), reachable(site).map((i) => i.id), [...curveTiles(site)].map(([k, t]) => `${k}:${t.curve}:${t.beyond}`)])
+      if (seen(now) !== seen(copy)) p.flag(`stale-memory: after ${p.trail[p.trail.length - 1].replace(/\(.*/, '')} the plot answers from memory with something that is no longer so`)
       if (now === site && plain(now) !== before && now.rev === rev) p.flag(`site-rev: ${p.trail[p.trail.length - 1].replace(/\(.*/, '')} changed the plot without bumping its revision`)
     }
     if (!Number.isFinite(s.cash)) {

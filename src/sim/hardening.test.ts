@@ -10,11 +10,13 @@ import { EVENTS, resolveEvent } from './growth'
 import { priceFactor } from './market'
 import { CAPS, has, nextReq } from './progress'
 import { REGIONS, homeOf, rivalReach } from './regions'
-import { ITEMS, doorFits, isBoundary } from './sites'
+import { curveTiles } from './curves'
+import { ITEMS, doorFits, isBoundary, openRooms, reachable } from './sites'
+import { staffEffects } from './staff'
 import { adversary, monkey } from './testing/chaos'
 import { fuzzDevices } from './testing/devicefuzz'
 import { checkSite, checkState } from './testing/invariants'
-import { hireOne, launch } from './testing/kit'
+import { hireOne, launch, placeAnywhere } from './testing/kit'
 import { PERSONAS } from './testing/personas'
 import { Play } from './testing/play'
 import { ALL_PERSONAS, canon, runGame } from './testing/runner'
@@ -529,6 +531,118 @@ describe('money that comes from nowhere', () => {
     const prices = early.products.map((p) => p.price)
     early.version = 5
     expect(G.migrate(early).products.map((p) => p.price)).toEqual(prices)
+  })
+})
+
+describe('a big campus of round buildings', () => {
+  /** A full campus plot of rings and discs, sixty people at desks in them and a dozen campaigns running. */
+  function campus() {
+    const s = game({ startType: 'all' })
+    while (!G.upgradeOffice(s)) void 0
+    G.clearZone(s, 'office', 0, 0, 99, 99)
+    const types = ['work', 'soft', 'eng', 'lab', 'lounge', 'meeting', 'lobby', 'work', 'soft']
+    let n = 0
+    for (let y = 1; y + 15 < s.office.h; y += 17) {
+      for (let x = 1; x + 15 < s.office.w; x += 17) {
+        const type = types[n++ % types.length]
+        expect(G.zoneRoom(s, 'office', type, x, y, x + 15, y + 15, n % 2 ? 'ring' : 'round', undefined, { thick: 4 }, true), `${type} at ${x},${y}`).toBeNull()
+      }
+    }
+    expect(s.office.curves!.length).toBeGreaterThanOrEqual(12)
+    for (let i = 0; i < 70; i++) placeAnywhere({ s, act: (_n: string, fn: (g: GameState) => unknown) => fn(s), rnd: () => ((i * 7919 + n++ * 104729) % 1000) / 1000 } as never, 'office', 'desk')
+    while (s.staff.length < 60) {
+      G.headhunt(s)
+      for (const c of [...s.candidates]) G.hire(s, c.id)
+    }
+    expect(G.startProduct(s, { design: G.starterDesign(s, 'phone'), family: 'Nova', variant: '', price: 399, tiers: [], quantity: 50000, mode: 'contract', marketing: 0 })).toBeNull()
+    for (const ch of ['online', 'social', 'press', 'tv', 'outdoor', 'esports'] as const) for (const r of [undefined, 'na']) G.startCampaign(s, ch, 'brand', 500e3, r)
+    expect(s.campaigns).toHaveLength(12)
+    return s
+  }
+
+  it('does not make a day slow to simulate, or the staff slow to add up', () => {
+    const s = campus()
+    expect(staffEffects(s).seated).toBeGreaterThan(40)
+    G.tick(s, 5)
+    // the staff's effects are asked for about twenty times a frame by the screens
+    const t0 = performance.now()
+    for (let i = 0; i < 200; i++) staffEffects(s)
+    const each = (performance.now() - t0) / 200
+    const t1 = performance.now()
+    G.tick(s, 60)
+    const day = (performance.now() - t1) / 60
+    // before any of it was remembered: about 16 ms a call and far more a day. Wide limits, for a busy machine
+    expect(each, `staffEffects took ${each.toFixed(2)} ms`).toBeLessThan(3)
+    expect(day, `a day took ${day.toFixed(1)} ms`).toBeLessThan(40)
+    sound(s)
+  }, 120000)
+
+  it('remembers nothing about a plot that a change has made untrue', () => {
+    const s = campus()
+    const site = s.office
+    const fresh = () => JSON.parse(JSON.stringify(site)) as typeof site
+    const same = () => {
+      const copy = fresh()
+      expect([...openRooms(site)].sort()).toEqual([...openRooms(copy)].sort())
+      expect(reachable(site).map((i) => i.id)).toEqual(reachable(copy).map((i) => i.id))
+      expect([...curveTiles(site)].map(([k, t]) => `${k}:${t.beyond}`)).toEqual([...curveTiles(copy)].map(([k, t]) => `${k}:${t.beyond}`))
+    }
+    same()
+    const seats = staffEffects(s).seats
+    // changes made through the game, and changes made behind its back: each is seen at once
+    G.removeRoom(s, 'office', site.rooms[0].n)
+    same()
+    expect(staffEffects(s).seats).toBeLessThan(seats)
+    site.walls = site.walls.filter((w) => w.kind !== 'door')
+    same()
+    for (const c of site.curves!) delete c.walls
+    same()
+    expect(staffEffects(s).seats).toBe(0)
+    site.grid[site.grid.findIndex((n) => n > 0)] = 0
+    same()
+    // and none of it is part of the save
+    expect(Object.keys(fresh()).sort()).toEqual(Object.keys(site).sort())
+  }, 120000)
+})
+
+describe('parts on a device', () => {
+  it('makes a part fit the face it sits on, and keeps it inside the rounded outline', () => {
+    const s = game({ startType: 'all' })
+    const phone = G.starterDesign(s, 'phone')
+    const narrow = { ...phone.body, width: 60 }
+    const cam = phone.parts.find((p) => p.kind === 'camera' && p.face === 'back')!
+    // wider than the body: brought down to the body's width, in proportion
+    const big = clampPart(narrow, { ...cam, x: 0, y: 0, w: 90, h: 45 }, 'phone')
+    expect(big.w).toBeLessThanOrEqual(60)
+    expect(big.w / big.h).toBeCloseTo(2, 1)
+    // one that already fits is not touched
+    expect(clampPart(narrow, { ...cam, x: 0, y: 0 }, 'phone')).toMatchObject({ w: cam.w, h: cam.h })
+    // a button taller than the edge it is on, and longer than the edge is long
+    const button = phone.parts.find((p) => p.kind === 'button')!
+    const long = clampPart(phone.body, { ...button, w: 500, h: 50 }, 'phone')
+    expect(long.h).toBeLessThanOrEqual(phone.body.thickness)
+    expect(long.w).toBeLessThan(phone.body.height)
+    // at the largest corner radius, a rear camera pushed into the corner of a tablet stays inside the outline
+    const tablet = G.starterDesign(s, 'tablet')
+    const round = { ...tablet.body, corner: 40 }
+    const tcam = tablet.parts.find((p) => p.kind === 'camera' && p.face === 'back') ?? { ...cam }
+    for (const [sx, sy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+      const q = clampPart(round, { ...tcam, x: sx * 1e4, y: sy * 1e4 }, 'tablet')
+      const r = Math.min(round.corner, round.width / 2, round.height / 2)
+      const dx = Math.abs(q.x) + q.w / 2 - (round.width / 2 - r)
+      const dy = Math.abs(q.y) + q.h / 2 - (round.height / 2 - r)
+      expect(dx <= 0 || dy <= 0 || Math.hypot(dx, dy) <= r + 1e-6, `corner ${sx},${sy}: ${q.x},${q.y}`).toBe(true)
+      expect(Math.sign(q.x)).toBe(sx)
+      expect(Math.sign(q.y)).toBe(sy)
+    }
+    // every starter design is already as its parts will be drawn: clamping changes none of them
+    for (const type of DEVICE_TYPES) {
+      const d = G.starterDesign(s, type)
+      for (const p of d.parts) {
+        const q = clampPart(d.body, p, type)
+        expect([q.w, q.h].map((v) => Math.round(v * 10)), `${type} ${p.kind} ${p.id}`).toEqual([p.w, p.h].map((v) => Math.round(v * 10)))
+      }
+    }
   })
 })
 
