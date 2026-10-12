@@ -1,97 +1,120 @@
-// Split out of Screens.tsx for the interface redesign.
-import { useState } from 'react'
-import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { MAX_LEVEL, SUPPLY_LABELS, TRACK_INFO, marketLevel, researchCost } from '../data/catalog'
-import { SEGMENTS, TYPES, segmentInfo, segmentsOf } from '../data/devices'
-import { companyOf, fmtDate, monthLabel, player, trailingUnits } from '../sim/game'
-import { OUTSIDE_OPTION, attraction, segmentDemand } from '../sim/market'
-import { factoryLine, marketPrice, pendingUnits } from '../sim/ops'
-import { nextGoals, stageOf } from '../sim/goals'
-import { type CapId, capOfTab, guided, has, lockTip, needText, nextCaps } from '../sim/progress'
-import { REGIONS } from '../sim/regions'
-import { sealedRooms } from '../sim/sites'
-import { staffEffects, unmanaged } from '../sim/staff'
-import { founderStake, marketCap } from '../sim/stock'
-import { COST_KEYS, DEVICE_TYPES, type DeviceType, type GameState, type Product, SUPPLY_CATS, TRACKS, monthCosts } from '../sim/types'
-import { hasType, unlockBlocked, unlockCost } from '../sim/world'
-import { type Tab, useGame, useStore } from '../store/game'
-import { goStep, guideStep } from './Guide'
-import { Thumb, statusIcon, statusText, statusTone } from './Inspector'
-import { COST_ICON, Icon, type IconName, TAB_ICON, trackIcon, typeIcon } from './icons'
-import { Btn, Empty, Fold, Head, IconBtn, Kpi, Lead, Meter, Mini, NameInput, Panel, Tabs, Tag, Th, chart, money, num, pct, pressable, useKept, useLayer } from './ui'
+// Company, Finance: four figures for the last full month, where the costs
+// went, income against costs over time, and behind a fold each the monthly
+// statement and the supply of components.
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { monthLabel } from '../sim/game'
+import { type GameState, monthCosts } from '../sim/types'
+import { useGame } from '../store/game'
+import { type CostGroupId, type LedgerRow, costGroups, ledger, monthFigures, shortages } from './CompanyFigures'
+import { Supply, SupplyHelp } from './Supply'
+import { type Column, Empty, Fold, Legend, Page, Panel, Stat, Table, Tag, chart, money, moneyDelta, num, pct } from './ui'
 
-// ------------------------------------------------------------------ finance
+/** Income against costs, month by month. Cash is a level, not a flow, and is not drawn here: it has its own line in the Cash tile on Overview. */
+export function FinanceChart({ g, months = 24 }: { g: GameState; months?: number }) {
+  const data = g.reports.slice(-months).map((r) => ({ month: monthLabel(r.month), Income: Math.round(r.revenue + r.other), Costs: Math.round(monthCosts(r)) }))
+  if (data.length < 2) return <Empty icon="chart" text="Income and costs are drawn here once two months have closed." />
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <LineChart data={data} margin={{ top: 8, right: 12, bottom: 0, left: 4 }}>
+        <CartesianGrid stroke={chart.grid} vertical={false} />
+        <XAxis dataKey="month" tick={chart.axis} stroke={chart.grid} minTickGap={30} />
+        <YAxis tick={chart.axis} stroke={chart.grid} tickFormatter={(v) => money(Number(v))} width={56} />
+        <Tooltip {...chart.tooltip} formatter={(v) => money(Number(v))} />
+        <Line dataKey="Income" stroke="var(--color-accent)" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+        <Line dataKey="Costs" stroke="var(--color-dim)" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+      </LineChart>
+    </ResponsiveContainer>
+  )
+}
 
-import { FinanceChart } from './Overview'
+/** The five groups of cost keep one colour each wherever they are drawn. None of them is a signal colour: a cost is not good or bad by its kind. */
+const GROUP_COLOR: Record<CostGroupId, string> = { people: '#5a9bd4', production: '#c9a25a', marketing: '#9c6ade', research: '#5fb8c9', other: 'var(--color-mute)' }
 
-const mine = (g: GameState) => g.products.filter((p) => p.companyId === 'player').sort((a, b) => b.launchDay - a.launchDay)
-
-const COST_LABELS: Record<(typeof COST_KEYS)[number], string> = { production: 'Production', rd: 'R&D', marketing: 'Marketing', development: 'Development', overhead: 'Overhead', salaries: 'Salaries', facilities: 'Facilities', interest: 'Interest' }
+function CostBar({ g }: { g: GameState }) {
+  const f = monthFigures(g)
+  const groups = costGroups(g.reports[g.reports.length - 1] ?? g.cur)
+  if (f.costs <= 0) return <div className="px-3 py-4 text-xs text-dim">Nothing has been spent yet.</div>
+  return (
+    <div className="px-3 py-3">
+      <div role="img" aria-label={`Costs by group: ${groups.map((c) => `${c.label} ${pct(c.share, 0)}`).join(', ')}`} className="flex h-3 w-full gap-px">
+        {groups.map((c) => c.amount > 0 && <span key={c.id} title={`${c.label}: ${money(c.amount)}, ${pct(c.share, 0)} of costs`} style={{ width: `${c.share * 100}%`, background: GROUP_COLOR[c.id] }} />)}
+      </div>
+      <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-x-4 gap-y-2">
+        {groups.map((c) => (
+          <div key={c.id} title={c.holds} className="min-w-0">
+            <Legend items={[{ label: c.label, color: GROUP_COLOR[c.id] }]} className="[&>span]:whitespace-normal" />
+            <div className="num mt-[2px] pl-[13px] text-xs text-fg">
+              {money(c.amount)} <span className="text-dim">{pct(c.share, 0)}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 export function Finance() {
   const g = useGame()
-  const year = g.reports.slice(-12)
-  const income = year.reduce((a, r) => a + r.revenue + r.other, 0)
-  const costs = year.reduce((a, r) => a + monthCosts(r), 0)
-  const stockValue = mine(g).filter((p) => p.status !== 'ended').reduce((a, p) => a + p.stock * p.unitCost, 0)
-  const rows = [...g.reports].reverse().slice(0, 36)
+  const f = monthFigures(g)
+  const of = f.partial ? 'this month so far' : monthLabel(f.month)
+  // each figure against the same figure of the month before
+  const change = (now: number, was: number | undefined) => (was === undefined ? (f.partial ? 'no month has closed yet' : 'the first full month') : `${moneyDelta(now - was)} against ${monthLabel(f.month - 1)}`)
+  const rows = ledger(g)
+  const cost = (id: CostGroupId, head: string, title: string, drop: number): Column<LedgerRow> => ({ id, head, title, num: true, drop, sort: (r) => r[id], className: 'text-dim', cell: (r) => money(r[id]) })
+  const cols: Column<LedgerRow>[] = [
+    { id: 'month', head: 'Month', sort: (r) => r.month, first: 'desc', cell: (r) => <span className="num text-fg">{monthLabel(r.month)}</span> },
+    { id: 'units', head: 'Units', title: 'Devices sold in the month', num: true, drop: 9, sort: (r) => r.units, className: 'text-dim', cell: (r) => num(r.units) },
+    { id: 'income', head: 'Income', title: 'Device sales, licensing, services and care plans', num: true, sort: (r) => r.income, className: 'text-fg', cell: (r) => money(r.income) },
+    cost('people', 'People', 'Salaries', 4),
+    cost('production', 'Production', 'Building devices', 5),
+    cost('marketing', 'Marketing', 'Campaigns, events and keynotes', 6),
+    cost('research', 'Research', 'Research budget and device development', 7),
+    cost('other', 'Other', 'Overheads, buildings and interest', 8),
+    { id: 'costs', head: 'Costs', title: 'Everything spent in the month', num: true, sort: (r) => r.costs, className: 'text-fg', cell: (r) => money(r.costs) },
+    { id: 'profit', head: 'Profit', num: true, sort: (r) => r.profit, cell: (r) => <span className={r.profit >= 0 ? 'text-pos' : 'text-neg'}>{money(r.profit)}</span> },
+    { id: 'cash', head: 'Cash', title: 'Cash in the bank when the month closed', num: true, sort: (r) => r.cash, className: 'text-fg', cell: (r) => money(r.cash) },
+  ]
+  const short = shortages(g).length
   return (
-    <div className="flex h-full min-h-0 flex-col gap-2 p-2">
+    <Page keep="finance">
       <div className="grid shrink-0 grid-cols-4 gap-2">
-        <Kpi label="Cash" icon="cash" value={g.config.unlimitedMoney ? 'UNLIMITED' : money(g.cash)} tone="accent" />
-        <Kpi label="Income, 12 months" icon="coins" value={money(income)} sub={`of which licensing and services ${money(year.reduce((a, r) => a + r.other, 0), 1)}`} />
-        <Kpi label="Costs, 12 months" icon="receipt" value={money(costs)} />
-        <Kpi label="Profit, 12 months" icon={income - costs >= 0 ? 'trendUp' : 'trendDown'} value={money(income - costs)} tone={income - costs >= 0 ? 'pos' : 'neg'} sub={`unsold stock at cost ${money(stockValue, 1)}`} />
+        <Stat label={`Income, ${of}`} icon="coins" value={money(f.income)} sub={change(f.income, f.before?.income)} />
+        <Stat label={`Costs, ${of}`} icon="receipt" value={money(f.costs)} sub={change(f.costs, f.before?.costs)} />
+        <Stat label={`Profit, ${of}`} icon={f.profit >= 0 ? 'trendUp' : 'trendDown'} value={money(f.profit)} tone={f.profit >= 0 ? 'pos' : 'neg'} sub={change(f.profit, f.before?.profit)} />
+        <Stat label={f.partial ? 'Cash today' : `Cash, end of ${monthLabel(f.month)}`} icon="cash" value={g.config.unlimitedMoney ? 'Unlimited' : money(f.cash)} tone={f.cash < 0 && !g.config.unlimitedMoney ? 'neg' : undefined} sub={g.config.unlimitedMoney ? 'money is not counted in this game' : change(f.cash, f.before?.cash)} />
       </div>
-      <div className="grid shrink-0 grid-cols-9 gap-1">
-        <Mini label="Shares, stakes" title="Raised from shares and stakes, last 12 months" icon="shares" value={money(year.reduce((a, r) => a + (r.funding ?? 0), 0), 1)} />
-        {COST_KEYS.map((k) => (
-          <Mini key={k} label={COST_LABELS[k]} title={`${COST_LABELS[k]}, last 12 months`} icon={COST_ICON[k]} value={money(year.reduce((a, r) => a + r[k], 0), 1)} />
-        ))}
-      </div>
-      <Panel title="Income, costs and cash, last 36 months" icon="chart" className="h-56 shrink-0">
-        <FinanceChart g={g} months={36} />
+
+      <Panel title={`Where the costs went, ${of}`} icon="pie" className="shrink-0">
+        <CostBar g={g} />
       </Panel>
-      <Panel title="Monthly statement" icon="doc" className="flex-1" bodyClass="overflow-auto">
-        <table className="grid-table ledger">
-          <thead>
-            <tr>
-              <th>Month</th>
-              <th className="r">Units</th>
-              <th className="r">Sales</th>
-              <th className="r" title="Income other than device sales: licensing, services, care plans">Other</th>
-              {COST_KEYS.map((k) => (
-                <th key={k} className="r">
-                  {COST_LABELS[k]}
-                </th>
-              ))}
-              <th className="r">Profit</th>
-              <th className="r" title="Cash in the bank when the month closed">Cash</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => {
-              const profit = r.revenue + r.other - monthCosts(r)
-              return (
-                <tr key={r.month} className="row">
-                  <td className="num text-fg">{monthLabel(r.month)}</td>
-                  <td className="num r text-dim">{num(r.units)}</td>
-                  <td className="num r text-fg">{money(r.revenue)}</td>
-                  <td className="num r text-dim">{money(r.other)}</td>
-                  {COST_KEYS.map((k) => (
-                    <td key={k} className="num r text-faint">
-                      {money(r[k])}
-                    </td>
-                  ))}
-                  <td className={`num r ${profit >= 0 ? 'text-pos' : 'text-neg'}`}>{money(profit)}</td>
-                  <td className="num r text-fg">{money(r.cash)}</td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-        {rows.length === 0 && <Empty icon="doc" text="The first statement closes at the end of the month." />}
-      </Panel>
-    </div>
+
+      {g.reports.length >= 2 && (
+        <Panel title="Income against costs" icon="chart" className="shrink-0" right={<Legend items={[{ label: 'Income', tone: 'accent' }, { label: 'Costs', color: 'var(--color-dim)' }]} className="pr-1" />}>
+          <div className="h-44">
+            <FinanceChart g={g} months={36} />
+          </div>
+        </Panel>
+      )}
+
+      <Fold title="Monthly detail" icon="doc" open={false} keep="finance:detail">
+        <Table label="Monthly statement" cols={cols} rows={rows} rowKey={(r) => String(r.month)} firstMin={76} keep="finance:ledger" empty="The first statement closes at the end of the month." />
+      </Fold>
+
+      {/* opens by itself while a shortage is costing money, and closes again when it is over; in between it is the player's to open */}
+      <Fold
+        key={short ? 'short' : 'calm'}
+        title="Component supply"
+        icon="package"
+        open={short > 0}
+        right={
+          <span className="flex items-center gap-2">
+            {short > 0 && <Tag tone="warn">{short === 1 ? '1 shortage' : `${short} shortages`}</Tag>}
+            <SupplyHelp />
+          </span>
+        }
+      >
+        <Supply />
+      </Fold>
+    </Page>
   )
 }

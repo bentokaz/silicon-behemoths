@@ -1,26 +1,28 @@
-// The device designer. The 3D studio fills the screen; everything else is a
-// floating toolbar or a drawer that opens over it when asked for.
-import { useEffect, useMemo, useRef, useState } from 'react'
+// The device designer. The 3D studio fills the screen above a one-line strip
+// (how the model is looked at, and the way on to the launch plan); the tools
+// are a row along the top and a drawer at each side that opens when asked for.
+// The launch plan itself is in DesignerPlan.tsx.
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DeviceView, type ViewName, fourthView } from '../3d/DeviceView'
 import { useStudio } from '../3d/studio'
-import { sfx } from '../audio/sfx'
 import { CHARGE_W, CHIP_TIERS, EXTRAS, LENSES, MATERIALS, PANEL_NAMES, RAM_OPTIONS, REFRESH, SENSOR_NAMES, STORAGE_OPTIONS, chipInfo, marketLevel, sensorInfo } from '../data/catalog'
 import { ANC, COOLERS, DRIVERS, FLIP, FLIP_COVERS, GPUS, HEAD_STRAPS, HINGES, INPUT_NAMES, MIC_ARRAYS, OPTICS, SPEAKERS, SPEAKER_DRIVERS, STRAPS, TYPES, headStrap, inputOptions, ioOptions, segmentsOf, sizeLimits, standInfo, standsFor, subLabel } from '../data/devices'
-import { RETAIL_CUT, canAfford, devPlan, isVariantOf, player, productName, startProduct } from '../sim/game'
+import { devPlan, isVariantOf, player, productName } from '../sim/game'
 import { faceLabel, facesFor, faceSize, isCoverCam, isEdge, isFlip, kindsFor, partLabel, speakerShape } from '../sim/geometry'
 import { layoutInternals, specShares, weightShares } from '../sim/internals'
-import { EVENTS, hasStage } from '../sim/growth'
-import { has, lockTip } from '../sim/progress'
+import { unitCostParts } from '../sim/insight'
+import { lockTip } from '../sim/progress'
 import { appeal, bestSegment, normalised } from '../sim/market'
-import { CONTRACT, FACTORY_SAVING, costNow, factoryLine } from '../sim/ops'
+import { costNow, factoryLine } from '../sim/ops'
 import { type FingerprintStyle, type FrontStyle, LAYOUT_NAMES } from '../sim/rivals'
 import { batteryLabel, chargeWatts, evaluate, foldedThickness, minBezel, minThickness, panelName, selfieMinDia, thermal } from '../sim/scoring'
-import { type Colorway, DEVICE_TYPES, type DeviceType, type Face, type Lens, type PlacedPart, type ProductionOrder, SUBS, type StorageTier } from '../sim/types'
+import { type Colorway, DEVICE_TYPES, type DeviceType, type Face, type Lens, type PlacedPart, SUBS } from '../sim/types'
 import { hasType } from '../sim/world'
 import { useGame, useStore } from '../store/game'
-import { typeIcon } from './icons'
-import { Btn, Choice, ConfirmBtn, Meter, Mini, NumInput, Row, Slider, Tabs, Tag, TextInput, modalOpen, money, num, pct, pressable, useLayer } from './ui'
-import { MAX_PRICE, MAX_RUN } from './format'
+import { LaunchPlan, type LaunchState, MarginRow } from './DesignerPlan'
+import { MAX_PRICE } from './format'
+import { Icon, typeIcon } from './icons'
+import { Btn, Choice, ConfirmBtn, IconBtn, Key, Legend, Meter, Mini, NumInput, Row, Slider, Tabs, Tag, TextInput, modalOpen, money, pct, pressable, price, useKept, useLayer } from './ui'
 
 const SWATCHES = ['#17191d', '#2b2f36', '#5b6470', '#c9ccd1', '#ecebe6', '#c8b89a', '#2e4a3c', '#2f4f73', '#8c2f39', '#d98a3d']
 const GLOWS = ['#ffffff', '#5ab4ff', '#8dffa8', '#ff5a4a', '#ffb347', '#c78bff']
@@ -44,18 +46,29 @@ const DEPTH_HINTS: Partial<Record<DeviceType, string>> = {
 }
 const storageLabel = (gb: number) => (gb >= 1024 ? `${gb / 1024} TB` : `${gb} GB`)
 
+/** The label of an option that is stored in lower case. */
+const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1)
+
+/** A colour: a chip of what is chosen, which opens the swatches and the free picker in place. Once opened it stays open. */
 function ColorPick({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useKept<boolean>(`designer:colour:${label}`, false)
   return (
     <div className="py-1">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] text-dim">{label}</span>
-        <input type="color" aria-label={label} value={value} onChange={(e) => onChange(e.target.value)} />
+        <button type="button" aria-expanded={open} aria-label={`${label}: ${open ? 'hide the colours' : 'choose a colour'}`} title={open ? 'Hide the colours' : 'Choose a colour'} onClick={() => setOpen(!open)} className={`flex h-7 items-center gap-2 border px-2 text-xs transition-colors ${open ? 'border-accent text-fg' : 'border-line2 text-dim hover:border-fg hover:text-fg'}`}>
+          <span className="h-3 w-7 border border-line2" style={{ background: value }} />
+          {open ? 'Done' : 'Change'}
+        </button>
       </div>
-      <div className="mt-1 flex gap-[3px]">
-        {SWATCHES.map((c) => (
-          <button key={c} title={c} aria-label={`${label}: ${c}`} aria-pressed={value === c} onClick={() => onChange(c)} className={`h-4 flex-1 border ${value === c ? 'border-accent' : 'border-line2'}`} style={{ background: c }} />
-        ))}
-      </div>
+      {open && (
+        <div className="mt-1 flex items-center gap-[3px]">
+          {SWATCHES.map((c) => (
+            <button key={c} type="button" title={c} aria-label={`${label}: ${c}`} aria-pressed={value === c} onClick={() => onChange(c)} className={`h-6 flex-1 border ${value === c ? 'border-accent' : 'border-line2 hover:border-fg'}`} style={{ background: c }} />
+          ))}
+          <input type="color" aria-label={`${label}: any colour`} title="Any colour" value={value} onChange={(e) => onChange(e.target.value)} className="ml-1 h-6 w-8 shrink-0" />
+        </div>
+      )}
     </div>
   )
 }
@@ -63,7 +76,7 @@ function ColorPick({ label, value, onChange }: { label: string; value: string; o
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="border-b border-line px-3 pb-2 pt-1">
-      <div className="label py-1 text-faint">{title}</div>
+      <div className="label py-1">{title}</div>
       {children}
     </div>
   )
@@ -75,8 +88,8 @@ function Toggle<T extends string>({ label, value, options, onChange }: { label: 
       <span className="text-[11px] text-dim">{label}</span>
       <div className="flex">
         {options.map((o) => (
-          <Btn key={o} small active={value === o} onClick={() => onChange(o)}>
-            {o}
+          <Btn key={o} small active={value === o} onClick={() => onChange(o)} className="-ml-px first:ml-0">
+            {cap(o)}
           </Btn>
         ))}
       </div>
@@ -186,7 +199,7 @@ function BodyPanel({ simple }: { simple: boolean }) {
             Minimum {minBez} mm at Industrial design level {g.levels.design}
             {flank ? `, plus ${flank} mm each side for the controls` : ''}
           </div>
-          {type === 'foldable' && <div className="mt-1 text-[11px] leading-snug text-faint">{isFlip(body) ? 'Use the Shut button above the model to see it folded.' : 'The cover screen on the outside follows the side bezel. Use the Shut button above the model to see it.'}</div>}
+          {type === 'foldable' && <div className="mt-1 text-[11px] leading-snug text-faint">{isFlip(body) ? 'Use the Shut button under the model to see it folded.' : 'The cover screen on the outside follows the side bezel. Use the Shut button under the model to see it.'}</div>}
         </Group>
       )}
       <Group title={frameName}>
@@ -331,12 +344,12 @@ function LayoutPanel() {
         {hasLogo ? (
           <div className="py-1 text-[11px] text-dim">Your uploaded company logo is placed on the {LOGO_PLACE[d.type] ?? 'back'}.</div>
         ) : d.type === 'watch' ? (
-          <div className="py-1 text-[11px] text-dim">Upload a company logo under System to engrave it on the case back.</div>
+          <div className="py-1 text-[11px] text-dim">Upload a company logo under Save and settings, Company, to engrave it on the case back.</div>
         ) : (
           <>
             <label className="flex items-center justify-between gap-2 py-1">
               <span className="text-[11px] text-dim">Logo text</span>
-              <TextInput value={o.logo} maxLength={14} onChange={(v) => setSimple({ logo: v })} className="h-6 w-40" />
+              <TextInput value={o.logo} maxLength={14} onChange={(v) => setSimple({ logo: v })} className="w-40" />
             </label>
             {LOGO_PLACE[d.type] && <div className="text-[11px] leading-snug text-faint">It goes on the {LOGO_PLACE[d.type]}.</div>}
           </>
@@ -355,28 +368,26 @@ function PartsPanel() {
       <Group title="Add part">
         <div className="grid grid-cols-2 gap-1">
           {kindsFor(d.type).map((k) => (
-            <Btn key={k} small onClick={() => addPart(k)} className="truncate text-left" title={`Add: ${partLabel({ kind: k, face: "back", crown: d.type === "watch" && k === "button" }, d.type)}`}>
-              + {partLabel({ kind: k, face: 'back', crown: d.type === 'watch' && k === 'button' }, d.type)}
+            <Btn key={k} small icon="plus" onClick={() => addPart(k)} className="!justify-start" title={`Add: ${partLabel({ kind: k, face: "back", crown: d.type === "watch" && k === "button" }, d.type)}`}>
+              <span className="min-w-0 truncate">{partLabel({ kind: k, face: 'back', crown: d.type === 'watch' && k === 'button' }, d.type)}</span>
             </Btn>
           ))}
         </div>
         <div className="mt-2 text-[11px] leading-snug text-faint">
-          Or work on the model itself: double-click a surface to add a part there, drag a part to move it, and pull the square handles to resize it or the round one to turn it. With nothing selected, the handles around the body resize the body. Arrow keys nudge, Delete removes, Ctrl+Z undoes.
+          Or work on the model itself: double-click a surface to add a part there, drag a part to move it, and pull the square handles to resize it or the round one to turn it. With nothing selected, the handles around the body resize the body. <Key>Arrows</Key> nudge, <Key>Delete</Key> removes, <Key>Ctrl</Key> <Key>Z</Key> undoes.
         </div>
       </Group>
-      <Group title={`Placed parts (${d.parts.length})`}>
+      <Group title={`Placed parts: ${d.parts.length}`}>
         {d.parts.map((p) => (
-          <div key={p.id} {...pressable(() => selectPart(p.id))} role="button" aria-pressed={selected === p.id} className={`flex cursor-pointer items-center justify-between border-l-2 px-2 py-[3px] text-[11px] ${selected === p.id ? 'border-accent bg-accent/10 text-accent' : 'border-transparent text-fg hover:bg-hover'}`}>
+          <div key={p.id} {...pressable(() => selectPart(p.id))} role="button" aria-pressed={selected === p.id} className={`flex h-7 cursor-pointer items-center justify-between border-l-2 pl-2 text-xs ${selected === p.id ? 'border-accent bg-accent/10 text-fg' : 'border-transparent text-fg hover:bg-hover'}`}>
             <span className="truncate">
               {isCoverCam(d, p) ? 'Cover camera' : partLabel(p, d.type)}
               {p.kind === 'camera' && p.face === 'back' && !isCoverCam(d, p) ? ` / ${p.lens}` : ''}
-              {(p.kind === 'port' || p.kind === 'slot') && p.text ? <span className="text-faint"> / {socketName(d.type, p.text)}</span> : ''}
+              {(p.kind === 'port' || p.kind === 'slot') && p.text ? <span className="text-dim"> / {socketName(d.type, p.text)}</span> : ''}
             </span>
             <span className="flex shrink-0 items-center gap-2">
-              <span className="num text-faint">{faceLabel(p.face, d.type)}</span>
-              <button className="num flex h-5 w-5 items-center justify-center text-dim hover:text-neg" title="Remove this part" aria-label={`Remove ${isCoverCam(d, p) ? "cover camera" : partLabel(p, d.type)}`} onClick={(e) => (e.stopPropagation(), removePart(p.id))}>
-                x
-              </button>
+              <span className="text-[11px] text-dim">{cap(faceLabel(p.face, d.type))}</span>
+              <IconBtn small tone="ghost" icon="bin" title={`Remove ${isCoverCam(d, p) ? 'the cover camera' : partLabel(p, d.type).toLowerCase()}`} onClick={(e) => (e.stopPropagation(), removePart(p.id))} />
             </span>
           </div>
         ))}
@@ -408,12 +419,12 @@ function Checks({ items, selected, onToggle, spec }: { items: { id: string; name
     <>
       {items.map((e) => (
         <Spec key={e.id} k={`${spec}:${e.id}`}>
-          <label className={`flex items-center justify-between py-[3px] text-[11px] ${e.locked ? 'text-faint' : 'text-fg'}`} title={e.why}>
+          <label className={`flex items-center justify-between py-[3px] text-[11px] ${e.locked ? 'cursor-not-allowed text-faint' : 'text-fg'}`} title={e.why}>
             <span>
               <input type="checkbox" className="mr-2 accent-accent" disabled={e.locked} checked={selected.includes(e.id)} onChange={() => onToggle(e.id)} />
               {e.name}
             </span>
-            <span className="num text-dim">{e.locked ? 'locked' : `+${money(e.cost)}`}</span>
+            {e.locked ? <Icon name="lock" size={11} className="shrink-0 text-faint" /> : <span className="num text-dim">+{money(e.cost)}</span>}
           </label>
         </Spec>
       ))}
@@ -538,12 +549,12 @@ function InternalsPanel({ maxBattery }: { maxBattery: number }) {
       {(T.input || ioOptions(type).length > 0) && (
         <Group title={T.input === 'keyboard' ? `Keyboard and ${(T.ioLabel ?? 'ports').toLowerCase()}` : T.input === 'controller' ? 'Controller, drive and ports' : T.input === 'wands' ? 'Controllers and sensing' : T.input === 'controls' ? 'Controls, ports and features' : (T.ioLabel ?? 'Features')}>
           <Spec k="input">{T.input && <Choice label={INPUT_NAMES[T.input]} value={s.keyboard ?? 0} options={inputOptions(type).map((k, i) => ({ value: i, label: `${k.name} (${money(k.cost)})`, locked: k.level > lv.design }))} onChange={(v) => setSpecs({ keyboard: v })} />}</Spec>
-          <Checks items={ioOptions(type).map((p) => ({ id: p.id, name: p.name, cost: p.cost, locked: p.level > lv.chipset, why: p.level > lv.chipset ? `Needs Chipset level ${p.level}` : undefined }))} selected={io} onToggle={(id) => setSpecs({ io: flip(io, id) })} spec="io" />
+          <Checks items={ioOptions(type).map((p) => ({ id: p.id, name: p.name, cost: p.cost, locked: p.level > lv.chipset, why: p.level > lv.chipset ? `${p.name} needs Chipset level ${p.level}: research it under Research, Technology` : undefined }))} selected={io} onToggle={(id) => setSpecs({ io: flip(io, id) })} spec="io" />
         </Group>
       )}
       {T.extras.length > 0 && (
         <Group title="Extras">
-          <Checks items={EXTRAS.filter((e) => T.extras.includes(e.id)).map((e) => ({ id: e.id, name: e.name, cost: e.cost, locked: !g.features.includes(e.id), why: g.features.includes(e.id) ? undefined : 'Research it in the technology tree' }))} selected={s.extras} onToggle={(id) => setSpecs({ extras: flip(s.extras, id) })} spec="extra" />
+          <Checks items={EXTRAS.filter((e) => T.extras.includes(e.id)).map((e) => ({ id: e.id, name: e.name, cost: e.cost, locked: !g.features.includes(e.id), why: g.features.includes(e.id) ? undefined : `${e.name} is not researched yet: find it under Research, Technology` }))} selected={s.extras} onToggle={(id) => setSpecs({ extras: flip(s.extras, id) })} spec="extra" />
         </Group>
       )}
     </div>
@@ -560,33 +571,31 @@ function ColoursPanel({ preview, setPreview }: { preview: number; setPreview: (i
   return (
     <>
       <Group title="Colourways">
-        <div className="text-[11px] leading-snug text-dim">Sell the device in up to three extra colours. Each adds a little appeal and a little cost. Click one to preview it.</div>
-        <button onClick={() => setPreview(-1)} className={`mt-2 flex w-full items-center gap-2 border px-2 py-1 text-left text-[11px] ${preview === -1 ? 'border-accent text-accent' : 'border-line text-fg'}`}>
+        <div className="text-[11px] leading-snug text-dim">Sell the device in up to three extra colours. Each adds a little appeal and a little cost. Click one to see it on the model.</div>
+        <button type="button" aria-pressed={preview === -1} title="Show the standard colour on the model" onClick={() => setPreview(-1)} className={`mt-2 flex h-7 w-full items-center gap-2 border px-2 text-left text-xs ${preview === -1 ? 'border-accent bg-accent/10 text-fg' : 'border-line2 text-fg hover:border-fg'}`}>
           <span className="h-4 w-4 border border-line2" style={{ background: d.body.backColor }} />
           Standard
         </button>
         {colors.map((c, i) => (
-          <div key={i} className={`mt-1 border p-2 ${preview === i ? 'border-accent' : 'border-line'}`}>
+          <div key={i} className={`mt-1 border p-2 ${preview === i ? 'border-accent bg-accent/10' : 'border-line2'}`}>
             <div className="flex items-center gap-2">
-              <button className="h-4 w-4 shrink-0 border border-line2" style={{ background: c.back }} onClick={() => setPreview(i)} title="Preview this colour" aria-label={`Preview ${c.name || "this colour"}`} />
-              <TextInput aria-label="Colour name" value={c.name} maxLength={16} onChange={(v) => update(i, { name: v })} className="h-6 min-w-0 flex-1" />
-              <button className="num flex h-5 w-5 shrink-0 items-center justify-center text-dim hover:text-neg" title="Remove this colour" aria-label={`Remove ${c.name || "this colour"}`} onClick={() => (setPreview(-1), setDraft({ colors: colors.filter((_, k) => k !== i) }))}>
-                x
-              </button>
+              <button type="button" className="h-7 w-7 shrink-0 border border-line2 hover:border-fg" style={{ background: c.back }} aria-pressed={preview === i} onClick={() => setPreview(i)} title="Show this colour on the model" aria-label={`Show ${c.name || 'this colour'} on the model`} />
+              <TextInput aria-label="Colour name" value={c.name} maxLength={16} onChange={(v) => update(i, { name: v })} className="min-w-0 flex-1" />
+              <IconBtn tone="ghost" icon="bin" title={`Remove ${c.name || 'this colour'}`} onClick={() => (setPreview(-1), setDraft({ colors: colors.filter((_, k) => k !== i) }))} />
             </div>
             <div className="mt-1 grid grid-cols-2 gap-2">
               <label className="flex items-center justify-between text-[11px] text-dim">
-                Body <input type="color" value={c.back} onChange={(e) => (update(i, { back: e.target.value }), setPreview(i))} />
+                Body <input type="color" aria-label={`${c.name || 'Colour'}: body`} value={c.back} onChange={(e) => (update(i, { back: e.target.value }), setPreview(i))} />
               </label>
               <label className="flex items-center justify-between text-[11px] text-dim">
-                Frame <input type="color" value={c.frame} onChange={(e) => (update(i, { frame: e.target.value }), setPreview(i))} />
+                Frame <input type="color" aria-label={`${c.name || 'Colour'}: frame`} value={c.frame} onChange={(e) => (update(i, { frame: e.target.value }), setPreview(i))} />
               </label>
             </div>
           </div>
         ))}
         {colors.length < 3 && (
-          <Btn small className="mt-2 w-full" onClick={() => (setDraft({ colors: [...colors, { name: ['Midnight', 'Sage', 'Sand'][colors.length], back: ['#1c2330', '#7d9482', '#d9c7a8'][colors.length], frame: ['#161b25', '#6b8070', '#c4b393'][colors.length] }] }), setPreview(colors.length))}>
-            + Add a colour
+          <Btn small icon="plus" className="mt-2 w-full" onClick={() => (setDraft({ colors: [...colors, { name: ['Midnight', 'Sage', 'Sand'][colors.length], back: ['#1c2330', '#7d9482', '#d9c7a8'][colors.length], frame: ['#161b25', '#6b8070', '#c4b393'][colors.length] }] }), setPreview(colors.length))}>
+            Add a colour
           </Btn>
         )}
       </Group>
@@ -602,6 +611,7 @@ function PartInspector({ part }: { part: PlacedPart }) {
   const body = d.body
   const { patchPart, removePart, duplicatePart, selectPart } = useStore.getState()
   const set = (patch: Partial<PlacedPart>) => patchPart(part.id, patch)
+  useLayer(true, () => selectPart(null))
   const fs = faceSize(body, part.face, d.type)
   const edge = isEdge(part.face, d.type)
   const round = part.kind === 'camera' || part.kind === 'flash' || part.crown || (part.kind === 'fingerprint' && !edge && d.type !== 'laptop')
@@ -611,15 +621,16 @@ function PartInspector({ part }: { part: PlacedPart }) {
   const size = mmFor(d.type)
   const step = d.type === 'tv' || d.type === 'desktop' || d.type === 'console' ? 1 : 0.25
   return (
-    <div className="pointer-events-auto w-[280px] border border-line2 bg-panel/95">
-      <div className="flex h-8 items-center justify-between border-b border-line px-2">
-        <span className="text-[11px] font-semibold text-fg">{partLabel(part, d.type)}</span>
-        <button className="num text-[11px] text-dim hover:text-accent" onClick={() => selectPart(null)}>
-          CLOSE
-        </button>
+    <div className="pointer-events-auto flex min-h-0 w-[300px] flex-col border border-accent bg-panel">
+      <div className="flex h-8 shrink-0 items-center justify-between border-b border-line pl-3 pr-1">
+        <span className="t-title flex items-center gap-2">
+          <span className="h-3 w-[3px] bg-accent" />
+          {partLabel(part, d.type)}
+        </span>
+        <IconBtn small tone="ghost" icon="close" title="Close (Esc)" onClick={() => selectPart(null)} />
       </div>
-      <div className="max-h-[52vh] overflow-y-auto px-2 py-1">
-        {faces.length > 1 && <Choice label="Surface" value={part.face} options={faces.map((f) => ({ value: f, label: faceLabel(f, d.type) }))} onChange={(v: Face) => set({ face: v, x: 0, y: 0 })} />}
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-1">
+        {faces.length > 1 && <Choice label="Surface" value={part.face} options={faces.map((f) => ({ value: f, label: cap(faceLabel(f, d.type)) }))} onChange={(v: Face) => set({ face: v, x: 0, y: 0 })} />}
         <Slider label={edge ? 'Along edge' : 'X'} value={part.x} min={-fs.w / 2} max={fs.w / 2} step={step} format={size} onChange={(v) => set({ x: v })} />
         {!edge && <Slider label="Y" value={part.y} min={-fs.h / 2} max={fs.h / 2} step={step} format={size} onChange={(v) => set({ y: v })} />}
         {round ? (
@@ -661,7 +672,7 @@ function PartInspector({ part }: { part: PlacedPart }) {
         {part.kind === 'logo' && !part.useImage && (
           <label className="flex items-center justify-between gap-2 py-1">
             <span className="text-[11px] text-dim">Text</span>
-            <TextInput value={part.text ?? ''} maxLength={14} onChange={(v) => set({ text: v })} className="h-6 w-40" />
+            <TextInput value={part.text ?? ''} maxLength={14} onChange={(v) => set({ text: v })} className="w-40" />
           </label>
         )}
         {(part.kind === 'port' || part.kind === 'slot') && part.text && <div className="py-1 text-[11px] leading-snug text-faint">This is the socket for: {socketName(d.type, part.text)}. Ports are added and removed under Internals.</div>}
@@ -678,7 +689,7 @@ function PartInspector({ part }: { part: PlacedPart }) {
             />
             {!front && <Choice label="Lens" value={part.lens ?? 'wide'} options={(Object.keys(LENSES) as Lens[]).map((l) => ({ value: l, label: LENSES[l].name, locked: l === 'periscope' && !g.features.includes('periscope') }))} onChange={(v) => set({ lens: v })} />}
             {front && (
-              <label className={`flex items-center py-1 text-[11px] ${g.features.includes('udc') ? '' : 'text-faint'}`}>
+              <label className={`flex items-center py-1 text-[11px] ${g.features.includes('udc') ? '' : 'cursor-not-allowed text-faint'}`} title={g.features.includes('udc') ? undefined : 'An under-display camera is not researched yet: find it under Research, Technology'}>
                 <input type="checkbox" className="mr-2 accent-accent" disabled={!g.features.includes('udc')} checked={!!part.underDisplay} onChange={(e) => set({ underDisplay: e.target.checked })} />
                 Under-display {g.features.includes('udc') ? '' : '(not researched)'}
               </label>
@@ -687,21 +698,21 @@ function PartInspector({ part }: { part: PlacedPart }) {
           </>
         )}
       </div>
-      <div className="flex flex-wrap gap-1 border-t border-line p-2">
+      <div className="flex shrink-0 flex-wrap gap-1 border-t border-line p-2">
         {!edge && (
           <>
-            <Btn small onClick={() => set({ x: 0 })}>
+            <Btn small title="Move it to the centre line" onClick={() => set({ x: 0 })}>
               Centre
             </Btn>
-            <Btn small onClick={() => set({ x: -part.x })}>
+            <Btn small title="Move it to the same place on the other side" onClick={() => set({ x: -part.x })}>
               Mirror
             </Btn>
           </>
         )}
-        <Btn small onClick={() => duplicatePart(part.id)}>
+        <Btn small title="Make a copy beside it" onClick={() => duplicatePart(part.id)}>
           Duplicate
         </Btn>
-        <Btn small tone="danger" onClick={() => removePart(part.id)}>
+        <Btn small tone="danger" title="Remove this part (Delete). Ctrl+Z brings it back." onClick={() => removePart(part.id)}>
           Delete
         </Btn>
       </div>
@@ -717,29 +728,104 @@ function StudioCaption() {
   const hint = useStudio((s) => s.hint)
   if (!caption && !hint) return null
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-16 flex flex-col items-center gap-1">
+    <div className="pointer-events-none absolute inset-x-0 bottom-3 flex flex-col items-center gap-1">
       {caption && (
-        <div className="flex items-stretch border border-line2 bg-panel/95">
+        <div className="flex items-stretch border border-line2 bg-panel">
           <span className="w-[3px] bg-accent" />
           <span className="px-3 py-[5px]">
-            <span className="num block text-[11px] text-faint">{caption.note}</span>
+            <span className="block text-[11px] text-dim">{caption.note}</span>
             <span className="block text-xs font-semibold text-fg">{caption.title}</span>
           </span>
         </div>
       )}
-      {hint && <div className="border border-warn/60 bg-panel/95 px-3 py-1 text-[11px] text-warn">{hint}</div>}
+      {hint && <div className="border border-warn bg-panel px-3 py-1 text-[11px] text-warn">{hint}</div>}
     </div>
   )
 }
 
 type LeftPanel = 'body' | 'parts' | 'internals' | 'colours' | null
-type RightPanel = 'score' | 'market' | null
+type RightPanel = 'score' | 'market' | 'issues' | null
+
+/** What the colours of the bars mean, in the Score and the Market panels alike. */
+const BARS = [
+  { label: 'Strong', tone: 'pos' },
+  { label: 'Fair', tone: 'dim' },
+  { label: 'Weak', tone: 'warn' },
+] as const
+const barTone = (share: number, strong: number, fair: number) => (share > strong ? 'pos' : share > fair ? 'dim' : 'warn')
+
+/** A labelled group of controls in the strip under the model. */
+function StripGroup({ label, title, children }: { label: string; title?: string; children: React.ReactNode }) {
+  return (
+    <div role="group" aria-label={label} title={title} className="flex shrink-0 items-center gap-2">
+      <span className="text-[11px] text-dim">{label}</span>
+      <div className="flex items-center [&>button+button]:-ml-px">{children}</div>
+    </div>
+  )
+}
+
+/** The device type on one line. "Change" opens the types in place; the ones the company cannot make yet say where they open. */
+function TypeLine({ type, worked }: { type: DeviceType; worked: boolean }) {
+  const g = useGame()
+  const [open, setOpen] = useState(false)
+  const { setType, say } = useStore.getState()
+  useLayer(open, () => setOpen(false))
+  const anyClosed = DEVICE_TYPES.some((t) => !hasType(g, t))
+  return (
+    <div className="shrink-0 border-b border-line">
+      <div className="flex h-10 items-center gap-2 pl-3 pr-2">
+        <Icon name={typeIcon(type)} size={14} className="shrink-0 text-dim" />
+        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-fg">{TYPES[type].name}</span>
+        <Btn small aria-expanded={open} title={open ? 'Keep this type' : 'Design another kind of device. Switching starts a fresh design.'} onClick={() => setOpen(!open)}>
+          {open ? 'Close' : 'Change'}
+        </Btn>
+      </div>
+      {open && (
+        <div className="px-2 pb-2" data-type-picker>
+          <div className="grid grid-cols-3 gap-1">
+            {DEVICE_TYPES.map((t) => {
+              const label = <span className="min-w-0 truncate">{TYPES[t].name}</span>
+              if (!hasType(g, t))
+                return (
+                  <Btn key={t} small locked={`${TYPES[t].plural}: your company does not make these yet. They open under Research, Device lines.`} onLocked={() => say(`${TYPES[t].plural} open under Research, Device lines.`)} className="!justify-start !px-[6px]">
+                    {label}
+                  </Btn>
+                )
+              // switching throws the design away: once it has been worked on, that takes a second click
+              if (worked && t !== type)
+                return (
+                  <ConfirmBtn key={t} small tone="default" icon={typeIcon(t)} confirm="Start over?" onClick={() => (setType(t), setOpen(false))} className="!justify-start !px-[6px]" title={`${TYPES[t].name}: switching starts a fresh design and discards this one`}>
+                    {label}
+                  </ConfirmBtn>
+                )
+              return (
+                <Btn key={t} small icon={typeIcon(t)} active={type === t} onClick={() => (t !== type && setType(t), setOpen(false))} className="!justify-start !px-[6px]" title={t === type ? `${TYPES[t].name}: what you are designing` : `${TYPES[t].name}: switching starts a fresh design`}>
+                  {label}
+                </Btn>
+              )
+            })}
+          </div>
+          {anyClosed && (
+            <div className="mt-2 flex items-start gap-[5px] px-1 text-[11px] leading-snug text-dim" data-lock-note>
+              <Icon name="lock" size={11} className="mt-[2px] shrink-0" />
+              <span>The locked ones open under Research, Device lines.</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 /** The designer, while there is a design to work on. The store can drop the draft a moment before this is unmounted (quitting, rewinding), so that is checked here and nothing below has to. */
 export function Designer() {
   const ready = useStore((s) => !!s.draft && !!s.game)
   return ready ? <Workbench /> : null
 }
+
+const startPrice = (type: DeviceType) => segmentsOf(type)[1]?.priceRef ?? 399
+/** Enter in a number field applies it: the figure is already taken as typed, so the field is left. */
+const leave = () => (document.activeElement as HTMLElement | null)?.blur()
 
 function Workbench() {
   const g = useGame()
@@ -749,7 +835,7 @@ function Workbench() {
   const editorMode = useStore((s) => s.editorMode)
   const canUndo = useStore((s) => s.past.length > 0)
   const canRedo = useStore((s) => s.future.length > 0)
-  const { selectPart, patchPart, removePart, closeDesigner, act, say, setTab, setSpecs, setEditorMode, setType, setMeta, undo, redo } = useStore.getState()
+  const { selectPart, patchPart, removePart, closeDesigner, setSpecs, setEditorMode, undo, redo } = useStore.getState()
   const type = draft.type
   const T = TYPES[type]
   const simple = editorMode === 'simple'
@@ -762,40 +848,34 @@ function Workbench() {
 
   const [left, setLeft] = useState<LeftPanel>('body')
   const [right, setRight] = useState<RightPanel>(null)
-  const [issuesOpen, setIssuesOpen] = useState(false)
   const [view, setView] = useState<ViewName | undefined>(undefined)
   const [nonce, setNonce] = useState(0)
   const [preview, setPreview] = useState(-1)
   const [launching, setLaunching] = useState(false)
-  const [price, setPrice] = useState(() => segmentsOf(type)[1]?.priceRef ?? 399)
-  const [quantity, setQuantity] = useState(10000)
-  const [marketing, setMarketing] = useState(250e3)
-  const [mode, setMode] = useState<ProductionOrder['mode']>('contract')
-  const [tiers, setTiers] = useState<StorageTier[]>([])
-  const [keynote, setKeynote] = useState(-1)
+  // what has been decided on the launch plan so far: it outlives a trip back to the design
+  const [plan, setPlan] = useState<LaunchState>(() => ({ price: startPrice(type), quantity: null, marketing: 250e3, mode: factoryLine(g)?.running ? 'factory' : 'contract', tiers: [], keynote: -1 }))
+  const patch = useCallback((p: Partial<LaunchState>) => setPlan((x) => ({ ...x, ...p })), [])
 
   useEffect(() => {
-    setPrice(segmentsOf(type)[1]?.priceRef ?? 399)
+    patch({ price: startPrice(type), tiers: [] })
     setView(undefined)
     setPreview(-1)
-    setTiers([])
-  }, [type])
+  }, [type, patch])
 
   const ev = useMemo(() => evaluate(draft, g.levels, marketLevel(g.day), g.features, g.chips), [draft, g.levels, g.day, g.features, g.chips])
-  const part = draft.parts.find((p) => p.id === selected)
+  const part = simple ? undefined : draft.parts.find((p) => p.id === selected)
   const errors = ev.report.issues.filter((i) => i.level === 'error')
   const warns = ev.report.issues.filter((i) => i.level === 'warn')
+  const issues = [...errors, ...warns]
   const me = player(g)
-  const probe = { raw: ev.raw, featureBonus: ev.featureBonus, price, type }
+  const probe = { raw: ev.raw, featureBonus: ev.featureBonus, price: plan.price, type }
   const best = bestSegment(probe, me, g.day)
   const variant = isVariantOf(g, meta.family, type)
-  const plan = devPlan(draft, g, variant)
-  const line = factoryLine(g)
+  const dev = devPlan(draft, g, variant)
   const unitNow = costNow(g, ev.costParts)
-  const buildEach = unitNow * (mode === 'contract' ? CONTRACT.premium : FACTORY_SAVING)
-  const venue = keynote >= 0 ? EVENTS.keynote.venues[keynote] : undefined
-  const dueNow = plan.cost + marketing + (venue?.cost ?? 0)
-  const margin = price * (1 - RETAIL_CUT) - buildEach
+  const mode = plan.mode === 'factory' && !factoryLine(g)?.running ? 'contract' : plan.mode
+  // (the maker's share is only worked out while the Market panel shows the margin)
+  const unit = useMemo(() => (right === 'market' ? unitCostParts(g, draft, mode) : null), [right, g, draft, mode])
   const n = normalised(ev.raw, g.day)
   // what the studio needs to open the device up, and to say what share of it each component is
   // (the layout is only worked out while the Internals panel is open: nothing else needs what each component weighs)
@@ -808,30 +888,34 @@ function Workbench() {
   }, [left])
   useEffect(() => () => useStudio.setState({ internals: false, hover: null, pick: null, tour: -1 }), [])
   // the opened device is framed clear of whichever drawers are out
+  const rightOut = !!right || !!part
   useEffect(() => {
-    useStudio.setState({ pad: [left ? 316 : 8, right ? 316 : 8] })
-  }, [left, right])
+    useStudio.setState({ pad: [left ? 316 : 8, rightOut ? 316 : 8] })
+  }, [left, rightOut])
 
   // keep the battery inside what the body can hold
   useEffect(() => {
     if (draft.specs.battery > ev.report.maxBattery && ev.report.maxBattery >= 100) setSpecs({ battery: ev.report.maxBattery })
   }, [draft.specs.battery, ev.report.maxBattery, setSpecs])
 
-  // the launch plan is a dialog over the bench: Esc goes back to the design, and nothing behind it takes keys
-  const planBox = useRef<HTMLDivElement>(null)
-  useLayer(launching, () => setLaunching(false), { modal: true, box: planBox })
-
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement).tagName
-      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || modalOpen()) return
+      // (the launch plan is a layer of its own: nothing here runs under it. Function keys are never ours: F5 saves.)
+      if (modalOpen() || /^F\d+$/.test(e.code)) return
+      const el = e.target as HTMLElement
+      const tag = el.tagName
+      const field = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA'
+      // a field that takes text has an undo of its own; a slider, a tick box or a list has none, so the design's applies there too
+      const typing = tag === 'TEXTAREA' || el.isContentEditable || (tag === 'INPUT' && !['range', 'checkbox', 'radio', 'color', 'button'].includes((el as HTMLInputElement).type))
       const st = useStore.getState()
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-        e.preventDefault()
-        return e.shiftKey ? st.redo() : st.undo()
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !typing) {
+        const k = e.key.toLowerCase()
+        if (k === 'z') return (e.preventDefault(), e.shiftKey ? st.redo() : st.undo())
+        if (k === 'y') return (e.preventDefault(), st.redo())
       }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') return (e.preventDefault(), st.redo())
-      const p = st.draft?.parts.find((x) => x.id === st.selectedPart)
+      // the arrow keys and Delete belong to whatever field has them
+      if (field || e.ctrlKey || e.metaKey || e.altKey) return
+      const p = st.editorMode === 'advanced' ? st.draft?.parts.find((x) => x.id === st.selectedPart) : undefined
       if (!p) return
       const step = e.shiftKey ? 2 : 0.5
       const flip = p.face === 'back' ? -1 : 1
@@ -840,23 +924,12 @@ function Workbench() {
       else if (e.key === 'ArrowRight') patchPart(p.id, { x: p.x + step * flip })
       else if (e.key === 'ArrowUp') patchPart(p.id, { y: p.y + step })
       else if (e.key === 'ArrowDown') patchPart(p.id, { y: p.y - step })
-      else if (e.key === 'Escape') selectPart(null)
       else return
       e.preventDefault()
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
-  }, [patchPart, removePart, selectPart])
-
-
-  const launch = () => {
-    const err = act((game) => startProduct(game, { design: draft, family: meta.family, variant: meta.variant, price, tiers, quantity, mode, marketing, keynote: keynote >= 0 ? keynote : undefined }))
-    if (err) return say(err, 'bad')
-    sfx.confirm()
-    say(`${productName(meta.family, meta.variant)} is in development. Release in ${plan.days} days.`)
-    closeDesigner(true)
-    setTab('products')
-  }
+  }, [patchPart, removePart])
 
   const toolTabs: { value: Exclude<LeftPanel, null>; label: string }[] = [
     { value: 'body', label: 'Body' },
@@ -864,345 +937,261 @@ function Workbench() {
     { value: 'internals', label: 'Internals' },
     { value: 'colours', label: 'Colours' },
   ]
-  const nextTier = STORAGE_OPTIONS.find((o) => o > (tiers.at(-1)?.storage ?? draft.specs.storage))
+  const advancedLock = lockTip(g, 'studio')
+  const blockedBy = errors.length === 1 ? '1 blocking issue' : `${errors.length} blocking issues`
+  const name = productName(meta.family, meta.variant) || 'Unnamed'
 
   return (
-    <div className="relative h-full min-h-0 overflow-hidden">
-      <div className="absolute inset-0 isolate">
-        <DeviceView design={draft} selectedId={simple ? null : selected} view={view} viewNonce={nonce} onPick={simple ? undefined : selectPart} logo={me.logo} colorIndex={preview} studio={{ editable: !simple, hints: { maxBattery: ev.report.maxBattery }, tear }} />
-      </div>
-      <StudioCaption />
-
-      {/* ---- top toolbar */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-2">
-        <div className="pointer-events-auto flex flex-wrap items-center gap-2">
-          <div className="flex border border-line2 bg-panel/95">
-            {toolTabs.map((t) => (
-              <Btn key={t.value} small tone="ghost" active={left === t.value} onClick={() => setLeft(left === t.value ? null : t.value)}>
-                {t.label}
-              </Btn>
-            ))}
-          </div>
-          <div className="flex border border-line2 bg-panel/95" title="Simple: choose from lists. Advanced: drag every part.">
-            {(['simple', 'advanced'] as const).map((m) => (
-              <Btn key={m} small tone="ghost" active={editorMode === m} onClick={() => setEditorMode(m)} locked={m === 'advanced' ? lockTip(g, 'studio') : null}>
-                {m}
-              </Btn>
-            ))}
-          </div>
-          <div className="flex border border-line2 bg-panel/95">
-            <Btn small tone="ghost" disabled={!canUndo} onClick={undo} title="Undo (Ctrl+Z)">
-              Undo
-            </Btn>
-            <Btn small tone="ghost" disabled={!canRedo} onClick={redo} title="Redo (Ctrl+Shift+Z)">
-              Redo
-            </Btn>
-          </div>
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <div className="absolute inset-0 isolate">
+          <DeviceView design={draft} selectedId={simple ? null : selected} view={view} viewNonce={nonce} onPick={simple ? undefined : selectPart} logo={me.logo} colorIndex={preview} studio={{ editable: !simple, hints: { maxBattery: ev.report.maxBattery }, tear }} />
         </div>
-        <div className="pointer-events-auto flex items-center gap-2">
-          {left === 'internals' && (
-            <div className="flex items-center border border-line2 bg-panel/95" title="Under Internals the device opens up. Keep it shut, take the cover off, or pull the layers apart.">
-              <Btn small tone="ghost" icon="lock" active={keepClosed} onClick={() => useStudio.setState({ keepClosed: true, tour: -1 })}>
-                Shut
-              </Btn>
-              <Btn small tone="ghost" icon="layers" className="whitespace-nowrap" active={!keepClosed && explode < 0.5} onClick={() => useStudio.setState({ keepClosed: false, explode: 0, tour: -1 })}>
-                Lid off
-              </Btn>
-              <Btn small tone="ghost" icon="layers" active={!keepClosed && explode >= 0.5} onClick={() => useStudio.setState({ keepClosed: false, explode: 1, tour: -1 })}>
-                Exploded
-              </Btn>
-              <input type="range" aria-label="How far the layers are pulled apart" min={0} max={1} step={0.02} value={keepClosed ? 0 : explode} disabled={keepClosed} onChange={(e) => useStudio.setState({ explode: Number(e.target.value), tour: -1 })} className="mx-2 w-14 accent-accent" title="How far the layers are pulled apart" />
-              {tour < 0 ? (
-                <Btn small tone="ghost" icon="play" className="border-l border-l-line2" disabled={tourSteps < 2 && !keepClosed} title="A short tour of what is inside: the camera stops at each of the main components in turn. Move the camera or click anything to end it." onClick={() => useStudio.setState({ keepClosed: false, tour: 0 })}>
-                  Tour
+        {/* everything over the model stays mounted under the launch plan, so it is found as it was left */}
+        <div className={launching ? 'hidden' : 'contents'}>
+          <StudioCaption />
+
+          {/* ---- top row: what to work on, how, and back a step; at the right, what it comes to */}
+          <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-2">
+            <div className="pointer-events-auto flex min-w-0 items-center gap-2">
+              <div className="border border-line2 bg-panel">
+                <Tabs className="!border-b-0" value={(left ?? 'none') as Exclude<LeftPanel, null>} options={toolTabs} onChange={(v) => setLeft(left === v ? null : v)} />
+              </div>
+              <div className="flex bg-panel [&>button+button]:-ml-px">
+                <Btn small active={simple} onClick={() => setEditorMode('simple')} title="Simple: choose from lists and the parts are placed for you">
+                  Simple
                 </Btn>
-              ) : (
-                <>
-                  <span className="num border-l border-line2 px-2 text-[11px] text-dim">
-                    {tour + 1} / {tourSteps}
-                  </span>
-                  <Btn small tone="ghost" icon="arrowRight" title="Next stop" onClick={() => useStudio.setState({ tour: tour + 1 < tourSteps ? tour + 1 : -1 })}>
-                    Next
-                  </Btn>
-                  <Btn small tone="ghost" icon="stop" title="End the tour" onClick={() => useStudio.setState({ tour: -1 })}>
-                    End
-                  </Btn>
-                </>
-              )}
-            </div>
-          )}
-          {type === 'foldable' && left !== 'internals' && (
-            <div className="flex border border-line2 bg-panel/95" title="Show it open, or folded shut with the cover screen outermost">
-              {(['open', 'shut'] as const).map((v) => (
-                <Btn key={v} small tone="ghost" active={folded === (v === 'shut')} onClick={() => useStudio.setState({ folded: v === 'shut' })}>
-                  {v}
+                <Btn small active={!simple} onClick={() => setEditorMode('advanced')} locked={advancedLock} onLocked={() => advancedLock && useStore.getState().say(advancedLock)} title="Advanced: place, move and size every part yourself">
+                  Advanced
                 </Btn>
-              ))}
+              </div>
+              <div className="flex bg-panel [&>button+button]:-ml-px">
+                <IconBtn icon="undo" disabled={!canUndo} onClick={undo} title={canUndo ? 'Undo (Ctrl+Z)' : 'Undo: nothing has been changed yet'} />
+                <IconBtn icon="redo" disabled={!canRedo} onClick={redo} title={canRedo ? 'Redo (Ctrl+Y)' : 'Redo: nothing has been undone'} />
+              </div>
             </div>
-          )}
-          <div className="flex border border-line2 bg-panel/95">
-            {(['front', 'back', 'side', 'bottom'] as ViewName[]).map((v) => (
-              <Btn key={v} small tone="ghost" active={view === v} onClick={() => (setView(v), setNonce((x) => x + 1))}>
-                {v === 'bottom' ? fourthView(type) : v}
-              </Btn>
-            ))}
+            <div className="pointer-events-auto flex shrink-0 items-stretch border border-line2 bg-panel">
+              <div className="flex items-baseline gap-2 self-center px-3" title="What one unit costs to build today. Whoever builds it adds or saves a little: see the launch plan.">
+                <span className="text-[11px] text-dim">Unit cost</span>
+                <span className="num text-[13px] font-semibold text-fg">{price(unitNow)}</span>
+              </div>
+              <Tabs
+                className="border-l border-line !border-b-0"
+                value={(right ?? 'none') as Exclude<RightPanel, null>}
+                onChange={(v) => setRight(right === v ? null : v)}
+                options={[
+                  { value: 'score', label: 'Score', badge: Math.round(ev.report.pct) },
+                  {
+                    value: 'market',
+                    label: (
+                      <span title={`Best fit: ${best.seg.name} buyers`}>
+                        Market<span className="ml-[6px] font-normal text-dim">{best.seg.name}</span>
+                      </span>
+                    ),
+                  },
+                  { value: 'issues', label: 'Issues', badge: issues.length > 0 ? issues.length : undefined, alert: true },
+                ]}
+              />
+            </div>
           </div>
-        </div>
-      </div>
 
-      {/* ---- left drawer */}
-      {left && (
-        <div className="absolute bottom-14 left-2 top-12 flex w-[300px] flex-col border border-line2 bg-panel/95">
-          {left === 'body' && !meta.variant && (
-            <div className="shrink-0 border-b border-line p-2">
-              <div className="label mb-1 text-faint">Device type</div>
-              <div className="grid grid-cols-3 gap-1">
-                {DEVICE_TYPES.map((t) => {
-                  const game = useStore.getState().game
-                  const closed = !!game && !hasType(game, t)
-                  const label = <span className="truncate">{TYPES[t].name}</span>
-                  // switching throws the design away: once it has been worked on, that takes a second click
-                  if (canUndo && !closed && t !== type)
-                    return (
-                      <ConfirmBtn key={t} small tone="default" icon={typeIcon(t)} confirm="Start over?" onClick={() => setType(t)} className="justify-start px-[6px]" title={`${TYPES[t].name}: switching starts a fresh design and discards this one`}>
-                        {label}
-                      </ConfirmBtn>
-                    )
-                  return (
-                    <Btn key={t} small icon={closed ? 'lock' : typeIcon(t)} active={type === t} onClick={() => setType(t)} className={`justify-start px-[6px] ${closed ? 'opacity-40' : ''}`} title={closed ? `${TYPES[t].name}: your company does not make these yet. Open the line under Research.` : t === type ? TYPES[t].name : `${TYPES[t].name}: switching starts a fresh design`}>
-                      {label}
-                    </Btn>
-                  )
-                })}
+          {/* ---- left drawer */}
+          {left && (
+            <div className="absolute left-2 top-[54px] flex max-h-[calc(100%-62px)] w-[300px] flex-col border border-line2 bg-panel">
+              {left === 'body' && !meta.variant && <TypeLine type={type} worked={canUndo} />}
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                {left === 'body' && <BodyPanel simple={simple} />}
+                {left === 'parts' && (simple ? <LayoutPanel /> : <PartsPanel />)}
+                {left === 'internals' && <InternalsPanel maxBattery={ev.report.maxBattery} />}
+                {left === 'colours' && <ColoursPanel preview={preview} setPreview={setPreview} />}
               </div>
             </div>
           )}
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {left === 'body' && <BodyPanel simple={simple} />}
-            {left === 'parts' && (simple ? <LayoutPanel /> : <PartsPanel />)}
-            {left === 'internals' && <InternalsPanel maxBattery={ev.report.maxBattery} />}
-            {left === 'colours' && <ColoursPanel preview={preview} setPreview={setPreview} />}
-          </div>
-        </div>
-      )}
 
-      {/* ---- right: a compact status card that expands on request */}
-      <div className="pointer-events-none absolute bottom-14 right-2 top-12 flex w-[300px] flex-col items-end gap-2">
-        <div className="pointer-events-auto w-full border border-line2 bg-panel/95">
-          <div className="grid grid-cols-3 gap-px bg-line">
-            {[
-              ['Unit cost', money(unitNow), 'text-accent'],
-              ['Design', Math.round(ev.report.pct), 'text-fg'],
-              ['Best fit', best.seg.name, 'text-fg'],
-            ].map(([k, v, tone]) => (
-              <div key={k} className="bg-panel px-2 py-[6px]">
-                <div className="text-[11px] text-faint">{k}</div>
-                <div className={`num truncate text-[13px] font-semibold ${tone}`} title={String(v)}>
-                  {v}
-                </div>
-              </div>
-            ))}
-          </div>
-          <Tabs value={right ?? ('none' as RightPanel & string)} onChange={(v) => setRight(right === v ? null : v)} options={[{ value: 'score', label: 'Score' }, { value: 'market', label: 'Market' }]} />
-          {right === 'score' && (
-            <div className="max-h-[48vh] overflow-y-auto p-2">
-              {ev.report.breakdown.map((b) => (
-                <div key={b.key} className="flex items-center gap-2 py-[3px]">
-                  <span className="w-32 text-[11px] text-dim">{b.label}</span>
-                  {b.max > 0 ? <Meter value={b.score} max={b.max} tone={b.score / b.max > 0.75 ? 'pos' : b.score / b.max > 0.4 ? 'accent' : 'warn'} /> : <div className="flex-1" />}
-                  <span className={`num w-12 text-right text-[11px] ${b.score < 0 ? 'text-neg' : 'text-dim'}`}>{b.max > 0 ? `${b.score.toFixed(0)}/${b.max}` : b.score.toFixed(0)}</span>
-                </div>
-              ))}
-              <div className="mt-2 grid grid-cols-2 gap-1">
-                {type === 'speaker' ? (
-                  <Mini label="Enclosure" value={`${speakerShape(draft.body).litres.toFixed(2)} L`} />
-                ) : type === 'headset' ? (
-                  <Mini label="Visor depth" value={`${Math.round(draft.body.thickness)} mm`} />
-                ) : T.noScreen ? (
-                  <Mini label="Volume" value={type === 'console' ? `${((draft.body.width * draft.body.height * draft.body.thickness) / 1e6).toFixed(1)} L` : `${Math.round((draft.body.width * draft.body.height * draft.body.thickness) / 1000)} cm3`} />
-                ) : (
-                  <Mini label="Screen" value={`${ev.report.diag.toFixed(type === 'watch' ? 2 : 1)}" / ${pct(ev.report.sbr, 0)}`} />
-                )}
-                <Mini label="Weight" value={grams(ev.report.weight)} tone={!T.weightByArea && ev.report.weight > T.weight[1] * 0.9 ? 'text-warn' : undefined} />
-                {heat ? (
-                  <Mini label="Cooling headroom" value={`${Math.round(heat.headroom * 100)}%`} tone={heat.headroom < 0.5 ? 'text-neg' : heat.headroom < 0.8 ? 'text-warn' : undefined} />
-                ) : type === 'speaker' ? (
-                  <Mini label="Screen" value={ev.report.diag ? `${ev.report.diag.toFixed(1)}"` : 'None'} />
-                ) : T.mains ? (
-                  <Mini label="Speakers" value={SPEAKERS[draft.specs.speakers ?? 0].name} />
-                ) : (
-                  <Mini label={type === 'earbuds' ? 'Listening, with case' : 'Battery life'} value={`${ev.report.lifeHours.toFixed(1)} h`} />
-                )}
-                <Mini label="Development" value={`${money(plan.cost, 1)} / ${plan.days} d`} />
-                {type === 'foldable' && <Mini label="Thickness when shut" value={`${foldedThickness(draft).toFixed(1)} mm`} />}
-              </div>
-            </div>
-          )}
-          {right === 'market' && (
-            <div className="max-h-[48vh] overflow-y-auto p-2">
-              <div className="flex items-center justify-between pb-1">
-                <span className="text-[11px] text-dim">Test price</span>
-                <NumInput value={price} onChange={setPrice} className="h-6 w-24 text-right" step={10} max={MAX_PRICE} aria-label="Test price" />
-              </div>
-              {segmentsOf(type).map((seg) => {
-                const a = appeal(probe, me, seg, g.day)
-                return (
-                  <div key={seg.id} className="flex items-center gap-2 py-[3px]">
-                    <span className="w-32 shrink-0 truncate text-[11px] text-dim" title={seg.name}>
-                      {seg.name}
-                    </span>
-                    <Meter value={a} max={100} tone={a > 70 ? 'pos' : a > 40 ? 'accent' : 'dim'} />
-                    <span className="num w-7 text-right text-[11px] text-fg">{Math.round(a)}</span>
-                  </div>
-                )
-              })}
-              <div className="label mb-1 mt-2 text-faint">Against the best on sale today</div>
-              {SUBS.map((k) => (
-                <div key={k} className="flex items-center gap-2 py-[3px]">
-                  <span className="w-32 shrink-0 truncate text-[11px] text-dim" title={subLabel(type, k)}>
-                    {subLabel(type, k)}
-                  </span>
-                  <Meter value={n[k]} max={1.1} tone={n[k] > 0.9 ? 'pos' : n[k] > 0.6 ? 'accent' : 'warn'} />
-                  <span className="num w-7 text-right text-[11px] text-fg">{Math.round(n[k] * 100)}</span>
-                </div>
-              ))}
-              <Row k="Margin per unit" v={money(price * (1 - RETAIL_CUT) - unitNow * CONTRACT.premium)} tone={margin > 0 ? 'text-pos' : 'text-neg'} />
-            </div>
-          )}
-        </div>
-        {part && !simple && <PartInspector part={part} />}
-      </div>
-
-      {/* ---- bottom bar */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 p-2">
-        <div className="pointer-events-auto max-w-[46%] border border-line2 bg-panel/95">
-          {issuesOpen && errors.length + warns.length > 0 && (
-            <div className="max-h-40 overflow-y-auto border-b border-line py-1">
-              {[...errors, ...warns].map((i, k) => (
-                <div key={k} {...(i.partId && !simple ? { role: 'button', ...pressable(() => selectPart(i.partId!)) } : {})} className={`flex gap-2 px-2 py-[2px] text-[11px] ${i.partId && !simple ? 'cursor-pointer hover:bg-hover' : ''}`}>
-                  <span className={`num w-12 shrink-0 ${i.level === 'error' ? 'text-neg' : 'text-warn'}`}>{i.level === 'error' ? 'BLOCK' : 'WARN'}</span>
-                  <span className="text-fg">{i.text}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          <button onClick={() => setIssuesOpen(!issuesOpen)} disabled={errors.length + warns.length === 0} title={errors.length + warns.length === 0 ? "Nothing stands in the way of this design" : undefined} aria-expanded={issuesOpen} className="num flex h-8 items-center gap-3 px-3 text-[11px]">
-            {errors.length + warns.length === 0 ? (
-              <span className="text-pos">NO ISSUES</span>
-            ) : (
-              <>
-                {errors.length > 0 && <span className="text-neg">{errors.length} BLOCKING</span>}
-                {warns.length > 0 && <span className="text-warn">{warns.length} WARNINGS</span>}
-                <span className="text-faint">{issuesOpen ? 'HIDE' : 'SHOW'}</span>
-              </>
-            )}
-          </button>
-        </div>
-        <div className="pointer-events-auto flex items-center gap-2">
-          <span className="num hidden max-w-[320px] truncate border border-line2 bg-panel/95 px-2 py-[7px] text-[11px] text-dim xl:block" title={`${productName(meta.family, meta.variant) || "Unnamed"} / ${T.name}`}>
-            {productName(meta.family, meta.variant) || 'Unnamed'} <span className="text-faint">/ {T.name}</span>
-            {variant && <span className="ml-2"><Tag tone="accent">shared platform</Tag></span>}
-          </span>
-          {canUndo ? (
-            <ConfirmBtn tone="default" confirm="Discard the design?" title="Throw this design away. To keep it for later, go to another screen instead: New device picks it up again." onClick={() => closeDesigner(true)}>
-              Cancel
-            </ConfirmBtn>
-          ) : (
-            <Btn onClick={() => closeDesigner(true)}>Cancel</Btn>
-          )}
-          <Btn tone="primary" className="h-9 px-6" disabled={errors.length > 0} onClick={() => setLaunching(true)}>
-            {errors.length ? `${errors.length} blocking` : 'Proceed to launch'}
-          </Btn>
-        </div>
-      </div>
-
-      {/* ---- launch plan */}
-      {launching && (
-        <div className="absolute inset-0 z-40 flex items-center justify-center bg-carbon/85 p-4">
-          <div ref={planBox} role="dialog" aria-label="Launch plan" className="flex max-h-full w-[760px] max-w-full flex-col border border-line2 bg-panel outline-none">
-            <div className="flex h-9 shrink-0 items-center border-b border-line px-3 text-[11px] font-semibold text-fg">Launch plan</div>
-            <div className="grid min-h-0 flex-1 grid-cols-2 overflow-y-auto">
-              <div className="border-r border-line p-3">
-                <div className="label mb-1 text-faint">Name</div>
-                <div className="flex gap-1">
-                  <TextInput value={meta.family} onChange={(v) => setMeta({ family: v })} maxLength={24} className="min-w-0 flex-1" placeholder="Product line" aria-label="Product line name" />
-                  <TextInput value={meta.variant} onChange={(v) => setMeta({ variant: v })} maxLength={10} className="w-24" placeholder="Variant" aria-label="Variant label" />
-                </div>
-                <div className="mt-1 text-[11px] leading-snug text-faint">{variant ? 'Shares a platform with a device you already make in this line, so development is cheaper and faster.' : 'Reuse an existing line name with a variant label (Pro, Lite) to share its platform.'}</div>
-
-                <div className="label mb-1 mt-3 text-faint">Price</div>
-                <div className="flex items-center gap-2">
-                  <NumInput value={price} onChange={setPrice} step={10} max={MAX_PRICE} className="w-28 text-right" aria-label="Price" />
-                  <span className="text-[11px] text-dim">
-                    best fit {best.seg.name} (typical {money(best.seg.priceRef)})
-                  </span>
-                </div>
-                {T.memory > 0 && (
+          {/* ---- right: the panel of the tab that is open, and the selected part under it */}
+          <div className="pointer-events-none absolute bottom-2 right-2 top-[54px] flex w-[300px] flex-col gap-2">
+            {right && (
+              <div className="pointer-events-auto min-h-0 shrink overflow-y-auto border border-line2 bg-panel p-3">
+                {right === 'score' && (
                   <>
-                    <div className="label mb-1 mt-3 text-faint">Storage options</div>
-                    <div className="text-[11px] text-dim">Base model: {storageLabel(draft.specs.storage)}</div>
-                    {tiers.map((t, i) => (
-                      <div key={t.storage} className="mt-1 flex items-center gap-2">
-                        <span className="num w-16 text-[11px] text-fg">{storageLabel(t.storage)}</span>
-                        <NumInput value={t.price} onChange={(v) => setTiers(tiers.map((x, k) => (k === i ? { ...x, price: v } : x)))} step={10} max={MAX_PRICE} className="h-6 w-24 text-right" aria-label={`Price of the ${storageLabel(t.storage)} option`} />
-                        <button className="num text-[11px] text-dim hover:text-neg" title={i < tiers.length - 1 ? 'Removes this option and the larger ones after it' : undefined} onClick={() => setTiers(tiers.slice(0, i))}>
-                          REMOVE
-                        </button>
+                    <Legend items={[...BARS]} className="mb-2" />
+                    {ev.report.breakdown.map((b) => (
+                      <div key={b.key} className="flex items-center gap-2 py-[3px]">
+                        <span className="w-32 shrink-0 truncate text-[11px] text-dim" title={b.label}>
+                          {b.label}
+                        </span>
+                        {b.max > 0 ? <Meter value={b.score} max={b.max} tone={barTone(b.score / b.max, 0.75, 0.4)} /> : <div className="flex-1" />}
+                        <span className={`num w-12 shrink-0 text-right text-[11px] ${b.score < 0 ? 'text-neg' : 'text-fg'}`}>{b.max > 0 ? `${b.score.toFixed(0)}/${b.max}` : b.score.toFixed(0)}</span>
                       </div>
                     ))}
-                    {tiers.length < 3 && nextTier && (
-                      <Btn small className="mt-1" onClick={() => setTiers([...tiers, { storage: nextTier, price: (tiers.at(-1)?.price ?? price) + (T.memory >= 2 ? 200 : 100) }])}>
-                        + {storageLabel(nextTier)} option
-                      </Btn>
-                    )}
-                    <div className="mt-1 text-[11px] leading-snug text-faint">Some buyers pay extra for more storage, which costs you little to add.</div>
+                    <div className="mt-2 border-t border-line pt-1">
+                      {type === 'speaker' ? (
+                        <Row k="Enclosure" v={`${speakerShape(draft.body).litres.toFixed(2)} L`} />
+                      ) : type === 'headset' ? (
+                        <Row k="Visor depth" v={`${Math.round(draft.body.thickness)} mm`} />
+                      ) : T.noScreen ? (
+                        <Row k="Volume" v={type === 'console' ? `${((draft.body.width * draft.body.height * draft.body.thickness) / 1e6).toFixed(1)} L` : `${Math.round((draft.body.width * draft.body.height * draft.body.thickness) / 1000)} cm3`} />
+                      ) : (
+                        <Row k="Screen, and its share of the front" v={`${ev.report.diag.toFixed(type === 'watch' ? 2 : 1)}", ${pct(ev.report.sbr, 0)}`} />
+                      )}
+                      <Row k="Weight" v={grams(ev.report.weight)} tone={!T.weightByArea && ev.report.weight > T.weight[1] * 0.9 ? 'text-warn' : undefined} />
+                      {heat ? (
+                        <Row k="Cooling headroom" v={`${Math.round(heat.headroom * 100)}%`} tone={heat.headroom < 0.5 ? 'text-neg' : heat.headroom < 0.8 ? 'text-warn' : undefined} />
+                      ) : type === 'speaker' ? (
+                        <Row k="Screen" v={ev.report.diag ? `${ev.report.diag.toFixed(1)}"` : 'None'} />
+                      ) : T.mains ? (
+                        <div className="flex items-baseline justify-between gap-3 border-b border-line py-[3px] text-[11px]">
+                          <span className="text-dim">Speakers</span>
+                          <span className="text-fg">{SPEAKERS[draft.specs.speakers ?? 0].name}</span>
+                        </div>
+                      ) : (
+                        <Row k={type === 'earbuds' ? 'Listening, with case' : 'Battery life'} v={`${ev.report.lifeHours.toFixed(1)} h`} />
+                      )}
+                      {type === 'foldable' && <Row k="Thickness when shut" v={`${foldedThickness(draft).toFixed(1)} mm`} />}
+                      <Row k="Development" v={`${money(dev.cost)}, ${dev.days} days`} />
+                    </div>
                   </>
                 )}
-
-                <div className="label mb-1 mt-3 text-faint">Launch marketing</div>
-                <Slider label="One-off launch budget" value={marketing} min={0} max={20e6} step={50e3} format={(v) => money(v)} onChange={setMarketing} />
-                <Choice label="Launch keynote" value={keynote} lockNote={lockTip(g, 'events') ?? (hasStage(g) ? null : `Your own venue: ${lockTip(g, 'venue') ?? (g.venue ? 'it needs a stage before it can hold a keynote.' : 'build one first, on the Venue screen.')}`)} options={[{ value: -1, label: 'None' }, ...EVENTS.keynote.venues.map((v, i) => ({ value: i, label: `${v.name} (${money(v.cost, 1)})`, locked: !has(g, 'events') || (i === 3 && !hasStage(g)) }))]} onChange={setKeynote} />
-              </div>
-              <div className="p-3">
-                <div className="label mb-1 text-faint">First production run</div>
-                <div className="flex gap-1">
-                  {(['contract', 'factory'] as const).map((m) => (
-                    <Btn key={m} small className="flex-1" active={mode === m} disabled={m === 'factory' && !line?.running} onClick={() => setMode(m)} title={m === 'factory' && !line?.running ? 'Needs a working line in your factory' : ''}>
-                      {m === 'contract' ? 'Contract maker' : 'Own factory'}
-                    </Btn>
+                {right === 'market' && (
+                  <>
+                    <Legend items={[...BARS]} className="mb-2" />
+                    <label className="flex items-center justify-between gap-2 pb-2">
+                      <span className="text-[11px] text-dim">Try a price</span>
+                      <NumInput value={plan.price} onChange={(v) => patch({ price: v })} onEnter={leave} className="w-24 text-right" step={10} max={MAX_PRICE} aria-label="Try a price" />
+                    </label>
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <span className="label">How buyers rate it at that price</span>
+                    </div>
+                    {segmentsOf(type).map((seg) => {
+                      const a = appeal(probe, me, seg, g.day)
+                      const fit = seg.id === best.seg.id
+                      return (
+                        <div key={seg.id} className="flex items-center gap-2 py-[3px]" title={fit ? `${seg.name}: the best fit` : seg.name}>
+                          <span className={`w-32 shrink-0 truncate text-[11px] ${fit ? 'font-semibold text-fg' : 'text-dim'}`}>{seg.name}</span>
+                          <Meter value={a} max={100} tone={barTone(a, 70, 40)} />
+                          <span className="num w-7 shrink-0 text-right text-[11px] text-fg">{Math.round(a)}</span>
+                        </div>
+                      )
+                    })}
+                    <div className="label mb-1 mt-3">Against the best on sale today</div>
+                    {SUBS.map((k) => (
+                      <div key={k} className="flex items-center gap-2 py-[3px]">
+                        <span className="w-32 shrink-0 truncate text-[11px] text-dim" title={subLabel(type, k)}>
+                          {subLabel(type, k)}
+                        </span>
+                        <Meter value={n[k]} max={1.1} tone={barTone(n[k], 0.9, 0.6)} />
+                        <span className="num w-7 shrink-0 text-right text-[11px] text-fg">{Math.round(n[k] * 100)}</span>
+                      </div>
+                    ))}
+                    {unit && (
+                      <div className="mt-2 border-t border-line pt-1">
+                        <MarginRow price={plan.price} unit={unit.total} />
+                      </div>
+                    )}
+                  </>
+                )}
+                {right === 'issues' &&
+                  (issues.length === 0 ? (
+                    <div className="text-xs leading-snug text-dim">Nothing stands in the way of this design.</div>
+                  ) : (
+                    issues.map((i, k) => {
+                      const jump = !!i.partId && !simple
+                      return (
+                        <div key={k} {...(jump ? { role: 'button', title: 'Select the part this is about', ...pressable(() => selectPart(i.partId!)) } : {})} className={`flex items-start gap-2 py-1 text-xs leading-snug ${jump ? '-mx-1 cursor-pointer px-1 hover:bg-hover' : ''}`}>
+                          <span className="mt-px shrink-0">
+                            <Tag tone={i.level === 'error' ? 'neg' : 'warn'}>{i.level === 'error' ? 'Blocks' : 'Warning'}</Tag>
+                          </span>
+                          <span className="text-fg">{i.text}</span>
+                        </div>
+                      )
+                    })
                   ))}
-                </div>
-                <div className="mt-2 flex items-center gap-2">
-                  <NumInput value={quantity} onChange={setQuantity} step={1000} max={MAX_RUN} className="w-28 text-right" aria-label="Units in the first production run" />
-                  <span className="num text-[11px] text-dim">units at {money(buildEach)} each</span>
-                </div>
-                <div className="mt-1 text-[11px] leading-snug text-faint">
-                  {mode === 'contract' ? `A contractor starts after ${CONTRACT.leadDays} days and delivers about ${num(CONTRACT.perDay / T.capacity)} a day.` : `Your line builds about ${num((line?.throughput ?? 0) / T.capacity)} a day.`} You pay for units as they are built, not up front.
-                </div>
-
-                <div className="mt-3 border-t border-line pt-2">
-                  <Row k="Development" v={money(plan.cost)} />
-                  <Row k="Launch marketing" v={money(marketing)} />
-                  {venue && <Row k={`Keynote: ${venue.name}`} v={money(venue.cost)} />}
-                  <Row k="Due now" v={money(dueNow)} tone={canAfford(g, dueNow) ? 'text-accent' : 'text-neg'} />
-                  <Row k="Production, paid as built" v={money(quantity * buildEach)} />
-                  <Row k="Income if the run sells out" v={money(quantity * price * (1 - RETAIL_CUT))} />
-                  <Row k="Margin per unit after the 15% retail cut" v={money(margin)} tone={margin > 0 ? 'text-pos' : 'text-neg'} />
-                  <Row k="Release" v={`in ${plan.days} days`} />
-                </div>
               </div>
-            </div>
-            <div className="flex shrink-0 gap-2 border-t border-line p-2">
-              <Btn className="flex-1" onClick={() => setLaunching(false)}>
-                Back to the design
+            )}
+            {part && <PartInspector part={part} />}
+          </div>
+        </div>
+      </div>
+
+      {/* ---- the strip under the model: how it is looked at, at the left; where it goes next, at the right */}
+      {!launching && (
+        <div className="flex h-10 shrink-0 items-center gap-4 border-t border-line bg-panel px-2">
+          <div className="flex min-w-0 flex-1 items-center gap-4">
+            <StripGroup label="View">
+              {(['front', 'back', 'side', 'bottom'] as ViewName[]).map((v) => (
+                <Btn key={v} small active={view === v} onClick={() => (setView(v), setNonce((x) => x + 1))} title={`Look at it from the ${v === 'bottom' ? (fourthView(type) === 'under' ? 'underside' : fourthView(type)) : v}`}>
+                  {cap(v === 'bottom' ? fourthView(type) : v)}
+                </Btn>
+              ))}
+            </StripGroup>
+            {type === 'foldable' && left !== 'internals' && (
+              <StripGroup label="Fold" title="Show it open, or folded shut with the cover screen outermost">
+                {(['open', 'shut'] as const).map((v) => (
+                  <Btn key={v} small active={folded === (v === 'shut')} onClick={() => useStudio.setState({ folded: v === 'shut' })}>
+                    {cap(v)}
+                  </Btn>
+                ))}
+              </StripGroup>
+            )}
+            {left === 'internals' && (
+              <StripGroup label="Inside">
+                <Btn small active={keepClosed} title="Keep the device shut while you work on what is inside" onClick={() => useStudio.setState({ keepClosed: true, tour: -1 })}>
+                  Shut
+                </Btn>
+                <Btn small active={!keepClosed && explode < 0.5} title="Take the cover off and look in" onClick={() => useStudio.setState({ keepClosed: false, explode: 0, tour: -1 })}>
+                  Lid off
+                </Btn>
+                <Btn small active={!keepClosed && explode >= 0.5} title="Pull the layers apart" onClick={() => useStudio.setState({ keepClosed: false, explode: 1, tour: -1 })}>
+                  Exploded
+                </Btn>
+                <input type="range" aria-label="How far the layers are pulled apart" min={0} max={1} step={0.02} value={keepClosed ? 0 : explode} disabled={keepClosed} onChange={(e) => useStudio.setState({ explode: Number(e.target.value), tour: -1 })} className="mx-2 hidden w-16 xl:block" title={keepClosed ? 'The device is shut: take the lid off first' : 'How far the layers are pulled apart'} />
+                {tour < 0 ? (
+                  <Btn small icon="play" className="ml-2" disabled={tourSteps < 2 && !keepClosed} title={tourSteps < 2 && !keepClosed ? 'There is too little inside this device for a tour' : 'A short tour of what is inside: the camera stops at each of the main components in turn. Move the camera or click anything to end it.'} onClick={() => useStudio.setState({ keepClosed: false, tour: 0 })}>
+                    Tour
+                  </Btn>
+                ) : (
+                  <>
+                    <span className="num ml-2 px-2 text-[11px] text-dim" title="Where the tour is">
+                      {tour + 1} / {tourSteps}
+                    </span>
+                    <Btn small icon="arrowRight" title="Go to the next stop of the tour" onClick={() => useStudio.setState({ tour: tour + 1 < tourSteps ? tour + 1 : -1 })}>
+                      Next
+                    </Btn>
+                    <Btn small icon="stop" title="End the tour" onClick={() => useStudio.setState({ tour: -1 })}>
+                      End
+                    </Btn>
+                  </>
+                )}
+              </StripGroup>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="hidden max-w-[240px] truncate text-xs text-dim xl:block" title={`${name}, a ${T.name.toLowerCase()}${variant ? ', on a platform it shares with a device you already make' : ''}`}>
+              {name}
+              {variant && <span className="ml-2"><Tag>Shared platform</Tag></span>}
+            </span>
+            {errors.length > 0 && (
+              <Btn small tone="ghost" icon="alert" className="!text-neg [&_svg]:!text-neg" title="Show what stands in the way" onClick={() => setRight('issues')}>
+                {blockedBy}
               </Btn>
-              <Btn tone="primary" className="min-w-0 flex-[2] truncate" disabled={!canAfford(g, dueNow) || !meta.family.trim()} title={!meta.family.trim() ? "Give the device a name first" : !canAfford(g, dueNow) ? `You need ${money(dueNow)} now for development, marketing and the keynote` : `Start development of ${productName(meta.family, meta.variant)}`} onClick={launch}>
-                {!meta.family.trim() ? "Name the device first" : canAfford(g, dueNow) ? `Start development of ${productName(meta.family, meta.variant)}` : "Not enough cash"}
+            )}
+            {canUndo ? (
+              <ConfirmBtn tone="default" confirm="Discard the design?" title="Throw this design away. To keep it for later, go to another screen instead: New device picks it up again." onClick={() => closeDesigner(true)}>
+                Cancel
+              </ConfirmBtn>
+            ) : (
+              <Btn title="Close the designer" onClick={() => closeDesigner(true)}>
+                Cancel
               </Btn>
-            </div>
+            )}
+            <Btn tone="primary" className="px-5" disabled={errors.length > 0} title={errors.length > 0 ? `Fix the ${blockedBy} first: they are listed under Issues` : 'Name it, price it and order the first run'} onClick={() => setLaunching(true)}>
+              Launch plan
+            </Btn>
           </div>
         </div>
       )}
+
+      {launching && <LaunchPlan plan={plan} patch={patch} back={() => setLaunching(false)} />}
     </div>
   )
 }

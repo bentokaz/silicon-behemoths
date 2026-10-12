@@ -21,7 +21,6 @@ import { OfficeScreen } from './Campus'
 import { PersonCard, Staff } from './Staff'
 import { Designer } from './Designer'
 import { CareScreen } from './Owners'
-import { WorldScreen } from './Regions'
 import { SharesScreen } from './Shares'
 import { MarketingScreen } from './Marketing'
 import { StoresScreen } from './Stores'
@@ -510,8 +509,8 @@ export function Shell() {
                   <Designer />
                 ) : (
                   <>
-                    {tab === 'city' && <CityScreen />}
-                    {tab === 'world' && <WorldScreen />}
+                    {/* the regions are a layer of the city: one view for both ids, never rebuilt between them */}
+                    {(tab === 'city' || tab === 'world') && <CityScreen />}
                     {tab === 'dashboard' && <Dashboard />}
                     {tab === 'finance' && <Finance />}
                     {tab === 'shares' && <SharesScreen />}

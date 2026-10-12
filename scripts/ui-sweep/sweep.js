@@ -355,7 +355,7 @@ async function seed(name, { tab, rebuild } = {}) {
   fb.setState({ form: null, ask: null, flagged: false })
   // all in one go, so the screen wanted is the only one drawn
   st().resume(G().migrate(JSON.parse(snap.json)))
-  W.sb.setState({ yearEnd: snap.yearEnd, checkpoint: snap.checkpoint, railOpen: true, feedOpen: true })
+  W.sb.setState({ yearEnd: snap.yearEnd, checkpoint: snap.checkpoint, railOpen: true, feedOn: {}, notes: [] })
   if (typeof tab === 'function') tab()
   else if (tab) st().setTab(tab)
   // the game's frame is on screen once the lazily loaded parts are in
@@ -569,9 +569,10 @@ function audit(label, { colours = true } = {}) {
       for (let p = el.parentElement; p; p = p.parentElement) if ((scrolls(p, 'x') && p.scrollWidth > p.clientWidth) || (scrolls(p, 'y') && p.scrollHeight > p.clientHeight)) reach = true
       if (!reach) note('off-window', `"${ownText.slice(0, 50)}" at ${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}`)
     }
+    if (parseFloat(cs.fontSize) > 0 && parseFloat(cs.fontSize) < 10.99) note('small-text', `"${ownText.slice(0, 40)}" ${cs.fontSize} .${el.className?.toString().slice(0, 40)}`)
     if (colours && parseFloat(cs.fontSize) > 0 && !el.closest(':disabled, [aria-disabled=true]')) {
       const c = contrast(el)
-      if (c < 2.6) note('low-contrast', `"${ownText.slice(0, 40)}" ${c.toFixed(2)}:1 ${cs.color} theme ${document.documentElement.dataset.theme} .${el.className?.toString().slice(0, 40)}`)
+      if (c < 4.45) note('low-contrast', `"${ownText.slice(0, 40)}" ${c.toFixed(2)}:1 ${cs.color} theme ${document.documentElement.dataset.theme} .${el.className?.toString().slice(0, 40)}`)
     }
   }
   for (const img of document.images) if (img.complete && !img.naturalWidth && isShown(img)) note('broken-image', img.src.slice(0, 80))
@@ -825,6 +826,8 @@ const uiStamp = () => {
 // ------------------------------------------------------------------ the tour
 
 const TABS = ['city', 'dashboard', 'products', 'research', 'market', 'world', 'goals', 'factory', 'stores', 'venue', 'marketing', 'care', 'labs', 'staff', 'office', 'finance', 'shares', 'rivals', 'system']
+/** Pages that are a view inside a screen (see src/store/nav.ts). */
+const VIEWS = [['research', 'lines'], ['staff', 'teams'], ['staff', 'hire'], ['staff', 'policy'], ['staff', 'execs'], ['marketing', 'events'], ['system', 'company'], ['system', 'settings'], ['system', 'keys']]
 const THEMES = ['ember', 'volt', 'ice', 'rose']
 
 /** Every stop of a state: each screen, the designer in both modes, a product and a person card. */
@@ -834,6 +837,8 @@ function stopsOf(state) {
   if (state === 'bankrupt') return at('gameover'), stops
   stops.push({ name: `${state}/chrome`, scope: 'chrome', depth: 0, setup: async () => (await seed(state), await settle(60)) })
   for (const tab of TABS) at(tab, () => st().setTab(tab))
+  // the pages that are a view of a screen: the frame's row of tabs reaches them, and so does this
+  for (const [tab, view] of VIEWS) at(`${tab}-${view}`, () => st().go({ tab, view }))
   at('designer-simple', () => (st().setEditorMode('simple'), st().openDesigner()))
   at('designer-advanced', () => (st().setEditorMode('advanced'), st().openDesigner()))
   at('inspector', () => {
@@ -906,7 +911,7 @@ function auditColours(label) {
     const r = el.getBoundingClientRect()
     if (r.width < 1 || r.height < 1 || el.closest(':disabled, [aria-disabled=true]')) continue
     const c = contrast(el)
-    if (c < 2.6) note('low-contrast', `"${ownText.slice(0, 40)}" ${c.toFixed(2)}:1 [${document.documentElement.dataset.theme}] .${el.className?.toString().slice(0, 50)}`)
+    if (c < 4.45) note('low-contrast', `"${ownText.slice(0, 40)}" ${c.toFixed(2)}:1 [${document.documentElement.dataset.theme}] .${el.className?.toString().slice(0, 50)}`)
   }
   S.ctx = was
 }
@@ -914,7 +919,7 @@ function auditColours(label) {
 /** Every key in System > Keys, on every screen: nothing may throw, and typing targets are left alone. */
 async function hotkeys(state = 'mid') {
   await seed(state)
-  const codes = ['Space', 'Digit1', 'Digit2', 'Digit3', 'F5', 'KeyN', 'KeyF', 'KeyG', 'F1', 'F2', 'F3', 'F4', 'KeyC', 'F6', 'F7', 'F8', 'F9', 'F10', 'KeyW', 'KeyS', 'KeyA', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyQ', 'KeyE', 'Equal', 'Minus', 'NumpadAdd', 'NumpadSubtract', 'Home', 'KeyR', 'Escape', 'Delete', 'KeyV', 'KeyB', 'Enter', 'Tab']
+  const codes = ['Space', 'Digit1', 'Digit2', 'Digit3', 'F5', 'KeyN', 'KeyF', 'KeyG', 'F1', 'F2', 'F3', 'F4', 'KeyC', 'F6', 'F7', 'F8', 'F9', 'F10', 'KeyW', 'KeyS', 'KeyA', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyQ', 'KeyE', 'Equal', 'Minus', 'NumpadAdd', 'NumpadSubtract', 'Home', 'KeyR', 'Escape', 'Delete', 'KeyV', 'KeyB', 'KeyU', 'KeyY', 'Enter', 'Tab']
   for (const tab of TABS) {
     st().setTab(tab)
     await settle(60)
@@ -1066,6 +1071,6 @@ function earlier() {
 }
 
 S.done ??= []
-Object.assign(S, { mod, crawlMenu, lookMenu, earlier, run, install, seed, SEEDS, snapshots, audit, auditRows, auditColours, crawl, crawlState, lookState, hotkeys, soak, vitals, summary, report, reset, click, key, setValue, listControls, describe, stopsOf, settle, TABS, THEMES, START_TYPES })
+Object.assign(S, { mod, crawlMenu, lookMenu, earlier, run, install, seed, SEEDS, snapshots, audit, auditRows, auditColours, crawl, crawlState, lookState, hotkeys, soak, vitals, summary, report, reset, click, key, setValue, listControls, describe, stopsOf, settle, TABS, VIEWS, THEMES, START_TYPES })
 install()
 export default S

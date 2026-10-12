@@ -4,7 +4,8 @@
 import { describe, expect, it } from 'vitest'
 import { defaultConfig, enterRegion, newGame, openStore } from '../../sim/game'
 import { SITE_TIERS } from '../../sim/sites'
-import type { GameState } from '../../sim/types'
+import { type GameState, SUPPLY_CATS } from '../../sim/types'
+import { BAYS, BAY_COUNT, BAY_LEVELS, CRANES, LOTS, PORT_GATE, QUAY_SLOT, QUAY_SLOTS, SHED, TRUCK, TRUCK_SLOTS, bayAt, bayLevel, portBays, portTrucks, shortages } from './plan'
 import { ISLAND, type Place, QUEUE, SHOP_BLOCKS, SHOP_MIN_SCALE, SHOP_ROOM, SHOP_SLOTS, SIGHT, type ShopBlock, type ShopLot, districtScale, districts, fillers, places, queueOf, shopLots, traffic } from './plan'
 
 const rich = (seed = 7) => newGame({ ...defaultConfig(), seed, unlimitedMoney: true })
@@ -295,5 +296,68 @@ describe('launch-day queues', () => {
       expect(d.blocks.some((b) => box.x0 >= b.x0 - EPS && box.x1 <= b.x1 + EPS && box.z0 >= b.z0 - EPS && box.z1 <= b.z1 + EPS), p.id).toBe(true)
       for (const other of shops) if (other !== p) expect(apart(box, walls(other)), `${p.id} ${other.id}`).toBe(true)
     }
+  })
+})
+
+describe('the port', () => {
+  const lot: Box = { x0: LOTS.port.x - LOTS.port.w / 2, x1: LOTS.port.x + LOTS.port.w / 2, z0: LOTS.port.z - LOTS.port.d / 2, z1: LOTS.port.z + LOTS.port.d / 2 }
+  const around = (x: number, z: number, w: number, d: number): Box => ({ x0: x - w / 2, x1: x + w / 2, z0: z - d / 2, z1: z + d / 2 })
+  const inside = (b: Box) => b.x0 >= lot.x0 && b.x1 <= lot.x1 && b.z0 >= lot.z0 && b.z1 <= lot.z1
+  const bays = Array.from({ length: BAY_COUNT }, (_, i) => around(...bayAt(i), BAYS.w, BAYS.d))
+  const trucks = TRUCK_SLOTS.map(([x, z]) => around(x, z, TRUCK.w, TRUCK.d))
+  const quay = QUAY_SLOTS.map(([x, z]) => around(x, z, QUAY_SLOT.w, QUAY_SLOT.d))
+  const shed = around(SHED.x, SHED.z, SHED.w, SHED.d)
+  const cranes = CRANES.map((c) => around(c.x, c.z, c.w, c.d))
+  /** A device on sale with so much in stock: all the port reads of one. */
+  const withStock = (stocks: number[], orders = 0): GameState => {
+    const g = rich()
+    return { ...g, products: stocks.map((stock, i) => ({ id: `p${i}`, name: `Device ${i}`, companyId: 'player', status: 'sale', stock })), orders: Array.from({ length: orders }, (_, i) => ({ id: `q${i}`, productId: 'p0', quantity: 1000, done: 0, mode: 'contract', placedDay: 0 })) } as unknown as GameState
+  }
+
+  it('keeps every bay, lorry and quay slot on its own ground inside the port, clear of the warehouse and the cranes', () => {
+    const all = [...bays.map((b, i) => ({ b, n: `bay ${i}` })), ...trucks.map((b, i) => ({ b, n: `lorry ${i}` })), ...quay.map((b, i) => ({ b, n: `quay ${i}` })), { b: shed, n: 'warehouse' }, ...cranes.map((b, i) => ({ b, n: `crane ${i}` }))]
+    for (const { b, n } of all) expect(inside(b), n).toBe(true)
+    for (const a of all) for (const b of all) if (a !== b) expect(apart(a.b, b.b), `${a.n} / ${b.n}`).toBe(true)
+    // and the way in from the high street is left open
+    for (const { b, n } of all) expect(b.x0 > PORT_GATE[0] + 3 || b.x1 < PORT_GATE[0] - 3 || b.z0 > PORT_GATE[1] + 4, n).toBe(true)
+    expect(QUAY_SLOTS).toHaveLength(SUPPLY_CATS.length)
+  })
+
+  it('stacks a bay by the stock of its device: empty when sold out, a container more at each step, six at most', () => {
+    expect(bayLevel(0)).toBe(0)
+    expect(bayLevel(-5)).toBe(0)
+    expect(bayLevel(1)).toBe(1)
+    BAY_LEVELS.forEach((least, i) => {
+      expect(bayLevel(least)).toBe(i + 1)
+      if (least > 1) expect(bayLevel(least - 1)).toBe(i)
+    })
+    expect(bayLevel(5e7)).toBe(BAY_LEVELS.length)
+    for (let i = 1; i < BAY_LEVELS.length; i++) expect(BAY_LEVELS[i]).toBeGreaterThan(BAY_LEVELS[i - 1])
+  })
+
+  it('gives each device on sale one bay, in order, and never more bays than there are', () => {
+    expect(portBays(rich())).toHaveLength(0)
+    const some = portBays(withStock([0, 800, 30000]))
+    expect(some.map((b) => b.level)).toEqual([0, 1, 4])
+    expect(some.map((b) => [b.x, b.z])).toEqual([bayAt(0), bayAt(1), bayAt(2)])
+    const many = portBays(withStock(Array.from({ length: BAY_COUNT + 5 }, (_, i) => i * 100)))
+    expect(many).toHaveLength(BAY_COUNT)
+    // the newest devices are the ones that keep a bay
+    expect(many.at(-1)!.id).toBe(`p${BAY_COUNT + 4}`)
+    expect(new Set(many.map((b) => `${b.x},${b.z}`)).size).toBe(BAY_COUNT)
+  })
+
+  it('parks one lorry to an open order, as far as there are doors', () => {
+    expect(portTrucks(withStock([10]))).toBe(0)
+    expect(portTrucks(withStock([10], 3))).toBe(3)
+    expect(portTrucks(withStock([10], 40))).toBe(TRUCK_SLOTS.length)
+  })
+
+  it('marks a quay slot only for a kind of component that is short today', () => {
+    const g = rich()
+    expect(shortages(g)).toEqual([])
+    g.supply.shockDays.displays = 12
+    g.supply.shockDays.memory = 1
+    expect(shortages(g)).toEqual(['displays', 'memory'])
   })
 })

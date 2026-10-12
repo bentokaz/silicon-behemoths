@@ -15,7 +15,7 @@ import { type Product, SUBS } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import type { IconName } from './icons'
 import { thumbKey } from './Inspector'
-import { Btn, Head, IconBtn, Lead, Meter, int, money, reducedMotion, useLayer } from './ui'
+import { Btn, Head, IconBtn, Lead, Meter, int, pct, price, reducedMotion, useLayer } from './ui'
 
 type Phase = 'doors' | 'welcome' | 'reveal' | 'specs' | 'price' | 'verdict'
 const TIMELINE: [Phase, number][] = [
@@ -66,7 +66,7 @@ function drawScreen(g: CanvasRenderingContext2D, phase: Phase, company: string, 
     points.forEach((s, i) => text(s, 230 + i * 130, 82))
   } else {
     text(p.name, 150, 60, '#b9bdc2', 400)
-    text(`$${int(p.price)}`, SH / 2 + 10, 240)
+    text(price(p.price), SH / 2 + 10, 240)
     text('ON SALE TODAY', SH - 120, 44, color, 400)
   }
 }
@@ -118,22 +118,33 @@ export function LaunchShow({ eventId }: { eventId: string }) {
     timers.current.forEach((t) => window.clearTimeout(t))
     timers.current = []
   }
+  /** Play the show from one beat on: that beat now, each later one at its own time after it. */
+  const playFrom = (from: number) => {
+    stopShow()
+    const beat = (ph: Phase) => {
+      setPhase(ph)
+      if (ph === 'welcome') sfx.hush()
+      if (ph === 'reveal') (sfx.drum(), timers.current.push(window.setTimeout(sfx.launch, 350)))
+      if (ph === 'specs' && score >= 40) sfx.applause(1.6, 0.5)
+      if (ph === 'price') sfx.applause(4, score >= 85 ? 1.6 : score >= 60 ? 1.1 : score >= 40 ? 0.6 : 0.25)
+      if (ph === 'verdict') (score >= 50 ? sfx.goal : sfx.alert)()
+    }
+    beat(TIMELINE[from][0])
+    for (const [ph, at] of TIMELINE.slice(from + 1)) timers.current.push(window.setTimeout(() => beat(ph), (at - TIMELINE[from][1]) * 1000))
+  }
   useEffect(() => {
-    setPhase('doors')
-    timers.current = TIMELINE.map(([ph, at]) =>
-      window.setTimeout(() => {
-        setPhase(ph)
-        if (ph === 'welcome') sfx.hush()
-        if (ph === 'reveal') (sfx.drum(), timers.current.push(window.setTimeout(sfx.launch, 350)))
-        if (ph === 'specs' && score >= 40) sfx.applause(1.6, 0.5)
-        if (ph === 'price') sfx.applause(4, score >= 85 ? 1.6 : score >= 60 ? 1.1 : score >= 40 ? 0.6 : 0.25)
-        if (ph === 'verdict') (score >= 50 ? sfx.goal : sfx.alert)()
-      }, at * 1000),
-    )
+    playFrom(0)
     return stopShow
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [run, score])
   /** Straight to the result: the beats still to come must not pull the show back. */
   const skip = () => (stopShow(), setPhase('verdict'))
+  /** On to the next beat without waiting for it; from the result, on with the game. */
+  const onward = () => {
+    const at = TIMELINE.findIndex(([ph]) => ph === phase)
+    if (phase === 'verdict' || at < 0) watch(null)
+    else playFrom(at + 1)
+  }
   // Esc skips to the result, and from the result closes the show; nothing behind it takes keys
   const box = useRef<HTMLDivElement>(null)
   useLayer(!!e && !!p && !!e.beats, () => (phase === 'verdict' ? watch(null) : skip()), { modal: true, box })
@@ -161,7 +172,7 @@ export function LaunchShow({ eventId }: { eventId: string }) {
     welcome: ['The lights go down', `${me.name} takes the stage.`],
     reveal: [p.name, 'Here it is.'],
     specs: ['What it does best', points.join('. ') + '.'],
-    price: [`$${int(p.price)}`, cheering ? 'The room is on its feet.' : score >= 30 ? 'Polite applause.' : 'An awkward silence.'],
+    price: [price(p.price), cheering ? 'The room is on its feet.' : score >= 30 ? 'Polite applause.' : 'An awkward silence.'],
     verdict: [`Score ${score}`, e.summary ?? ''],
   }
   const parts: [string, number, string, IconName][] = [
@@ -171,7 +182,18 @@ export function LaunchShow({ eventId }: { eventId: string }) {
     ['On the night', b.luck, 'Demos work, or they do not.', 'dice'],
   ]
   return (
-    <div ref={box} role="dialog" aria-label={`Launch keynote: ${p.name}`} className="absolute inset-0 z-40 bg-carbon outline-none">
+    <div
+      ref={box}
+      role="dialog"
+      aria-label={`Launch keynote: ${p.name}`}
+      className="absolute inset-0 z-40 bg-carbon outline-none"
+      // Enter or Space moves the show on; a button that has the keyboard keeps its own Enter and Space
+      onKeyDown={(ev) => {
+        if ((ev.key !== 'Enter' && ev.key !== ' ') || (ev.target as HTMLElement).closest('button, a')) return
+        ev.preventDefault()
+        onward()
+      }}
+    >
       <div className="absolute inset-0">
         <SiteView key={`${eventId}-${run}`} site={site} mode="cut" mood="night" tool={null} company={me.name} color={me.color} logo={me.logo} products={[p]} show={show} autoRotate={phase !== 'verdict' && !reducedMotion()} />
       </div>
@@ -185,11 +207,11 @@ export function LaunchShow({ eventId }: { eventId: string }) {
         </div>
         <div className="pointer-events-auto flex gap-1">
           {phase !== 'verdict' && (
-            <Btn small icon="fast" title="Skip to the result (Esc)" onClick={skip}>
+            <Btn small icon="fast" title="Skip to the result (Esc). Enter or Space moves on one step." onClick={skip}>
               Skip to the result
             </Btn>
           )}
-          <IconBtn icon="close" title="Close the keynote" onClick={() => (stopShow(), watch(null))} />
+          <IconBtn icon="close" title={phase === 'verdict' ? 'Close the keynote (Esc)' : 'Close the keynote'} onClick={() => (stopShow(), watch(null))} />
         </div>
       </div>
       {phase !== 'verdict' && (
@@ -230,13 +252,13 @@ export function LaunchShow({ eventId }: { eventId: string }) {
               <Head icon="trendUp" className="text-faint">
                 Launch hype
               </Head>
-              <div className="num text-[13px] text-accent">+{Math.round(p.hype * 100)}%</div>
+              <div className="num text-[13px] text-accent">+{pct(p.hype, 0)}</div>
             </div>
             <div>
               <Head icon="tag" className="text-faint">
                 Priced at
               </Head>
-              <div className="num text-[13px] text-fg">{money(p.price, 0)}</div>
+              <div className="num text-[13px] text-fg">{price(p.price)}</div>
             </div>
           </div>
           <div className="mt-3 flex gap-1">
@@ -246,7 +268,7 @@ export function LaunchShow({ eventId }: { eventId: string }) {
             <Btn className="flex-1" onClick={() => (watch(null), focus(p.id))}>
               See the device
             </Btn>
-            <Btn tone="primary" className="flex-1" autoFocus onClick={() => watch(null)}>
+            <Btn tone="primary" className="flex-1" autoFocus title="Back to the game (Enter)" onClick={() => watch(null)}>
               Continue
             </Btn>
           </div>

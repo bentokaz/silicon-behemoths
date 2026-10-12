@@ -7,9 +7,10 @@ import { type ReactNode, memo, useCallback, useEffect, useLayoutEffect, useMemo,
 import * as THREE from 'three'
 import { AutoTurn, CameraFence, SafeCanvas, useShadingRelease } from './SafeCanvas'
 import { type Pt, bayRun, bayStands, curveTiles, nearestBay } from '../sim/curves'
-import { EDGE_COST, keepsDoors, zonePlan } from '../sim/game'
+import { money, moneyDelta, num, pct } from '../components/format'
+import { EDGE_COST, keepsDoors, roomCost, zonePlan } from '../sim/game'
 import type { FactoryLife, OfficeLife, StoreLife, VenueLife } from '../sim/life'
-import { ITEMS, type LineStats, SITE_TIERS, type Shape, type ShapeOpts, areaOf, areaTiles, canPlace, curveFor, cutAt, doorFits, fillError, gridAt, inPlot, isBoundary, itemAt, lineTiles, pocketAt, reachable, roomOf, rowSpots, tilesOf, wallAt } from '../sim/sites'
+import { ITEMS, type LineStats, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, areaOf, areaTiles, canPlace, curveFor, cutAt, doorFits, fillError, gridAt, inPlot, isBoundary, itemAt, lineTiles, pocketAt, reachable, roomOf, rowSpots, tilesOf, wallAt } from '../sim/sites'
 import { ROLE_INFO, inTraining, jobTitle } from '../sim/staff'
 import type { Employee, Product, Site, SiteItem, SiteKind } from '../sim/types'
 import { QUALITY, type Quality, isHeld, useSettings } from '../store/settings'
@@ -83,6 +84,8 @@ export interface RunInfo {
   kept?: number
   /** Wall tool: stretches a curved wall cuts too short for a door or an opening. */
   short?: number
+  /** Item tool: places it would fit where the money does not reach. */
+  poor?: number
 }
 
 /** What the area tool would do where the pointer is, beyond how much ground it covers. */
@@ -93,8 +96,27 @@ export interface AreaNote {
   yard?: number
   /** Metres of the plot's edge that close the courtyard the fill tool points at, where walls do not go all the way round. */
   rim?: number
-  /** Why the fill tool cannot be used here. */
+  /** Why the tool cannot be used here: the ground is built on, the money is short, or (fill) it is not a courtyard. */
   error?: string
+  /** A corner has been set: the next click builds. */
+  anchored?: boolean
+  /** Things standing on the ground that building here clears away and sells. */
+  clears?: number
+}
+
+/** The store's month, projected to its end, for the plate over its tills. */
+export interface MonthFigures {
+  profit: number
+  partial?: boolean
+}
+
+/** A research project in progress. */
+export interface ResearchNow {
+  name: string
+  /** 0-1 of the way to done. */
+  progress: number
+  /** Days left at today's budget; null or missing when nothing is being spent. */
+  daysLeft?: number | null
 }
 
 /** A show in progress at a venue. */
@@ -125,7 +147,8 @@ export interface SiteViewProps {
   /** Room to outline, and rooms with no way in. */
   selectedRoom?: number
   sealed?: number[]
-  onTile?: (x: number, y: number, item: SiteItem | undefined) => void
+  /** A tile was clicked with no tool in hand. Return true to have the card of the room there opened beside the click. */
+  onTile?: (x: number, y: number, item: SiteItem | undefined) => boolean | void
   /** The item tool was clicked, or pressed and dragged from one tile to another: a row goes down between them. */
   onRow?: (x0: number, y0: number, x1: number, y1: number) => void
   /** The wall tool was clicked on a stretch of wall or dragged along a run of it. */
@@ -164,6 +187,18 @@ export interface SiteViewProps {
   card?: (target: Target, close: () => void) => ReactNode
   /** Told how many rooms nobody can walk to from the street, though they have a door (it is blocked, or leads only to another such room). */
   onCutOff?: (rooms: number) => void
+  /** What the player can spend right now: what a tool would cost more than this is shown as refused. */
+  budget?: number
+  /** A tool was clicked outside the plot. */
+  onOff?: () => void
+  /** Room in pixels that panels over the view take at its left, top, right and bottom: cards keep clear of them. */
+  clear?: [number, number, number, number]
+  /** Store: this month's figures, for the plate over the tills. */
+  month?: MonthFigures | null
+  /** Office: the projects being researched, as the Research screen names and counts them, for the plates over the labs. */
+  research?: ResearchNow[]
+  /** Told once the view has drawn its first frames. */
+  onDrawn?: () => void
 }
 
 const CHUNK = 8
@@ -703,9 +738,10 @@ const labelPosition = (el: THREE.Object3D, camera: THREE.Camera, size: { width: 
 }
 
 /** Keeps a card on screen: pinned beside its object, on whichever side has room, and never off any edge of the view. */
+const cardClear = { left: 8, top: 50, right: 8, bottom: 46 }
 const cardPosition = (el: THREE.Object3D, camera: THREE.Camera, size: { width: number; height: number }): number[] => {
   pin.setFromMatrixPosition(el.matrixWorld).project(camera)
-  return placeBeside((pin.x * 0.5 + 0.5) * size.width, (-pin.y * 0.5 + 0.5) * size.height, cardSize.x, cardSize.y, size.width, size.height, 'beside')
+  return placeBeside((pin.x * 0.5 + 0.5) * size.width, (-pin.y * 0.5 + 0.5) * size.height, cardSize.x, cardSize.y, size.width, size.height, 'beside', 8, cardClear.top, cardClear.bottom, cardClear.left, cardClear.right)
 }
 
 /** Wraps a card so its real size is known to whatever places it. */
@@ -733,10 +769,46 @@ function Celebrate({ count, places, sparks, palette }: { count: number; places: 
   return null
 }
 
-const fmtMoney = (v: number) => (v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `$${Math.round(v / 1e3)}K` : `$${Math.round(v)}`)
+/** Tells the door (SiteView) that the view is up: after the first frames have been drawn, shaders and all. */
+function Drawn({ on }: { on?: () => void }) {
+  const n = useRef(0)
+  useFrame(() => {
+    if (n.current < 3 && ++n.current === 3) on?.()
+  })
+  return null
+}
+
+/** The plot's edge, drawn while a building tool is in hand: this is where the land ends. */
+function PlotEdge({ w, h, color }: { w: number; h: number; color: string }) {
+  const geo = useMemo(() => new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-w / 2, 0.03, -h / 2), new THREE.Vector3(w / 2, 0.03, -h / 2), new THREE.Vector3(w / 2, 0.03, h / 2), new THREE.Vector3(-w / 2, 0.03, h / 2)]), [w, h])
+  useEffect(() => () => geo.dispose(), [geo])
+  return (
+    <lineLoop geometry={geo} renderOrder={6} userData={{ live: true }}>
+      <lineBasicMaterial color={color} toneMapped={false} transparent opacity={0.9} depthWrite={false} />
+    </lineLoop>
+  )
+}
+
+/** A small sign over a place that says what is going on there: the project in a lab, the order on the line, a store's month. */
+interface Plate {
+  key: string
+  at: [number, number, number]
+  text: string
+  figure?: string
+  /** 0-1, drawn as a thin bar along the bottom. */
+  bar?: number
+  tone: 'accent' | 'pos' | 'warn' | 'neg' | 'dim'
+  title: string
+  target: Target
+}
+const PLATE_TONE = { accent: 'bg-accent', pos: 'bg-pos', warn: 'bg-warn', neg: 'bg-neg', dim: 'bg-mute' }
+const PLATE_TEXT = { accent: 'text-fg', pos: 'text-pos', warn: 'text-warn', neg: 'text-neg', dim: 'text-dim' }
+
+/** What is being researched, for the plates over the labs: the list the builder hands in (the Research screen's own), or failing that the sim's summary of the office. */
+const researchOn = (o: OfficeLife, given?: ResearchNow[]): ResearchNow[] => given ?? o.research
 const fmtHour = (h: number) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`
 
-export function SiteScene({ site, mode, mood, tool, company, color, logo, selectedRoom, sealed, onTile, onRow, onEdges, onSell, onRun, onArea, onPreview, seated = [], idle = [], applicants, onPerson, day = 0, line, producing = false, products = [], busy = 0, show, autoRotate, speed = 0, life, card, onCutOff }: SiteViewProps) {
+export function SiteScene({ site, mode, mood, tool, company, color, logo, selectedRoom, sealed, onTile, onRow, onEdges, onSell, onRun, onArea, onPreview, seated = [], idle = [], applicants, onPerson, day = 0, line, producing = false, products = [], busy = 0, show, autoRotate, speed = 0, life, card, onCutOff, budget = Infinity, onOff, clear, month, research, onDrawn }: SiteViewProps) {
   const prefs = useSettings((s) => s.settings)
   const Q = QUALITY[prefs.quality]
   const shading = useShadingRelease()
@@ -755,6 +827,13 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
   const span = Math.max(w, h)
   const [hover, setHover] = useState<{ x: number; y: number; edge: Edge } | null>(null)
   const [anchor, setAnchor] = useState<[number, number] | null>(null)
+  /** The pointer is over the land beyond the plot, where nothing can be built. */
+  const [off, setOff] = useState(false)
+  // cards keep clear of whatever panels lie over the view
+  cardClear.left = clear?.[0] ?? 8
+  cardClear.top = clear?.[1] ?? 50
+  cardClear.right = clear?.[2] ?? 8
+  cardClear.bottom = clear?.[3] ?? 46
   /** Where the button went down with a tool that paints as it is dragged: the tile, the exact spot, and the wall under it. */
   const [drag, setDrag] = useState<{ x: number; y: number; fx: number; fy: number; edge: Edge; bay?: string } | null>(null)
   /** With these tools a left-drag belongs to the tool, not the camera. */
@@ -777,6 +856,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
   useEffect(() => {
     setAnchor(null)
     setDrag(null)
+    setOff(false)
   }, [tool?.type, tool && 'room' in tool ? tool.room : '', tool && 'kind' in tool ? tool.kind : ''])
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -1142,7 +1222,9 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
     if (areaTool) {
       /** A whole courtyard, shown in its true shape: its open tiles and the corners its curved walls leave over. */
       const yard = (tiles: [number, number][], live = curveTiles(site), pocket = tiles.length ? pocketAt(site, tiles[0][0], tiles[0][1], live) : null) => {
-        const note: AreaNote = { filled: true, rim: pocket && !pocket.enclosed ? Math.round(pocket.rim) : undefined }
+        const note: AreaNote = { filled: true, rim: pocket && !pocket.enclosed ? Math.round(pocket.rim) : undefined, anchored: true }
+        const cost = tool.type === 'room' ? roomCost(site, tool.room, tiles.length) : 0
+        if (cost > budget) return { good: [] as [number, number][], bad: tiles, curve: null, area: tiles.length, note: { ...note, error: `Not enough cash: this room costs ${money(cost)}` } }
         return { good: tiles, bad: [] as [number, number][], curve: null, area: tiles.length, shapes: (pocket?.curved ?? []).flatMap((key) => live.get(key)?.shape.outside ?? []), note }
       }
       if (filling) {
@@ -1157,23 +1239,49 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
       // before the first corner is set as well as after
       const plan = tool.type === 'room' && shape === 'rect' && site.curves?.length ? zonePlan(site, from[0], from[1], hover.x, hover.y, shape, opts) : null
       if (plan?.filled && anchor) return yard(plan.tiles)
-      const inYard: AreaNote | undefined = plan?.yard ? { yard: plan.yard } : undefined
+      const note: AreaNote = { yard: plan?.yard || undefined, anchored: !!anchor }
       // a room with a curved wall takes every tile the curve touches
       const all = areaTiles(from[0], from[1], hover.x, hover.y, shape, opts, tool.type === 'room').filter(([x, y]) => inPlot(site, x, y))
-      const good = all.filter(([x, y]) => (tool.type === 'clear' ? !!gridAt(site, x, y) : !gridAt(site, x, y) && !(tool.type === 'room' && itemAt(site, x, y))))
-      const bad = tool.type === 'room' ? all.filter(([x, y]) => gridAt(site, x, y) || itemAt(site, x, y)) : []
+      // what the sim itself would take: a room is laid on every open tile (whatever stands there is cleared and sold), demolition takes the built ones
+      const good = all.filter(([x, y]) => (tool.type === 'clear' ? !!gridAt(site, x, y) : !gridAt(site, x, y)))
+      const bad = tool.type === 'room' ? all.filter(([x, y]) => gridAt(site, x, y)) : []
       const curve = anchor ? curveFor(from[0], from[1], hover.x, hover.y, shape, opts) : null
-      return { good, bad, curve, area: tool.type === 'room' ? Math.round(areaOf(good, curve)) : good.length, note: inYard }
+      const area = tool.type === 'room' ? Math.max(good.length ? 1 : 0, Math.round(areaOf(good, curve))) : good.length
+      if (tool.type === 'room') {
+        const standing = new Set<string>()
+        for (const [x, y] of good) {
+          const it = itemAt(site, x, y)
+          if (it) standing.add(it.id)
+        }
+        if (standing.size) note.clears = standing.size
+        const cost = roomCost(site, tool.room, area)
+        // (a first corner inside a room of the same kind extends that room, so built ground is only wrong once the box is drawn)
+        if (anchor && !good.length) note.error = 'That land is already built on'
+        else if (cost > budget) note.error = `Not enough cash: ${anchor ? 'this room costs' : 'a square metre costs'} ${money(cost)}`
+      } else if (anchor && !good.length) note.error = tool.type === 'clear' ? 'There are no rooms there to knock down' : 'Ground can only be laid on open land'
+      // refused: the whole box is drawn in the warning colour
+      if (note.error) return { good: [] as [number, number][], bad: all, curve, area, note }
+      return { good, bad, curve, area, note }
     }
     if (tool.type === 'item') {
       const def = ITEMS[site.kind][tool.kind]
       if (!def) return null
       // one where the pointer is, or a row from where the button went down
-      const spots = (drag ? rowSpots(def, drag.x, drag.y, hover.x, hover.y, tool.rot) : ([[hover.x, hover.y]] as [number, number][])).map(([x, y]) => ({ x, y, ok: !canPlace(site, tool.kind, x, y, tool.rot) }))
+      // as many as the money covers, in the order they would be laid; the rest are shown as refused
+      const can = def.cost > 0 ? Math.floor(budget / def.cost) : Infinity
+      let fits = 0
+      let poor = 0
+      const spots = (drag ? rowSpots(def, drag.x, drag.y, hover.x, hover.y, tool.rot) : ([[hover.x, hover.y]] as [number, number][])).map(([x, y]) => {
+        const free = !canPlace(site, tool.kind, x, y, tool.rot)
+        const ok = free && fits < can
+        if (ok) fits++
+        else if (free) poor++
+        return { x, y, ok }
+      })
       const good = spots.filter((s) => s.ok).flatMap((s) => tilesOf(def, s.x, s.y, tool.rot))
       const bad = spots.filter((s) => !s.ok).flatMap((s) => tilesOf(def, s.x, s.y, tool.rot).filter(([x, y]) => inPlot(site, x, y)))
       const count = spots.filter((s) => s.ok).length
-      return { good, bad, spots, run: { tool: 'item' as const, count, blocked: spots.length - count, cost: count * def.cost } }
+      return { good, bad, spots, run: { tool: 'item' as const, count, blocked: spots.length - count, cost: count * def.cost, poor } }
     }
     if (tool.type === 'remove') {
       const items = drag ? sellRun(drag.x, drag.y, hover.x, hover.y) : sellRun(hover.x, hover.y, hover.x, hover.y)
@@ -1209,11 +1317,11 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
     }
     return null
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hover?.x, hover?.y, hover?.edge.x, hover?.edge.y, hover?.edge.side, hover?.edge.bay, hover?.edge.curve, anchor, drag, tool, site, site.rev, areaTool, shape, filling, optsKey])
+  }, [hover?.x, hover?.y, hover?.edge.x, hover?.edge.y, hover?.edge.side, hover?.edge.bay, hover?.edge.curve, anchor, drag, tool, site, site.rev, areaTool, shape, filling, optsKey, budget])
 
   // ---- a tool being dragged: say what it would do, and do it when the button comes up
   const runInfo = drag && preview && 'run' in preview && preview.run ? preview.run : null
-  const runKey = runInfo ? `${runInfo.tool}|${runInfo.count}|${runInfo.blocked}|${runInfo.cost}|${runInfo.kept ?? 0}|${runInfo.short ?? 0}` : ''
+  const runKey = runInfo ? `${runInfo.tool}|${runInfo.count}|${runInfo.blocked}|${runInfo.cost}|${runInfo.kept ?? 0}|${runInfo.short ?? 0}|${runInfo.poor ?? 0}` : ''
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => onRun?.(runInfo), [runKey, onRun])
   const finish = useRef<() => void>(() => {})
@@ -1243,7 +1351,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
 
   const previewCount = areaTool && (anchor || filling) && preview ? ('area' in preview && preview.area !== undefined ? preview.area : preview.good.length) : 0
   const areaNote = areaTool && preview && 'note' in preview ? preview.note : undefined
-  const noteKey = areaNote ? `${areaNote.filled ? 1 : 0}|${areaNote.error ?? ''}|${areaNote.yard ?? 0}|${areaNote.rim ?? 0}` : ''
+  const noteKey = areaNote ? `${areaNote.filled ? 1 : 0}|${areaNote.error ?? ''}|${areaNote.yard ?? 0}|${areaNote.rim ?? 0}|${areaNote.anchored ? 1 : 0}|${areaNote.clears ?? 0}` : ''
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => onPreview?.(previewCount, areaNote), [previewCount, noteKey, onPreview])
 
@@ -1294,7 +1402,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
         <div className="pointer-events-none -translate-y-full whitespace-nowrap border border-accent bg-panel/95 px-2 py-[3px] text-center">
           <div className="num text-[11px] text-fg">
             {runInfo.count} x {runInfo.tool === 'remove' ? '+' : ''}
-            {fmtMoney(runInfo.cost)}
+            {money(runInfo.cost)}
           </div>
           {runInfo.blocked > 0 && <div className="text-[11px] text-neg">{runInfo.blocked} cannot go</div>}
         </div>
@@ -1312,7 +1420,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
     const hour = hourOf(campus.t)
     const here = meetingTables.map((t, i) => ({ t, i })).filter(({ t }) => gridAt(site, t.x, t.y) === roomN)
     if (!here.length) return { title: 'Meeting room', line: 'No table yet', tone: 'dim' }
-    if (!led.length) return { title: 'Meeting room', line: 'No teams with a lead', sub: 'Set up teams under Staff', tone: 'dim' }
+    if (!led.length) return { title: 'Meeting room', line: 'No teams with a lead', sub: 'Set up teams under Campus, Teams', tone: 'dim' }
     let next: { name: string; start: number } | null = null
     for (let k = 0; k < led.length; k++) {
       const slot = meetingSlot(k, meetingTables.length)
@@ -1340,17 +1448,17 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
       }
       case 'media':
         if (!o.campaigns.length) return { title: 'Campaigns', line: 'Nothing running', sub: 'Click to plan one', tone: 'dim' }
-        return { title: `Campaigns running: ${o.campaigns.length}`, line: o.campaigns[k % o.campaigns.length].channel, rows: o.campaigns.slice(0, 2).map((c) => `${c.target}  ${fmtMoney(c.monthly)}/mo`), tone: 'accent' }
+        return { title: `Campaigns running: ${o.campaigns.length}`, line: o.campaigns[k % o.campaigns.length].channel, rows: o.campaigns.slice(0, 2).map((c) => `${c.target}  ${money(c.monthly)}/mo`), tone: 'accent' }
       case 'support': {
         const s = o.support
-        return { title: 'Support lines', line: `${Math.round(s.tickets).toLocaleString()} tickets a day`, bar: Math.min(1, s.load), sub: s.load >= 1 ? `Overloaded: the team can answer ${Math.round(s.capacity).toLocaleString()}` : `The team can answer ${Math.round(s.capacity).toLocaleString()}`, tone: s.load >= 1 ? 'neg' : s.load >= 0.75 ? 'warn' : 'pos' }
+        return { title: 'Support lines', line: `${num(s.tickets)} tickets a day`, bar: Math.min(1, s.load), sub: s.load >= 1 ? `Overloaded: the team can answer ${num(s.capacity)}` : `The team can answer ${num(s.capacity)}`, tone: s.load >= 1 ? 'neg' : s.load >= 0.75 ? 'warn' : 'pos' }
       }
       case 'server':
       case 'soft': {
         const os = o.os
         if (os.project) return { title: os.own ? `${os.name} ${os.version + 1}` : `${os.name} 1`, line: 'Next version in the works', bar: os.project.progress, sub: `${os.project.daysLeft} days to go`, tone: 'accent' }
-        if (!os.own) return { title: 'Software', line: 'Running stock software', sub: 'Start your own system under Labs', tone: 'dim' }
-        return { title: `${os.name} ${os.version}`, line: os.quality >= os.industry ? 'Ahead of the industry' : 'Behind the industry', sub: os.services > 0 ? `Services earn ${fmtMoney(os.services)} a month` : `Quality ${Math.round(os.quality)} against ${Math.round(os.industry)}`, tone: os.quality >= os.industry ? 'pos' : 'warn' }
+        if (!os.own) return { title: 'Software', line: 'Running stock software', sub: 'Start your own system under Research, Labs', tone: 'dim' }
+        return { title: `${os.name} ${os.version}`, line: os.quality >= os.industry ? 'Ahead of the industry' : 'Behind the industry', sub: os.services > 0 ? `Services earn ${money(os.services)} a month` : `Quality ${Math.round(os.quality)} against ${Math.round(os.industry)}`, tone: os.quality >= os.industry ? 'pos' : 'warn' }
       }
       case 'meeting':
         return meetingText(roomN)
@@ -1433,7 +1541,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
       const open = f.orders.length
       for (const item of site.items) {
         if (item.kind === 'dock_out' || item.kind === 'dock_in') out.push(itemTarget(site, item, 'orders', item.kind === 'dock_out' ? 'Shipping dock' : 'Receiving dock', open ? `${open} production ${open === 1 ? 'order' : 'orders'} open` : 'No orders'))
-        else if (item.kind === 'test') out.push(itemTarget(site, item, 'quality', 'Test station', f.line?.running ? `${(f.line.defectRate * 100).toFixed(1)}% of units ship faulty` : 'Line not running'))
+        else if (item.kind === 'test') out.push(itemTarget(site, item, 'quality', 'Test station', f.line?.running ? `${pct(f.line.defectRate)} of units ship faulty` : 'Line not running'))
       }
     } else if (site.kind === 'venue' && life?.venue) {
       const v = life.venue
@@ -1481,6 +1589,67 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
   useEffect(() => {
     if (tool) setOpen(null)
   }, [tool])
+  // a room's card goes when the room is no longer the one picked (another was, or it was knocked down)
+  useEffect(() => {
+    setOpen((cur) => (cur?.kind === 'room' && cur.id !== String(selectedRoom ?? 0) ? null : cur))
+  }, [selectedRoom])
+
+  // ---- plates: what is going on, said over the place itself
+  const plates = useMemo(() => {
+    const out: Plate[] = []
+    if (!lively || mode === 'full') return out
+    const sign = (key: string, kind: Target['kind'], at: [number, number, number], rest: Pick<Plate, 'text' | 'figure' | 'bar' | 'tone' | 'title'>) => out.push({ key, at, target: { key: `plate:${key}`, kind, label: rest.text, box: [0, 0, 0, 0, 0, 0], anchor: at }, ...rest })
+    /** The middle of a set of things, in the world. */
+    const middle = (pts: [number, number][], y: number): [number, number, number] => [pts.reduce((a, p) => a + p[0], 0) / pts.length - w / 2, y, pts.reduce((a, p) => a + p[1], 0) / pts.length - h / 2]
+    const itemMid = (items: SiteItem[]) => items.map((it): [number, number] => [place(it)[0] + w / 2, place(it)[2] + h / 2])
+    if (site.kind === 'office' && office) {
+      const lines = researchOn(office, research)
+      site.rooms
+        .filter((r) => r.type === 'lab')
+        .slice(0, 6)
+        .forEach((r, k) => {
+          const tiles: [number, number][] = []
+          for (let i = 0; i < site.grid.length; i++) if (site.grid[i] === r.n) tiles.push([(i % w) + 0.5, Math.floor(i / w) + 0.5])
+          if (!tiles.length) return
+          const l = lines.length ? lines[k % lines.length] : undefined
+          const stalled = !!l && office.budget <= 0
+          sign(`lab:${r.n}`, 'research', middle(tiles, cut ? 2.2 : STOREY + 0.6), {
+            text: l ? l.name : 'No research running',
+            figure: l ? `${Math.round(l.progress * 100)}%` : undefined,
+            bar: l?.progress,
+            tone: !l ? 'dim' : stalled ? 'warn' : 'pos',
+            title: !l ? 'Nothing is being researched in this lab. Click to choose a project.' : stalled ? `${l.name}: there is no research budget, so it is not moving. Click to change that.` : `Being researched here: ${l.name}${l.daysLeft ? `, about ${num(l.daysLeft)} days left` : ''}. Click for the research controls.`,
+          })
+        })
+    } else if (site.kind === 'factory' && life?.factory) {
+      const f = life.factory
+      const machines = site.items.filter((it) => (f.line?.linked.size ? f.line.linked.has(it.id) : !!ITEMS.factory[it.kind]?.stage))
+      if (machines.length) {
+        const queue = f.orders.filter((o) => o.mode === 'factory' && o.done < o.quantity)
+        const o = queue[0]
+        const share = o ? o.done / Math.max(1, o.quantity) : 0
+        sign('line', 'orders', middle(itemMid(machines), cut ? 3 : STOREY + 0.8), {
+          text: o ? `${o.product}${queue.length > 1 ? `, ${queue.length - 1} more queued` : ''}` : f.line?.running ? 'No order on the line' : 'The line is not running',
+          figure: o ? `${Math.round(share * 100)}%` : undefined,
+          bar: o ? share : undefined,
+          tone: !f.line?.running ? 'warn' : o ? 'accent' : 'dim',
+          title: o ? `On the line: ${o.product}, ${num(o.done)} of ${num(o.quantity)} built. Click for the orders.` : (f.line?.problem ?? (f.line?.running ? 'The line is ready and has nothing to build. Click for the orders.' : 'The line is not running.')),
+        })
+      }
+    } else if (site.kind === 'store' && life?.store) {
+      const st = life.store
+      const tills = site.items.filter((it) => it.kind === 'counter')
+      const at = tills.length ? middle(itemMid(tills), cut ? 2.2 : STOREY + 0.6) : ([0, cut ? 2.2 : STOREY + 0.6, 0] as [number, number, number])
+      sign('tills', 'takings', at, {
+        text: !st.open ? 'Closed' : month ? (month.partial ? 'This month, projected' : 'Profit this month') : 'Sold this month',
+        figure: !st.open ? undefined : month ? moneyDelta(month.profit) : num(st.monthUnits),
+        tone: !st.open ? 'warn' : month ? (month.profit < 0 ? 'neg' : 'pos') : 'accent',
+        title: `${st.name}: ${num(st.visitors)} visitors a day, ${num(st.perDay)} sold a day. Click for the takings.`,
+      })
+    }
+    return out
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [site, site.rev, life, lively, mode, cut, month?.profit, month?.partial, research])
   useEffect(() => {
     document.body.style.cursor = hot && !tool ? 'pointer' : ''
     return () => {
@@ -1573,14 +1742,38 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
               setAnchor(null)
             }
           } else {
-            if (open) setOpen(null)
-            onTile?.(t.x, t.y, itemAt(site, t.x, t.y))
+            // the room that was clicked gets its card right there, beside the pointer
+            const n = gridAt(site, t.x, t.y)
+            const room = onTile?.(t.x, t.y, itemAt(site, t.x, t.y)) && n ? roomOf(site, n) : undefined
+            setOpen(room ? { key: `room:${n}`, kind: 'room', id: String(n), label: ROOMS[site.kind][room.type]?.name ?? 'Room', box: [0, 0, 0, 0, 0, 0], anchor: [t.fx - w / 2, 0.2, t.fy - h / 2] } : null)
           }
         }}
       >
         <planeGeometry args={[w, h]} />
         <meshBasicMaterial />
       </mesh>
+
+      {/* the land beyond the plot, while a tool is in hand: a click there is answered, not swallowed */}
+      {tool && (
+        <mesh
+          visible={false}
+          rotation-x={-Math.PI / 2}
+          position={[0, 0.002, 0]}
+          onPointerMove={(e) => {
+            const out = Math.abs(e.point.x) > w / 2 || Math.abs(e.point.z) > h / 2
+            if (out !== off) setOff(out)
+          }}
+          onPointerOut={() => off && setOff(false)}
+          onClick={(e) => {
+            if (e.delta > 5 || (Math.abs(e.point.x) <= w / 2 && Math.abs(e.point.z) <= h / 2)) return
+            onOff?.()
+          }}
+        >
+          <planeGeometry args={[w + span * 8, h + span * 8]} />
+          <meshBasicMaterial />
+        </mesh>
+      )}
+      {tool && <PlotEdge w={w} h={h} color={off ? neg : accent} />}
 
       {chunks.map((chunk) => {
         const glow = lit.current.get(chunk.key) ?? M.glow
@@ -1663,6 +1856,24 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
           <Sized>{card(open, () => setOpen(null))}</Sized>
         </Html>
       )}
+      {!tool &&
+        plates.map((p) =>
+          p.target.key === open?.key ? null : (
+            <Html key={p.key} position={p.at} center zIndexRange={[19, 10]}>
+              <button type="button" title={p.title} onClick={() => setOpen(p.target)} onPointerDown={(e) => e.stopPropagation()} className="relative block max-w-[220px] cursor-pointer border border-line2 bg-panel/95 px-2 py-[3px] text-left text-[11px] leading-4 hover:border-fg">
+                <span className="flex items-baseline gap-2 whitespace-nowrap">
+                  <span className={`min-w-0 truncate ${p.figure ? 'text-fg' : PLATE_TEXT[p.tone]}`}>{p.text}</span>
+                  {p.figure && <span className={`num shrink-0 font-semibold ${PLATE_TEXT[p.tone]}`}>{p.figure}</span>}
+                </span>
+                {p.bar !== undefined && (
+                  <span className="absolute inset-x-0 bottom-0 block h-[2px] bg-line">
+                    <span className={`block h-full ${PLATE_TONE[p.tone]}`} style={{ width: `${Math.max(0, Math.min(1, p.bar)) * 100}%` }} />
+                  </span>
+                )}
+              </button>
+            </Html>
+          ),
+        )}
 
       {site.kind === 'store' && !crowdOn && <Shoppers spots={shopperSpots} count={Math.round(busy * shopperSpots.length)} />}
 
@@ -1686,6 +1897,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
           <N8AO halfRes aoRadius={0.8} distanceFalloff={1} intensity={mood === 'night' ? 1.2 : 2} quality="medium" />
         </EffectComposer>
       )}
+      <Drawn on={onDrawn} />
       {!autoRotate && <CameraKeys span={span} home={home} aim={aim} />}
       {autoRotate && <AutoTurn speed={3} />}
       <CameraFence span={span} top={height + 6} />

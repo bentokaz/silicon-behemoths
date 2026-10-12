@@ -5,7 +5,7 @@
 import { ITEMS } from '../../sim/sites'
 import type { Site, SiteItem } from '../../sim/types'
 
-export type TargetKind = 'research' | 'product' | 'campaign' | 'applicants' | 'os' | 'team' | 'support' | 'orders' | 'quality' | 'takings' | 'person' | 'venue'
+export type TargetKind = 'research' | 'product' | 'campaign' | 'applicants' | 'os' | 'team' | 'support' | 'orders' | 'quality' | 'takings' | 'person' | 'venue' | 'room'
 
 export interface Target {
   key: string
@@ -65,9 +65,10 @@ export function rayBox(ox: number, oy: number, oz: number, dx: number, dy: numbe
  * screen: 'above' centres it over a point, 'beside' sets it to the right of
  * the point (or to the left when there is no room on the right). Either way
  * it is then held inside the view on all four sides, clear of the bars along
- * the top and bottom. Returns the top-left corner in pixels.
+ * the top and bottom, and of whatever panels take `left` and `right` pixels
+ * of the sides. Returns the top-left corner in pixels.
  */
-export function placeBeside(px: number, py: number, w: number, h: number, viewW: number, viewH: number, how: 'above' | 'beside', edge = 8, top = 50, bottom = 46): [number, number] {
+export function placeBeside(px: number, py: number, w: number, h: number, viewW: number, viewH: number, how: 'above' | 'beside', edge = 8, top = 50, bottom = 46, left = edge, right = edge): [number, number] {
   let x: number
   let y: number
   if (how === 'above') {
@@ -77,10 +78,11 @@ export function placeBeside(px: number, py: number, w: number, h: number, viewW:
     if (y < top && py + 18 + h <= viewH - bottom) y = py + 18
   } else {
     x = px + 14
-    if (x + w > viewW - edge && px - 14 - w >= edge) x = px - 14 - w
+    if (x + w > viewW - right && px - 14 - w >= left) x = px - 14 - w
     y = py - 30
   }
-  const maxX = Math.max(edge, viewW - w - edge)
+  const lo = how === 'beside' ? left : edge
+  const maxX = Math.max(lo, viewW - w - (how === 'beside' ? right : edge))
   const maxY = Math.max(top, viewH - h - bottom)
-  return [Math.max(edge, Math.min(maxX, x)), Math.max(top, Math.min(maxY, y))]
+  return [Math.max(lo, Math.min(maxX, x)), Math.max(top, Math.min(maxY, y))]
 }

@@ -3,6 +3,7 @@ import { installUiSounds } from './audio/sfx'
 import { MainMenu, NewGame } from './components/Menu'
 import { FeedbackHost } from './components/Feedback'
 import { MenuNote } from './components/MenuNote'
+import { Tips } from './components/Tips'
 import { CrashGuard, SizeNotice } from './components/Safety'
 import { useStore } from './store/game'
 
@@ -32,6 +33,7 @@ export default function App() {
           <Suspense fallback={<Loading />}>{screen === 'game' && hasGame ? <Shell /> : screen === 'new' ? <NewGame /> : <MainMenu />}</Suspense>
         </CrashGuard>
         <FeedbackHost />
+        <Tips />
         {/* outside a game there is no strip: what the menu has to say shows at the bottom of it */}
         {!(screen === 'game' && hasGame) && <MenuNote />}
       </div>

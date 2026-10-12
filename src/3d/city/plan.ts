@@ -1,5 +1,6 @@
 // The city view's map: where everything stands, and what each place has to
 // say for itself. Worked out from the game state; nothing here draws.
+import { int, money, num, pct } from '../../components/format'
 import { CHANNELS } from '../../sim/growth'
 import { factoryLine, orderLeft } from '../../sim/ops'
 import { type CapId, has, needText } from '../../sim/progress'
@@ -7,7 +8,7 @@ import { REGIONS, type RegionDef, homeOf, homeRegion } from '../../sim/regions'
 import { SITE_TIERS, sealedRooms, storeStats, venueStats } from '../../sim/sites'
 import { staffEffects } from '../../sim/staff'
 import { rivalValue } from '../../sim/stock'
-import type { Campaign, Company, GameState, Site, Store } from '../../sim/types'
+import { type Campaign, type Company, type GameState, SUPPLY_CATS, type Site, type Store, type SupplyCat } from '../../sim/types'
 
 export type PlaceKind = 'office' | 'factory' | 'venue' | 'store' | 'rival' | 'research' | 'exchange' | 'port' | 'board' | 'region'
 
@@ -260,6 +261,62 @@ export const BOARD_SLOTS: [number, number][] = [-85, 111, -119, 145, -153, -45, 
 /** The pier ships leave from, and its seaward end. */
 export const PIER = { x: 120, z0: 122, z1: 172 }
 
+// ---------------------------------------------------------------- the port
+
+/** The company's warehouse at the port: its name is on the front. */
+export const SHED = { x: LOTS.port.x - 66, z: LOTS.port.z - 4, w: 60, d: 24, h: 12 }
+/** The two gantry cranes on the quay: where each stands, and the ground its legs take. */
+export const CRANES: Lot[] = [LOTS.port.x + 66, LOTS.port.x + 92].map((x) => ({ x, z: LOTS.port.z + 19, w: 13, d: 11 }))
+
+/**
+ * The yard east of the warehouse is marked out in bays, one to each device on
+ * sale: what is in stock stands in its bay as a stack of containers, and a
+ * device that has sold out is an empty bay marked in the warning colour.
+ */
+export const BAYS = { cols: 8, rows: 3, w: 7, d: 6.4, pitchX: 8.2, pitchZ: 8.6, x0: LOTS.port.x - 22, z0: LOTS.port.z - 17 }
+export const BAY_COUNT = BAYS.cols * BAYS.rows
+/** The middle of a bay. They fill from the row nearest the street, west to east. */
+export const bayAt = (i: number): [number, number] => [BAYS.x0 + (i % BAYS.cols) * BAYS.pitchX, BAYS.z0 + Math.floor(i / BAYS.cols) * BAYS.pitchZ]
+/** The least stock that fills each level of a bay: one container, two, and so on up to six. */
+export const BAY_LEVELS = [1, 1000, 5000, 20000, 60000, 200000]
+/** How many containers stand in a device's bay for a given stock: none when it has sold out, six at most. */
+export const bayLevel = (stock: number) => BAY_LEVELS.filter((least) => stock >= least).length
+
+export interface Bay {
+  /** The device whose bay it is. */
+  id: string
+  name: string
+  x: number
+  z: number
+  /** Containers standing in it, 0 to 6. */
+  level: number
+}
+
+/** The company's devices on sale, each in its bay, in the order they were launched. With more devices than bays, the newest have one. */
+export function portBays(g: GameState): Bay[] {
+  const selling = g.products.filter((p) => p.companyId === 'player' && p.status === 'sale')
+  return selling.slice(-BAY_COUNT).map((p, i) => {
+    const [x, z] = bayAt(i)
+    return { id: p.id, name: p.name, x, z, level: bayLevel(p.stock) }
+  })
+}
+
+/** The ground a waiting lorry takes. */
+export const TRUCK = { w: 2.6, d: 10.4 }
+/** Where lorries wait in front of the warehouse doors, one to each production order that is still open: the middle of each, nose to the south. */
+export const TRUCK_SLOTS: [number, number][] = Array.from({ length: 12 }, (_, i): [number, number] => [SHED.x - SHED.w / 2 + 3.2 + i * 4.9, SHED.z + SHED.d / 2 + 10.2])
+/** How many lorries are waiting: one to an open order, as many as there is room for. */
+export const portTrucks = (g: GameState) => Math.min(TRUCK_SLOTS.length, g.orders.length)
+
+/**
+ * The quay's inbound row: one slot to each kind of component, by the cranes.
+ * While a kind is short its slot stands empty, marked in the warning colour.
+ */
+export const QUAY_SLOT = { w: 8.6, d: 3.4 }
+export const QUAY_SLOTS: [number, number][] = SUPPLY_CATS.map((_, i): [number, number] => [LOTS.port.x + 50 + i * 10.6, LOTS.port.z + 6])
+/** The kinds of component that are short today. */
+export const shortages = (g: GameState): SupplyCat[] => SUPPLY_CATS.filter((cat) => (g.supply?.shockDays?.[cat] ?? 0) > 0)
+
 // ---------------------------------------------------------------- districts overseas
 
 export const ISLAND = { w: 160, d: 112 }
@@ -326,9 +383,10 @@ export function districts(g: GameState): District[] {
 
 // ---------------------------------------------------------------- places
 
-const short = (v: number) => (v >= 1e9 ? `${(v / 1e9).toFixed(1)}B` : v >= 1e6 ? `${(v / 1e6).toFixed(v >= 1e7 ? 0 : 1)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(v >= 1e4 ? 0 : 1)}K` : `${Math.round(v)}`)
-const cash = (v: number) => `$${short(v)}`
-const plural = (n: number, one: string, many = one + 's') => `${n} ${n === 1 ? one : many}`
+// the one number format, as everywhere else
+const short = num
+const cash = money
+const plural = (n: number, one: string, many = one + 's') => `${int(n)} ${n === 1 ? one : many}`
 
 /** Days since the builders moved onto a plot, read from the news; undefined once they have gone. */
 function buildingDays(g: GameState, test: RegExp): number | undefined {
@@ -484,7 +542,7 @@ export function places(g: GameState): Place[] {
     id: 'exchange',
     kind: 'exchange',
     name: 'Stock exchange',
-    lines: g.stock.listed ? [`$${g.stock.price.toFixed(2)} a share`, `${move >= 0 ? 'Up' : 'Down'} ${Math.abs(move).toFixed(1)}% this month`] : ['Not listed yet', `Company valued at ${cash(g.stock.price * g.stock.shares)}`],
+    lines: g.stock.listed ? [`${money(g.stock.price)} a share`, `${move >= 0 ? 'Up' : 'Down'} ${pct(Math.abs(move) / 100)} this month`] : ['Not listed yet', `Company valued at ${cash(g.stock.price * g.stock.shares)}`],
     ...LOTS.exchange,
     h: 20,
     region: home.region.id,
@@ -505,7 +563,7 @@ export function places(g: GameState): Place[] {
       id: `region:${d.region.id}`,
       kind: 'region',
       name: d.region.name,
-      lines: d.open ? [`${short(st.monthUnits)} sold this month`, `${Math.round(st.awareness * 100)}% know your name, ${plural(stores, 'store')}`] : ['You do not sell here yet', `Setting up costs ${cash(d.region.entry)}`],
+      lines: d.open ? [`${short(st.monthUnits)} sold this month`, `${pct(st.awareness, 0)} know your name, ${plural(stores, 'store')}`] : ['You do not sell here yet', `Setting up costs ${cash(d.region.entry)}`],
       x: d.x,
       z: d.z,
       w: ISLAND.w,

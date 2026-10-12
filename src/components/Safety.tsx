@@ -49,22 +49,23 @@ export class CrashGuard extends Component<{ children: ReactNode }, CrashState> {
     const detail = `${error.name}: ${error.message}\n${(error.stack ?? '').split('\n').slice(1, 6).join('\n')}`
     return (
       <div className="flex h-full items-center justify-center bg-carbon p-6">
-        <div className="w-[560px] max-w-full border border-neg bg-panel">
-          <div className="flex items-center gap-2 border-b border-line px-4 py-3 text-[12px] font-semibold text-neg">
-            <Icon name="alert" size={15} />
-            Something broke
+        <div role="alert" className="flex max-h-full w-[560px] max-w-full flex-col border border-neg bg-panel">
+          <div className="flex h-9 shrink-0 items-center gap-2 border-b border-line px-4">
+            <Icon name="alert" size={14} className="shrink-0 text-neg" />
+            <span className="t-title">Something broke</span>
           </div>
-          <div className="space-y-3 p-4 text-[12px] leading-relaxed text-dim">
+          <div className="min-h-0 space-y-3 overflow-y-auto p-4 text-xs leading-relaxed text-dim">
             <p className="text-fg">A screen ran into an error and had to stop. {saved === 'yes' ? `Your company was saved a moment ago, to a slot called "${CRASH_SLOT}". Your other saves and the autosave are untouched.` : saved === 'failed' ? 'The game could not write a save just now; your earlier saves and the autosave are still there.' : 'Your saves are untouched.'}</p>
             <p>
-              Reload the page, or go to the main menu, and load {saved === 'yes' ? `"${CRASH_SLOT}"` : 'your last save'} from the Continue list to carry on.{saved === 'yes' ? ' If it breaks again in the same place, load the Autosave instead.' : ''} Either way, please report it with the lines below.
+              Reload the page, then choose Load game on the main menu and load {saved === 'yes' ? `"${CRASH_SLOT}"` : 'your last save'} to carry on.{saved === 'yes' ? ' If it breaks again in the same place, load the Autosave instead.' : ''} Please report it with the lines below.
             </p>
             <pre className="num max-h-32 select-text overflow-auto whitespace-pre-wrap break-words border border-line bg-carbon p-2 text-[11px] leading-snug text-dim">{detail}</pre>
             <div className="flex flex-wrap gap-2">
-              <Btn tone="primary" icon="refresh" onClick={() => window.location.reload()}>
+              <Btn tone="primary" large icon="refresh" autoFocus onClick={() => window.location.reload()}>
                 Reload
               </Btn>
               <Btn
+                large
                 icon={copied === 'yes' ? 'check' : 'doc'}
                 onClick={() => {
                   // the clipboard can be refused (no permission, an embedded frame): say so, the text is on screen to select
@@ -79,8 +80,9 @@ export class CrashGuard extends Component<{ children: ReactNode }, CrashState> {
                 {copied === 'yes' ? 'Copied' : copied === 'failed' ? 'Could not copy: select the text above' : 'Copy the details'}
               </Btn>
               <Btn
+                large
                 icon="quit"
-                title="Leave this company and go back to the main menu without reloading. The autosave is in the Continue list."
+                title="Leave this company and go back to the main menu without reloading. Your saves are under Load game."
                 onClick={() => {
                   useStore.getState().quit()
                   this.setState({ error: null, saved: 'no', copied: 'no' })
@@ -88,7 +90,7 @@ export class CrashGuard extends Component<{ children: ReactNode }, CrashState> {
               >
                 Main menu
               </Btn>
-              <Btn icon="review" onClick={() => useFeedback.getState().open('bug')}>
+              <Btn large icon="review" onClick={() => useFeedback.getState().open('bug')}>
                 Report it
               </Btn>
             </div>
@@ -120,30 +122,29 @@ export function SizeNotice() {
   const small = size.w < MIN_WIDTH || size.h < MIN_HEIGHT
   if (hidden || (!small && !touchOnly)) return null
   return (
-    <div role="status" className="flex shrink-0 items-center gap-3 border-b border-warn bg-panel px-3 py-2 text-[11px] text-warn">
-      <Icon name="alert" size={14} className="shrink-0" />
+    <div role="status" className="flex shrink-0 items-center gap-3 border-b border-warn bg-panel px-3 py-1 text-xs text-fg">
+      <Icon name="alert" size={14} className="shrink-0 text-warn" />
       <span className="min-w-0 flex-1">
-        {touchOnly ? 'This game is made for a computer with a mouse and keyboard. It will not play well on a phone or tablet.' : `This window is ${size.w} x ${size.h}. The game is laid out for ${MIN_WIDTH} x ${MIN_HEIGHT} or larger: make the window bigger, go fullscreen, or zoom the page out.`}
+        {touchOnly ? 'This game is made for a computer with a mouse and keyboard. It will not play well on a phone or tablet.' : `This window is ${size.w} by ${size.h}. The game needs ${MIN_WIDTH} by ${MIN_HEIGHT} or more: make the window bigger, go fullscreen, or zoom the page out.`}
       </span>
-      <button onClick={() => setHidden(true)} className="shrink-0 border border-warn px-2 py-[2px] hover:bg-warn/10">
+      <Btn small className="shrink-0" title="Hide this notice until the window changes size again" onClick={() => setHidden(true)}>
         Hide
-      </button>
+      </Btn>
     </div>
   )
 }
 
 /** Where to send bug reports and ideas. */
 export function FeedbackLinks({ className = '' }: { className?: string }) {
-  const link = 'inline-flex items-center gap-[6px] border border-line2 bg-raise px-2 py-[5px] text-[11px] text-dim hover:border-accent hover:text-fg'
+  // quiet links beside the one button: they leave the game for another site
+  const link = 'inline-flex h-7 items-center px-1 text-xs text-dim underline hover:text-fg'
   return (
-    <div className={`flex flex-wrap items-center gap-2 ${className}`}>
-      <FeedbackButton small />
+    <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 ${className}`}>
+      <FeedbackButton />
       <a href={FEEDBACK_URL} target="_blank" rel="noreferrer" className={link}>
-        <Icon name="review" size={12} />
         itch.io comments
       </a>
       <a href={ISSUES_URL} target="_blank" rel="noreferrer" className={link}>
-        <Icon name="code" size={12} />
         GitHub issues
       </a>
     </div>

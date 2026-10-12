@@ -1,149 +1,132 @@
-// Operations: the factory floor, production orders and component supply.
-import { useState } from 'react'
-import { Line, LineChart, ReferenceLine, ResponsiveContainer, YAxis } from 'recharts'
+// Sites, Factory: the factory floor in 3D. One line of status floats over it
+// (what the line is making, output, quality, upkeep); the queue, the stages of
+// the line and the move to a bigger site sit behind that line. Production
+// orders live with the devices (Orders.tsx) and component supply with the
+// company's money (Supply.tsx): neither is about this building.
 import { sfx } from '../audio/sfx'
-import { SUPPLY_LABELS } from '../data/catalog'
-import { TYPES } from '../data/devices'
-import { autoLine, buildFactory, cancelOrder, fmtDate, lockSupply, roomCost, zoneable } from '../sim/game'
-import { CONTRACT, FACTORY_SAVING, LOCK_DAYS, LOCK_FEE, buildCost, factoryLine, marketPrice, orderLeft } from '../sim/ops'
-import { ITEMS, SITE_TIERS, starterLine, tierOf, upkeep } from '../sim/sites'
-import { SUPPLY_CATS } from '../sim/types'
+import { autoLine, buildFactory, roomCost, zoneable } from '../sim/game'
+import { CONTRACT, FACTORY_SAVING, factoryLine } from '../sim/ops'
+import { ITEMS, SITE_TIERS, starterLine, tierOf } from '../sim/sites'
 import { useGame, useStore } from '../store/game'
 import { SiteBuilder } from './SiteBuilder'
-import { Icon, type IconName, supplyIcon, typeIcon } from './icons'
-import { Btn, ConfirmBtn, ConfirmIconBtn, Empty, Fold, Kpi, Lead, Meter, Mini, Panel, Tabs, Tag, Th, money, num, pct, pressable, useKept } from './ui'
-import { Orders } from './Orders'
-import { Supply } from './Supply'
-
-type View = 'floor' | 'orders' | 'supply'
-
+import { aSite, factoryNow, factoryStatus } from './SitesFigures'
+import { BarRow, Detail, Fact, Note, Sec, SiteIntro } from './SitesParts'
+import { Btn, ConfirmBtn, Legend, Meter, money, num, pct } from './ui'
 
 export function FactoryScreen() {
   const g = useGame()
-  const { act, say } = useStore.getState()
-  const [view, setView] = useKept<View>('factory:view', () => (g.factory ? 'floor' : 'orders'))
+  const { act, say, go } = useStore.getState()
   const line = factoryLine(g)
   const next = SITE_TIERS.factory[g.factory ? g.factory.tier + 1 : 0]
-  const factoryOrders = g.orders.filter((o) => o.mode === 'factory')
-  const queued = factoryOrders.reduce((a, o) => a + orderLeft(o) * TYPES[g.products.find((p) => p.id === o.productId)?.type ?? 'phone'].capacity, 0)
   const build = () => {
     const err = act((s) => buildFactory(s))
     if (err) say(err, 'bad')
-    else (sfx.confirm(), setView('floor'))
+    else sfx.confirm()
   }
-  const plan = g.factory ? starterLine(g.factory) : null
-  const starterCost = plan && g.factory ? plan.items.reduce((a, p) => a + ITEMS.factory[p.kind].cost, 0) + roomCost(g.factory, 'hall', zoneable(g.factory, ...plan.hall, 'rect').length) : 0
+
+  if (!g.factory) {
+    return (
+      <SiteIntro
+        icon="factory"
+        title="A factory of your own"
+        facts={[
+          { label: 'Site', value: `${next.name}, ${next.w} x ${next.h} m` },
+          { label: 'Upkeep a month', value: <span className="num">{money(next.rent)}</span> },
+        ]}
+        action={
+          <ConfirmBtn tone="primary" large icon="build" className="w-full" confirm={`Pay ${money(next.cost)}?`} onClick={build}>
+            Build the factory for {money(next.cost)}
+          </ConfirmBtn>
+        }
+      >
+        A contract maker adds {pct(CONTRACT.premium - 1, 0)} to the cost of every unit and needs {CONTRACT.leadDays} days before the first one arrives. Your own line builds for {pct(1 - FACTORY_SAVING, 0)} under cost and starts the same day. The plot comes bare: you lay the line on it next.
+      </SiteIntro>
+    )
+  }
+
+  const now = factoryNow(g)
+  const plan = starterLine(g.factory)
+  const starterCost = plan ? plan.items.reduce((a, p) => a + ITEMS.factory[p.kind].cost, 0) + roomCost(g.factory, 'hall', zoneable(g.factory, ...plan.hall, 'rect').length) : 0
   const stages: [string, number][] = line ? [['Board assembly', line.caps.smt], ['Device assembly', line.caps.assembly], ['Packaging', line.caps.pack], ['Testing', line.caps.test]] : []
-  const stageIcon: Record<string, IconName> = { 'Board assembly': 'chip', 'Device assembly': 'build', Packaging: 'package', Testing: 'check' }
   const peak = Math.max(1, ...stages.map((s) => s[1]))
+  const down = now.state === 'stopped' || now.state === 'none'
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center justify-between border-b border-line bg-panel pr-2">
-        <Tabs value={view} onChange={setView} options={[{ value: 'floor', label: 'Factory floor', icon: 'factory' }, { value: 'orders', label: 'Production orders', icon: 'package', badge: g.orders.length }, { value: 'supply', label: 'Component supply', icon: 'truck', badge: SUPPLY_CATS.filter((c) => g.supply.shockDays[c] > 0).length || undefined }]} className="border-b-0" />
-        <span className="num text-[11px] text-faint">
-          contract maker +{pct(CONTRACT.premium - 1, 0)} / own factory -{pct(1 - FACTORY_SAVING, 0)} on unit cost
-        </span>
-      </div>
-      <div className="min-h-0 flex-1">
-        {view === 'orders' && (
-          <div className="h-full overflow-auto p-2">
-            <Panel bodyClass="overflow-auto">
-              <Orders />
-            </Panel>
-          </div>
-        )}
-        {view === 'supply' && (
-          <div className="h-full overflow-auto">
-            <Supply />
-          </div>
-        )}
-        {view === 'floor' &&
-          (!g.factory ? (
-            <div className="flex h-full items-center justify-center p-6">
-              <div className="w-[560px] border border-line bg-panel p-5">
-                <div className="flex items-center gap-3 text-base font-semibold text-fg">
-                  <Icon name="factory" size={20} className="text-accent" />
-                  You do not own a factory
-                </div>
-                <div className="mt-2 text-[12px] leading-relaxed text-dim">
-                  A contract manufacturer builds your devices for a {pct(CONTRACT.premium - 1, 0)} margin, after a {CONTRACT.leadDays}-day wait, with {pct(CONTRACT.defectRate)} arriving faulty. Your own factory builds at cost less {pct(1 - FACTORY_SAVING, 0)}, starts the same day, and ships fewer faults if you add test stations. You lay out the line yourself: docks, conveyors and machines.
-                </div>
-                <div className="mt-3 grid grid-cols-3 gap-1">
-                  <Mini label={next.name} icon="cash" value={money(next.cost, 1)} tone="text-fg" />
-                  <Mini label="Floor" icon="plot" value={`${next.w} x ${next.h} m`} />
-                  <Mini label="Upkeep / month" icon="receipt" value={money(next.rent, 1)} />
-                </div>
-                <ConfirmBtn tone="primary" confirm={`Pay ${money(next.cost, 1)}?`} icon="build" className="mt-4 h-10 w-full" onClick={build}>
-                  Build a {next.name.toLowerCase()} for {money(next.cost, 1)}
-                </ConfirmBtn>
+    <SiteBuilder
+      siteRef="factory"
+      site={g.factory}
+      busy={Math.min(1, g.products.filter((p) => p.companyId === 'player').reduce((a, p) => a + p.stock, 0) / 150e3)}
+      line={line}
+      producing={now.queue.length > 0}
+      status={factoryStatus(g)}
+      tools={
+        starterCost > 0 && !line?.running ? (
+          <ConfirmBtn
+            small
+            tone="default"
+            icon="build"
+            confirm={`Pay ${money(starterCost)}?`}
+            title="Zones a production hall and lays one short working line in it: docks, board assembly, device assembly, packaging and a test station"
+            onClick={() => {
+              const err = act((s) => autoLine(s))
+              if (err) say(err, 'bad')
+              else sfx.confirm()
+            }}
+          >
+            Lay a starter line for {money(starterCost)}
+          </ConfirmBtn>
+        ) : undefined
+      }
+    >
+     <Detail>
+      <Sec
+        title="On order"
+        count={now.queue.length}
+        right={
+          <Btn small tone="ghost" icon="arrowRight" title="Orders are placed, changed and cancelled under Devices, Mine" onClick={() => go({ tab: 'products' })}>
+            Devices
+          </Btn>
+        }
+      >
+        {now.queue.length === 0 ? (
+          <Note>{now.state === 'idle' ? now.why : 'Nothing is on order for the factory.'}</Note>
+        ) : (
+          <>
+            {now.state === 'stopped' && <Note tone="neg">{now.why}</Note>}
+            {now.queue.map((o, i) => (
+              <div key={o.id} className="flex h-6 items-center gap-2" title={`${num(o.done)} of ${num(o.quantity)} built${o.days !== null ? `, about ${o.days} ${o.days === 1 ? 'day' : 'days'} of the line left` : ''}`}>
+                <span className={`min-w-0 flex-1 truncate text-xs ${i === 0 && !down ? 'text-fg' : 'text-dim'}`}>{o.name}</span>
+                <Meter value={o.share} tone={down ? 'neg' : i === 0 ? 'accent' : 'dim'} className="!w-16 shrink-0" />
+                <span className="num w-10 shrink-0 text-right text-[11px] text-fg">{pct(o.share, 0)}</span>
               </div>
-            </div>
-          ) : (
-            <SiteBuilder siteRef="factory" site={g.factory} busy={Math.min(1, g.products.filter((p) => p.companyId === 'player').reduce((a, p) => a + p.stock, 0) / 150e3)} line={line} producing={factoryOrders.length > 0}>
-              <Fold title="Line" icon="factory" right={line?.running ? <Tag tone="pos" icon="check">ready</Tag> : <Tag tone="neg" icon="alert">down</Tag>} bodyClass="p-2">
-                {line?.running ? (
-                  <div className="grid grid-cols-2 gap-1">
-                    <Mini label="Output / day" icon="gauge" value={num(line.throughput)} tone="text-fg" />
-                    <Mini label="Faults" icon="alert" value={pct(line.defectRate)} tone={line.defectRate > 0.03 ? 'text-warn' : 'text-pos'} />
-                    <Mini label="Running cost / day" icon="receipt" value={money(line.runCost)} />
-                    <Mini label="Work queued" icon="hourglass" value={queued ? `${Math.ceil(queued / line.throughput)} days` : 'none'} />
-                  </div>
-                ) : (
-                  <div className="text-[11px] leading-snug text-warn">{line?.problem}</div>
-                )}
-                {stages.some((s) => s[1] > 0) && (
-                  <div className="mt-2">
-                    {stages.map(([name, cap]) => (
-                      <div key={name} className="flex items-center gap-2 py-[2px]">
-                        <span className="w-28 whitespace-nowrap text-[11px] text-dim">
-                          <Lead icon={stageIcon[name]} />
-                          {name}
-                        </span>
-                        <Meter value={cap} max={peak} tone={line?.running && cap === line.throughput && name !== 'Testing' ? 'warn' : 'accent'} />
-                        <span className="num w-10 text-right text-[11px] text-fg">{cap}</span>
-                      </div>
-                    ))}
-                    <div className="mt-1 text-[11px] leading-snug text-faint">Output is set by the slowest of the first three. Testing only lowers the fault rate.</div>
-                  </div>
-                )}
-                {starterCost > 0 && !line?.running && (
-                  <Btn
-                    small
-                    tone="primary"
-                    icon="build"
-                    className="mt-2 w-full"
-                    onClick={() => {
-                      const err = act((s) => autoLine(s))
-                      if (err) say(err, 'bad')
-                      else sfx.confirm()
-                    }}
-                  >
-                    Lay a starter line ({money(starterCost, 1)})
-                  </Btn>
-                )}
-              </Fold>
-              <Fold title="Factory" icon="campus" open={false} bodyClass="p-2">
-                <div className="grid grid-cols-2 gap-1">
-                  <Mini label="Size" icon="plot" value={tierOf(g.factory).name} tone="text-fg" />
-                  <Mini label="Upkeep / month" icon="receipt" value={money(upkeep(g.factory), 1)} />
-                </div>
-                {next ? (
-                  <ConfirmBtn small tone="default" confirm={`Pay ${money(next.cost, 1)}?`} icon="plot" className="mt-2 w-full" onClick={build}>
-                    Expand to {next.name.toLowerCase()} ({money(next.cost, 1)})
-                  </ConfirmBtn>
-                ) : (
-                  <div className="mt-2 text-[11px] text-dim">This is the largest factory.</div>
-                )}
-              </Fold>
-              <Fold title="How lines work" icon="info" open={false} bodyClass="p-2 text-[11px] leading-snug text-dim">
-                A line runs from a receiving dock to a shipping dock. Everything touching it, directly or through conveyors, is part of it. It needs board assembly, device assembly and packaging. Add more of the slowest stage to raise output, and test stations to cut faults.
-              </Fold>
-            </SiteBuilder>
-          ))}
-      </div>
-    </div>
+            ))}
+          </>
+        )}
+      </Sec>
+      <Sec title="Line">
+        {line?.running ? (
+          <>
+            {stages.map(([name, cap]) => (
+              <BarRow key={name} label={name} share={cap / peak} value={num(cap)} tone={cap === line.throughput && name !== 'Testing' ? 'warn' : 'accent'} title={name === 'Testing' ? 'Units a day the test stations can check. Testing never slows the line: it only lowers the share of faulty units.' : `Units a day this stage can handle`} />
+            ))}
+            <Legend className="mt-1" items={[{ label: 'Units a day', tone: 'accent' }, { label: 'Slowest stage: sets the output', tone: 'warn' }]} />
+            <Fact k="Running cost a day, at full output" v={money(line.runCost)} num />
+          </>
+        ) : (
+          <Note tone="warn">{line?.problem ?? 'There is no line yet.'} A line runs from a receiving dock to a shipping dock through board assembly, device assembly and packaging, joined directly or by conveyors.</Note>
+        )}
+      </Sec>
+      <Sec title="Site">
+        <Fact k="Size" v={`${tierOf(g.factory).name}, ${g.factory.w} x ${g.factory.h} m`} />
+        {next ? (
+          <ConfirmBtn small tone="default" icon="plot" className="mt-2 w-full" confirm={`Pay ${money(next.cost)}?`} title={`${next.blurb} ${next.w} x ${next.h} m, upkeep ${money(next.rent)} a month. Everything built moves across as it stands.`} onClick={build}>
+            Move to {aSite(next.name)} for {money(next.cost)}
+          </ConfirmBtn>
+        ) : (
+          <div className="mt-1 text-[11px] text-dim">This is the largest factory site.</div>
+        )}
+      </Sec>
+     </Detail>
+    </SiteBuilder>
   )
 }
-
-export { Kpi }

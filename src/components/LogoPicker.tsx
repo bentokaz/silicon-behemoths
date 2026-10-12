@@ -32,7 +32,7 @@ export function LogoPicker({ value, onChange }: { value?: string; onChange: (log
   const { say } = useStore.getState()
   return (
     <div className="flex items-center gap-2">
-      <div className="flex h-12 w-12 shrink-0 items-center justify-center border border-line2 bg-raise">{value ? <img src={value} alt="Company logo" className="h-full w-full object-contain" /> : <span className="label text-faint">none</span>}</div>
+      <div className="flex h-12 w-12 shrink-0 items-center justify-center border border-line2 bg-raise">{value ? <img src={value} alt="Company logo" className="h-full w-full object-contain" /> : <span className="text-[11px] text-faint">None</span>}</div>
       <input
         ref={input}
         type="file"
@@ -44,7 +44,7 @@ export function LogoPicker({ value, onChange }: { value?: string; onChange: (log
           if (file) readLogo(file).then(onChange, (err: Error) => say(err.message, 'bad'))
         }}
       />
-      <Btn small icon="export" onClick={() => input.current?.click()}>
+      <Btn small icon="export" title="Choose a PNG, JPEG, WebP or SVG image, 8 MB at most" onClick={() => input.current?.click()}>
         {value ? 'Replace' : 'Upload logo'}
       </Btn>
       {value && <ConfirmIconBtn icon="bin" title="Remove the logo" onClick={() => onChange(undefined)} />}

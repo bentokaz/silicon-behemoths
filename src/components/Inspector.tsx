@@ -1,23 +1,29 @@
-// The slide-over product inspector: 3D model, key numbers, and tabs for
-// details that are only shown when asked for.
-import { useEffect, useRef, useState } from 'react'
+// The product drawer: one device, at the right-hand edge. For a device of the
+// player's own it opens on what can be done about it (why it sells as it
+// does, stock with a reorder, the price); scores, specs and reviews are behind
+// tabs. A rival's device opens the same drawer without the controls.
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { DeviceView, type ViewName } from '../3d/DeviceView'
 import { deviceThumbnail } from '../3d/thumbnail'
 import { sfx } from '../audio/sfx'
 import { EXTRAS, LENSES, SUPPLY_LABELS, materialInfo, panelInfo, sensorInfo } from '../data/catalog'
 import { ANC, COOLERS, DRIVERS, GPUS, HINGES, INPUT_NAMES, MIC_ARRAYS, OPTICS, SPEAKERS, SPEAKER_DRIVERS, STRAPS, TYPES, headStrap, inputOptions, ioInfo, segmentInfo, standInfo, subLabel } from '../data/devices'
-import { RECALL_DEADLINE, RETAIL_CUT, companyOf, discontinue, fmtDate, orderProduction, player, recallProduct, setPrice } from '../sim/game'
-import { normalised, tierAverages } from '../sim/market'
-import { CONTRACT, buildCost, factoryLine, pendingUnits, supplyPrice } from '../sim/ops'
+import { RECALL_DEADLINE, companyOf, discontinue, fmtDate, monthLabel, player, productName, recallProduct } from '../sim/game'
+import { type Why, demandEstimate, productProfit, suggestReorder, whyLines } from '../sim/insight'
+import { normalised } from '../sim/market'
+import { supplyPrice } from '../sim/ops'
 import { VARIANTS } from '../sim/rivals'
 import { coverScreen, isCoverCam, isFlip } from '../sim/geometry'
 import { batteryLabel, chargeWatts, chipFor, foldedThickness, panelName } from '../sim/scoring'
-import { type DeviceDesign, type DeviceType, type GameState, type Product, type ProductionOrder, SUBS, SUPPLY_CATS } from '../sim/types'
-import { useGame, useStore } from '../store/game'
-import { Icon, type IconName, supplyIcon, typeIcon } from './icons'
+import { type DeviceDesign, type DeviceType, type GameState, type Product, type Review, SUBS, SUPPLY_CATS } from '../sim/types'
+import { freeFamily, useGame, useStore } from '../store/game'
+import { lastMonth, score, statusNote } from './DeviceLogic'
+import { PriceNote, applyPrice, quoteWords, reorder, showCompany } from './DeviceParts'
+import { Orders } from './Orders'
+import { Icon, type IconName, supplyIcon } from './icons'
 import { MAX_PRICE, MAX_RUN } from './format'
-import { Btn, ConfirmBtn, Drawer, Head, Lead, Meter, Mini, NumInput, Row, Tabs, Tag, chart, money, num, pct, reducedMotion } from './ui'
+import { Btn, ConfirmBtn, Drawer, IconBtn, Key, Legend, Meter, NumInput, Row, Swatch, Tabs, Tag, chart, money, moneyDelta, num, pct, price, reducedMotion, useLayer } from './ui'
 
 /** Where to look from when a device is opened up: at the side that comes off. */
 const TEAR_VIEW: Partial<Record<DeviceType, ViewName>> = { laptop: 'front', console: 'front', earbuds: 'front', headset: 'front', speaker: 'front' }
@@ -177,76 +183,319 @@ export const statusTone = (p: Product) => (p.status === 'sale' ? (p.stock <= 0 &
 export const statusIcon = (p: Product): IconName => (p.status === 'sale' ? (p.stock <= 0 && p.companyId === 'player' ? 'alert' : 'check') : p.status === 'dev' ? 'hourglass' : 'ban')
 export const statusText = (p: Product) => (p.status === 'sale' ? (p.stock <= 0 && p.companyId === 'player' ? 'Sold out' : 'On sale') : p.status === 'dev' ? `Dev ${p.devDaysLeft}d` : 'Ended')
 
-function ScoreBars({ product }: { product: Product }) {
-  const g = useGame()
-  const n = normalised(product.raw, g.day)
+// ---------------------------------------------------------------- the top of the drawer
+
+const WHY_TONE = { neg: 'text-neg', warn: 'text-warn', pos: 'text-pos', dim: 'text-dim' } as const
+const WHY_ICON: Record<Why['tone'], IconName> = { neg: 'alert', warn: 'alert', pos: 'check', dim: 'info' }
+
+/** Why the device sells the way it does: every reason, the most important first. */
+function WhyList({ lines, quiet }: { lines: Why[]; /** A rival's device: the reasons are told, but none of them asks anything of the player. */ quiet?: boolean }) {
   return (
-    <div>
-      {SUBS.map((k) => (
-        <div key={k} className="flex items-center gap-2 py-[3px]">
-          <span className="w-32 text-[11px] text-dim">{subLabel(product.type, k)}</span>
-          <Meter value={n[k]} max={1.1} tone={n[k] > 0.9 ? 'pos' : n[k] > 0.6 ? 'accent' : 'warn'} />
-          <span className="num w-8 text-right text-[11px] text-fg">{Math.round(n[k] * 100)}</span>
-        </div>
+    <ul aria-label="Why it sells as it does" className="min-w-0 flex-1 space-y-[6px]">
+      {lines.map((w, i) => (
+        <li key={i} className={`flex gap-2 text-xs leading-snug ${quiet ? 'text-dim' : WHY_TONE[w.tone]}`}>
+          <Icon name={quiet ? 'info' : WHY_ICON[w.tone]} size={12} className="mt-[2px] shrink-0" />
+          <span className={w.tone === 'pos' || w.tone === 'dim' ? 'text-dim' : ''}>{w.text}</span>
+        </li>
       ))}
-      <div className="mt-1 text-[11px] text-faint">100 = level with the best the market can build today</div>
+    </ul>
+  )
+}
+
+/** The device in 3D, for the player who asks to see it: turn it, open it up, see its colours. */
+function Model({ product, onClose }: { product: Product; onClose: () => void }) {
+  const g = useGame()
+  const [view, setView] = useState<ViewName | undefined>(undefined)
+  const [nonce, setNonce] = useState(0)
+  const [color, setColor] = useState(-1)
+  const [torn, setTorn] = useState(false)
+  useEffect(() => {
+    setView(undefined)
+    setColor(-1)
+    setTorn(false)
+    // the same view shows the next device: frame it afresh rather than build a new view for it
+    setNonce((x) => x + 1)
+  }, [product.id])
+  return (
+    <div className="relative h-[240px] border-b border-line">
+      <DeviceView design={product.design} view={view} viewNonce={nonce} autoRotate={!torn && !reducedMotion()} logo={player(g).logo} colorIndex={color} teardown={torn} />
+      <div className="absolute left-2 top-2 flex border border-line bg-panel">
+        {(['back', 'front', 'side'] as ViewName[]).map((v) => (
+          <Btn key={v} small tone="ghost" active={view === v} onClick={() => (setView(v), setNonce((x) => x + 1))}>
+            {v === 'back' ? 'Back' : v === 'front' ? 'Front' : 'Side'}
+          </Btn>
+        ))}
+        <Btn small tone="ghost" icon="layers" active={torn} title="Open it up and see what is inside" onClick={() => (setTorn(!torn), setView(TEAR_VIEW[product.type] ?? 'back'), setNonce((x) => x + 1))}>
+          Inside
+        </Btn>
+      </div>
+      {!!product.design.colors?.length && (
+        <div className="absolute bottom-2 left-2 flex gap-1">
+          {[{ back: product.design.body.backColor, name: 'Standard' }, ...product.design.colors].map((c, i) => (
+            <button key={i} type="button" title={c.name} aria-label={`Show it in ${c.name}`} aria-pressed={color === i - 1} onClick={() => setColor(i - 1)} className={`h-5 w-5 border ${color === i - 1 ? 'border-accent' : 'border-line2'}`} style={{ background: c.back }} />
+          ))}
+        </div>
+      )}
+      <IconBtn icon="minus" tone="ghost" title="Back to the small picture" className="absolute right-2 top-2 bg-panel" onClick={onClose} />
     </div>
   )
 }
 
-function Voices({ product }: { product: Product }) {
-  const stars = product.feedback.length ? product.feedback.reduce((a, f) => a + f.stars, 0) / product.feedback.length : 0
+/** Stock, what is on order, and ordering more: the quantity starts at what recent sales call for. */
+function Supply({ g, p }: { g: GameState; p: Product }) {
+  const [qty, setQty] = useState(() => suggestReorder(g, p))
+  const pending = g.orders.some((o) => o.productId === p.id)
+  // a device still in development has no sales to go by: the forecast for a design like it is the guide
+  const month = Math.floor(g.day / 30)
+  const guess = useMemo(() => (p.status === 'dev' ? demandEstimate(g, p.design, p.price) : null), [p.id, p.price, p.status, month]) // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <div className="p-2">
-      <Head icon="press" className="mb-1 text-faint">
-        Press reviews
-      </Head>
-      {!product.reviews.length && <div className="py-2 text-[11px] text-faint">Reviews are published on release day.</div>}
-      {product.reviews.map((r) => (
-        <div key={r.outlet} className="mb-1 flex gap-3 border border-line p-2">
-          <div className={`num w-10 shrink-0 text-xl leading-none ${r.score >= 8 ? 'text-pos' : r.score >= 6 ? 'text-fg' : 'text-neg'}`}>{r.score.toFixed(1)}</div>
-          <div className="min-w-0">
-            <div className="label">{r.outlet}</div>
-            {r.pros.map((t) => (
-              <div key={t} className="text-[11px] text-fg">
-                <Icon name="plus" size={9} className="mr-[5px] inline-block text-pos" />
-                {t}
-              </div>
-            ))}
-            {r.cons.map((t) => (
-              <div key={t} className="text-[11px] text-dim">
-                <Icon name="minus" size={9} className="mr-[5px] inline-block text-neg" />
-                {t}
-              </div>
-            ))}
-          </div>
+    <section aria-label="Stock" className="border-b border-line p-3">
+      <div className="flex items-baseline gap-3">
+        <span className="label w-14 shrink-0">In stock</span>
+        <span className={`t-value ${p.stock <= 0 && p.status === 'sale' ? 'text-neg' : 'text-fg'}`}>{num(p.stock)}</span>
+      </div>
+      <div className="mt-2 flex items-center gap-3">
+        <span className="label w-14 shrink-0">Order</span>
+        <NumInput value={qty} onChange={setQty} step={1000} max={MAX_RUN} onEnter={() => reorder(p, qty)} aria-label="Units to order" className="w-28 text-right" />
+        <Btn tone="primary" icon="package" className="ml-auto" disabled={qty <= 0} title={qty <= 0 ? 'Enter how many units to build' : undefined} onClick={() => reorder(p, qty)}>
+          Order {qty > 0 ? num(qty) : 'units'}
+        </Btn>
+      </div>
+      <div className="mt-2 text-[11px] leading-snug text-dim">{qty > 0 ? quoteWords(g, p, qty) : guess ? `Nothing is selling yet to go by. A design like this should sell ${num(guess.low)} to ${num(guess.high)} in its first three months.` : 'Stock and orders cover the next months at the recent pace. Type a number to order anyway.'}</div>
+      {pending && (
+        <div className="mt-2 border border-line">
+          <Orders filter={p.id} bare />
+        </div>
+      )}
+    </section>
+  )
+}
+
+/** The price: Enter applies it, and so does leaving the field. While a new figure is typed the line under it says what it would do. */
+function PriceField({ g, p }: { g: GameState; p: Product }) {
+  const [draft, setDraft] = useState(p.price)
+  useEffect(() => setDraft(p.price), [p.price])
+  const dirty = draft > 0 && draft !== p.price
+  // Esc puts the old price back before it closes anything
+  useLayer(dirty, () => setDraft(p.price))
+  return (
+    <section aria-label="Price" className="border-b border-line p-3">
+      <div className="flex items-center gap-3">
+        <span className="label w-14 shrink-0">Price</span>
+        <NumInput value={draft} onChange={setDraft} step={10} max={MAX_PRICE} onEnter={() => applyPrice(p, draft)} onBlur={() => applyPrice(p, draft)} aria-label="Retail price" title={p.tiers.length ? 'The storage options move with it' : undefined} className="w-28 text-right" />
+        {dirty && (
+          <span className="text-[11px] text-dim">
+            <Key>Enter</Key> saves, <Key>Esc</Key> puts it back
+          </span>
+        )}
+      </div>
+      <PriceNote g={g} p={p} value={draft} className="mt-2 !leading-snug" />
+    </section>
+  )
+}
+
+/** A recall that is waiting for a decision. */
+function Recall({ g, p }: { g: GameState; p: Product }) {
+  if (p.recall?.state !== 'open') return null
+  const left = Math.max(0, RECALL_DEADLINE - (g.day - p.recall.day))
+  return (
+    <section aria-label="Recall" className="border-b border-neg/60 p-3">
+      <div className="text-xs leading-snug text-dim">
+        <span className="num text-fg">{pct(p.defectRate)}</span> of units are faulty and owners are talking. Recall and repair every unit sold, or leave it: in <span className="num text-fg">{left}</span> days it becomes a scandal that costs reputation and fans.
+      </div>
+      <ConfirmBtn
+        icon="recall"
+        className="mt-2"
+        confirm={`Click again: spend ${money(p.recall.cost)}`}
+        onClick={() => {
+          const err = useStore.getState().act((s) => recallProduct(s, p.id))
+          if (err) useStore.getState().say(err, 'bad')
+          else (sfx.confirm(), useStore.getState().say(`${p.name} is being recalled and repaired.`))
+        }}
+      >
+        Recall and repair for {money(p.recall.cost)}
+      </ConfirmBtn>
+    </section>
+  )
+}
+
+// ---------------------------------------------------------------- behind the tabs
+
+function Sales({ g, product, mine }: { g: GameState; product: Product; mine: boolean }) {
+  const { act, say } = useStore.getState()
+  // the last entry is the month that closed last
+  const thisMonth = Math.floor(g.day / 30)
+  const history = product.history.slice(-24).map((u, i, all) => ({ m: monthLabel((product.status === 'ended' && product.endDay !== undefined ? Math.floor(product.endDay / 30) + 1 : thisMonth) - (all.length - i)), Units: u }))
+  const seg = product.segment ? segmentInfo(product.segment) : undefined
+  const profit = mine ? productProfit(g, product).total : 0
+  return (
+    <div className="p-3">
+      {history.length > 1 ? (
+        <div className="h-28" role="img" aria-label="Units sold a month">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={history} margin={{ top: 4, right: 4, bottom: 0, left: -10 }}>
+              <CartesianGrid stroke={chart.grid} vertical={false} />
+              <XAxis dataKey="m" tick={chart.axis} stroke={chart.grid} minTickGap={24} />
+              <YAxis tick={chart.axis} stroke={chart.grid} tickFormatter={(v) => num(v)} />
+              <Tooltip {...chart.tooltip} cursor={{ fill: 'var(--color-hover)' }} formatter={(v) => [num(Number(v)), 'Units']} />
+              <Bar dataKey="Units" fill="var(--color-mute)" isAnimationActive={false} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      ) : (
+        <div className="py-2 text-xs text-dim">{product.status === 'dev' ? 'Not on sale yet.' : 'Units a month appear here once two months have closed.'}</div>
+      )}
+      <div className="mt-2">
+        <Row k="Sold in all" v={num(product.unitsSold)} />
+        {mine && <Row k="Taken in all" v={money(product.revenue)} />}
+        {mine && product.unitsSold > 0 && <Row k="Profit in all, an estimate" v={moneyDelta(profit)} tone={profit < 0 ? 'text-neg' : 'text-pos'} />}
+        {mine && product.status !== 'dev' && <Row k="Owners content" v={pct(product.satisfaction, 0)} tone={product.satisfaction < 0.5 ? 'text-neg' : undefined} />}
+        <Row k={product.status === 'dev' ? 'On sale from' : 'On sale since'} v={fmtDate(product.status === 'dev' ? g.day + product.devDaysLeft : product.launchDay)} />
+        {seg && <Row k="Sold to" v={<span className="font-sans">{seg.name} buyers</span>} />}
+      </div>
+      {mine && product.status !== 'ended' && (
+        <ConfirmBtn icon="ban" className="mt-3" confirm={`Click again: stop selling ${product.name} for good`} title="Takes the device off sale. Unsold stock is written off and orders for it are cancelled. This cannot be undone." onClick={() => (act((s) => discontinue(s, product.id)), say(`${product.name} is discontinued.`))}>
+          Discontinue
+        </ConfirmBtn>
+      )}
+    </div>
+  )
+}
+
+function Scores({ g, product }: { g: GameState; product: Product }) {
+  const n = normalised(product.raw, g.day)
+  return (
+    <div className="p-3">
+      {SUBS.map((k) => (
+        <div key={k} className="flex items-center gap-2 py-1">
+          <span className="w-32 shrink-0 truncate text-xs text-dim">{subLabel(product.type, k)}</span>
+          <Meter value={n[k]} max={1.1} tone={n[k] > 0.9 ? 'pos' : n[k] > 0.6 ? 'dim' : 'warn'} />
+          <span className="num w-8 shrink-0 text-right text-xs text-fg">{Math.round(n[k] * 100)}</span>
+        </div>
+      ))}
+      <Legend
+        className="mt-2"
+        items={[
+          { label: 'Over 90: with the best', tone: 'pos' },
+          { label: 'Middling', tone: 'dim' },
+          { label: 'Under 60: behind', tone: 'warn' },
+        ]}
+      />
+      <div className="mt-1 text-[11px] text-dim">100 is level with the best the market can build today.</div>
+      <div className="mt-2">
+        <Row k="Design" v={Math.round(product.designPct)} />
+      </div>
+    </div>
+  )
+}
+
+function Specs({ g, product, mine }: { g: GameState; product: Product; mine: boolean }) {
+  return (
+    <div className="p-3">
+      {specLines(product.design, product.diag, mine ? g : undefined).map(([k, v]) => (
+        <Row key={k} icon={SPEC_ICON[k] ?? 'feed'} k={<span className="whitespace-nowrap">{k}</span>} v={<span className="whitespace-normal text-right">{v}</span>} />
+      ))}
+      <Row icon="weight" k="Weight" v={weightLabel(product.weight)} />
+      {lifeLabel(product.type) && <Row icon="battery" k={lifeLabel(product.type)} v={`${Math.round(product.lifeHours * 10) / 10} h`} />}
+      {product.tiers.map((t) => (
+        <Row key={t.storage} icon="tag" k={`${t.storage >= 1024 ? t.storage / 1024 + ' TB' : t.storage + ' GB'} option`} v={price(t.price)} />
+      ))}
+      {mine && (
+        <>
+          <div className="mb-1 mt-4 text-xs font-semibold text-fg">What one costs to build today</div>
+          {SUPPLY_CATS.map((c) => (
+            <Row key={c} icon={supplyIcon(c)} k={`${SUPPLY_LABELS[c]}${supplyPrice(g, c) > 1.08 ? ', prices up' : ''}`} v={price(product.costParts[c] * supplyPrice(g, c))} tone={supplyPrice(g, c) > 1.08 ? 'text-warn' : undefined} />
+          ))}
+          <Row icon="build" k="Assembly and extras" v={price(product.costParts.other)} />
+          <Row icon="alert" k="Units that arrive faulty" v={pct(product.defectRate)} tone={product.defectRate > 0.03 ? 'text-warn' : undefined} />
+        </>
+      )}
+    </div>
+  )
+}
+
+/** The lines every outlet printed, and for each outlet only what it said that the others did not. */
+function splitReviews(reviews: Review[]): { pros: string[]; cons: string[]; own: { outlet: string; score: number; pros: string[]; cons: string[] }[] } {
+  const shared = (pick: (r: Review) => string[]) => (reviews.length > 1 ? pick(reviews[0]).filter((t) => reviews.every((r) => pick(r).includes(t))) : [])
+  const pros = shared((r) => r.pros)
+  const cons = shared((r) => r.cons)
+  return { pros, cons, own: reviews.map((r) => ({ outlet: r.outlet, score: r.score, pros: r.pros.filter((t) => !pros.includes(t)), cons: r.cons.filter((t) => !cons.includes(t)) })) }
+}
+
+const Point = ({ good, children }: { good: boolean; children: string }) => (
+  <div className={`flex gap-2 text-xs leading-snug ${good ? 'text-fg' : 'text-dim'}`}>
+    <Icon name={good ? 'plus' : 'minus'} size={11} className={`mt-[3px] shrink-0 ${good ? 'text-pos' : 'text-neg'}`} />
+    {children}
+  </div>
+)
+
+function Voices({ product }: { product: Product }) {
+  const split = useMemo(() => splitReviews(product.reviews), [product.reviews])
+  const stars = product.feedback.length ? product.feedback.reduce((a, f) => a + f.stars, 0) / product.feedback.length : 0
+  const apart = split.own.filter((r) => r.pros.length || r.cons.length)
+  return (
+    <div className="p-3">
+      <div className="mb-2 text-xs font-semibold text-fg">The press</div>
+      {!product.reviews.length && <div className="text-xs text-dim">Reviews are published on release day.</div>}
+      {product.reviews.length > 0 && (
+        <div className="grid gap-px border border-line bg-line" style={{ gridTemplateColumns: `repeat(${product.reviews.length}, minmax(0, 1fr))` }}>
+          {product.reviews.map((r) => (
+            <div key={r.outlet} className="min-w-0 bg-panel px-2 py-[6px]" title={r.outlet}>
+              <div className="truncate text-[11px] text-dim">{r.outlet}</div>
+              <div className={`t-value mt-1 ${r.score >= 8 ? 'text-pos' : r.score >= 6 ? 'text-fg' : 'text-neg'}`}>{score(r.score)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {(split.pros.length > 0 || split.cons.length > 0) && (
+        <div className="mt-2 space-y-1">
+          <div className="text-[11px] text-dim">They all say</div>
+          {split.pros.map((t) => (
+            <Point key={t} good>
+              {t}
+            </Point>
+          ))}
+          {split.cons.map((t) => (
+            <Point key={t} good={false}>
+              {t}
+            </Point>
+          ))}
+        </div>
+      )}
+      {apart.map((r) => (
+        <div key={r.outlet} className="mt-2 space-y-1">
+          <div className="text-[11px] text-dim">{product.reviews.length > 1 ? `Only ${r.outlet}` : r.outlet}</div>
+          {r.pros.map((t) => (
+            <Point key={t} good>
+              {t}
+            </Point>
+          ))}
+          {r.cons.map((t) => (
+            <Point key={t} good={false}>
+              {t}
+            </Point>
+          ))}
         </div>
       ))}
       {product.companyId === 'player' && (
         <>
-          <Head
-            icon="review"
-            className="mb-1 mt-3 text-faint"
-            right={
-              stars > 0 && (
-                <span className="num flex items-center gap-[3px] text-fg" title="Average out of 5">
-                  <Icon name="star" size={10} className="text-accent" />
-                  {stars.toFixed(1)}
-                </span>
-              )
-            }
-          >
-            What owners say
-          </Head>
-          {!product.feedback.length && <div className="py-2 text-[11px] text-faint">Owner comments arrive weekly once the device is selling.</div>}
+          <div className="mb-1 mt-4 flex items-baseline justify-between text-xs font-semibold text-fg">
+            Owners
+            {stars > 0 && (
+              <span className="num font-normal text-dim" title="Average out of 5">
+                {score(stars)} of 5
+              </span>
+            )}
+          </div>
+          {!product.feedback.length && <div className="text-xs text-dim">Owners' comments arrive weekly once the device is selling.</div>}
           {product.feedback.map((f, i) => (
             <div key={i} className="flex items-start gap-2 border-b border-line py-[5px] last:border-0">
-              <span className={`num flex w-8 shrink-0 items-center gap-[3px] text-[11px] ${f.stars >= 4 ? 'text-pos' : f.stars <= 2 ? 'text-neg' : 'text-dim'}`} title={`${f.stars} out of 5`}>
+              <span className={`num flex w-8 shrink-0 items-center gap-[3px] text-xs ${f.stars >= 4 ? 'text-pos' : f.stars <= 2 ? 'text-neg' : 'text-dim'}`} title={`${f.stars} out of 5`}>
                 <Icon name="star" size={11} />
                 {f.stars}
               </span>
-              <span className="flex-1 text-[11px] text-fg">{f.text}</span>
-              <span className="num shrink-0 text-[11px] text-faint">{fmtDate(f.day)}</span>
+              <span className="flex-1 text-xs text-fg">{f.text}</span>
+              <span className="num shrink-0 text-[11px] text-dim">{fmtDate(f.day)}</span>
             </div>
           ))}
         </>
@@ -255,293 +504,113 @@ function Voices({ product }: { product: Product }) {
   )
 }
 
-/** Controls only the owner of a product gets: supply, price, and what to build next. */
-function Manage({ p }: { p: Product }) {
-  const g = useGame()
-  const { act, say, openDesigner } = useStore.getState()
-  const line = factoryLine(g)
-  const [qty, setQty] = useState(10000)
-  const [mode, setMode] = useState<ProductionOrder['mode']>(line?.running ? 'factory' : 'contract')
-  const [price, setP] = useState(p.price)
-  const avg = tierAverages(p)
-  const cost = buildCost(g, p, mode)
-  const margin = avg.price * (1 - RETAIL_CUT) - cost - avg.extraCost
-  const pending = pendingUnits(g, p.id)
-  const orders = g.orders.filter((o) => o.productId === p.id)
-  const ended = p.status === 'ended'
-  const order = () => {
-    const err = act((s) => orderProduction(s, p.id, qty, mode))
-    if (err) say(err === 'Enter a quantity' ? 'Enter how many units to build.' : err, 'bad')
-    else (sfx.cash(), say(`Ordered ${num(qty)} units. You pay as they are built.`))
-  }
-  const reprice = () => {
-    if (price === p.price || price <= 0) return
-    act((s) => setPrice(s, p.id, price))
-    say(`${p.name} now costs ${money(price)}.`)
-  }
+/** What can be built on a device: a variant in its family, or the next generation. A name already in use is never offered. */
+function Variants({ g, p }: { g: GameState; p: Product }) {
+  const { openDesigner } = useStore.getState()
+  const taken = (name: string) => g.products.some((x) => x.companyId === 'player' && x.status !== 'ended' && x.name === name)
+  const m = /^(.*?)(\d+)$/.exec(p.family)
+  const next = productName(freeFamily(g, m ? `${m[1]}${Number(m[2]) + 1}` : `${p.family} 2`, p.variant), p.variant)
   return (
-    <div className="space-y-3 p-2">
-      <div className="grid grid-cols-3 gap-1">
-        <Mini label="In stock" icon="warehouse" value={num(p.stock)} tone={p.stock <= 0 && p.status === 'sale' ? 'text-neg' : 'text-fg'} />
-        <Mini label="On order" icon="truck" value={num(pending)} />
-        <Mini label="Margin / unit" icon="percent" value={money(margin)} tone={margin > 0 ? 'text-pos' : 'text-neg'} />
-      </div>
-
-      {!ended && (
-        <div className="border border-line p-2">
-          <Head icon="factory" className="mb-1 text-faint">
-            Order a production run
-          </Head>
-          <div className="flex gap-1">
-            {(['contract', 'factory'] as const).map((m) => (
-              <Btn key={m} small icon={m === 'contract' ? 'doc' : 'factory'} className="flex-1" active={mode === m} disabled={m === 'factory' && !line?.running} onClick={() => setMode(m)} title={m === 'factory' && !line?.running ? 'Needs a working line in your factory' : ''}>
-                {m === 'contract' ? 'Contract maker' : 'Own factory'}
+    <div className="p-3">
+      <div className="text-xs leading-snug text-dim">A variant shares this device's platform: about 45% cheaper and 40% faster to develop.</div>
+      <div className="mt-2 space-y-1">
+        {VARIANTS.map((v) => {
+          const name = productName(p.family, v.id)
+          const used = taken(name)
+          return (
+            <div key={v.id} className="flex items-center gap-3">
+              <Btn className="w-36 shrink-0 justify-start" disabled={used} title={used ? `${name} already exists` : `Design ${name}`} onClick={() => openDesigner({ from: p, variant: v.id })}>
+                {name}
               </Btn>
-            ))}
-          </div>
-          <div className="mt-2 flex items-center gap-2">
-            <NumInput value={qty} onChange={setQty} step={1000} max={MAX_RUN} onEnter={order} aria-label="Units to build" className="h-7 w-28 text-right" />
-            <span className="num flex-1 text-[11px] text-dim">x {money(cost)}</span>
-            <Btn small tone="primary" icon="package" disabled={qty <= 0} title={qty <= 0 ? 'Enter how many units to build' : undefined} onClick={order}>
-              Order {money(qty * cost, 1)}
-            </Btn>
-          </div>
-          <div className="mt-1 text-[11px] leading-snug text-faint">
-            {mode === 'contract' ? `Starts after ${CONTRACT.leadDays} days, then about ${num(CONTRACT.perDay / TYPES[p.type].capacity)} a day. ${pct(CONTRACT.defectRate)} arrive faulty.` : `About ${num((line?.throughput ?? 0) / TYPES[p.type].capacity)} a day, shared with other orders. ${pct(line?.defectRate ?? 0)} arrive faulty.`}
-          </div>
-          {orders.map((o) => (
-            <div key={o.id} className="mt-2">
-              <div className="num flex justify-between text-[11px] text-dim">
-                <span>
-                  <Lead icon={o.mode === 'contract' ? 'doc' : 'factory'} size={10} />
-                  {o.mode === 'contract' ? 'CONTRACT' : 'FACTORY'}
-                </span>
-                <span>
-                  {num(o.done)} / {num(o.quantity)}
-                </span>
-              </div>
-              <Meter value={o.done} max={o.quantity} />
+              <span className="min-w-0 text-[11px] leading-snug text-dim">{used ? 'You already make it.' : v.note}</span>
             </div>
-          ))}
-        </div>
-      )}
-
-      {!ended && (
-        <div className="border border-line p-2">
-          <Head icon="tag" className="mb-1 text-faint">
-            Retail price
-          </Head>
-          <div className="flex items-center gap-2">
-            <NumInput value={price} onChange={setP} step={10} max={MAX_PRICE} onEnter={reprice} aria-label="Retail price" className="h-7 w-28 text-right" />
-            <span className="flex-1 text-[11px] text-faint">{p.tiers.length ? `Storage options move with it (avg paid ${money(avg.price)})` : `Retailers keep ${pct(RETAIL_CUT, 0)}`}</span>
-            <Btn small icon="check" disabled={price === p.price || price <= 0} title={price <= 0 ? 'Enter a price above zero' : price === p.price ? 'This is the price already' : undefined} onClick={reprice}>
-              Apply
-            </Btn>
-          </div>
-        </div>
-      )}
-
-      <div className="border border-line p-2">
-        <Head icon="branch" className="mb-1 text-faint">
-          Build on this device
-        </Head>
-        <div className="grid grid-cols-3 gap-1">
-          {VARIANTS.map((v) => (
-            <Btn key={v.id} small title={v.note} onClick={() => openDesigner({ from: p, variant: v.id })}>
-              {v.id}
-            </Btn>
-          ))}
-          <Btn small icon="arrowRight" title="Start the next generation from this design" onClick={() => openDesigner({ from: p, variant: 'next' })}>
-            Successor
-          </Btn>
-        </div>
-        <div className="mt-1 text-[11px] leading-snug text-faint">A variant in the same family reuses the platform: about 45% cheaper and 40% faster to develop.</div>
+          )
+        })}
       </div>
-
-      <div className="border border-line p-2">
-        <Head icon="receipt" className="mb-1 text-faint">
-          Cost to build one, today
-        </Head>
-        {SUPPLY_CATS.map((c) => (
-          <Row key={c} icon={supplyIcon(c)} k={SUPPLY_LABELS[c]} v={`${money(p.costParts[c] * supplyPrice(g, c))}${supplyPrice(g, c) > 1.08 ? '  (prices up)' : ''}`} tone={supplyPrice(g, c) > 1.08 ? 'text-warn' : undefined} />
-        ))}
-        <Row icon="build" k="Assembly and extras" v={money(p.costParts.other)} />
-        <Row icon="alert" k="Fault rate" v={pct(p.defectRate)} tone={p.defectRate > 0.03 ? 'text-warn' : undefined} />
+      <div className="mt-3 flex items-center gap-3 border-t border-line pt-3">
+        <Btn icon="arrowRight" className="w-36 shrink-0 justify-start" title={`Start ${next} from this design`} onClick={() => openDesigner({ from: p, variant: 'next' })}>
+          {next}
+        </Btn>
+        <span className="min-w-0 text-[11px] leading-snug text-dim">The next generation, starting from this design.</span>
       </div>
-
-      {!ended && (
-        <ConfirmBtn small icon="ban" className="w-full" confirm={`Stop selling ${p.name} for good?`} title="Takes the device off sale. Unsold stock is written off and orders for it are cancelled. This cannot be undone." onClick={() => (act((s) => discontinue(s, p.id)), say(`${p.name} is discontinued.`))}>
-          Discontinue {p.name}
-        </ConfirmBtn>
-      )}
     </div>
   )
 }
 
-type InspectTab = 'overview' | 'manage' | 'specs' | 'voices'
+type InspectTab = 'sales' | 'scores' | 'specs' | 'reviews' | 'variants'
 
-/** Global slide-over: opens whenever a product is focused anywhere in the game. */
+/** The one drawer for a device: opens whenever a product is focused anywhere in the game. */
 export function ProductDrawer() {
   const g = useGame()
   const id = useStore((s) => s.inspect)
   const { focus } = useStore.getState()
   const product = g.products.find((p) => p.id === id)
-  const [tab, setTab] = useState<InspectTab>('overview')
-  const [view, setView] = useState<ViewName | undefined>(undefined)
-  const [nonce, setNonce] = useState(0)
-  const [color, setColor] = useState(-1)
-  const [torn, setTorn] = useState(false)
+  const [tab, setTab] = useState<InspectTab>('sales')
+  const [big, setBig] = useState(false)
+  const scroll = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    setView(undefined)
-    setColor(-1)
-    setTab('overview')
-    setTorn(false)
-    // the same view shows the next device: frame it afresh rather than build a new view for it
-    setNonce((x) => x + 1)
+    setBig(false)
+    scroll.current?.parentElement?.scrollTo?.({ top: 0 })
   }, [id])
-  // (Esc closes it: the drawer is the top layer while it is open)
   // a device that no longer exists (another game was loaded) leaves nothing selected behind
   useEffect(() => {
     if (id && !product) focus(null)
   }, [id, product, focus])
+  const rev = useStore((s) => s.rev)
+  const why = useMemo(() => (product ? whyLines(g, product) : []), [g, product, rev])
 
   if (!product) return null
   const company = companyOf(g, product.companyId)
   const mine = company.isPlayer
-  const seg = product.segment ? segmentInfo(product.segment) : undefined
-  const history = product.history.map((u, i) => ({ m: i + 1, Units: u }))
-  const tabs: { value: InspectTab; label: string; icon: IconName }[] = [{ value: 'overview', label: 'Overview', icon: 'overview' }, ...(mine ? [{ value: 'manage' as const, label: 'Manage', icon: 'system' as const }] : []), { value: 'specs', label: 'Specs', icon: 'feed' }, { value: 'voices', label: 'Reviews', icon: 'review' }]
+  const live = mine && product.status !== 'ended'
+  const status = statusNote(product)
+  const tabs: { value: InspectTab; label: string }[] = [{ value: 'sales', label: 'Sales' }, { value: 'scores', label: 'Scores' }, { value: 'specs', label: 'Specs' }, { value: 'reviews', label: 'Reviews' }, ...(live ? [{ value: 'variants' as const, label: 'Variants' }] : [])]
+  const shown = tabs.some((t) => t.value === tab) ? tab : 'sales'
   return (
     <Drawer
       open
       onClose={() => focus(null)}
-      width={440}
+      width={420}
       title={
-        <span>
-          <span style={{ color: company.color }}>{company.name}</span> <span className="text-faint">/</span> {product.name}
+        <span className="flex min-w-0 items-center gap-2">
+          <Swatch color={company.color}>{product.name}</Swatch>
+          {status && <Tag tone={status.tone}>{status.text}</Tag>}
+          {!mine && (
+            <Btn small tone="ghost" icon="arrowRight" className="ml-1 font-normal" title={`Show ${company.name} under Devices, Rivals`} onClick={() => showCompany(company.id)}>
+              {company.name}
+            </Btn>
+          )}
         </span>
       }
     >
-      <div className="relative h-[270px] border-b border-line">
-        <DeviceView design={product.design} view={view} viewNonce={nonce} autoRotate={!torn && !reducedMotion()} logo={player(g).logo} colorIndex={color} teardown={torn} />
-        <div className="absolute left-2 top-2 flex border border-line bg-panel/90">
-          {(['back', 'front', 'side'] as ViewName[]).map((v) => (
-            <Btn key={v} small tone="ghost" active={view === v} onClick={() => (setView(v), setNonce((x) => x + 1))}>
-              {v}
-            </Btn>
-          ))}
-          <Btn small tone="ghost" icon="layers" active={torn} title="Open it up and see what is inside" onClick={() => (setTorn(!torn), setView(TEAR_VIEW[product.type] ?? 'back'), setNonce((x) => x + 1))}>
-            Teardown
-          </Btn>
-        </div>
-        {!!product.design.colors?.length && (
-          <div className="absolute bottom-2 left-2 flex gap-1">
-            {[{ back: product.design.body.backColor, name: 'Standard' }, ...product.design.colors].map((c, i) => (
-              <button key={i} title={c.name} aria-label={`Show it in ${c.name}`} aria-pressed={color === i - 1} onClick={() => setColor(i - 1)} className={`h-4 w-4 border ${color === i - 1 ? 'border-accent' : 'border-line2'}`} style={{ background: c.back }} />
-            ))}
-          </div>
-        )}
-        <div className="absolute right-2 top-2 flex gap-1">
-          <Tag tone={statusTone(product)} icon={statusIcon(product)}>
-            {statusText(product)}
-          </Tag>
-          <Tag icon={typeIcon(product.type)}>{TYPES[product.type].name}</Tag>
-        </div>
-      </div>
-      <div className="grid grid-cols-4 gap-px border-b border-line bg-line">
-        {(
-          [
-            ['Price', money(product.price), 'tag'],
-            ['Review', product.reviewAvg ? product.reviewAvg.toFixed(1) : '--', 'star'],
-            ['Sold', num(product.unitsSold), 'package'],
-            ['Design', Math.round(product.designPct), 'design'],
-          ] as const
-        ).map(([k, v, icon]) => (
-          <div key={k} className="bg-panel px-2 py-[6px]">
-            <div className="flex items-center gap-1 text-[11px] text-faint">
-              <Icon name={icon} size={10} />
-              {k}
-            </div>
-            <div className="num text-[13px] font-semibold text-fg">{v}</div>
-          </div>
-        ))}
-      </div>
-      <Tabs fit value={tab} options={tabs} onChange={setTab} className="bg-panel" />
-      {tab === 'overview' && (
-        <div className="space-y-3 p-2">
-          <div className="grid grid-cols-3 gap-1">
-            <Mini label="Segment" icon="target" value={seg?.name ?? '--'} />
-            <Mini label={product.status === 'dev' ? 'Release in' : 'Released'} icon={product.status === 'dev' ? 'hourglass' : 'calendar'} value={product.status === 'dev' ? `${product.devDaysLeft} days` : fmtDate(product.launchDay)} />
-            <Mini label="Revenue" icon="coins" value={money(product.revenue)} />
-            {mine && <Mini label="Owner mood" icon="morale" value={pct(product.satisfaction, 0)} tone={product.satisfaction > 0.7 ? 'text-pos' : product.satisfaction < 0.5 ? 'text-neg' : 'text-fg'} />}
-            {mine && <Mini label="Weight" icon="weight" value={weightLabel(product.weight)} />}
-            {mine && lifeLabel(product.type) && <Mini label={lifeLabel(product.type) ?? ''} icon="battery" value={`${product.lifeHours.toFixed(0)} h`} />}
-          </div>
-          <div className="border border-line p-2">
-            <Head icon="chart" className="mb-1 text-faint">
-              Scores against the market today
-            </Head>
-            <ScoreBars product={product} />
-          </div>
-          {history.length > 1 && (
-            <div className="border border-line p-2">
-              <Head icon="market" className="mb-1 text-faint">
-                Units per month
-              </Head>
-              <div className="h-28">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={history} margin={{ top: 4, right: 4, bottom: 0, left: -10 }}>
-                    <CartesianGrid stroke={chart.grid} vertical={false} />
-                    <XAxis dataKey="m" tick={chart.axis} stroke={chart.grid} />
-                    <YAxis tick={chart.axis} stroke={chart.grid} tickFormatter={(v) => num(v)} />
-                    <Tooltip {...chart.tooltip} cursor={{ fill: 'var(--color-hover)' }} formatter={(v) => num(Number(v))} labelFormatter={(m) => `Month ${m}`} />
-                    <Bar dataKey="Units" fill="var(--color-accent)" isAnimationActive={false} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
+      <div ref={scroll}>
+        {big && <Model product={product} onClose={() => setBig(false)} />}
+        <section className="flex gap-3 border-b border-line p-3">
+          {!big && (
+            <button type="button" title="Show it in 3D" aria-label={`Show ${product.name} in 3D`} onClick={() => setBig(true)} className="h-24 w-24 shrink-0 border border-line bg-panel transition-colors hover:border-line2 hover:bg-hover">
+              <Thumb product={product} className="h-full w-full" />
+            </button>
           )}
-        </div>
-      )}
-      {mine && product.recall?.state === 'open' && (
-        <div className="m-2 border border-neg p-2">
-          <div className="flex items-center gap-[6px] text-[11px] font-semibold text-neg">
-            <Icon name="alert" size={13} />
-            Recall decision
+          <div className="min-w-0 flex-1">
+            <WhyList lines={why} quiet={!mine} />
+            {!mine && (
+              <div className="mt-2 text-xs text-dim">
+                <span className="num text-fg">{price(product.price)}</span>, reviewed <span className="num text-fg">{score(product.reviewAvg)}</span>, <span className="num text-fg">{num(lastMonth(product))}</span> sold last month.
+              </div>
+            )}
           </div>
-          <div className="mt-1 text-[11px] leading-snug text-dim">
-            {pct(product.defectRate)} of units are faulty and owners are talking. Recall and repair every unit sold, or leave it: in {Math.max(0, RECALL_DEADLINE - (g.day - product.recall.day))} days it becomes a scandal that costs brand reputation and fans.
-          </div>
-          <Btn
-            small
-            tone="primary"
-            icon="recall"
-            className="mt-2 w-full"
-            onClick={() => {
-              const err = useStore.getState().act((s) => recallProduct(s, product.id))
-              if (err) useStore.getState().say(err, 'bad')
-              else (sfx.confirm(), useStore.getState().say(`${product.name} is being recalled and repaired.`))
-            }}
-          >
-            Recall and repair ({money(product.recall.cost, 1)})
-          </Btn>
-        </div>
-      )}
-      {tab === 'manage' && mine && <Manage key={product.id} p={product} />}
-      {tab === 'specs' && (
-        <div className="p-2">
-          {specLines(product.design, product.diag, mine ? g : undefined).map(([k, v]) => (
-            <Row key={k} icon={SPEC_ICON[k] ?? 'feed'} k={<span className="whitespace-nowrap">{k}</span>} v={<span className="whitespace-normal text-right">{v}</span>} />
-          ))}
-          <Row icon="weight" k="Weight" v={weightLabel(product.weight)} />
-          {lifeLabel(product.type) && <Row icon="battery" k={lifeLabel(product.type)} v={`${product.lifeHours.toFixed(1)} h`} />}
-          {product.tiers.map((t) => (
-            <Row key={t.storage} icon="tag" k={`${t.storage >= 1024 ? t.storage / 1024 + ' TB' : t.storage + ' GB'} option`} v={money(t.price)} />
-          ))}
-        </div>
-      )}
-      {tab === 'voices' && <Voices product={product} />}
+        </section>
+        {live && <Recall g={g} p={product} />}
+        {live && <Supply key={product.id} g={g} p={product} />}
+        {live && <PriceField key={`price:${product.id}`} g={g} p={product} />}
+        <Tabs value={shown} options={tabs} onChange={setTab} className="bg-panel" />
+        {shown === 'sales' && <Sales g={g} product={product} mine={mine} />}
+        {shown === 'scores' && <Scores g={g} product={product} />}
+        {shown === 'specs' && <Specs g={g} product={product} mine={mine} />}
+        {shown === 'reviews' && <Voices product={product} />}
+        {shown === 'variants' && live && <Variants g={g} p={product} />}
+      </div>
     </Drawer>
   )
 }

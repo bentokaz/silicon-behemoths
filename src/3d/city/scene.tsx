@@ -5,10 +5,10 @@
 import { memo, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { ITEMS, gridAt } from '../../sim/sites'
-import type { GameState, Site } from '../../sim/types'
+import { type GameState, SUPPLY_CATS, type Site, type SupplyCat } from '../../sim/types'
 import { Sign, Trees, hash } from '../site/kit'
 import { Batch, Ground, STOREY, Structure, surface } from '../site/structure'
-import { BOARD_SLOTS, type District, HOME, ISLAND, ISLAND_STREETS, LOTS, PIER, type Place, ROADS, fillers, towerFloors } from './plan'
+import { BAYS, BOARD_SLOTS, type Bay, CRANES, type District, HOME, ISLAND, ISLAND_STREETS, LOTS, PIER, type Place, QUAY_SLOT, QUAY_SLOTS, ROADS, SHED, TRUCK_SLOTS, fillers, portBays, portTrucks, shortages, towerFloors } from './plan'
 
 const PAVE = '#a7a399'
 const ROAD = '#33363a'
@@ -238,38 +238,68 @@ export function buildCivic(g: GameState, mats: CityMats): THREE.Mesh[] {
   return b.build(mats.of)
 }
 
-/** Where the company's name goes on its warehouse. */
-export const SHED = { x: LOTS.port.x - 66, z: LOTS.port.z - 4, w: 60, d: 24, h: 12 }
+/** The colour of something that needs the player, on the ground and on the plates alike. */
+const WARN = '#f2b631'
 
-/** The port: a warehouse, cranes, and as many containers on the quay as there are devices in stock. */
-export function buildPort(stock: number, orders: number, color: string, mats: CityMats): THREE.Mesh[] {
+/**
+ * The port: the warehouse and its cranes; a bay to each device on sale, with
+ * what is in stock standing in it; a lorry waiting for each open order; and
+ * the quay's inbound row, where a kind of component that is short is an empty,
+ * marked slot.
+ */
+export function buildPort(bays: Bay[], trucks: number, short: SupplyCat[], ship: boolean, color: string, mats: CityMats): THREE.Mesh[] {
   const b = new Batch()
-  const p = LOTS.port
   b.box('wall', SHED.x, SHED.h / 2, SHED.z, SHED.w, SHED.h, SHED.d, '#b9bdc2')
   b.box('trim', SHED.x, SHED.h + 0.3, SHED.z, SHED.w + 1, 0.6, SHED.d + 1, '#5a5e63')
   b.box('wall', SHED.x, 9, SHED.z + SHED.d / 2 + 0.2, SHED.w, 1.6, 0.3, color)
   for (let i = 0; i < 4; i++) b.box('trim', SHED.x - 21 + i * 14, 3, SHED.z + SHED.d / 2 + 0.2, 8, 6, 0.2, '#7d8388')
-  // containers: the fuller the warehouse, the higher the stacks
-  const count = containers(stock)
-  let placed = 0
-  for (let row = 0; row < 4 && placed < count; row++) {
-    for (let col = 0; col < 10 && placed < count; col++) {
-      const stack = Math.min(count - placed, 1 + Math.floor(hash(row * 17 + col * 5) * 3))
-      for (let k = 0; k < stack; k++) {
-        b.box('wall', p.x - 20 + col * 6.6, 1.4 + k * 2.65, p.z - 18 + row * 9.5, 6.1, 2.6, 2.5, BOXES[(row * 3 + col + k) % BOXES.length], 0.88 + hash(row + col * 3 + k * 7) * 0.2)
-        placed++
-      }
-    }
+  /** A rectangle painted on the ground, as four lines. */
+  const outline = (key: string, x: number, z: number, w: number, d: number, line: number, paint: string) => {
+    b.quad(key, x - w / 2, z - d / 2, x + w / 2, z - d / 2 + line, 0.14, paint)
+    b.quad(key, x - w / 2, z + d / 2 - line, x + w / 2, z + d / 2, 0.14, paint)
+    b.quad(key, x - w / 2, z - d / 2, x - w / 2 + line, z + d / 2, 0.14, paint)
+    b.quad(key, x + w / 2 - line, z - d / 2, x + w / 2, z + d / 2, 0.14, paint)
   }
+  // ---- the bays: one to a device, two containers to a layer, three layers at most
+  bays.forEach((bay, i) => {
+    const out = bay.level === 0
+    outline(out ? 'neon' : 'floor8', bay.x, bay.z, BAYS.w, BAYS.d, out ? 0.45 : 0.22, out ? WARN : '#d9d6cc')
+    // a sold-out bay is hatched as well, so that it reads as empty and not merely as unused
+    if (out) for (const dx of [-2, 0, 2]) b.quad('neon', bay.x + dx - 0.22, bay.z - BAYS.d / 2 + 0.9, bay.x + dx + 0.22, bay.z + BAYS.d / 2 - 0.9, 0.14, WARN)
+    for (let k = 0; k < bay.level; k++) b.box('wall', bay.x, 1.4 + Math.floor(k / 2) * 2.65, bay.z - 1.1 + (k % 2 ? -1.35 : 1.35), 6.1, 2.6, 2.5, BOXES[(i * 3 + k) % BOXES.length], 0.88 + hash(i * 7 + k * 3) * 0.2)
+    // the board its name is on, at the front
+    b.box('wall', bay.x, 0.75, bay.z + BAYS.d / 2 - 0.2, BAYS.w - 0.6, 1.5, 0.3, '#16181b')
+  })
+  // ---- lorries waiting at the warehouse doors
+  for (const [x, z] of TRUCK_SLOTS.slice(0, trucks)) {
+    b.box('wall', x, 2.25, z - 1.3, 2.5, 2.9, 7.6, '#e9e6e0')
+    b.box('wall', x, 1.85, z + 3.75, 2.4, 2.5, 2.2, color)
+    b.box('trim', x, 0.5, z - 0.1, 2.3, 0.7, 10.2, '#17191c')
+  }
+  // ---- the inbound row by the cranes: a stack to each kind of component, an empty marked slot to each that is short
+  SUPPLY_CATS.forEach((cat, i) => {
+    const [x, z] = QUAY_SLOTS[i]
+    if (short.includes(cat)) {
+      outline('neon', x, z, QUAY_SLOT.w, QUAY_SLOT.d, 0.45, WARN)
+      b.quad('neon', x - 0.22, z - QUAY_SLOT.d / 2 + 0.7, x + 0.22, z + QUAY_SLOT.d / 2 - 0.7, 0.14, WARN)
+      // a post with a lamp on it, to be seen from across the bay
+      b.box('trim', x + QUAY_SLOT.w / 2 - 0.3, 2, z, 0.3, 4, 0.3, '#2f3338')
+      b.box('neon', x + QUAY_SLOT.w / 2 - 0.3, 4.3, z, 0.9, 0.6, 0.9, WARN)
+    } else {
+      outline('floor8', x, z, QUAY_SLOT.w, QUAY_SLOT.d, 0.22, '#d9d6cc')
+      for (let k = 0; k < 2; k++) b.box('wall', x, 1.4 + k * 2.65, z, 6.1, 2.6, 2.5, BOXES[(i + k * 2) % BOXES.length], 0.9 + hash(i * 5 + k) * 0.16)
+    }
+  })
   // two gantry cranes on the quay
-  for (const x of [p.x + 66, p.x + 92]) {
-    for (const sx of [-6, 6]) for (const sz of [-5, 5]) b.box('trim', x + sx, 12, p.z + 19 + sz, 0.9, 24, 0.9, '#c9a227')
-    b.box('trim', x, 24.5, p.z + 19, 14, 1.3, 12, '#c9a227')
-    b.box('trim', x, 26, p.z + 30, 2, 1.5, 50, '#c9a227')
-    b.box('trim', x, 21.5, p.z + 40, 2.8, 4.6, 2.8, '#2f3338')
+  for (const crane of CRANES) {
+    const x = crane.x
+    for (const sx of [-6, 6]) for (const sz of [-5, 5]) b.box('trim', x + sx, 12, crane.z + sz, 0.9, 24, 0.9, '#c9a227')
+    b.box('trim', x, 24.5, crane.z, 14, 1.3, 12, '#c9a227')
+    b.box('trim', x, 26, crane.z + 11, 2, 1.5, 50, '#c9a227')
+    b.box('trim', x, 21.5, crane.z + 21, 2.8, 4.6, 2.8, '#2f3338')
   }
   // a ship alongside while orders are on their way in
-  if (orders > 0) {
+  if (ship) {
     const sx = PIER.x - 12.5
     const sz = (PIER.z0 + PIER.z1) / 2 + 4
     b.box('wall', sx, 0.6, sz, 10, 4.4, 40, '#27313d')
@@ -279,8 +309,6 @@ export function buildPort(stock: number, orders: number, color: string, mats: Ci
   }
   return b.build(mats.of)
 }
-/** How many containers stand on the quay for a given stock of devices. */
-export const containers = (stock: number) => Math.min(110, Math.ceil(10 * Math.log2(1 + stock / 400)))
 
 /** Rival headquarters, and the hoardings round whatever is being built. */
 export function buildTowers(list: Place[], mats: CityMats): THREE.Mesh[] {
@@ -484,8 +512,13 @@ export function CityModel({ g, all, list, mats, lights, color, accent }: { g: Ga
   const base = useMemo(() => buildBase(all, taken, list, mats), [takenKey, openKey, mats]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => base.meshes.forEach((m) => m.geometry.dispose()), [base])
   const civic = useBatch(() => buildCivic(g, mats), [g.activeResearch.length, g.stock.listed, g.stock.history.length, mats])
-  const stock = g.products.filter((p) => p.companyId === 'player' && p.status === 'sale').reduce((a, p) => a + p.stock, 0)
-  const port = useBatch(() => buildPort(stock, g.orders.length, color, mats), [containers(stock), g.orders.length > 0, color, mats])
+  // the port is rebuilt only when a bay gains or loses a container, a lorry comes or goes, or a shortage starts or ends
+  const bays = portBays(g)
+  const baysKey = bays.map((bay) => `${bay.id}:${bay.level}`).join('|')
+  const trucks = portTrucks(g)
+  const short = shortages(g)
+  const port = useBatch(() => buildPort(bays, trucks, short, g.orders.length > 0, color, mats), [baysKey, trucks, short.join('|'), g.orders.length > 0, color, mats])
+  const bayNames = useMemo(() => bays.map((bay) => ({ id: bay.id, name: bay.name, x: bay.x, z: bay.z })), [bays.map((bay) => `${bay.id}:${bay.name}`).join('|')]) // eslint-disable-line react-hooks/exhaustive-deps
   const towersKey = list.map((p) => `${p.id}:${p.dim ? 0 : 1}:${p.building !== undefined ? 1 : 0}:${p.site ? `${p.site.w}.${p.site.floors}.${p.x}.${p.z}.${p.scale ?? 1}.${p.front ?? 0}.${p.crowded ? 1 : 0}` : ''}:${p.company ? towerFloors(p.company) + p.company.color : ''}`).join('|')
   const towers = useBatch(() => buildTowers(list, mats), [towersKey, mats])
   const me = g.companies[0]
@@ -508,6 +541,10 @@ export function CityModel({ g, all, list, mats, lights, color, accent }: { g: Ga
         return null
       })}
       <Sign p={[SHED.x, 9, SHED.z + SHED.d / 2 + 0.45]} size={[30, 3]} name={me.name} glow={lights ? 1 : 0.5} />
+      {/* and each device's name on the board at the front of its bay */}
+      {bayNames.map((bay) => (
+        <Sign key={bay.id} p={[bay.x, 0.78, bay.z + BAYS.d / 2 - 0.02]} size={[BAYS.w - 1.2, 1.3]} name={bay.name} glow={lights ? 1 : 0.5} />
+      ))}
     </>
   )
 }

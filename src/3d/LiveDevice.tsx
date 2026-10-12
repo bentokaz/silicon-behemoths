@@ -7,6 +7,7 @@ import { type RootState, type ThreeEvent, useFrame, useThree } from '@react-thre
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { sfx } from '../audio/sfx'
+import { Icon } from '../components/icons'
 import { TYPES } from '../data/devices'
 import { sizeLimits } from '../data/devices'
 import { type Carrier, carrierBody, clampPart, faceBasis, faceLabel, faceSize, facesFor, isEdge, isFlip, kindsFor, mountOf, onKeyboard, partLabel } from '../sim/geometry'
@@ -929,7 +930,7 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
 
   const part = design.parts.find((p) => p.id === selectedId)
   const st = useStore.getState()
-  const chip = 'h-5 border border-line2 bg-panel/95 px-[6px] text-[11px] text-dim hover:border-accent hover:text-accent'
+  const chip = 'h-6 border border-line2 bg-panel px-2 text-[11px] text-fg hover:border-fg hover:bg-hover'
   return (
     <group ref={turn}>
       <primitive object={group} onPointerDown={down} onPointerMove={move} onDoubleClick={twice} />
@@ -938,15 +939,15 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
         <group ref={bar}>
           <Html center zIndexRange={[5, 0]} style={{ pointerEvents: 'none' }}>
             <div className="flex translate-y-3 whitespace-nowrap" style={{ pointerEvents: 'auto' }} onPointerDown={(e) => e.stopPropagation()}>
-              <button className={chip} title="Make a copy beside it" onClick={() => st.duplicatePart(part.id)}>
+              <button type="button" className={chip} title="Make a copy beside it" onClick={() => st.duplicatePart(part.id)}>
                 Copy
               </button>
               {!isEdge(part.face, design.type) && (
-                <button className={`${chip} border-l-0`} title="Move to the centre line" onClick={() => st.patchPart(part.id, { x: 0 })}>
+                <button type="button" className={`${chip} -ml-px`} title="Move to the centre line" onClick={() => st.patchPart(part.id, { x: 0 })}>
                   Centre
                 </button>
               )}
-              <button className={`${chip} border-l-0 hover:border-neg hover:text-neg`} title="Remove (Delete)" onClick={() => st.removePart(part.id)}>
+              <button type="button" className={`${chip} -ml-px hover:!border-neg hover:text-neg`} title="Remove this part (Delete)" onClick={() => st.removePart(part.id)}>
                 Delete
               </button>
             </div>
@@ -955,15 +956,15 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
       )}
       {adding && (
         <Html position={adding.at} zIndexRange={[6, 0]}>
-          <div className="w-40 border border-line2 bg-panel/95" onPointerDown={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-line px-2 py-1">
-              <span className="text-[11px] text-faint">Add to {faceLabel(adding.face, design.type)}</span>
-              <button className="num text-[11px] text-dim hover:text-accent" onClick={() => setAdding(null)}>
-                x
+          <div className="w-44 border border-line2 bg-panel" onPointerDown={(e) => e.stopPropagation()}>
+            <div className="flex h-7 items-center justify-between border-b border-line pl-2">
+              <span className="text-[11px] text-dim">Add to the {faceLabel(adding.face, design.type)}</span>
+              <button type="button" className="flex h-7 w-7 items-center justify-center text-dim hover:bg-hover hover:text-fg" title="Close without adding anything" aria-label="Close without adding anything" onClick={() => setAdding(null)}>
+                <Icon name="close" size={12} />
               </button>
             </div>
             {adding.kinds.map((k) => (
-              <button key={k} className="block w-full px-2 py-[3px] text-left text-[11px] text-fg hover:bg-hover hover:text-accent" onClick={() => (st.addPart(k, adding), setAdding(null))}>
+              <button key={k} type="button" className="block h-6 w-full px-2 text-left text-xs text-fg hover:bg-hover" onClick={() => (st.addPart(k, adding), setAdding(null))}>
                 {partLabel({ kind: k, face: adding.face, crown: design.type === 'watch' && k === 'button' }, design.type)}
               </button>
             ))}

@@ -3,17 +3,28 @@
 // draw calls. Limbs are posed by hand each frame: there is no skeleton, but
 // arms have a shoulder and an elbow and legs a hip and a knee, and each pose
 // is a set of joint angles the body eases toward.
+import { useThree } from '@react-three/fiber'
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import { Act, type Body, Kind, Mode, Tool } from './crowd'
 import { DARK, HAIR, SKIN, TROUSERS } from './kit'
-import { Pose } from './spots'
+import { emptySeats, picks, useHighlight } from '../../store/highlight'
+import { themeColor } from '../../store/theme'
+import { Pose, type Spot, USE } from './spots'
 import { useTick } from './tick'
 
 const BOXES = 14
 const BALLS = 4
 const MARKS = 2
+/** A highlight plate is two flat squares: a dark one behind, and the coloured one a little smaller on top of it. */
+const PLATES = 2
+/** The most empty desks that are marked at once. */
+const DESK_PLATES = 240
+/** How bright everybody else is drawn while some people are picked out. */
+const DIM = 0.42
+/** How tall a highlight plate is on screen, in px, however far away the camera is. */
+const PLATE_PX = 15
 // box slots
 const TORSO = 0
 const THIGH = 1
@@ -120,6 +131,8 @@ interface Meshes {
   balls: THREE.InstancedMesh
   marks: THREE.InstancedMesh
   blobs: THREE.InstancedMesh
+  /** The plates over whoever, or whatever, a highlight picks out. Drawn over everything, so a wall never hides one. */
+  plates: THREE.InstancedMesh
   cap: number
 }
 
@@ -131,7 +144,9 @@ function build(cap: number): Meshes {
   const blob = new THREE.CircleGeometry(1, 14)
   blob.rotateX(-Math.PI / 2)
   const blobs = new THREE.InstancedMesh(blob, new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.22, depthWrite: false }), cap)
-  for (const m of [boxes, balls, marks, blobs]) {
+  const plates = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ toneMapped: false, depthTest: false, depthWrite: false, transparent: true }), (cap + DESK_PLATES) * PLATES)
+  plates.renderOrder = 50
+  for (const m of [boxes, balls, marks, blobs, plates]) {
     m.frustumCulled = false
     m.userData.live = true
     m.count = 0
@@ -144,33 +159,36 @@ function build(cap: number): Meshes {
   for (let i = 0; i < cap * BOXES; i++) boxes.setColorAt(i, col.set('#ffffff'))
   for (let i = 0; i < cap * BALLS; i++) balls.setColorAt(i, col.set('#ffffff'))
   for (let i = 0; i < cap * MARKS; i++) marks.setColorAt(i, col.set('#ffffff'))
-  return { boxes, balls, marks, blobs, cap }
+  for (let i = 0; i < (cap + DESK_PLATES) * PLATES; i++) plates.setColorAt(i, col.set('#ffffff'))
+  return { boxes, balls, marks, blobs, plates, cap }
 }
 
-function paint(m: Meshes, bodies: Body[]) {
+/** Writes everybody's colours. With `shade`, each body is drawn that much darker (1 is as it is): how the people a highlight leaves out step back. */
+function paint(m: Meshes, bodies: Body[], shade?: Float32Array) {
   const n = Math.min(bodies.length, m.cap)
   for (let i = 0; i < n; i++) {
     const b = bodies[i]
+    const k = shade ? shade[i] : 1
     const skin = SKIN[b.look % SKIN.length]
     const hair = HAIR[(b.look >> 3) % HAIR.length]
     const legs = TROUSERS[(b.look >> 5) % TROUSERS.length]
     const bx = i * BOXES
-    m.boxes.setColorAt(bx + TORSO, col.set(b.shirt))
-    for (let k = 0; k < 2; k++) {
-      m.boxes.setColorAt(bx + THIGH + k, col.set(legs))
-      m.boxes.setColorAt(bx + SHIN + k, col.set(legs))
-      m.boxes.setColorAt(bx + FOOT + k, col.set(DARK))
-      m.boxes.setColorAt(bx + UARM + k, col.set(b.shirt))
-      m.boxes.setColorAt(bx + FARM + k, col.set(b.shirt))
+    m.boxes.setColorAt(bx + TORSO, col.set(b.shirt).multiplyScalar(k))
+    for (let j = 0; j < 2; j++) {
+      m.boxes.setColorAt(bx + THIGH + j, col.set(legs).multiplyScalar(k))
+      m.boxes.setColorAt(bx + SHIN + j, col.set(legs).multiplyScalar(k))
+      m.boxes.setColorAt(bx + FOOT + j, col.set(DARK).multiplyScalar(k))
+      m.boxes.setColorAt(bx + UARM + j, col.set(b.shirt).multiplyScalar(k))
+      m.boxes.setColorAt(bx + FARM + j, col.set(b.shirt).multiplyScalar(k))
     }
-    m.boxes.setColorAt(bx + LONG, col.set(hair))
+    m.boxes.setColorAt(bx + LONG, col.set(hair).multiplyScalar(k))
     // whatever they hold is coloured when it is first put in their hands
     b.prop = -1
     const sx = i * BALLS
-    m.balls.setColorAt(sx + HEAD, col.set(skin))
-    m.balls.setColorAt(sx + HAIRB, col.set(hair))
-    m.balls.setColorAt(sx + HAND, col.set(skin))
-    m.balls.setColorAt(sx + HAND + 1, col.set(skin))
+    m.balls.setColorAt(sx + HEAD, col.set(skin).multiplyScalar(k))
+    m.balls.setColorAt(sx + HAIRB, col.set(hair).multiplyScalar(k))
+    m.balls.setColorAt(sx + HAND, col.set(skin).multiplyScalar(k))
+    m.balls.setColorAt(sx + HAND + 1, col.set(skin).multiplyScalar(k))
   }
   m.boxes.instanceColor!.needsUpdate = true
   m.balls.instanceColor!.needsUpdate = true
@@ -215,7 +233,7 @@ function propOf(b: Body, walking: boolean): number {
 }
 
 /** Writes one person's parts. */
-function pose(m: Meshes, i: number, b: Body, dt: number): boolean {
+function pose(m: Meshes, i: number, b: Body, dt: number, shade = 1): boolean {
   const c = b.cur
   const walking = b.mode === Mode.Walk || b.mode === Mode.In || b.mode === Mode.Out || b.striding
   const rest = REST[walking ? Pose.Stand : b.pose] ?? REST[Pose.Stand]
@@ -514,8 +532,8 @@ function pose(m: Meshes, i: number, b: Body, dt: number): boolean {
     b.prop = prop
     const colours = PROP_COLOR[prop]
     if (colours) {
-      m.boxes.setColorAt(bx + PROP, col.set(colours[0]))
-      m.boxes.setColorAt(bx + PROP2, col.set(colours[1]))
+      m.boxes.setColorAt(bx + PROP, col.set(colours[0]).multiplyScalar(shade))
+      m.boxes.setColorAt(bx + PROP2, col.set(colours[1]).multiplyScalar(shade))
       fresh = true
     }
   }
@@ -580,19 +598,46 @@ function pose(m: Meshes, i: number, b: Body, dt: number): boolean {
 const GOLD = '#f2b631'
 const BLUE = '#5aa2f0'
 const SPARK = '#fff3c9'
+/** What a highlight plate is backed with, so it reads on grass, floor and wall alike. */
+const BACKING = '#0a0908'
 
 /** Anything with people in it to draw: a crowd, or a cast put together by hand. */
 export interface Cast {
   bodies: Body[]
   /** Bumped when the set of bodies changes. */
   version: number
+  /** The site the cast is on and every place on it someone can be. The campus highlights read them; a cast put together by hand has neither. */
+  site?: { kind: string }
+  spots?: Spot[]
+}
+
+const SCALE = new THREE.Vector3()
+const AT = new THREE.Vector3()
+const FACING = new THREE.Quaternion()
+
+/**
+ * One highlight plate: a square that faces the camera and is the same size on
+ * screen however far away it is (a mark that shrank with distance could not be
+ * found on a big campus). `unit` is the world size of one screen pixel at a
+ * distance of one.
+ */
+function putPlate(m: Meshes, k: number, camera: THREE.Camera, unit: number, x: number, y: number, z: number, colour: string) {
+  AT.set(x, y, z)
+  const size = Math.max(0.2, camera.position.distanceTo(AT) * unit * PLATE_PX)
+  AT.y += size * 0.65
+  m.plates.setMatrixAt(k * PLATES, A.compose(AT, FACING, SCALE.set(size * 1.34, size * 1.34, 1)))
+  m.plates.setColorAt(k * PLATES, col.set(BACKING))
+  m.plates.setMatrixAt(k * PLATES + 1, A.compose(AT, FACING, SCALE.set(size, size, 1)))
+  m.plates.setColorAt(k * PLATES + 1, col.set(colour))
 }
 
 export function People({ crowd, cap, neg, markers = true }: { crowd: Cast; cap: number; neg: string; markers?: boolean }) {
   const m = useMemo(() => build(cap), [cap])
+  const camera = useThree((s) => s.camera)
+  const viewHeight = useThree((s) => s.size.height)
   useEffect(
     () => () => {
-      for (const mesh of [m.boxes, m.balls, m.marks, m.blobs]) {
+      for (const mesh of [m.boxes, m.balls, m.marks, m.blobs, m.plates]) {
         mesh.geometry.dispose()
         ;(mesh.material as THREE.Material).dispose()
         mesh.dispose()
@@ -600,17 +645,44 @@ export function People({ crowd, cap, neg, markers = true }: { crowd: Cast; cap: 
     },
     [m],
   )
-  const seen = useMemo(() => ({ version: -1 }), [m]) // eslint-disable-line react-hooks/exhaustive-deps
+  // what was last drawn: the cast, who a highlight picked out, and the things that are only looked up now and then
+  const seen = useMemo(() => ({ version: -1, sig: 0, shade: new Float32Array(cap).fill(1), warn: GOLD, pos: '#5fd08a', readAt: -10, free: [] as Spot[], plates: 0 }), [m]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useTick((dt, now) => {
     const bodies = crowd.bodies
     const n = Math.min(bodies.length, cap)
-    if (seen.version !== crowd.version) {
+    // a highlight belongs to the campus: other sites, and casts that carry no markers, are drawn as ever
+    const hl = markers && crowd.site?.kind === 'office' ? useHighlight.getState().on : null
+    // who is picked out, folded into one number: when it changes, everybody's colours are written again
+    let sig = hl === 'raise' ? 1 : hl === 'unhappy' ? 2 : hl === 'desks' ? 3 : 0
+    if (hl)
+      for (let i = 0; i < n; i++) {
+        const b = bodies[i]
+        const on = b.kind === Kind.Staff && !b.quit && picks(hl, b)
+        // with the empty desks marked nobody steps back: it is the desks that are looked for
+        seen.shade[i] = on || hl === 'desks' ? 1 : DIM
+        sig = (sig * 31 + (on ? 7 : 3)) | 0
+      }
+    const recast = seen.version !== crowd.version
+    if (recast || seen.sig !== sig) {
       seen.version = crowd.version
-      for (const b of bodies) b.shown = false
-      paint(m, bodies)
-      for (let i = 0; i < n; i++) hide(m, i)
+      seen.sig = sig
+      if (recast) for (const b of bodies) b.shown = false
+      paint(m, bodies, hl ? seen.shade : undefined)
+      if (recast) for (let i = 0; i < n; i++) hide(m, i)
     }
+    if (hl && now - seen.readAt > 0.5) {
+      // the theme's own colours, and which desks stand empty: looked up twice a second, not every frame
+      seen.readAt = now
+      seen.warn = themeColor('warn', GOLD)
+      seen.pos = themeColor('pos', '#5fd08a')
+      seen.free = hl === 'desks' && crowd.spots ? emptySeats(crowd.spots.filter((s) => (s.use & USE.seat) !== 0), bodies.filter((b) => b.kind === Kind.Staff && !b.quit).map((b) => b.seat)) : []
+    }
+    FACING.copy(camera.quaternion)
+    const unit = (camera as THREE.PerspectiveCamera).isPerspectiveCamera ? (2 * Math.tan((((camera as THREE.PerspectiveCamera).fov / 2) * Math.PI) / 180)) / Math.max(1, viewHeight) : 0.0015
+    const tint = hl === 'raise' ? seen.warn : neg
+    let plates = 0
+
     m.boxes.count = n * BOXES
     m.balls.count = n * BALLS
     m.blobs.count = n
@@ -620,13 +692,17 @@ export function People({ crowd, cap, neg, markers = true }: { crowd: Cast; cap: 
       const b = bodies[i]
       const mi = i * MARKS
       let mark = 0
+      const picked = hl !== null && hl !== 'desks' && seen.shade[i] === 1
       if (b.mode === Mode.Off) {
         if (b.shown) {
           hide(m, i)
           b.shown = false
         }
-        // an empty chair with a badge over it: away on a course
-        if (markers && b.training && b.seat && !b.quit) {
+        if (picked && b.seat) {
+          // away from their desk (on a course, or gone home): the plate stands over the chair
+          putPlate(m, plates++, camera, unit, b.seat.x, 1.3, b.seat.z, tint)
+        } else if (!hl && markers && b.training && b.seat && !b.quit) {
+          // an empty chair with a badge over it: away on a course
           const s = b.seat
           A.makeRotationY(now * 1.2).scale(SCALE.set(0.13, 0.13, 0.035)).setPosition(s.x, 1.45 + Math.sin(now * 2 + i) * 0.04, s.z)
           m.marks.setMatrixAt(mi, A)
@@ -634,9 +710,11 @@ export function People({ crowd, cap, neg, markers = true }: { crowd: Cast; cap: 
           mark = 1
         }
       } else {
-        if (pose(m, i, b, dt)) recolour = true
-        if (markers && b.kind === Kind.Staff && !b.quit) {
-          const top = b.y + b.cur[HIP] + 1.08
+        if (pose(m, i, b, dt, hl ? seen.shade[i] : 1)) recolour = true
+        const top = b.y + b.cur[HIP] + 1.08
+        if (picked) putPlate(m, plates++, camera, unit, b.x, top, b.z, tint)
+        // while a highlight is on, the everyday marks are put away: only what was asked for is marked
+        else if (!hl && markers && b.kind === Kind.Staff && !b.quit) {
           const working = b.mode === Mode.Do && (b.act === Act.Desk || b.act === Act.Station || b.act === Act.Meet)
           if (b.ask || b.slump || !b.seat) {
             A.makeRotationY(now * 1.5).scale(SCALE.set(0.085, 0.11, 0.085)).setPosition(b.x, top + 0.06 + Math.sin(now * 3 + i) * 0.05, b.z)
@@ -659,6 +737,13 @@ export function People({ crowd, cap, neg, markers = true }: { crowd: Cast; cap: 
       if (mark < 1) m.marks.setMatrixAt(mi, ZERO)
       if (mark < 2) m.marks.setMatrixAt(mi + 1, ZERO)
     }
+    if (hl === 'desks') for (const s of seen.free) if (plates < cap + DESK_PLATES) putPlate(m, plates++, camera, unit, s.x, s.y + 1.25, s.z, seen.pos)
+    if (plates || seen.plates) {
+      m.plates.instanceMatrix.needsUpdate = true
+      if (m.plates.instanceColor) m.plates.instanceColor.needsUpdate = true
+    }
+    m.plates.count = plates * PLATES
+    seen.plates = plates
     if (recolour) m.boxes.instanceColor!.needsUpdate = true
     m.boxes.instanceMatrix.needsUpdate = true
     m.balls.instanceMatrix.needsUpdate = true
@@ -673,8 +758,7 @@ export function People({ crowd, cap, neg, markers = true }: { crowd: Cast; cap: 
       <primitive object={m.boxes} />
       <primitive object={m.balls} />
       <primitive object={m.marks} />
+      <primitive object={m.plates} />
     </>
   )
 }
-
-const SCALE = new THREE.Vector3()

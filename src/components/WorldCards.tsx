@@ -1,7 +1,8 @@
 // Small cards that open beside something clicked in a building: the bench
 // shows the research, the reception the applicants, the dock the orders.
 // Each does the one or two things you would want on the spot and links to the
-// full screen for the rest.
+// full screen for the rest. The card of a room (its finish, furnishing it,
+// knocking it down) is here too: it opens beside the floor that was clicked.
 import type { ReactNode } from 'react'
 import type { Target } from '../3d/SiteView'
 import { meetingSlot } from '../3d/site/crowd'
@@ -10,25 +11,27 @@ import { TYPES } from '../data/devices'
 import { fmtDate, hire, researchItem, setCampaignBudget, stopCampaign, toggleResearch } from '../sim/game'
 import { devProgress, factoryLife, officeLife, researchLines, storeLife, venueLife } from '../sim/life'
 import { type CapId, capOfTab, lockTip } from '../sim/progress'
-import { ITEMS } from '../sim/sites'
+import { ITEMS, ROOMS, roomTiles } from '../sim/sites'
 import { ROLE_INFO, staffEffects, titleFor } from '../sim/staff'
-import { TRACKS } from '../sim/types'
+import { type Room, type Site, TRACKS } from '../sim/types'
 import { type Tab, useGame, useStore } from '../store/game'
 import { ExecShortlist, lockProps } from './Progress'
+import { storeMonth } from './SiteInsight'
 import { Icon, type IconName } from './icons'
-import { Btn, Meter, Row, Tag, money, num, pct, useLayer } from './ui'
+import { Btn, ConfirmBtn, Meter, Row, Tag, money, moneyDelta, num, pct, price, useLayer } from './ui'
 
 const TITLES: Record<Target['kind'], { title: string; icon: IconName }> = {
   research: { title: 'Research', icon: 'research' },
   product: { title: 'Device', icon: 'devices' },
   campaign: { title: 'Campaigns', icon: 'marketing' },
   applicants: { title: 'Applicants', icon: 'person' },
+  room: { title: 'Room', icon: 'rooms' },
   os: { title: 'Software', icon: 'labs' },
   team: { title: 'Team meetings', icon: 'staff' },
   support: { title: 'Support', icon: 'care' },
   orders: { title: 'Production', icon: 'factory' },
   quality: { title: 'Testing', icon: 'factory' },
-  takings: { title: 'Takings', icon: 'stores' },
+  takings: { title: 'This store', icon: 'stores' },
   person: { title: 'Person', icon: 'person' },
   venue: { title: 'Venue', icon: 'venue' },
 }
@@ -43,7 +46,7 @@ interface More {
   cap?: CapId
 }
 
-function Frame({ target, close, children, more, title }: { target: Target; close: () => void; children: ReactNode; more?: More; title?: string }) {
+function Frame({ target, close, children, more, title, count }: { target: Target; close: () => void; children: ReactNode; more?: More; title?: string; /** A figure beside the title. */ count?: ReactNode }) {
   const g = useGame()
   const t = TITLES[target.kind]
   // a link to somewhere not open yet wears a lock, says what opens it, and shows the card for it instead of going
@@ -58,6 +61,7 @@ function Frame({ target, close, children, more, title }: { target: Target; close
         <span className="flex items-center gap-2 text-[11px] font-semibold text-fg">
           <Icon name={t.icon} size={13} className="text-accent" />
           {title ?? t.title}
+          {count !== undefined && <span className="num font-normal text-faint">{count}</span>}
         </span>
         <button className="flex h-6 w-6 items-center justify-center text-faint hover:text-fg" onClick={close} title="Close (Esc)" aria-label="Close">
           <Icon name="close" size={11} />
@@ -129,7 +133,7 @@ function ResearchCard({ target, close }: { target: Target; close: () => void }) 
           <Btn small className="!px-2" disabled={g.rdBudget <= 0} onClick={() => act((s) => void (s.rdBudget = Math.max(0, s.rdBudget - step)))} title="Spend less">
             -
           </Btn>
-          <span className="num w-16 text-center text-xs text-fg">{money(g.rdBudget, 1)}</span>
+          <span className="num w-16 text-center text-xs text-fg">{money(g.rdBudget)}</span>
           <Btn small className="!px-2" {...lock} lockMark="corner" onClick={() => act((s) => void (s.rdBudget += step))} title="Spend more: research goes faster">
             +
           </Btn>
@@ -177,14 +181,14 @@ function ProductCard({ target, close }: { target: Target; close: () => void }) {
       <Frame target={target} close={close} more={{ label: 'All devices', tab: 'products' }}>
         <Note>Nothing is being developed here yet. Prototypes appear on these benches as soon as a device is in the works.</Note>
         <Btn
-          tone="primary"
-          className="mt-2 h-8 w-full"
+          icon="plus"
+          className="mt-2 w-full"
           onClick={() => {
             close()
             openDesigner()
           }}
         >
-          Design a new device
+          New device
         </Btn>
       </Frame>
     )
@@ -206,10 +210,10 @@ function ProductCard({ target, close }: { target: Target; close: () => void }) {
         </>
       ) : (
         <>
-          <Row k="Price" v={money(p.price, 0)} />
+          <Row k="Price" v={price(p.price)} />
           <Row k="In stock" v={num(p.stock)} tone={p.stock <= 0 ? 'text-warn' : undefined} />
           <Row k="Sold" v={num(p.unitsSold)} />
-          <Row k="Reviews" v={`${p.reviewAvg.toFixed(1)} / 10`} />
+          <Row k="Reviews" v={`${Math.round(p.reviewAvg * 10) / 10} of 10`} />
         </>
       )}
       <Btn
@@ -243,14 +247,14 @@ function CampaignCard({ target, close }: { target: Target; close: () => void }) 
           <div key={c.id} className="border-b border-line py-[5px] last:border-0">
             <div className="text-[11px] text-fg">{c.channel}</div>
             <div className="text-[11px] text-dim">
-              For {c.target.toLowerCase() === 'the brand' ? 'the brand' : c.target}. Spent {money(c.spent, 1)} so far.
+              For {c.target.toLowerCase() === 'the brand' ? 'the brand' : c.target}. Spent {money(c.spent)} so far.
             </div>
             <div className="mt-1 flex items-center justify-between gap-2">
               <span className="flex items-center gap-1">
                 <Btn small className="!px-2" onClick={() => act((s) => setCampaignBudget(s, c.id, c.monthly - step))} title="Spend less">
                   -
                 </Btn>
-                <span className="num w-20 text-center text-[11px] text-fg">{money(c.monthly, 0)}/mo</span>
+                <span className="num w-24 text-center text-[11px] text-fg">{money(c.monthly)} a month</span>
                 <Btn small className="!px-2" {...lock} lockMark="corner" onClick={() => act((s) => setCampaignBudget(s, c.id, c.monthly + step))} title="Spend more">
                   +
                 </Btn>
@@ -274,7 +278,7 @@ function ApplicantsCard({ target, close }: { target: Target; close: () => void }
   // whoever was clicked comes first
   const list = [...g.candidates].sort((a, b) => (a.id === target.id ? -1 : 0) - (b.id === target.id ? -1 : 0)).slice(0, 5)
   return (
-    <Frame target={target} close={close} more={{ label: `All ${g.candidates.length} applicants`, tab: 'staff' }}>
+    <Frame target={target} close={close} more={{ label: `All ${g.candidates.length} under Hiring`, tab: 'staff', view: 'hire' }}>
       {!list.length && <Note>Nobody is waiting to be seen.</Note>}
       {list.length > 0 && <Note tone={free > 0 ? 'text-dim' : 'text-warn'}>{free > 0 ? `${free} free ${free === 1 ? 'desk' : 'desks'}. Hiring costs a month's pay up front.` : 'There is no free desk: anyone hired now has nowhere to work.'}</Note>}
       {list.map((e) => (
@@ -288,12 +292,11 @@ function ApplicantsCard({ target, close }: { target: Target; close: () => void }
               {titleFor(e.skill) ? `${titleFor(e.skill)} ${ROLE_INFO[e.role].name.toLowerCase()}` : ROLE_INFO[e.role].name}
             </span>
             <span className="num block text-[11px] text-faint">
-              skill {Math.round(e.skill)} / {money(e.salary, 0)} a month
+              skill {Math.round(e.skill)}, {price(e.salary)} a month
             </span>
           </span>
           <Btn
             small
-            tone="primary"
             className="shrink-0"
             onClick={() => {
               const err = act((s) => hire(s, e.id))
@@ -314,14 +317,14 @@ function OsCard({ target, close }: { target: Target; close: () => void }) {
   const g = useGame()
   const os = officeLife(g).os
   return (
-    <Frame target={target} close={close} more={{ label: 'Open the labs', tab: 'labs' }}>
+    <Frame target={target} close={close} more={{ label: 'Open Labs', tab: 'labs' }}>
       <div className="flex items-baseline justify-between">
         <span className="text-[13px] text-fg">
           {os.name} {os.own ? os.version : ''}
         </span>
         <Tag tone={os.own ? 'pos' : 'dim'}>{os.own ? 'your own' : 'licensed'}</Tag>
       </div>
-      {!os.own && !os.project && <Note>Your devices run stock software, the same as everyone else. Your own system starts in the labs.</Note>}
+      {!os.own && !os.project && <Note>Your devices run stock software, the same as everyone else. Your own system starts under Research, Labs.</Note>}
       <div className="mt-2 empty:hidden">
         <LockLine id="labs" />
       </div>
@@ -329,7 +332,7 @@ function OsCard({ target, close }: { target: Target; close: () => void }) {
         <>
           <Row k="Quality" v={Math.round(os.quality)} tone={os.quality >= os.industry ? 'text-pos' : 'text-warn'} />
           <Row k="What buyers expect" v={Math.round(os.industry)} />
-          <Row k="Services income" v={os.services > 0 ? `${money(os.services, 1)} a month` : 'none'} />
+          <Row k="Services income" v={os.services > 0 ? `${money(os.services)} a month` : 'none'} />
         </>
       )}
       {os.project && (
@@ -380,7 +383,7 @@ function SupportCard({ target, close }: { target: Target; close: () => void }) {
   const s = officeLife(g).support
   const tone = s.load >= 1 ? 'neg' : s.load >= 0.75 ? 'warn' : 'pos'
   return (
-    <Frame target={target} close={close} more={{ label: 'After-sales', tab: 'care' }}>
+    <Frame target={target} close={close} more={{ label: 'Open Owners', tab: 'care' }}>
       <LockLine id="care" />
       <Row k="Tickets a day" v={num(s.tickets)} />
       <Row k="The team can answer" v={num(s.capacity)} />
@@ -440,12 +443,21 @@ function TakingsCard({ target, close, siteRef }: { target: Target; close: () => 
   const g = useGame()
   const st = storeLife(g, siteRef.replace('store:', ''))
   if (!st) return null
+  const month = storeMonth(g, siteRef.replace('store:', ''))
   return (
-    <Frame target={target} close={close}>
-      <div className="mb-1 flex items-baseline justify-between">
-        <span className="truncate text-[13px] text-fg">{st.name}</span>
-        <Tag tone={st.open ? 'pos' : 'neg'}>{st.open ? 'trading' : 'closed'}</Tag>
-      </div>
+    <Frame target={target} close={close} title={st.name} more={{ label: 'All stores', tab: 'stores' }}>
+      {!st.open && (
+        <div className="mb-1">
+          <Tag tone="neg">closed</Tag>
+        </div>
+      )}
+      {month && (
+        <>
+          <Row k={month.partial ? 'Profit this month, projected' : 'Profit this month'} v={moneyDelta(month.profit)} tone={month.profit < 0 ? 'text-neg' : 'text-pos'} />
+          <Row k="Takings" v={money(month.revenue)} />
+          <Row k="Costs" v={money(month.costs)} />
+        </>
+      )}
       <Row k="Visitors a day" v={num(st.visitors)} />
       <Row k="Sold a day" v={num(st.perDay)} />
       <Row k="Sold this month" v={num(st.monthUnits)} />
@@ -528,6 +540,40 @@ function VenueCard({ target, close }: { target: Target; close: () => void }) {
           <Row k="Keynotes held here" v={v.held} />
         </div>
       )}
+    </Frame>
+  )
+}
+
+/**
+ * The card of a room, opened beside the floor that was clicked: its finish,
+ * a way into furnishing it, and knocking it down. The builder does the work
+ * (so that each change is a step that can be undone); this is only the card.
+ */
+export function RoomCard({ target, close, site, room, onStyle, onFurnish, onDemolish }: { target: Target; close: () => void; site: Site; room: Room; onStyle: (style: number) => void; onFurnish: () => void; onDemolish: () => void }) {
+  const def = ROOMS[site.kind][room.type]
+  if (!def) return null
+  return (
+    <Frame target={target} close={close} title={def.name} count={`${num(roomTiles(site, room.n))} m\u00b2`}>
+      <div className="mb-1 text-[11px] text-dim">Finish</div>
+      <div className="grid grid-cols-2 gap-1">
+        {def.styles.map((st, i) => (
+          <button key={st.name} type="button" aria-pressed={room.style === i} onClick={() => onStyle(i)} className={`flex items-center gap-2 border px-[6px] py-[5px] text-left text-[11px] ${room.style === i ? 'border-accent bg-accent/10 text-accent' : 'border-line2 text-dim hover:border-fg hover:text-fg'}`}>
+            <span aria-hidden className="flex h-4 w-6 shrink-0 border border-line2">
+              <span className="flex-1" style={{ background: st.floor }} />
+              <span className="flex-1" style={{ background: st.wall }} />
+            </span>
+            <span className="truncate">{st.name}</span>
+          </button>
+        ))}
+      </div>
+      <div className="mt-2 flex gap-2">
+        <Btn small icon="furnish" className="flex-1" onClick={onFurnish}>
+          Furnish
+        </Btn>
+        <ConfirmBtn small icon="demolish" className="flex-1" confirm="Knock it down?" title="Knocks the room down. Everything inside is sold for half its price. Undo brings it back." onClick={onDemolish}>
+          Demolish
+        </ConfirmBtn>
+      </div>
     </Frame>
   )
 }

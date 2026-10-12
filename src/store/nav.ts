@@ -141,6 +141,10 @@ export const destOf = (id: Dest) => NAV.find((d) => d.id === id)!
 export function resolve(where: Where): { tab: Tab; view?: string; role?: Where['role'] } {
   const tab = (TABS as string[]).includes(where.tab) ? (where.tab as Tab) : where.tab === 'overview' ? 'dashboard' : where.tab === 'devices' ? 'products' : where.tab === 'campus' ? 'office' : 'dashboard'
   if (tab === 'marketing' && where.view === 'fans') return { tab: 'care', role: where.role }
+  // production orders are with the devices now, component supply with the company's finances; the factory page is its floor
+  if (tab === 'factory' && where.view === 'orders') return { tab: 'products' }
+  if (tab === 'factory' && where.view === 'supply') return { tab: 'finance' }
+  if (tab === 'factory') return { tab }
   if (tab === 'staff' && (where.view === 'people' || where.view === 'staff')) return { tab, view: 'team', role: where.role }
   if (tab === 'staff' && where.view === 'applicants') return { tab, view: 'hire', role: where.role }
   if (tab === 'goals') return { tab, view: where.view === 'growth' || where.view === 'goals' ? where.view : undefined, role: where.role }

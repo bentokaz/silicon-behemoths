@@ -5,7 +5,7 @@ import { sendFeedback } from '../store/cloud'
 import { useStore } from '../store/game'
 import { type FeedbackKind, type Sign, maybeAsk, noteBack, noteLeaving, noteRefusal, noteTrouble, recentSigns, useFeedback } from '../store/trouble'
 import { Icon, type IconName } from './icons'
-import { Btn, useLayer } from './ui'
+import { Btn, IconBtn, useLayer } from './ui'
 
 export const FEEDBACK_URL = 'https://bentokaz.itch.io/siliconbehemoths'
 export const ISSUES_URL = 'https://github.com/bentokaz/silicon-behemoths/issues'
@@ -41,7 +41,7 @@ const QUESTION: Record<Sign['kind'], { title: string; text: (s: Sign) => string 
   error: { title: 'That looked like a bug', text: () => 'Something in the game failed a moment ago. It would help a lot to know what you were doing when it happened.' },
   stuck: { title: 'Stuck on something?', text: (s) => `The game kept answering with ${s.note.replace(/ shown \d+ times$/, '')}. If that message did not tell you what to do next, say so and it will get fixed.` },
   rage: { title: 'Is something not responding?', text: () => 'It looked as if you were clicking on something that would not answer. Tell us what it was.' },
-  slow: { title: 'Running slowly?', text: () => 'The game has been drawing slowly on this computer. Lowering Quality under System, Settings usually helps; a quick report helps too.' },
+  slow: { title: 'Running slowly?', text: () => 'The game has been drawing slowly on this computer. Lowering the detail under Save and settings, Settings usually helps; a quick report helps too.' },
   gameover: { title: 'A rough ending?', text: () => 'If that felt unfair or came out of nowhere, say what happened. Your save from before the debt is still there to go back to.' },
 }
 
@@ -49,30 +49,32 @@ const QUESTION: Record<Sign['kind'], { title: string; text: (s: Sign) => string 
 function Ask() {
   const ask = useFeedback((s) => s.ask)
   const { open, dismiss } = useFeedback.getState()
+  const screen = useStore((s) => s.screen)
   useLayer(!!ask, () => dismiss())
   if (!ask) return null
   const q = QUESTION[ask.kind]
+  // it sits clear of what runs along the bottom: the messenger strip in a game, the footer of the new-company form
+  const bottom = screen === 'game' ? 52 : screen === 'new' ? 64 : 16
   return (
-    <div className="absolute bottom-4 right-4 z-[80] w-[340px] max-w-[calc(100%-2rem)] border border-accent bg-panel" role="dialog" aria-label={q.title}>
-      <div className="flex items-center gap-2 border-b border-line px-3 py-2 text-[11px] font-semibold text-accent">
-        <Icon name="review" size={14} />
-        <span className="flex-1">{q.title}</span>
-        <button className="-mr-1 flex h-6 w-6 items-center justify-center text-faint hover:text-fg" onClick={() => dismiss()} title="Close (Esc)" aria-label="Close">
-          <Icon name="close" size={13} />
-        </button>
+    <div className="absolute right-4 z-[80] w-[340px] max-w-[calc(100%-2rem)] border border-line2 bg-panel" style={{ bottom }} role="dialog" aria-label={q.title}>
+      <div className="flex h-8 items-center gap-2 border-b border-line pl-3 pr-1">
+        <Icon name="review" size={13} className="shrink-0 text-dim" />
+        <span className="t-title min-w-0 flex-1 truncate">{q.title}</span>
+        <IconBtn icon="close" tone="ghost" small title="Close (Esc)" onClick={() => dismiss()} />
       </div>
-      <div className="space-y-3 p-3 text-[12px] leading-relaxed text-dim">
+      <div className="space-y-3 p-3 text-xs leading-relaxed text-dim">
         <p>{q.text(ask)}</p>
         <div className="flex flex-wrap items-center gap-2">
-          <Btn small tone="primary" icon="alert" onClick={() => open(ask.kind === 'stuck' ? 'confusing' : 'bug')}>
+          {/* an outline button: the screen under this card may have its own filled one */}
+          <Btn icon="review" onClick={() => open(ask.kind === 'stuck' ? 'confusing' : 'bug')}>
             Report it
           </Btn>
-          <Btn small icon="check" onClick={() => dismiss()}>
+          <Btn tone="ghost" onClick={() => dismiss()}>
             All fine
           </Btn>
-          <button className="ml-auto text-[11px] text-faint hover:text-fg" onClick={() => dismiss(true)}>
+          <Btn tone="ghost" className="ml-auto" title="Never show this question again in this browser" onClick={() => dismiss(true)}>
             Do not ask again
-          </button>
+          </Btn>
         </div>
       </div>
     </div>
@@ -97,6 +99,7 @@ function Form() {
   useLayer(!!form, close, { modal: true, box })
   if (!form) return null
   const K = KINDS.find((k) => k.id === kind)!
+  const tooShort = text.trim().length < 3
   const body = `${text.trim()}\n\n---\n${withDetails ? Object.entries(context).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(' | ') || 'none' : v}`).join('\n') : `build: ${BUILD}`}`
   const issue = `${ISSUES_URL}/new?title=${encodeURIComponent(`[${K.label}] ${text.trim().split('\n')[0].slice(0, 70)}`)}&body=${encodeURIComponent(body)}`
   const send = async () => {
@@ -108,69 +111,67 @@ function Form() {
   return (
     <div className="absolute inset-0 z-[90] flex items-center justify-center bg-black/60 p-4" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div ref={box} className="flex max-h-full w-[560px] max-w-full flex-col border border-line2 bg-panel outline-none" role="dialog" aria-modal="true" aria-label="Send feedback">
-        <div className="flex items-center gap-2 border-b border-line px-4 py-3 text-[12px] font-semibold text-fg">
-          <Icon name="review" size={15} className="text-accent" />
-          <span className="flex-1">Tell us about it</span>
-          <button className="-mr-1 flex h-6 w-6 items-center justify-center text-faint hover:text-fg" onClick={close} title="Close (Esc)" aria-label="Close">
-            <Icon name="close" size={14} />
-          </button>
+        <div className="flex h-9 shrink-0 items-center gap-2 border-b border-line pl-4 pr-1">
+          <Icon name="review" size={13} className="shrink-0 text-dim" />
+          <span className="t-title flex-1">Tell us about it</span>
+          <IconBtn icon="close" tone="ghost" title="Close (Esc)" onClick={close} />
         </div>
         {state === 'sent' ? (
-          <div className="space-y-3 p-4 text-[12px] leading-relaxed text-dim">
+          <div className="space-y-3 p-4 text-xs leading-relaxed text-dim">
             <p className="flex items-center gap-2 text-pos">
               <Icon name="check" size={14} />
               Sent. Thank you: every report is read.
             </p>
             <div className="flex gap-2">
-              <Btn tone="primary" onClick={close}>
-                Back to the game
+              <Btn tone="primary" large autoFocus onClick={close}>
+                Done
               </Btn>
-              <Btn icon="plus" onClick={() => setState('idle')}>
+              <Btn large icon="plus" onClick={() => setState('idle')}>
                 Send another
               </Btn>
             </div>
           </div>
         ) : (
-          <div className="min-h-0 space-y-3 overflow-y-auto p-4 text-[12px] text-dim">
+          <div className="min-h-0 space-y-3 overflow-y-auto p-4 text-xs text-dim">
             <div className="grid grid-cols-2 gap-1">
               {KINDS.map((k) => (
-                <button key={k.id} onClick={() => setKind(k.id)} className={`flex items-center gap-2 border px-2 py-2 text-left text-[11px] transition-colors ${kind === k.id ? 'border-accent bg-accent/10 text-accent' : 'border-line2 bg-raise text-fg hover:border-accent'}`}>
-                  <Icon name={k.icon} size={14} className={kind === k.id ? '' : 'text-dim'} />
+                <button key={k.id} type="button" aria-pressed={kind === k.id} onClick={() => setKind(k.id)} className={`flex h-9 items-center gap-2 border px-3 text-left text-xs transition-colors ${kind === k.id ? 'border-accent bg-accent/10 font-semibold text-accent' : 'border-line2 bg-raise text-fg hover:border-fg'}`}>
+                  <Icon name={k.icon} size={14} className={kind === k.id ? 'text-accent' : 'text-dim'} />
                   {k.label}
                 </button>
               ))}
             </div>
             <div>
-              <div className="mb-1 text-[11px] text-dim">{K.ask}</div>
+              <div className="mb-1 text-xs text-fg">{K.ask}</div>
               <textarea
                 autoFocus
                 aria-label={K.ask}
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 // Ctrl+Enter sends, as in most places where Enter itself makes a new line
-                onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && text.trim().length >= 3 && state !== 'sending' && (e.preventDefault(), void send())}
+                onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !tooShort && state !== 'sending' && (e.preventDefault(), void send())}
                 maxLength={4000}
                 rows={6}
                 style={{ userSelect: 'text' }}
-                className="max-h-[40vh] min-h-20 w-full resize-y border border-line2 bg-carbon p-2 text-[12px] leading-relaxed text-fg outline-none focus:border-accent"
+                className="max-h-[40vh] min-h-20 w-full resize-y border border-line2 bg-carbon p-2 text-xs leading-relaxed text-fg outline-none focus:border-accent"
                 placeholder="A sentence or two is plenty."
               />
-              <div className="num mt-[2px] flex justify-between text-[11px] text-faint">
-                <span>{text.trim().length < 3 ? 'Write a few words to send.' : 'Ctrl+Enter sends.'}</span>
-                {text.length > 3600 && <span className={text.length >= 4000 ? 'text-warn' : ''}>{text.length} / 4000</span>}
+              <div className="mt-[2px] flex justify-between text-[11px] text-faint">
+                <span>{tooShort ? 'Write a few words to send.' : 'Ctrl+Enter sends.'}</span>
+                {text.length > 3600 && <span className={`num ${text.length >= 4000 ? 'text-warn' : ''}`}>{text.length} / 4000</span>}
               </div>
             </div>
-            <input aria-label="How to reach you (optional)" style={{ userSelect: 'text' }} value={contact} onChange={(e) => setContact(e.target.value)} maxLength={120} className="w-full border border-line2 bg-carbon px-2 py-[6px] text-[12px] text-fg outline-none focus:border-accent" placeholder="How to reach you, if you want a reply (optional)" />
+            <input aria-label="How to reach you (optional)" style={{ userSelect: 'text' }} value={contact} onChange={(e) => setContact(e.target.value)} maxLength={120} className="h-7 w-full border border-line2 bg-carbon px-2 text-xs text-fg outline-none focus:border-accent" placeholder="How to reach you, if you want a reply (optional)" />
             <label className="flex items-start gap-2 text-[11px] leading-snug">
-              <input type="checkbox" className="mt-[2px]" checked={withDetails} onChange={(e) => setWithDetails(e.target.checked)} />
+              <input type="checkbox" className="mt-[2px] accent-accent" checked={withDetails} onChange={(e) => setWithDetails(e.target.checked)} />
               <span>
                 Include technical details: the screen you were on, the game date, your browser and window size, and any errors the game noticed. No save data and nothing about you.{' '}
-                <button className="text-accent hover:underline" onClick={() => setPeek(!peek)}>
+                <button type="button" aria-expanded={peek} className="text-fg underline hover:text-accent" onClick={() => setPeek(!peek)}>
                   {peek ? 'Hide them' : 'See them'}
                 </button>
               </span>
             </label>
-            {peek && <pre className="num max-h-28 overflow-auto border border-line bg-carbon p-2 text-[11px] leading-snug text-faint">{Object.entries(context).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(' | ') || 'none' : v}`).join('\n')}</pre>}
+            {peek && <pre className="num max-h-28 overflow-auto border border-line bg-carbon p-2 text-[11px] leading-snug text-dim">{Object.entries(context).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(' | ') || 'none' : v}`).join('\n')}</pre>}
             {state === 'failed' && (
               <p className="flex items-start gap-2 text-warn">
                 <Icon name="alert" size={14} className="mt-[1px] shrink-0" />
@@ -178,15 +179,17 @@ function Form() {
               </p>
             )}
             <div className="flex flex-wrap items-center gap-2">
-              <Btn tone="primary" icon="arrowRight" disabled={text.trim().length < 3 || state === 'sending'} onClick={() => void send()}>
+              <Btn tone="primary" large icon="arrowRight" disabled={tooShort || state === 'sending'} title={state === 'sending' ? 'Sending now' : tooShort ? 'Write a few words first' : 'Send it to the maker (Ctrl+Enter)'} onClick={() => void send()}>
                 {state === 'sending' ? 'Sending' : 'Send'}
               </Btn>
-              <Btn onClick={close}>Cancel</Btn>
+              <Btn tone="ghost" large title="Close without sending (Esc)" onClick={close}>
+                Cancel
+              </Btn>
               <span className="ml-auto flex items-center gap-3 text-[11px]">
-                <a href={text.trim() ? issue : ISSUES_URL} target="_blank" rel="noreferrer" className="text-faint hover:text-fg">
+                <a href={text.trim() ? issue : ISSUES_URL} target="_blank" rel="noreferrer" className="text-dim underline hover:text-fg">
                   Post on GitHub instead
                 </a>
-                <a href={FEEDBACK_URL} target="_blank" rel="noreferrer" className="text-faint hover:text-fg">
+                <a href={FEEDBACK_URL} target="_blank" rel="noreferrer" className="text-dim underline hover:text-fg">
                   itch.io comments
                 </a>
               </span>
@@ -275,7 +278,7 @@ export function FeedbackButton({ small, className = '' }: { small?: boolean; cla
   const flagged = useFeedback((s) => s.flagged)
   const open = useFeedback((s) => s.open)
   return (
-    <Btn small={small} icon="review" className={`relative ${className}`} title="Report a problem or send an idea. It takes a few seconds and goes straight to the maker." onClick={() => open(flagged ? 'bug' : 'bug')}>
+    <Btn small={small} icon="review" className={`relative ${className}`} title="Report a problem or send an idea. It takes a few seconds and goes straight to the maker." onClick={() => open('bug')}>
       Feedback
       {flagged && <span className="absolute -right-[3px] -top-[3px] h-[7px] w-[7px] bg-warn" aria-label="The game noticed a possible problem" />}
     </Btn>
