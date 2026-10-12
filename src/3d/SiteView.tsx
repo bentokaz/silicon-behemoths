@@ -25,7 +25,7 @@ import { FactoryCrowd } from './site/factorycrowd'
 import { FactoryFloor, shippingDocks } from './site/factorylife'
 import { Jacks } from './site/jacks'
 import { Doors, Dropping, Sparks, SparksView, WallFx, type WallPiece, snapshot, wallChanges, wallHeight } from './site/fx'
-import { Baked, type PersonLook, hash } from './site/kit'
+import { Baked, type PersonLook, Sparing, hash } from './site/kit'
 import { DeskScreens, FrontSigns, RoomLights, StageLights } from './site/lights'
 import { buildNav, cutOffRooms } from './site/nav'
 import { OfficeItem } from './site/office'
@@ -168,6 +168,13 @@ interface Props {
 const CHUNK = 8
 /** People drawn walking about at each quality setting; the rest stay seated. */
 const LIVE_CAP: Record<Quality, number> = { low: 24, medium: 60, high: 90 }
+/**
+ * A site with this many things on it is drawn sparingly at the middle quality setting (the lowest always is, the
+ * highest never): once it is, it stays so until it has shrunk to the second figure, so that selling one desk does not
+ * rebuild every model on the plot.
+ */
+const SPARING_AT = 700
+const SPARING_UNTIL = 500
 /** Guests drawn walking to their seats at a venue at each quality setting; the rest of the house is drawn seated. */
 const VENUE_WALKERS: Record<Quality, number> = { low: 40, medium: 110, high: 180 }
 /** Real lamps handed round the lit rooms after dark at each quality setting. */
@@ -200,10 +207,20 @@ interface ItemCtx {
   soldOut?: Set<string>
   away?: boolean
   aisles?: number
+  /** Built from fewer triangles: see Sparing. */
+  sparing?: boolean
 }
 
 /** The model for one placed item of any kind of site. */
 function ItemModel({ kind, item, c }: { kind: SiteKind; item: string; c: ItemCtx }) {
+  return (
+    <Sparing.Provider value={!!c.sparing}>
+      <ItemKind kind={kind} item={item} c={c} />
+    </Sparing.Provider>
+  )
+}
+
+function ItemKind({ kind, item, c }: { kind: SiteKind; item: string; c: ItemCtx }) {
   if (kind === 'office') return <OfficeItem kind={item} c={{ who: c.who, glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, devices: c.devices, on: c.on, live: c.live, progress: c.progress, busy: c.busy }} />
   if (kind === 'factory') return <FactoryItem kind={item} c={{ running: !!c.running, flow: c.flow, glow: c.glow, seed: c.seed, fill: c.fill, away: c.away, live: c.live }} />
   if (kind === 'store') return <StoreItem kind={item} c={{ products: c.products, glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, soldOut: c.soldOut }} />
@@ -715,6 +732,9 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
   const prefs = useSettings((s) => s.settings)
   const Q = QUALITY[prefs.quality]
   const { w, h } = site
+  const crowded = useRef(false)
+  crowded.current = site.items.length >= (crowded.current ? SPARING_UNTIL : SPARING_AT)
+  const sparing = prefs.quality === 'low' || (prefs.quality === 'medium' && crowded.current)
   const tier = SITE_TIERS[site.kind][site.tier]
   // inside a mall there is no sky and no night: what shows past the walls is the dim upper part of the building,
   // and the hall keeps its own lamps on, so the hour only warms and lowers the light a little
@@ -1026,6 +1046,7 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
       fill: Math.round(busy * 5) / 5,
       away: !!item.id && yard.managed.has(item.id),
       aisles: site.kind === 'venue' && 'x' in item ? seatAisles(site, item as SiteItem) : 0,
+      sparing,
     }
   }
   const sigOf = (items: { item: SiteItem }[], glow: number) =>
@@ -1035,7 +1056,7 @@ export function SiteView({ site, mode, mood, tool, company, color, logo, selecte
         const on = shown.get(item.id)
         return `${item.id}:${item.x},${item.y},${item.rot}:${who ? who.look + who.color : liveSeats.has(item.id) ? 'L' : ''}:${line?.linked.has(item.id) ? 1 : 0}${line?.flow.get(item.id)?.join('') ?? ''}${on ? on.devices.map((p) => p.id).join('') + (on.progress ?? '') : ''}${yard.managed.has(item.id) ? 'A' : ''}${site.kind === 'venue' ? seatAisles(site, item) || '' : ''}`
       })
-      .join('|') + `#${Math.round(glow * 10)}${running ? 'r' : ''}${site.kind === 'factory' ? `${Math.round(busy * 5)}${crowdOn ? 'w' : ''}` : ''}${company}${logo?.length ?? 0}${color}${productKey}${soldKey}${liveKinds ? 'v' : ''}${crowdOn ? 'c' : ''}${researching ? 'R' : ''}${showcaseList[0]?.id ?? ''}${staged ? `s${staged.screen?.uuid ?? ''}` : ''}`
+      .join('|') + `#${Math.round(glow * 10)}${running ? 'r' : ''}${site.kind === 'factory' ? `${Math.round(busy * 5)}${crowdOn ? 'w' : ''}` : ''}${company}${logo?.length ?? 0}${color}${productKey}${soldKey}${liveKinds ? 'v' : ''}${crowdOn ? 'c' : ''}${researching ? 'R' : ''}${showcaseList[0]?.id ?? ''}${staged ? `s${staged.screen?.uuid ?? ''}` : ''}${sparing ? 'S' : ''}`
 
   const place = (item: SiteItem): [number, number, number] => {
     const def = ITEMS[site.kind][item.kind]

@@ -2,9 +2,10 @@
 // shared, and whole groups of models are merged into a handful of meshes
 // (see Baked), so a campus with thousands of parts stays cheap to draw.
 import { useFrame } from '@react-three/fiber'
-import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, createContext, useContext, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
+import { type BakePart, GLOW_STEPS, chamferBox, leanOf, pack } from './bake'
 
 type V3 = [number, number, number]
 
@@ -14,15 +15,39 @@ function cached<T extends THREE.BufferGeometry>(key: string, make: () => T): T {
   if (!g) geos.set(key, (g = make()))
   return g as T
 }
-/** A box. Small radii give a single chamfer, larger ones a rounded edge. */
-export const boxGeo = (w: number, h: number, d: number, r: number) =>
-  cached(`b${w},${h},${d},${r}`, () => {
-    const rr = Math.min(r, w / 2, h / 2, d / 2)
-    return rr > 0.004 ? new RoundedBoxGeometry(w, h, d, rr >= 0.05 ? 2 : 1, rr) : new THREE.BoxGeometry(w, h, d)
-  })
-export const cylGeo = (top: number, bottom: number, h: number, seg: number) => cached(`c${top},${bottom},${h},${seg}`, () => new THREE.CylinderGeometry(top, bottom, h, seg))
-export const torusGeo = (R: number, r: number, seg = 20) => cached(`t${R},${r},${seg}`, () => new THREE.TorusGeometry(R, r, 6, seg))
-export const sphereGeo = (r: number, detail = 1) => cached(`s${r},${detail}`, () => new THREE.IcosahedronGeometry(r, detail))
+/**
+ * Set around the models of a site that is drawn sparingly: a very large one,
+ * or any site at the lowest quality. Parts are then built from fewer
+ * triangles: the centimetre bevels that nobody sees from across a campus go,
+ * and round things have fewer sides.
+ */
+export const Sparing = createContext(false)
+
+function fromLean(l: { position: Float32Array; normal: Float32Array; index: Uint32Array }): THREE.BufferGeometry {
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.BufferAttribute(l.position, 3))
+  g.setAttribute('normal', new THREE.BufferAttribute(l.normal, 3))
+  g.setIndex(new THREE.BufferAttribute(new Uint16Array(l.index), 1))
+  return g
+}
+/** A box. Small radii give a single bevel, larger ones a rounded edge. */
+export function boxGeo(w: number, h: number, d: number, r: number, sparing = false): THREE.BufferGeometry {
+  const rr = Math.min(r, w / 2, h / 2, d / 2)
+  const kind = rr <= 0.004 || (sparing && rr < 0.03) ? 0 : rr < 0.05 || sparing ? 1 : 2
+  return cached(`b${w},${h},${d},${kind ? r : 0},${kind}`, () => (kind === 0 ? new THREE.BoxGeometry(w, h, d) : kind === 1 ? fromLean(chamferBox(w, h, d, rr)) : new RoundedBoxGeometry(w, h, d, 2, rr)))
+}
+export function cylGeo(top: number, bottom: number, h: number, seg: number, sparing = false): THREE.BufferGeometry {
+  const sides = sparing && seg > 8 ? Math.max(8, Math.ceil(seg * 0.6)) : seg
+  return cached(`c${top},${bottom},${h},${sides}`, () => new THREE.CylinderGeometry(top, bottom, h, sides))
+}
+export function torusGeo(R: number, r: number, seg = 20, sparing = false): THREE.BufferGeometry {
+  const [tube, round] = sparing ? [5, Math.max(10, Math.ceil(seg * 0.6))] : [6, seg]
+  return cached(`t${R},${r},${round},${tube}`, () => new THREE.TorusGeometry(R, r, tube, round))
+}
+export function sphereGeo(r: number, detail = 1, sparing = false): THREE.BufferGeometry {
+  const level = sparing ? Math.min(detail, 1) : detail
+  return cached(`s${r},${level}`, () => new THREE.IcosahedronGeometry(r, level))
+}
 
 export interface Look {
   /** Roughness, 0-1. */
@@ -60,46 +85,89 @@ interface PartProps extends Look {
 
 /** A box with softened edges. s = [width, height, depth], r = edge radius. */
 export function B({ p, s, c, r = 0.012, rot, cast = true, ...look }: PartProps & { s: V3; r?: number }) {
-  return <mesh position={p} rotation={rot} geometry={boxGeo(s[0], s[1], s[2], r)} material={mat(c, look)} castShadow={cast} receiveShadow />
+  const sparing = useContext(Sparing)
+  return <mesh position={p} rotation={rot} geometry={boxGeo(s[0], s[1], s[2], r, sparing)} material={mat(c, look)} castShadow={cast} receiveShadow />
 }
 
 /** A cylinder or cone standing on its axis. r = [top radius, bottom radius]. */
 export function C({ p, r, h, c, seg = 16, rot, cast = true, ...look }: PartProps & { r: [number, number]; h: number; seg?: number }) {
-  return <mesh position={p} rotation={rot} geometry={cylGeo(r[0], r[1], h, seg)} material={mat(c, look)} castShadow={cast} receiveShadow />
+  const sparing = useContext(Sparing)
+  return <mesh position={p} rotation={rot} geometry={cylGeo(r[0], r[1], h, seg, sparing)} material={mat(c, look)} castShadow={cast} receiveShadow />
 }
 
 /** A ring: tyres, hoops. Lies in the XY plane until rotated. R = ring radius, r = tube radius. */
 export function Ring({ p, R, r, c, rot, cast = true, ...look }: PartProps & { R: number; r: number }) {
-  return <mesh position={p} rotation={rot} geometry={torusGeo(R, r)} material={mat(c, look)} castShadow={cast} receiveShadow />
+  const sparing = useContext(Sparing)
+  return <mesh position={p} rotation={rot} geometry={torusGeo(R, r, 20, sparing)} material={mat(c, look)} castShadow={cast} receiveShadow />
 }
 
 /** A faceted ball, used for foliage and ornaments. */
 export function S({ p, r, c, detail = 1, cast = true, scale, ...look }: PartProps & { r: number; detail?: number; scale?: V3 }) {
-  return <mesh position={p} scale={scale} geometry={sphereGeo(r, detail)} material={mat(c, look)} castShadow={cast} receiveShadow />
+  const sparing = useContext(Sparing)
+  return <mesh position={p} scale={scale} geometry={sphereGeo(r, detail, sparing)} material={mat(c, look)} castShadow={cast} receiveShadow />
 }
 
 // ---------------------------------------------------------------- baking
 
-const baked = new Map<string, THREE.Material>()
-/** One shared material for every part that differs only in colour; the colour moves to the vertices. */
-function bakeMaterial(m: THREE.MeshStandardMaterial): { key: string; material: THREE.Material; tint: boolean } {
-  if (m.transparent) return { key: m.uuid, material: m, tint: false }
-  const key = `${m.roughness}|${m.metalness}|${m.flatShading ? 1 : 0}|${m.emissive.getHex()}|${m.emissiveIntensity}`
-  let out = baked.get(key)
-  if (!out) {
-    out = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: m.roughness, metalness: m.metalness, flatShading: m.flatShading, emissive: m.emissive, emissiveIntensity: m.emissiveIntensity })
-    baked.set(key, out)
+const surfaces = new Map<string, THREE.Material>()
+/**
+ * The one material every plain part of a merged mesh is drawn with. Colour,
+ * roughness, metalness and glow are read from each vertex, so parts that
+ * differ only in those share a single draw call.
+ */
+function surface(side: THREE.Side, glass = false): THREE.Material {
+  const key = `${side}${glass ? 'g' : ''}`
+  let m = surfaces.get(key)
+  if (!m) {
+    // panes are drawn in one pass, back and front together: they are thin, evenly tinted and write no depth
+    const made = glass ? new THREE.MeshStandardMaterial({ side, transparent: true, depthWrite: false, forceSinglePass: true }) : new THREE.MeshStandardMaterial({ side })
+    made.userData.surface = true
+    made.onBeforeCompile = (shader) => {
+      shader.vertexShader =
+        // colours are stored as they were written and made linear here, exactly as a material's own colour is
+        'attribute vec4 aTint;\nattribute vec4 aSurf;\nattribute vec4 aGlow;\nvarying vec3 vTint;\nvarying vec3 vSurf;\nvarying vec3 vGlow;\nvec3 sbLinear( vec3 c ) { return mix( pow( c * 0.9478672986 + vec3( 0.0521327014 ), vec3( 2.4 ) ), c * 0.0773993808, vec3( lessThanEqual( c, vec3( 0.04045 ) ) ) ); }\n' +
+        shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>\nvTint = sbLinear( aTint.rgb );\nvSurf = vec3( aTint.a, aSurf.r, aSurf.g );\nvGlow = sbLinear( aGlow.rgb ) * aGlow.a * ${(255 / GLOW_STEPS).toFixed(4)};`)
+      shader.fragmentShader =
+        'varying vec3 vTint;\nvarying vec3 vSurf;\nvarying vec3 vGlow;\n' +
+        shader.fragmentShader
+          .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= vTint;\ndiffuseColor.a *= vSurf.z;')
+          .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = vSurf.x;')
+          .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = vSurf.y;')
+          .replace('vec3 totalEmissiveRadiance = emissive;', 'vec3 totalEmissiveRadiance = vGlow;')
+    }
+    made.customProgramCacheKey = () => 'sb-surface'
+    surfaces.set(key, (m = made))
   }
-  return { key, material: out, tint: true }
+  return m
+}
+
+const still = () => {}
+/** True for a part of the tree with nothing left in it to draw or move once its meshes are merged. */
+function settle(o: THREE.Object3D, merged: Set<THREE.Object3D>, out: THREE.Object3D[], top: boolean): boolean {
+  let all = merged.has(o) || o.type === 'Group' || o.type === 'Object3D'
+  const quiet: THREE.Object3D[] = []
+  for (const child of o.children) {
+    if (settle(child, merged, out, false)) quiet.push(child)
+    else all = false
+  }
+  // the largest quiet branches are the ones put to rest: a branch inside one needs nothing more
+  if (!all || top) out.push(...quiet)
+  return all
 }
 
 /**
- * Renders its children, then merges every plain mesh among them into one mesh
- * per material and hides the originals. The merge is done by hand, straight
- * into typed arrays, because it runs every time something in a block of
- * furniture changes and has to be quick. Anything animated or textured must
- * set userData.live (or use a material with a map) to be left alone.
- * `sig` says when the contents have changed and need merging again.
+ * Renders its children, then merges every plain mesh among them into a few
+ * meshes and hides the originals: one for everything that casts a shadow, one
+ * for everything that does not, and one for the glass. The merge
+ * is done by hand, straight into typed arrays (see bake.ts), because it runs
+ * every time something in a block of furniture changes and has to be quick.
+ * Anything animated or textured must set userData.live (or use a material
+ * with a map) to be left alone. `sig` says when the contents have changed and
+ * need merging again.
+ *
+ * The originals stay in the scene, for the next merge. Branches with nothing
+ * left to draw are put to rest so that the renderer does not walk thousands
+ * of unseen parts on every frame.
  */
 export function Baked({ sig, children }: { sig: string | number; children: ReactNode }) {
   const src = useRef<THREE.Group>(null)
@@ -107,78 +175,56 @@ export function Baked({ sig, children }: { sig: string | number; children: React
   useLayoutEffect(() => {
     const root = src.current
     if (!root) return
+    // wake whatever the last merge put to rest: its parts may have moved since
+    root.traverse((o) => {
+      if (!o.userData.rested) return
+      delete o.userData.rested
+      delete (o as { updateMatrixWorld?: unknown }).updateMatrixWorld
+      o.visible = true
+    })
     root.updateWorldMatrix(true, true)
     const inv = new THREE.Matrix4().copy(root.matrixWorld).invert()
-    interface Part {
-      geo: THREE.BufferGeometry
-      at: THREE.Matrix4
-      color: THREE.Color
-    }
-    const groups = new Map<string, { material: THREE.Material; parts: Part[]; cast: boolean; tint: boolean; count: number }>()
+    const groups = new Map<string, { material: THREE.Material; parts: BakePart[]; cast: boolean }>()
+    const done = new Set<THREE.Object3D>()
     root.traverse((o) => {
       const mesh = o as THREE.Mesh
-      if (!mesh.isMesh || mesh.userData.live || Array.isArray(mesh.material)) return
+      if (!mesh.isMesh || (mesh as THREE.InstancedMesh).isInstancedMesh || mesh.userData.live || Array.isArray(mesh.material)) return
       const source = mesh.material as THREE.MeshStandardMaterial
       if (source.map || !('roughness' in source)) return
-      const pos = mesh.geometry.attributes.position
-      const nor = mesh.geometry.attributes.normal
-      // only plain, tightly packed geometry can be copied straight across
-      if (!pos || !nor || !(pos as THREE.BufferAttribute).isBufferAttribute || !(nor as THREE.BufferAttribute).isBufferAttribute || pos.itemSize !== 3) return
-      const b = bakeMaterial(source)
-      const key = b.key + (mesh.castShadow ? 'c' : 'n')
+      const lean = leanOf(mesh.geometry, !!source.flatShading)
+      if (!lean) return
+      const lit = source.emissiveIntensity > 0 && source.emissive.getHex() !== 0
+      // glass as this kit makes it (see mat) is merged like anything else, its tint and opacity going to the vertices;
+      // any other see-through material is kept as it is
+      const pane = source.transparent && !source.depthWrite && source.blending === THREE.NormalBlending && !source.alphaMap
+      const material = source.transparent && !pane ? source : surface(source.side, pane)
+      const key = material.uuid + (mesh.castShadow ? 'c' : 'n')
       let g = groups.get(key)
-      if (!g) groups.set(key, (g = { material: b.material, parts: [], cast: mesh.castShadow, tint: b.tint, count: 0 }))
-      g.parts.push({ geo: mesh.geometry, at: new THREE.Matrix4().multiplyMatrices(inv, mesh.matrixWorld), color: source.color })
-      g.count += mesh.geometry.index ? mesh.geometry.index.count : pos.count
+      if (!g) groups.set(key, (g = { material, parts: [], cast: mesh.castShadow }))
+      g.parts.push({ lean, at: new THREE.Matrix4().multiplyMatrices(inv, mesh.matrixWorld).elements, hex: source.color.getHex(), rough: source.roughness, metal: source.metalness, glow: lit ? source.emissive.getHex() : 0, power: lit ? source.emissiveIntensity : 0, alpha: pane ? source.opacity : 1 })
       mesh.visible = false
+      done.add(mesh)
     })
-    // every part is written straight into one set of arrays per material: no copies of the geometry in between
+    const quiet: THREE.Object3D[] = []
+    settle(root, done, quiet, true)
+    for (const o of quiet) {
+      o.userData.rested = true
+      o.visible = false
+      o.updateMatrixWorld = still
+    }
     const meshes: THREE.Mesh[] = []
-    const normalMatrix = new THREE.Matrix3()
     for (const g of groups.values()) {
-      if (!g.count) continue
-      const P = new Float32Array(g.count * 3)
-      const N = new Float32Array(g.count * 3)
-      const C = g.tint ? new Float32Array(g.count * 3) : null
-      let o = 0
-      for (const part of g.parts) {
-        const p = part.geo.attributes.position.array
-        const n = part.geo.attributes.normal.array
-        const index = part.geo.index?.array
-        const e = part.at.elements
-        const ne = normalMatrix.getNormalMatrix(part.at).elements
-        const { r, g: cg, b: cb } = part.color
-        const total = index ? index.length : part.geo.attributes.position.count
-        for (let i = 0; i < total; i++) {
-          const v = (index ? index[i] : i) * 3
-          const x = p[v]
-          const y = p[v + 1]
-          const z = p[v + 2]
-          P[o] = e[0] * x + e[4] * y + e[8] * z + e[12]
-          P[o + 1] = e[1] * x + e[5] * y + e[9] * z + e[13]
-          P[o + 2] = e[2] * x + e[6] * y + e[10] * z + e[14]
-          const nx = n[v]
-          const ny = n[v + 1]
-          const nz = n[v + 2]
-          const ax = ne[0] * nx + ne[3] * ny + ne[6] * nz
-          const ay = ne[1] * nx + ne[4] * ny + ne[7] * nz
-          const az = ne[2] * nx + ne[5] * ny + ne[8] * nz
-          const len = Math.hypot(ax, ay, az) || 1
-          N[o] = ax / len
-          N[o + 1] = ay / len
-          N[o + 2] = az / len
-          if (C) {
-            C[o] = r
-            C[o + 1] = cg
-            C[o + 2] = cb
-          }
-          o += 3
-        }
-      }
+      const a = pack(g.parts)
+      if (!a.index.length) continue
       const merged = new THREE.BufferGeometry()
-      merged.setAttribute('position', new THREE.BufferAttribute(P, 3))
-      merged.setAttribute('normal', new THREE.BufferAttribute(N, 3))
-      if (C) merged.setAttribute('color', new THREE.BufferAttribute(C, 3))
+      merged.setAttribute('position', new THREE.BufferAttribute(a.position, 3))
+      merged.setAttribute('normal', new THREE.BufferAttribute(a.normal, 3))
+      if (g.material.userData.surface) {
+        merged.setAttribute('aTint', new THREE.BufferAttribute(a.tint, 4, true))
+        merged.setAttribute('aSurf', new THREE.BufferAttribute(a.surf, 4, true))
+        merged.setAttribute('aGlow', new THREE.BufferAttribute(a.glow, 4, true))
+      }
+      merged.setIndex(new THREE.BufferAttribute(a.index, 1))
       const mesh = new THREE.Mesh(merged, g.material)
       mesh.castShadow = g.cast
       mesh.receiveShadow = true
