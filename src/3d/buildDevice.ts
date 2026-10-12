@@ -5,7 +5,7 @@
 import * as THREE from 'three'
 import { mergeGeometries, toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { HINGES, MIC_ARRAYS, headStrap, standInfo } from '../data/devices'
-import { type Carrier, GRIP, carrierBody, caseShape, consoleFans, consoleShape, coverScreen, designFace, edgeBevel, faceBasis, faceSink, handheldControls, headsetEyes, isCoverCam, isEdge, isFlip, isRing, laptopDeck, mountOf, screenRect, speakerShape, standLift, standMount, visorShape } from '../sim/geometry'
+import { type Carrier, GRIP, faceSize, partExtent, carrierBody, caseShape, consoleFans, consoleShape, coverScreen, designFace, edgeBevel, faceBasis, faceSink, handheldControls, headsetEyes, isCoverCam, isEdge, isFlip, isRing, laptopDeck, mountOf, screenRect, speakerShape, standLift, standMount, visorShape } from '../sim/geometry'
 import { clamp } from '../sim/rng'
 import { panelName } from '../sim/scoring'
 import type { Body, DeviceDesign, DeviceType, Face, PlacedPart, Specs } from '../sim/types'
@@ -568,12 +568,30 @@ function highlight(p: PlacedPart): THREE.LineLoop {
 }
 
 /** Adds the parts that belong on one of the device's solids, or only those of them that `only` picks. */
+/**
+ * The part as it is drawn. A part is kept on its face when the body changes, but not cut down to it: a grille made
+ * for a wide console, on a body since made narrow, would hang out past both sides in mid-air. Here it is drawn no
+ * larger than the face it is on, and kept within it.
+ */
+function fitted(p: PlacedPart, d: DeviceDesign): PlacedPart {
+  const face = faceSize(d.body, p.face, d.type)
+  const size = partExtent(p)
+  const k = Math.min(1, (face.w * 0.96) / Math.max(size.w, 1e-6), (face.h * 0.96) / Math.max(size.h, 1e-6))
+  if (k >= 1) return p
+  const w = p.w * k
+  const h = p.h * k
+  const reachX = Math.max(0, face.w / 2 - (size.w * k) / 2)
+  const reachY = Math.max(0, face.h / 2 - (size.h * k) / 2)
+  return { ...p, w, h, x: Math.min(reachX, Math.max(-reachX, p.x)), y: Math.min(reachY, Math.max(-reachY, p.y)) }
+}
+
 function addParts(target: THREE.Object3D, d: DeviceDesign, carrier: Carrier, c: Ctx, only?: (p: PlacedPart) => boolean) {
   const solid = carrierBody(d.body, d.type, carrier)
   const mine = d.parts.filter((p) => mountOf(d.type, p.face).carrier === carrier && (!only || only(p)))
   // raised plates first, so anything placed on one can be lifted onto it
   const plates = mine.filter((p) => p.kind === 'island')
-  for (const p of [...plates, ...mine.filter((q) => q.kind !== 'island')]) {
+  for (const placed of [...plates, ...mine.filter((q) => q.kind !== 'island')]) {
+    const p = fitted(placed, d)
     const g = buildPart(p, solid, mountOf(d.type, p.face).face, c)
     if (p.kind !== 'island' && (d.type === 'desktop' || d.type === 'tv')) {
       // a port panel is a real step on something this size, so sockets inside it sit on top of it

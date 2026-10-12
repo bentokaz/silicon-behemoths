@@ -452,7 +452,8 @@ export function Chair({ z = 0.24, color = CHARCOAL, rotY = 0, x = 0 }: { z?: num
       <C p={[0, 0.03, 0]} r={[0.27, 0.29]} h={0.04} c={DARK} seg={5} metal={0.6} rough={0.4} />
       <C p={[0, 0.235, 0]} r={[0.028, 0.032]} h={0.37} c={STEEL} seg={8} metal={0.9} rough={0.3} cast={false} />
       <B p={[0, 0.455, 0]} s={[0.46, 0.08, 0.44]} c={color} r={0.03} rough={0.95} />
-      <B p={[0, 0.56, 0.2]} s={[0.05, 0.2, 0.04]} c={DARK} r={0.01} cast={false} />
+      {/* the back's post stops just short of the seat's rear face: flush with it, the two flickered */}
+      <B p={[0, 0.56, 0.195]} s={[0.05, 0.2, 0.04]} c={DARK} r={0.01} cast={false} />
       <B p={[0, 0.8, 0.215]} s={[0.44, 0.5, 0.06]} c={color} r={0.03} rough={0.95} rot={[-0.1, 0, 0]} />
       {[-0.245, 0.245].map((ax) => (
         <group key={ax}>

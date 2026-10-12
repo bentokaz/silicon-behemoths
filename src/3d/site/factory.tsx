@@ -84,8 +84,9 @@ function Dock({ c, out }: { c: FactoryCtx; out: boolean }) {
       <B p={[0, 2.5, -0.35]} s={[1.5, 0.3, 0.016]} c={YELLOW} r={0} rough={0.6} cast={false} />
       <B p={[0, 0.3, 0.1]} s={[1.96, 0.6, 0.8]} c="#8c8e90" r={0.012} rough={0.9} />
       <B p={[0, 0.604, 0.44]} s={[1.96, 0.012, 0.12]} c={YELLOW} r={0} rough={0.7} cast={false} />
-      <B p={[0, 0.7, 0.1]} s={[1.2, 0.2, 0.62]} c="#3a3d42" r={0.01} metal={0.5} rough={0.5} />
-      <B p={[0, BELT - 0.01, 0.1]} s={[1.2, 0.02, 0.5]} c="#15171a" r={0} rough={0.9} cast={false} />
+      {/* the bed stops a little under the belt that runs on it: with their tops level, the two flickered */}
+      <B p={[0, 0.69, 0.1]} s={[1.2, 0.2, 0.62]} c="#3a3d42" r={0.01} metal={0.5} rough={0.5} />
+      <B p={[0, BELT - 0.012, 0.1]} s={[1.2, 0.02, 0.5]} c="#15171a" r={0} rough={0.9} cast={false} />
       {[-0.7, 0.72].map((x, i) => (
         <B key={x} p={[x, 0.74 + i * 0.06, 0.14]} s={[0.3, 0.28 + i * 0.12, 0.34]} c={BOX} r={0.008} rough={0.85} cast={false} />
       ))}
@@ -140,7 +141,8 @@ export function Lorry({ seed, wheels = true }: { seed: number; wheels?: boolean 
       {[-0.8, 0.8].map((x) => (
         <B key={x} p={[x, 1.1, 3.756]} s={[0.36, 0.16, 0.012]} c="#f4f6f8" r={0} glow="#fff6e0" glowPower={0.3} cast={false} />
       ))}
-      <B p={[0, 0.82, 3.7]} s={[2.3, 0.3, 0.16]} c="#2b2d31" r={0.03} />
+      {/* the bumper stands a little proud of the cab at each side: flush with it, the two flickered */}
+      <B p={[0, 0.82, 3.7]} s={[2.34, 0.3, 0.16]} c="#2b2d31" r={0.03} />
     </>
   )
 }
@@ -241,14 +243,14 @@ export function FactoryItem({ kind, c }: { kind: string; c: FactoryCtx }) {
           <B p={[0, 0.36, 0]} s={[0.94, 0.72, 0.9]} c="#d9dde1" r={0.012} rough={0.5} />
           <B p={[0, 1.3, -0.3]} s={[0.94, 1.16, 0.3]} c="#22262b" r={0.012} rough={0.5} />
           <B p={[0, 1.35, -0.146]} s={[0.7, 0.5, 0.008]} c="#06140c" r={0} glow="#55e39f" glowPower={(c.running ? 1 : 0.3) * c.glow} cast={false} />
-          <B p={[0, 0.76, 0.1]} s={[0.94, 0.08, 0.6]} c="#3a3d42" r={0.008} metal={0.5} rough={0.5} />
+          <B p={[0, 0.76, 0.1]} s={[0.952, 0.08, 0.6]} c="#3a3d42" r={0.008} metal={0.5} rough={0.5} />
           <B p={[0, 0.83, 0.1]} s={[0.4, 0.06, 0.4]} c="#101114" r={0.01} cast={false} />
           {[-0.3, 0.3].map((x) => (
             <C key={x} p={[x, 0.96, 0.1]} r={[0.02, 0.02]} h={0.32} c={STEEL} seg={8} metal={0.9} rough={0.3} cast={false} />
           ))}
           <B p={[0, 1.13, 0.1]} s={[0.7, 0.04, 0.3]} c={YELLOW} r={0.008} cast={false} />
           {/* a bin on the front for the units that fail */}
-          <B p={[0.22, 0.03, 0.56]} s={[0.4, 0.06, 0.2]} c="#7a1f24" r={0.006} rough={0.7} cast={false} />
+          <B p={[0.22, 0.03, 0.557]} s={[0.392, 0.06, 0.19]} c="#7a1f24" r={0.006} rough={0.7} cast={false} />
           {[-0.19, 0.19].map((x) => (
             <B key={x} p={[0.22 + x, 0.2, 0.56]} s={[0.02, 0.34, 0.2]} c="#a3262c" r={0.004} rough={0.7} cast={false} />
           ))}
@@ -279,7 +281,7 @@ export function FactoryItem({ kind, c }: { kind: string; c: FactoryCtx }) {
           {[-0.92, 0, 0.92].map((x) => [-0.36, 0.36].map((z) => <B key={`${x}${z}`} p={[x, 1.5, z]} s={[0.06, 3.0, 0.06]} c="#2f5d8a" r={0.008} rough={0.5} />))}
           {[0.14, 1.1, 2.06].map((y, row) => (
             <group key={y}>
-              <B p={[0, y, 0]} s={[1.9, 0.06, 0.8]} c="#e0812a" r={0.008} rough={0.6} />
+              <B p={[0, y, 0]} s={[1.884, 0.06, 0.8]} c="#e0812a" r={0.008} rough={0.6} />
               {[-0.62, -0.02, 0.56].map((x, i) => {
                 if (hash(c.seed + row * 3 + i * 7) > 0.15 + (c.fill ?? 0.7) * 0.85) return null
                 const h = 0.3 + hash(c.seed + row * 5 + i) * 0.4
@@ -314,7 +316,7 @@ export function FactoryItem({ kind, c }: { kind: string; c: FactoryCtx }) {
           {[-0.2, 0.2].map((x) => (
             <group key={x}>
               <B p={[x, 1.1, 0.46]} s={[0.07, 2.0, 0.08]} c={DARK} r={0.008} />
-              <B p={[x, 0.14, 0.78]} s={[0.1, 0.04, 0.72]} c={STEEL} r={0.006} metal={0.8} rough={0.4} />
+              <B p={[x, 0.14, 0.786]} s={[0.1, 0.04, 0.708]} c={STEEL} r={0.006} metal={0.8} rough={0.4} />
             </group>
           ))}
           <B p={[0, 0.3, 0.52]} s={[0.56, 0.4, 0.04]} c={DARK} r={0.008} cast={false} />
@@ -329,7 +331,7 @@ export function FactoryItem({ kind, c }: { kind: string; c: FactoryCtx }) {
             <group key={x}>
               <B p={[x, 1.16, -0.34]} s={[0.58, 0.4, 0.03]} c="#0c0d0f" r={0.008} />
               <B p={[x, 1.16, -0.321]} s={[0.54, 0.36, 0.008]} c="#081420" r={0} glow={['#3aa0ff', '#55e39f', '#ffb347'][i]} glowPower={0.8 * c.glow} cast={false} />
-              <B p={[x, 0.88, -0.34]} s={[0.05, 0.2, 0.03]} c={DARK} r={0.006} cast={false} />
+              <B p={[x, 0.88, -0.34]} s={[0.05, 0.2, 0.022]} c={DARK} r={0.006} cast={false} />
             </group>
           ))}
           {[-0.4, 0.4].map((x) => (

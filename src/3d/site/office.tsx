@@ -311,7 +311,8 @@ export function OfficeItem({ kind, c }: { kind: string; c: OfficeCtx }) {
           {[-0.6, 0.6].map((x) => (
             <group key={x}>
               <B p={[x, 0.02, -0.3]} s={[0.08, 0.04, 0.5]} c={DARK} r={0.01} cast={false} />
-              <B p={[x, 0.55, -0.34]} s={[0.05, 1.02, 0.05]} c={DARK} r={0.008} />
+              {/* thinner than the panel they hold, so that where they run up into it no two faces lie in one plane */}
+              <B p={[x, 0.55, -0.34]} s={[0.05, 1.02, 0.04]} c={DARK} r={0.008} />
             </group>
           ))}
           <B p={[0, 1.45, -0.34]} s={[1.8, 1.04, 0.05]} c="#0c0d0f" r={0.01} rough={0.35} />
