@@ -44,13 +44,14 @@ const ENTER_TIME = 0.42
 const SIDLE_SPEED = 1.25
 /** How close two people on their feet may come, centre to centre. */
 export const GAP = 0.42
-/** How close a walker may squeeze past someone standing at a counter or in a queue. */
+/** How close someone may come to a person who is part-way into or out of a chair, and cannot step aside. */
 export const GAP_FIXED = 0.32
 /** How near the middle of a body may come to a wall or a piece of furniture. */
 const WALL_GAP = 0.22
 /** Half the clear width of a doorway that a body's middle may use. */
 const DOOR_HALF = 0.2
 const EDGE = 0.5 - WALL_GAP
+const SCRATCH = new Int16Array(PATH_MAX)
 
 export class Body {
   id = ''
@@ -135,6 +136,8 @@ export class Body {
   waited = 0
   /** The doorway coming up on their route, so a queue for it forms behind whoever is waiting. */
   nextGate = -1
+  /** The busy doorway they last looked for a way round, so they only think about it once. */
+  swerved = -1
   /** The tile someone standing about has to themselves. */
   claim = -1
   /** Smoothed joint angles, owned by the renderer; and what it last drew in their hands. */
@@ -232,6 +235,13 @@ export class Crowd {
   private keepClear = new Uint8Array(0)
   private cx = 0
   private cz = 0
+  /** Seconds the crowd has been running, and when the next person may set off for home. */
+  private clock = 0
+  private nextOut = 0
+  /** Seconds between people setting off for home: shorter the more ways out of the building there are. */
+  private outEvery = 1.25
+  /** How many people are in or waiting at each doorway. */
+  private gateLoad = new Int16Array(0)
 
   // ---------------------------------------------------------------- the site
 
@@ -271,6 +281,7 @@ export class Crowd {
       const y = (i / w) | 0
       for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) clear(x + dx, y + dy)
     }
+    this.gateLoad = new Int16Array(this.gates.length)
     if (nav.entry >= 0) this.keepClear[nav.entry] = 1
     // routes keep off the floor where people stand at counters, tables and in queues, when there is another way
     for (const s of spots) {
@@ -702,6 +713,10 @@ export class Crowd {
         return
       }
       if (!b.leaving) {
+        // home time comes for everyone at once when the clock jumps or the hours change: they still go a few at a time,
+        // so the way out never has the whole company standing at it
+        if (b.kind === Kind.Staff && want === Act.Home && this.clock < this.nextOut) return
+        if (b.kind === Kind.Staff && want === Act.Home) this.nextOut = this.clock + this.outEvery * (0.75 + rnd(b.seed + this.counter++) * 0.5)
         b.act = Act.Home
         this.leave(b)
       }
@@ -867,6 +882,7 @@ export class Crowd {
   protected route(b: Body) {
     const nav = this.nav
     this.freeGate(b)
+    b.swerved = -1
     let from = nav.tileAt(b.x, b.z)
     if (from < 0 || !nav.walk[from]) from = nav.nearest(from < 0 ? nav.entry : from)
     if (b.goalTile < 0 || from < 0) return this.arrive(b, true)
@@ -876,6 +892,30 @@ export class Crowd {
     if (!b.pathLen) return this.arrive(b, true)
     b.mode = Mode.Walk
     b.still = 0
+  }
+
+  /** Looks for a way that does not use a busy doorway. True if one was found that is not much longer; otherwise the route is left as it was. */
+  private routeRound(b: Body, g: number): boolean {
+    const nav = this.nav
+    const from = nav.tileAt(b.x, b.z)
+    if (from < 0 || !nav.walk[from] || b.goalTile < 0) return false
+    // the two tiles the door stands between, or the one it fills
+    const tiles: number[] = []
+    for (let k = b.pathAt; k < b.pathLen && k < b.pathAt + 4; k++) {
+      const prev = k > 0 ? b.path[k - 1] : from
+      if (this.gateBetween(prev, b.path[k]) === g) tiles.push(prev, b.path[k])
+    }
+    if (!tiles.length) return false
+    for (const t of tiles) nav.penalty[t] += 5
+    const n = nav.find(from, b.goalTile, SCRATCH)
+    for (const t of tiles) nav.penalty[t] -= 5
+    // only worth it for another door close by: a long way round is slower than waiting a turn
+    if (!n || n > b.pathLen - b.pathAt + 4) return false
+    for (let k = 0; k < n; k++) if (tiles.includes(SCRATCH[k]) && this.gateBetween(k ? SCRATCH[k - 1] : from, SCRATCH[k]) === g) return false
+    b.path.set(SCRATCH.subarray(0, n))
+    b.pathLen = n
+    b.pathAt = 0
+    return true
   }
 
   /** At the goal tile (or unable to walk there, and so simply put there). */
@@ -1058,6 +1098,16 @@ export class Crowd {
     if (b.gate >= 0 && this.gates[b.gate]?.holder === b) this.gates[b.gate].holder = null
     b.gate = b.waitGate = b.nextGate = -1
     b.waited = 0
+  }
+
+  /** Counts who is in or waiting at each doorway. */
+  private countGates() {
+    const load = this.gateLoad
+    load.fill(0)
+    for (const b of this.foot) {
+      if (b.gate >= 0 && b.gate < load.length) load[b.gate]++
+      if (b.waitGate >= 0 && b.waitGate < load.length) load[b.waitGate]++
+    }
   }
 
   // ---------------------------------------------------------------- moving
@@ -1277,7 +1327,7 @@ export class Crowd {
     const g = cur >= 0 && cur !== tile ? this.gateBetween(cur, tile) : cur >= 0 ? this.gateT[cur] - 1 : -1
     if (b.gate >= 0 && b.gate !== g) {
       const old = this.gates[b.gate]
-      if (g >= 0 || (b.x - old.x) ** 2 + (b.z - old.z) ** 2 > 0.2) {
+      if (g >= 0 || (b.x - old.x) ** 2 + (b.z - old.z) ** 2 > 0.11) {
         if (old.holder === b) old.holder = null
         b.gate = -1
       }
@@ -1285,6 +1335,11 @@ export class Crowd {
     // the door coming up within a couple of tiles, so a queue for it forms in good time
     b.nextGate = g
     for (let k = b.pathAt; b.nextGate < 0 && k < b.pathLen - 1 && k < b.pathAt + 2; k++) b.nextGate = this.gateBetween(b.path[k], b.path[k + 1])
+    // a queue at that door, and they are not yet in it: a double door has another leaf, and a room may have another door
+    if (b.nextGate >= 0 && b.gate !== b.nextGate && b.waitGate !== b.nextGate && b.swerved !== b.nextGate && this.gateLoad[b.nextGate] >= 2) {
+      b.swerved = b.nextGate
+      if (this.routeRound(b, b.nextGate)) return
+    }
     if (g >= 0) {
       const gate = this.gates[g]
       const holder = gate.holder
@@ -1457,6 +1512,11 @@ export class Crowd {
     return b.mode === Mode.Walk || b.mode === Mode.In || b.mode === Mode.Out || (b.mode === Mode.Do && !b.spot)
   }
 
+  /** Whether someone is standing in a spot on open floor: at a counter, in a queue, in front of a display. */
+  private planted(b: Body): boolean {
+    return b.mode === Mode.Do && !!b.spot && b.spot.open
+  }
+
   /** Nobody ends a step standing inside anybody else. */
   private separate() {
     const foot = this.foot
@@ -1471,7 +1531,8 @@ export class Crowd {
         if (!al && !bl) continue
         let dx = b.x - a.x
         let dz = b.z - a.z
-        const min = al && bl ? GAP : GAP_FIXED
+        // someone standing at a counter or in a queue is given the same room as anyone else on their feet
+        const min = (al || this.planted(a)) && (bl || this.planted(b)) ? GAP : GAP_FIXED
         const d2 = dx * dx + dz * dz
         if (d2 >= min * min) continue
         let d = Math.sqrt(d2)
@@ -1532,6 +1593,8 @@ export class Crowd {
       if (b.mode === Mode.Off) continue
       if (b.mode !== Mode.Do || !b.spot || b.spot.open) foot.push(b)
     }
+    this.countGates()
+    this.clock += step
     let dead = false
     for (let i = 0; i < this.bodies.length; i++) {
       const b = this.bodies[i]
@@ -1539,6 +1602,15 @@ export class Crowd {
       if (b.thinkIn <= 0 && (b.mode === Mode.Do || b.mode === Mode.Off)) {
         b.thinkIn = 0.3 + rnd(b.seed + i) * 0.35
         this.think(b, hour, day)
+      }
+      else if (b.thinkIn <= 0 && b.mode === Mode.Walk && b.kind === Kind.Staff && !b.leaving && !b.quit) {
+        // home time has come while they were on their way somewhere: no need to get there first
+        b.thinkIn = 1.2 + rnd(b.seed + i) * 0.8
+        if (this.desire(b, hour, day) === Act.Home && this.clock >= this.nextOut) {
+          this.nextOut = this.clock + this.outEvery * (0.75 + rnd(b.seed + this.counter++) * 0.5)
+          b.act = Act.Home
+          this.leave(b)
+        }
       }
       if (b.mode !== Mode.Off) this.move(b, step)
       if (b.dead) dead = true
