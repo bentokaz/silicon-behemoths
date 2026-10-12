@@ -29,7 +29,7 @@ function PersonRow({ e, children, status }: { e: Employee; children?: React.Reac
     <>
       <td className="text-fg">
         {e.name}
-        {!e.exec && titleFor(e.skill) && <span className="ml-2 text-[10px] text-faint">{titleFor(e.skill)}</span>}
+        {!e.exec && titleFor(e.skill) && <span className="ml-2 text-[11px] text-faint">{titleFor(e.skill)}</span>}
       </td>
       <td className={e.exec ? 'text-fg' : 'text-dim'}>
         <RoleDot role={e.role} exec={e.exec} />
@@ -86,7 +86,7 @@ function EmployeeDrawer({ e, seated, onClose }: { e: Employee; seated: boolean; 
               {EXECS[e.exec].title}
             </Head>
             <div className="text-[11px] leading-snug text-fg">{EXECS[e.exec].effect}</div>
-            <div className="mt-1 text-[10px] leading-snug text-faint">The lift follows their skill and morale, and only counts while they have a desk. They would like an executive desk of their own. If the seat falls empty, what it opened stays open: {EXECS[e.exec].gap.charAt(0).toLowerCase() + EXECS[e.exec].gap.slice(1)}</div>
+            <div className="mt-1 text-[11px] leading-snug text-faint">The lift follows their skill and morale, and only counts while they have a desk. They would like an executive desk of their own. If the seat falls empty, what it opened stays open: {EXECS[e.exec].gap.charAt(0).toLowerCase() + EXECS[e.exec].gap.slice(1)}</div>
           </div>
         )}
         <div className="border border-line p-2">
@@ -94,10 +94,10 @@ function EmployeeDrawer({ e, seated, onClose }: { e: Employee; seated: boolean; 
             <Head icon="morale" className="text-faint">
               Morale
             </Head>
-            <span className={`num text-sm ${{ pos: 'text-pos', warn: 'text-warn', neg: 'text-neg' }[moraleTone(e.morale)]}`}>{Math.round(e.morale)}</span>
+            <span className={`num text-[13px] ${{ pos: 'text-pos', warn: 'text-warn', neg: 'text-neg' }[moraleTone(e.morale)]}`}>{Math.round(e.morale)}</span>
           </div>
           <Meter value={e.morale} max={100} tone={moraleTone(e.morale)} />
-          <div className="mt-2 text-[10px] leading-snug text-faint">Morale follows office comfort, fair pay, having a desk and the people around them. Unhappy people work less and eventually quit.</div>
+          <div className="mt-2 text-[11px] leading-snug text-faint">Morale follows office comfort, fair pay, having a desk and the people around them. Unhappy people work less and eventually quit.</div>
         </div>
         <div className="border border-line p-2">
           <Head icon="star" className="mb-1 text-faint">
@@ -317,11 +317,11 @@ export function Staff() {
                 return (
                   <div key={t.id} className="border border-line">
                     <div className="flex items-center gap-2 border-b border-line px-2 py-[5px]">
-                      <NameInput aria-label="Team name" title="Rename this team" value={t.name} onChange={(v) => act((s) => renameTeam(s, t.id, v))} maxLength={24} className="h-6 flex-1 !border-transparent !bg-transparent !px-0 text-xs uppercase tracking-wider text-fg" />
+                      <NameInput aria-label="Team name" title="Rename this team" value={t.name} onChange={(v) => act((s) => renameTeam(s, t.id, v))} maxLength={24} className="h-6 flex-1 !border-transparent !bg-transparent !px-0 text-xs text-fg" />
                       <span className={`num text-[11px] ${bonus > 0 ? 'text-pos' : 'text-warn'}`}>{bonus > 0 ? `+${pct(bonus, 0)} output` : members.length < 2 ? 'needs 2 people' : 'no lead'}</span>
                       <ConfirmIconBtn icon="bin" title={`Disband ${t.name || "this team"}`} onClick={() => act((s) => deleteTeam(s, t.id))} />
                     </div>
-                    {members.length > TEAM_SPAN && <div className="border-b border-line px-2 py-1 text-[10px] text-warn">Too many for one lead: the bonus is spread thin.</div>}
+                    {members.length > TEAM_SPAN && <div className="border-b border-line px-2 py-1 text-[11px] text-warn">Too many for one lead: the bonus is spread thin.</div>}
                     {members.map((e) => (
                       <div key={e.id} className="flex items-center gap-2 border-b border-line px-2 py-[4px] text-[11px] last:border-b-0">
                         <RoleDot role={e.role} exec={e.exec} />
@@ -351,8 +351,8 @@ export function Staff() {
               {(Object.keys(HOURS) as StaffPolicy['hours'][]).map((h) => (
                 <button key={h} onClick={() => (act((s) => setPolicy(s, { hours: h })), sfx.toggle())} className={`mb-1 block w-full border p-2 text-left ${g.policy.hours === h ? 'border-accent bg-accent/10' : 'border-line hover:border-line2'}`}>
                   <div className="flex items-baseline justify-between">
-                    <span className={`text-xs uppercase tracking-wider ${g.policy.hours === h ? 'text-accent' : 'text-fg'}`}>{HOURS[h].name}</span>
-                    <span className="num text-[10px] text-dim">
+                    <span className={`text-xs ${g.policy.hours === h ? 'text-accent' : 'text-fg'}`}>{HOURS[h].name}</span>
+                    <span className="num text-[11px] text-dim">
                       output {Math.round(HOURS[h].output * 100)}% / morale {HOURS[h].morale > 0 ? '+' : ''}
                       {HOURS[h].morale}
                     </span>
@@ -367,8 +367,8 @@ export function Staff() {
               </Head>
               {PERKS.map((p, i) => (
                 <button key={p.name} onClick={() => (act((s) => setPolicy(s, { perks: i })), sfx.toggle())} className={`mb-1 flex w-full items-baseline justify-between border p-2 text-left ${g.policy.perks === i ? 'border-accent bg-accent/10' : 'border-line hover:border-line2'}`}>
-                  <span className={`text-xs uppercase tracking-wider ${g.policy.perks === i ? 'text-accent' : 'text-fg'}`}>{p.name}</span>
-                  <span className="num text-[10px] text-dim">
+                  <span className={`text-xs ${g.policy.perks === i ? 'text-accent' : 'text-fg'}`}>{p.name}</span>
+                  <span className="num text-[11px] text-dim">
                     {money(p.perHead, 0)} a head / morale +{p.morale}
                   </span>
                 </button>
@@ -427,7 +427,7 @@ export function Staff() {
         )}
       </Panel>
       <div className="flex shrink-0 items-center justify-between gap-2">
-        <span className="text-[10px] text-faint">Hiring costs one month of salary. A new batch of applicants arrives each month; a better-known, more impressive company attracts better ones.</span>
+        <span className="text-[11px] text-faint">Hiring costs one month of salary. A new batch of applicants arrives each month; a better-known, more impressive company attracts better ones.</span>
         <div className="flex shrink-0 gap-1 whitespace-nowrap">
           {fx.idle > 0 && (
             <Btn small tone="primary" icon="desk" onClick={() => setTab('office')}>
@@ -478,7 +478,7 @@ export function OfficeScreen() {
             <span className="num text-[11px] text-fg">{pct(fx.comfort, 0)}</span>
           </div>
           <Meter value={fx.comfort} tone={fx.comfort > 0.7 ? 'pos' : fx.comfort > 0.35 ? 'accent' : 'warn'} />
-          <div className="mt-1 text-[10px] leading-snug text-faint">Comfort lifts morale: build a lounge, a fitness room or an atrium garden. Prestige attracts better applicants and helps fan events.</div>
+          <div className="mt-1 text-[11px] leading-snug text-faint">Comfort lifts morale: build a lounge, a fitness room or an atrium garden. Prestige attracts better applicants and helps fan events.</div>
         </div>
       </Fold>
       <Fold title="Specialist rooms" icon="rooms" open={false} bodyClass="px-2 py-1">
@@ -494,14 +494,14 @@ export function OfficeScreen() {
         ).map(([id, name, who, role]) => (
           <Row key={id} icon={roleIcon(role)} k={name} v={kinds.has(id) ? 'built' : `+25% for ${who}`} tone={kinds.has(id) ? 'text-pos' : undefined} />
         ))}
-        <div className="py-1 text-[10px] leading-snug text-faint">Each holds a station that boosts one person of that role. Stations only go in their own kind of room.</div>
+        <div className="py-1 text-[11px] leading-snug text-faint">Each holds a station that boosts one person of that role. Stations only go in their own kind of room.</div>
       </Fold>
       <Fold title="More land" icon="plot" open={!!next} bodyClass="p-2">
         {next ? (
           <>
-            <div className="text-sm text-fg">{next.name}</div>
+            <div className="text-[13px] text-fg">{next.name}</div>
             <div className="text-[11px] leading-snug text-dim">{next.blurb}</div>
-            <div className="num mt-1 text-[10px] text-faint">
+            <div className="num mt-1 text-[11px] text-faint">
               {next.w} x {next.h} m, land {money(next.rent, 1)} / mo
             </div>
             <ConfirmBtn
@@ -517,7 +517,7 @@ export function OfficeScreen() {
             >
               Move for {money(next.cost, 1)}
             </ConfirmBtn>
-            <div className="mt-1 text-[10px] text-faint">Every room and everything in it is rebuilt on the new plot as it stands, with open land all around to grow into.</div>
+            <div className="mt-1 text-[11px] text-faint">Every room and everything in it is rebuilt on the new plot as it stands, with open land all around to grow into.</div>
           </>
         ) : (
           <div className="text-[11px] text-dim">You own the campus, the largest plot there is. The rest is up to you.</div>

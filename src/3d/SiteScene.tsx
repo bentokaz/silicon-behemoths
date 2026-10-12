@@ -686,8 +686,8 @@ function Label({ target }: { target: Target }) {
   })
   return (
     <div ref={ref} className="pointer-events-none whitespace-nowrap border border-line2 bg-panel/95 px-2 py-[3px] text-center">
-      <div className="text-[11px] uppercase tracking-wider text-fg">{target.label}</div>
-      {target.hint && <div className="text-[10px] normal-case tracking-normal text-dim">{target.hint}</div>}
+      <div className="text-[11px] text-fg">{target.label}</div>
+      {target.hint && <div className="text-[11px] normal-case tracking-normal text-dim">{target.hint}</div>}
     </div>
   )
 }
@@ -1296,7 +1296,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
             {runInfo.count} x {runInfo.tool === 'remove' ? '+' : ''}
             {fmtMoney(runInfo.cost)}
           </div>
-          {runInfo.blocked > 0 && <div className="text-[10px] text-neg">{runInfo.blocked} cannot go</div>}
+          {runInfo.blocked > 0 && <div className="text-[11px] text-neg">{runInfo.blocked} cannot go</div>}
         </div>
       </Html>
     ) : null

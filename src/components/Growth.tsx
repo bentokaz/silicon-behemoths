@@ -41,14 +41,14 @@ function Campaigns() {
         <div className="grid grid-cols-2 gap-1">
           {(Object.keys(CHANNELS) as ChannelId[]).map((id) => (
             <button key={id} aria-pressed={channel === id} aria-disabled={has(g, capOfChannel(id)) ? undefined : true} title={has(g, capOfChannel(id)) ? undefined : (lockTip(g, capOfChannel(id)) ?? undefined)} onClick={() => (has(g, capOfChannel(id)) ? setChannel(id) : useStore.getState().showLock(capOfChannel(id)))} className={`border p-2 text-left ${has(g, capOfChannel(id)) ? '' : 'opacity-45'} ${channel === id ? 'border-accent bg-accent/10' : 'border-line hover:border-line2'}`}>
-              <div className={`flex items-center gap-[6px] text-[11px] font-semibold uppercase tracking-wider ${channel === id ? 'text-accent' : 'text-fg'}`}>
+              <div className={`flex items-center gap-[6px] text-[11px] font-semibold ${channel === id ? 'text-accent' : 'text-fg'}`}>
                 <Icon name={channelIcon(id)} size={13} className={channel === id ? '' : 'text-dim'} />
                 <span className="min-w-0 flex-1 truncate" title={CHANNELS[id].name}>
                   {CHANNELS[id].name}
                 </span>
                 {!has(g, capOfChannel(id)) && <Icon name="lock" size={10} className="shrink-0" />}
               </div>
-              <div className="num text-[10px] text-faint">from {money(CHANNELS[id].min, 0)} / mo</div>
+              <div className="num text-[11px] text-faint">from {money(CHANNELS[id].min, 0)} / mo</div>
             </button>
           ))}
         </div>
@@ -115,8 +115,8 @@ function Campaigns() {
                       <Lead icon={channelIcon(c.channel)} size={12} />
                       {CHANNELS[c.channel].name}
                       {/* in a narrow panel the column for what is advertised goes, and it is said here instead */}
-                      <span className="hidden truncate pl-[17px] text-[10px] text-dim @max-[520px]:block">{p ? p.name : "the company"}</span>
-                      {c.region && <span className="block truncate pl-[17px] text-[10px] text-faint">{regionInfo(c.region).name}</span>}
+                      <span className="hidden truncate pl-[17px] text-[11px] text-dim @max-[520px]:block">{p ? p.name : "the company"}</span>
+                      {c.region && <span className="block truncate pl-[17px] text-[11px] text-faint">{regionInfo(c.region).name}</span>}
                     </td>
                     <td className={`clip @max-[520px]:hidden ${p ? "text-accent" : "text-dim"}`}>
                       {p ? (
@@ -134,7 +134,7 @@ function Campaigns() {
                       </div>
                     </td>
                     <td className="num r text-dim @max-[600px]:hidden">{money(c.spent, 1)}</td>
-                    <td className="@max-[440px]:hidden">{p ? <Meter value={buzz} tone={buzz > 0.5 ? 'pos' : 'accent'} /> : <span className="text-[10px] text-faint">brand only</span>}</td>
+                    <td className="@max-[440px]:hidden">{p ? <Meter value={buzz} tone={buzz > 0.5 ? 'pos' : 'accent'} /> : <span className="text-[11px] text-faint">brand only</span>}</td>
                     <td className="r">
                       <IconBtn icon="stop" tone="ghost" title="Stop this campaign" onClick={() => (act((s) => stopCampaign(s, c.id)), say(`${CHANNELS[c.channel].name} campaign stopped.`))} />
                     </td>
@@ -207,7 +207,7 @@ function Fans() {
             </span>
           </div>
           <div className="mt-2 flex items-center justify-between gap-2">
-            <span className="text-[10px] leading-snug text-faint">Unanswered owners are less satisfied. Support agents answer about 120 tickets a day each; a support bar in a store helps too.</span>
+            <span className="text-[11px] leading-snug text-faint">Unanswered owners are less satisfied. Support agents answer about 120 tickets a day each; a support bar in a store helps too.</span>
             {capacity < tickets && (
               <Btn small icon="hire" onClick={() => setTab('staff')}>
                 Hire support
@@ -225,7 +225,7 @@ function Fans() {
               {f.stars}
             </span>
             <span className="flex-1 text-[12px] text-fg">{f.text}</span>
-            <span className="num shrink-0 text-right text-[9px] text-faint">
+            <span className="num shrink-0 text-right text-[11px] text-faint">
               {f.product.name}
               <br />
               {fmtDate(f.day)}
@@ -255,7 +255,7 @@ function EventCard({ type }: { type: EventType }) {
   const when = type === 'keynote' ? (product ? `on release day, ${fmtDate(g.day + product.devDaysLeft)}` : '') : type === 'expo' ? `${fair.name}, ${fmtDate(fair.day)}` : `${fmtDate(g.day + days)}`
   return (
     <div className="flex flex-col border border-line bg-panel p-3">
-      <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.14em] text-fg">
+      <div className="flex items-center gap-2 text-[12px] font-semibold text-fg">
         <Icon name={eventIcon(type)} size={14} className="text-accent" />
         {def.name}
       </div>
@@ -265,15 +265,15 @@ function EventCard({ type }: { type: EventType }) {
         {type === 'keynote' && inDev.length > 0 && <Choice label="Device" icon="devices" value={pid ?? ''} options={inDev.map((p) => ({ value: p.id, label: p.name }))} onChange={setProductId} />}
         {(type === 'fanfest' || type === 'devcon') && <Slider label="Hold it in" icon="calendar" value={days} min={EVENT_LEAD} max={180} format={(v) => `${v} days`} onChange={setDays} />}
         <div className="flex items-center gap-2 py-1">
-          <span className="flex w-14 items-center gap-1 text-[10px] uppercase tracking-wider text-faint">
+          <span className="flex w-14 items-center gap-1 text-[11px] text-faint">
             <Icon name="target" size={10} />
             Reach
           </span>
           <Meter value={reach} max={1.1} tone={reach >= 0.9 ? 'pos' : 'accent'} />
         </div>
-        {type === 'keynote' && venue === OWN_VENUE && g.venue && <div className="text-[10px] leading-snug text-faint">Your venue seats {venueStats(g.venue).seats}. More seats and better production carry a show further.</div>}
+        {type === 'keynote' && venue === OWN_VENUE && g.venue && <div className="text-[11px] leading-snug text-faint">Your venue seats {venueStats(g.venue).seats}. More seats and better production carry a show further.</div>}
         {when && !blocked && (
-          <div className="num py-1 text-[10px] text-faint">
+          <div className="num py-1 text-[11px] text-faint">
             <Lead icon="calendar" size={10} />
             {when}
           </div>
@@ -335,7 +335,7 @@ function Events() {
           {past.length === 0 && <Empty icon="star" text="Results appear here after each event. The score depends on the venue, your marketers and how good the thing you showed really was." />}
           {past.map((e) => (
             <div key={e.id} className="flex items-start gap-3 border-b border-line px-2 py-[6px]">
-              <span className={`num w-8 shrink-0 text-lg leading-none ${(e.score ?? 0) >= 70 ? 'text-pos' : (e.score ?? 0) >= 45 ? 'text-fg' : 'text-neg'}`}>{e.score}</span>
+              <span className={`num w-8 shrink-0 text-base leading-none ${(e.score ?? 0) >= 70 ? 'text-pos' : (e.score ?? 0) >= 45 ? 'text-fg' : 'text-neg'}`}>{e.score}</span>
               <div className="flex-1">
                 <div className="text-[11px] text-fg">
                   <Lead icon={eventIcon(e.type)} />
@@ -442,7 +442,7 @@ function LayoutPicker({ store, onClose }: { store: Store; onClose: () => void })
             </div>
           </div>
         ) : (
-          <div className="text-[10px] leading-snug text-faint">Choose a store to copy. Rooms, curved and slanted walls, doors and glass, floor finishes, cladding, roof, storeys and every piece of furniture come across; sales figures and the name stay with this store. Nothing changes until you confirm.</div>
+          <div className="text-[11px] leading-snug text-faint">Choose a store to copy. Rooms, curved and slanted walls, doors and glass, floor finishes, cladding, roof, storeys and every piece of furniture come across; sales figures and the name stay with this store. Nothing changes until you confirm.</div>
         )
       }
     >
@@ -458,8 +458,8 @@ function LayoutPicker({ store, onClose }: { store: Store; onClose: () => void })
         return (
           <button key={s.id} disabled={!fits} onClick={() => setPick(on ? null : s.id)} className={`block w-full border-b border-l-2 border-b-line px-3 py-2 text-left disabled:cursor-default ${on ? 'border-l-accent bg-accent/10' : 'border-l-transparent hover:bg-hover disabled:hover:bg-transparent'}`}>
             <div className="flex items-baseline justify-between gap-2">
-              <span className={`truncate text-xs font-semibold uppercase tracking-wider ${on ? 'text-accent' : fits ? 'text-fg' : 'text-faint'}`}>{s.name}</span>
-              <span className="shrink-0 text-[10px] text-faint">
+              <span className={`truncate text-xs font-semibold ${on ? 'text-accent' : fits ? 'text-fg' : 'text-faint'}`}>{s.name}</span>
+              <span className="shrink-0 text-[11px] text-faint">
                 {s.location} / {regionInfo(s.region).name}
               </span>
             </div>
@@ -469,7 +469,7 @@ function LayoutPicker({ store, onClose }: { store: Store; onClose: () => void })
               <Mini label="Worth" icon="cash" value={money(layoutValue(s.site), 0)} />
               <Mini label="To copy here" icon="receipt" value={!fits ? 'no room' : q.same ? 'the same' : copyCost(q.cost)} tone={!fits ? 'text-neg' : q.same ? 'text-dim' : q.error ? 'text-warn' : 'text-fg'} />
             </div>
-            {q.error && <div className={`mt-1 text-[10px] leading-snug ${fits ? 'text-warn' : 'text-neg'}`}>{q.error}</div>}
+            {q.error && <div className={`mt-1 text-[11px] leading-snug ${fits ? 'text-warn' : 'text-neg'}`}>{q.error}</div>}
           </button>
         )
       })}
@@ -509,7 +509,7 @@ export function StoresScreen() {
           <div className="h-full overflow-y-auto p-2">
             {regions.length > 1 && (
               <div className="mb-2 flex items-center gap-2 border border-line bg-panel px-2 py-[6px]">
-                <span className="flex items-center gap-[5px] text-[10px] uppercase tracking-wider text-dim">
+                <span className="flex items-center gap-[5px] text-[11px] text-dim">
                   <Icon name="pin" size={11} />
                   Open the next store in
                 </span>
@@ -530,7 +530,7 @@ export function StoresScreen() {
                 const fit = model ? newLayoutQuote(g, model.id, i) : null
                 return (
                 <div key={t.name} className="border border-line bg-panel p-3">
-                  <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.14em] text-fg">
+                  <div className="flex items-center gap-2 text-[12px] font-semibold text-fg">
                     <Icon name="stores" size={14} className="text-accent" />
                     {t.name}
                   </div>
@@ -625,11 +625,11 @@ export function StoresScreen() {
                       <span className="num text-[11px] text-fg">{pct(st.appeal, 0)}</span>
                     </div>
                     <Meter value={st.appeal} tone={st.appeal > 0.75 ? 'pos' : st.appeal > 0.5 ? 'accent' : 'warn'} />
-                    <div className="mt-1 text-[10px] leading-snug text-faint">Appeal turns more visitors into buyers. Add plants, a logo wall and benches, give the building its own cladding, and leave the floor uncrowded.</div>
+                    <div className="mt-1 text-[11px] leading-snug text-faint">Appeal turns more visitors into buyers. Add plants, a logo wall and benches, give the building its own cladding, and leave the floor uncrowded.</div>
                   </div>
                 </Fold>
                 <Fold title="Manage" icon="system" open={false} bodyClass="p-2">
-                  <div className="text-[10px] leading-snug text-faint">Each checkout, support bar and repair bench needs one member of staff. A support bar makes every owner a little happier; repair benches cut the cost of warranty work.</div>
+                  <div className="text-[11px] leading-snug text-faint">Each checkout, support bar and repair bench needs one member of staff. A support bar makes every owner a little happier; repair benches cut the cost of warranty work.</div>
                   <Btn small icon="layers" className="mt-2 w-full" disabled={g.stores.length < 2} title={g.stores.length < 2 ? 'There is no other store to copy from yet' : 'Rebuild this store to the layout of another one'} onClick={() => setPicking(true)}>
                     Copy layout from...
                   </Btn>
@@ -665,7 +665,7 @@ export function VenueScreen() {
     return (
       <div className="flex h-full items-center justify-center p-4">
         <div className="w-[520px] border border-line bg-panel p-4">
-          <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.14em] text-fg">
+          <div className="flex items-center gap-2 text-[12px] font-semibold text-fg">
             <Icon name="venue" size={14} className="text-accent" />A venue of your own
           </div>
           <div className="mt-2 text-[12px] leading-relaxed text-dim">
@@ -710,7 +710,7 @@ export function VenueScreen() {
               <span className="num text-[11px] text-fg">{pct(v, 0)}</span>
             </div>
             <Meter value={v} tone={v > 0.75 ? 'pos' : v > 0.4 ? 'accent' : 'warn'} />
-            <div className="mt-1 text-[10px] leading-snug text-faint">{note}</div>
+            <div className="mt-1 text-[11px] leading-snug text-faint">{note}</div>
           </div>
         ))}
         <Btn small icon={rehearse ? 'stop' : 'mic'} className="mt-2 w-full" active={rehearse} onClick={() => setRehearse(!rehearse)}>
@@ -735,15 +735,15 @@ export function VenueScreen() {
       <Fold title="More land" icon="plot" open={false} bodyClass="p-2">
         {next ? (
           <>
-            <div className="text-sm text-fg">{next.name}</div>
+            <div className="text-[13px] text-fg">{next.name}</div>
             <div className="text-[11px] leading-snug text-dim">{next.blurb}</div>
-            <div className="num mt-1 text-[10px] text-faint">
+            <div className="num mt-1 text-[11px] text-faint">
               {next.w} x {next.h} m, upkeep {money(next.rent, 1)} / mo
             </div>
             <ConfirmBtn tone="primary" confirm={`Pay ${money(next.cost, 1)}?`} icon="truck" className="mt-2 w-full" onClick={buy}>
               Move for {money(next.cost, 1)}
             </ConfirmBtn>
-            <div className="mt-1 text-[10px] text-faint">Everything you have built is moved across as it stands.</div>
+            <div className="mt-1 text-[11px] text-faint">Everything you have built is moved across as it stands.</div>
           </>
         ) : (
           <div className="text-[11px] text-dim">This is the largest venue site there is.</div>

@@ -383,16 +383,16 @@ function TagProjector({ list, tags }: { list: Place[]; tags: RefObject<Map<strin
 
 function Tag({ place, full }: { place: Place; full: boolean }) {
   const own = OWN.includes(place.kind)
-  if (!full) return <div className={`whitespace-nowrap border bg-carbon/75 px-[5px] py-[1px] text-[9px] uppercase tracking-[0.14em] ${place.warn ? 'border-warn text-warn' : own ? 'border-accent/60 text-fg' : 'border-line text-dim'}`}>{place.name}</div>
+  if (!full) return <div className={`whitespace-nowrap border bg-carbon/75 px-[5px] py-[1px] text-[11px] ${place.warn ? 'border-warn text-warn' : own ? 'border-accent/60 text-fg' : 'border-line text-dim'}`}>{place.name}</div>
   return (
     <div className="whitespace-nowrap border border-line2 bg-panel/95 px-2 py-[5px]">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-fg">{place.name}</div>
+      <div className="text-[11px] font-semibold text-fg">{place.name}</div>
       {place.lines.map((line) => (
         <div key={line} className="num text-[11px] text-dim">
           {line}
         </div>
       ))}
-      {place.warn && <div className="text-[10px] text-warn">{place.warn}</div>}
+      {place.warn && <div className="text-[11px] text-warn">{place.warn}</div>}
     </div>
   )
 }

@@ -59,7 +59,7 @@ function Chips() {
           <Mini label="Battery efficiency" icon="battery" value={rel(mine.eff, helix.eff)} tone={mine.eff >= helix.eff ? 'text-pos' : 'text-warn'} />
           <Mini label="Cost per chip" icon="tag" value={`${money(mine.cost)} (${rel(mine.cost, helix.cost)})`} tone={mine.cost <= helix.cost ? 'text-pos' : 'text-warn'} />
         </div>
-        <div className="mt-2 text-[10px] leading-snug text-faint">Shown for an average team. A strong hardware team finishes sooner and can lift the result by up to 8%; a weak one loses up to 12%. Research the Chipset track first to design on a newer process.</div>
+        <div className="mt-2 text-[11px] leading-snug text-faint">Shown for an average team. A strong hardware team finishes sooner and can lift the result by up to 8%; a weak one loses up to 12%. Research the Chipset track first to design on a newer process.</div>
         <div className="mt-3 border-t border-line pt-2">
           <Row icon="cash" k="Project cost" v={money(chipProjectCost(gen))} />
           <Row icon="hourglass" k="Time with your hardware team" v={`${chipProjectDays(g)} days`} />
@@ -95,8 +95,8 @@ function Chips() {
           return (
             <div key={c.id} className="border-b border-line p-3">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-fg">
-                  {c.name} <span className="num text-[10px] font-normal text-faint">x{c.gen}0 process</span>
+                <span className="text-[13px] font-semibold text-fg">
+                  {c.name} <span className="num text-[11px] font-normal text-faint">x{c.gen}0 process</span>
                 </span>
                 {c.status === 'dev' ? <Tag tone="warn" icon="hourglass">{c.devDaysLeft} days left</Tag> : <Tag tone="pos" icon="check">ready</Tag>}
               </div>
@@ -114,7 +114,7 @@ function Chips() {
                     </div>
                     <div className="w-40">
                       <div className="num text-[11px] text-fg">{c.licenceFee ? `${pct(adoption)} of rival devices` : '--'}</div>
-                      <div className="num text-[10px] text-faint">earned so far {money(c.licenceIncome, 1)}</div>
+                      <div className="num text-[11px] text-faint">earned so far {money(c.licenceIncome, 1)}</div>
                     </div>
                   </div>
                 </>
@@ -166,7 +166,7 @@ function Software() {
                   </span>
                   <span className="block text-[11px] leading-snug text-dim">{f.note}</span>
                 </span>
-                {have ? <Tag tone="pos" icon="check">shipped</Tag> : <span className="num text-[10px] text-faint">+{f.points}</span>}
+                {have ? <Tag tone="pos" icon="check">shipped</Tag> : <span className="num text-[11px] text-faint">+{f.points}</span>}
               </button>
             )
           })}
@@ -174,7 +174,7 @@ function Software() {
         <Panel title={os.project ? 'In development' : first ? 'Build your own operating system' : 'Next version'} icon={os.project ? 'hourglass' : 'os'} bodyClass="overflow-y-auto p-3">
           {os.project ? (
             <>
-              <div className="text-sm text-fg">
+              <div className="text-[13px] text-fg">
                 {os.name} {os.version + 1}
               </div>
               <Meter value={os.project.total - os.project.daysLeft} max={os.project.total} className="mt-2" />
@@ -229,7 +229,7 @@ function Software() {
                   {first ? `Start building ${name || 'it'}` : `Start version ${os.version + 1}`}
                 </Btn>
               )}
-              {!first && <div className="mt-2 text-[10px] leading-snug text-faint">Even with no new features, a new version brings the system back up to date. Expectations rise by about two points a year.</div>}
+              {!first && <div className="mt-2 text-[11px] leading-snug text-faint">Even with no new features, a new version brings the system back up to date. Expectations rise by about two points a year.</div>}
             </>
           )}
         </Panel>

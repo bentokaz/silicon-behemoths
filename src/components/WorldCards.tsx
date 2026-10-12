@@ -55,7 +55,7 @@ function Frame({ target, close, children, more, title }: { target: Target; close
   return (
     <div className="w-[264px] border border-line2 bg-panel/95 text-left" onPointerDown={stop} onPointerUp={stop} onClick={stop} onWheel={stop} onContextMenu={stop}>
       <div className="flex h-7 items-center justify-between border-b border-line px-2">
-        <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-fg">
+        <span className="flex items-center gap-2 text-[11px] font-semibold text-fg">
           <Icon name={t.icon} size={13} className="text-accent" />
           {title ?? t.title}
         </span>
@@ -65,14 +65,14 @@ function Frame({ target, close, children, more, title }: { target: Target; close
       </div>
       <div className="max-h-[260px] overflow-y-auto p-2">{children}</div>
       {more && tip && cap && (
-        <button aria-disabled title={tip} className="flex h-7 w-full cursor-not-allowed items-center justify-between gap-2 border-t border-line px-2 text-[10px] uppercase tracking-wider text-faint" onClick={() => useStore.getState().showLock(cap)}>
+        <button aria-disabled title={tip} className="flex h-7 w-full cursor-not-allowed items-center justify-between gap-2 border-t border-line px-2 text-[11px] text-faint" onClick={() => useStore.getState().showLock(cap)}>
           <span className="truncate">{more.label}</span>
           <Icon name="lock" size={10} className="shrink-0" />
         </button>
       )}
       {more && !tip && (
         <button
-          className="flex h-7 w-full items-center justify-between border-t border-line px-2 text-[10px] uppercase tracking-wider text-dim hover:bg-hover hover:text-accent"
+          className="flex h-7 w-full items-center justify-between border-t border-line px-2 text-[11px] text-dim hover:bg-hover hover:text-accent"
           onClick={() => {
             useStore.getState().go({ tab: more.tab, view: more.view })
             close()
@@ -124,7 +124,7 @@ function ResearchCard({ target, close }: { target: Target; close: () => void }) 
   return (
     <Frame target={target} close={close} more={{ label: 'Open the research tree', tab: 'research' }}>
       <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="text-[10px] uppercase tracking-wider text-dim">Budget a month</span>
+        <span className="text-[11px] text-dim">Budget a month</span>
         <span className="flex items-center gap-1">
           <Btn small className="!px-2" disabled={g.rdBudget <= 0} onClick={() => act((s) => void (s.rdBudget = Math.max(0, s.rdBudget - step)))} title="Spend less">
             -
@@ -147,13 +147,13 @@ function ResearchCard({ target, close }: { target: Target; close: () => void }) 
             </Btn>
           </div>
           <Meter value={l.progress} tone="pos" className="mt-1" />
-          <div className="num mt-[2px] text-[10px] text-dim">
+          <div className="num mt-[2px] text-[11px] text-dim">
             {pct(l.progress, 0)}
             {l.daysLeft !== undefined ? `, about ${l.daysLeft} days left` : ''}
           </div>
         </div>
       ))}
-      {ideas.length > 0 && <div className="mb-1 mt-2 text-[10px] uppercase tracking-wider text-dim">Could start</div>}
+      {ideas.length > 0 && <div className="mb-1 mt-2 text-[11px] text-dim">Could start</div>}
       {ideas.map((i) => (
         <div key={i.id} className="flex items-center justify-between gap-2 py-[3px]">
           <span className="min-w-0 truncate text-[11px] text-dim" title={i.name}>
@@ -193,14 +193,14 @@ function ProductCard({ target, close }: { target: Target; close: () => void }) {
   return (
     <Frame target={target} close={close} more={{ label: 'All devices', tab: 'products' }}>
       <div className="flex items-baseline justify-between gap-2">
-        <span className="truncate text-sm text-fg">{p.name}</span>
+        <span className="truncate text-[13px] text-fg">{p.name}</span>
         <Tag tone={p.status === 'dev' ? 'accent' : p.stock <= 0 ? 'warn' : 'pos'}>{p.status === 'dev' ? 'in development' : p.stock <= 0 ? 'sold out' : 'on sale'}</Tag>
       </div>
-      <div className="mb-2 text-[10px] uppercase tracking-wider text-faint">{TYPES[p.type].name}</div>
+      <div className="mb-2 text-[11px] text-faint">{TYPES[p.type].name}</div>
       {p.status === 'dev' ? (
         <>
           <Meter value={progress} />
-          <div className="num mt-1 text-[10px] text-dim">
+          <div className="num mt-1 text-[11px] text-dim">
             {pct(progress, 0)} developed, release in {p.devDaysLeft} days
           </div>
         </>
@@ -242,7 +242,7 @@ function CampaignCard({ target, close }: { target: Target; close: () => void }) 
         return (
           <div key={c.id} className="border-b border-line py-[5px] last:border-0">
             <div className="text-[11px] text-fg">{c.channel}</div>
-            <div className="text-[10px] text-dim">
+            <div className="text-[11px] text-dim">
               For {c.target.toLowerCase() === 'the brand' ? 'the brand' : c.target}. Spent {money(c.spent, 1)} so far.
             </div>
             <div className="mt-1 flex items-center justify-between gap-2">
@@ -284,10 +284,10 @@ function ApplicantsCard({ target, close }: { target: Target; close: () => void }
               <span className="h-2 w-2 shrink-0" style={{ background: ROLE_INFO[e.role].color }} />
               <span className="truncate">{e.name}</span>
             </span>
-            <span className="block truncate text-[10px] text-dim">
+            <span className="block truncate text-[11px] text-dim">
               {titleFor(e.skill) ? `${titleFor(e.skill)} ${ROLE_INFO[e.role].name.toLowerCase()}` : ROLE_INFO[e.role].name}
             </span>
-            <span className="num block text-[10px] text-faint">
+            <span className="num block text-[11px] text-faint">
               skill {Math.round(e.skill)} / {money(e.salary, 0)} a month
             </span>
           </span>
@@ -316,7 +316,7 @@ function OsCard({ target, close }: { target: Target; close: () => void }) {
   return (
     <Frame target={target} close={close} more={{ label: 'Open the labs', tab: 'labs' }}>
       <div className="flex items-baseline justify-between">
-        <span className="text-sm text-fg">
+        <span className="text-[13px] text-fg">
           {os.name} {os.own ? os.version : ''}
         </span>
         <Tag tone={os.own ? 'pos' : 'dim'}>{os.own ? 'your own' : 'licensed'}</Tag>
@@ -334,9 +334,9 @@ function OsCard({ target, close }: { target: Target; close: () => void }) {
       )}
       {os.project && (
         <div className="mt-2">
-          <div className="text-[10px] uppercase tracking-wider text-dim">Next version</div>
+          <div className="text-[11px] text-dim">Next version</div>
           <Meter value={os.project.progress} className="mt-1" />
-          <div className="num mt-1 text-[10px] text-dim">
+          <div className="num mt-1 text-[11px] text-dim">
             {pct(os.project.progress, 0)} done, {os.project.daysLeft} days to go
           </div>
         </div>
@@ -360,13 +360,13 @@ function TeamCard({ target, close }: { target: Target; close: () => void }) {
           <div key={t.id} className="flex items-center justify-between gap-2 border-b border-line py-[4px] last:border-0">
             <span className="min-w-0">
               <span className="block truncate text-[11px] text-fg">{t.name}</span>
-              <span className="block truncate text-[10px] text-dim">
+              <span className="block truncate text-[11px] text-dim">
                 {t.lead}, {t.members.length} people
               </span>
             </span>
             <span className="shrink-0 text-right">
               <span className="num block text-[11px] text-fg">{hourText(slot.start)}</span>
-              <span className="num block text-[10px] text-pos">+{pct(t.bonus, 0)}</span>
+              <span className="num block text-[11px] text-pos">+{pct(t.bonus, 0)}</span>
             </span>
           </div>
         )
@@ -407,7 +407,7 @@ function OrdersCard({ target, close }: { target: Target; close: () => void }) {
             <Tag>{o.mode === 'factory' ? 'this line' : 'contractor'}</Tag>
           </div>
           <Meter value={o.done} max={o.quantity} className="mt-1" />
-          <div className="num mt-[2px] text-[10px] text-dim">
+          <div className="num mt-[2px] text-[11px] text-dim">
             {num(o.done)} of {num(o.quantity)} built
           </div>
         </div>
@@ -443,7 +443,7 @@ function TakingsCard({ target, close, siteRef }: { target: Target; close: () => 
   return (
     <Frame target={target} close={close}>
       <div className="mb-1 flex items-baseline justify-between">
-        <span className="truncate text-sm text-fg">{st.name}</span>
+        <span className="truncate text-[13px] text-fg">{st.name}</span>
         <Tag tone={st.open ? 'pos' : 'neg'}>{st.open ? 'trading' : 'closed'}</Tag>
       </div>
       <Row k="Visitors a day" v={num(st.visitors)} />
@@ -495,29 +495,29 @@ function VenueCard({ target, close }: { target: Target; close: () => void }) {
         <Row k="A show here fills" v={pct(v.draw, 0)} />
       </div>
       <div className="mt-2 flex items-baseline justify-between">
-        <span className="text-[10px] uppercase tracking-wider text-dim">Production</span>
-        <span className="num text-[10px] text-dim">{pct(st.production, 0)}</span>
+        <span className="text-[11px] text-dim">Production</span>
+        <span className="num text-[11px] text-dim">{pct(st.production, 0)}</span>
       </div>
       <Meter value={st.production} tone={st.production > 0.7 ? 'pos' : st.production > 0.35 ? 'accent' : 'warn'} className="mt-[2px]" />
       <div className="mt-2 flex items-baseline justify-between">
-        <span className="text-[10px] uppercase tracking-wider text-dim">Reach of a keynote here</span>
-        <span className="num text-[10px] text-dim">{pct(st.reach / 1.1, 0)}</span>
+        <span className="text-[11px] text-dim">Reach of a keynote here</span>
+        <span className="num text-[11px] text-dim">{pct(st.reach / 1.1, 0)}</span>
       </div>
       <Meter value={st.reach / 1.1} tone="accent" className="mt-[2px]" />
-      <div className="mb-1 mt-3 text-[10px] uppercase tracking-wider text-dim">Coming up</div>
+      <div className="mb-1 mt-3 text-[11px] text-dim">Coming up</div>
       {!v.upcoming.length && <Note>Nothing is booked. A keynote for a device in development can be held on this stage.</Note>}
       {v.upcoming.slice(0, 4).map((e) => (
         <div key={e.id} className="flex items-center justify-between gap-2 border-b border-line py-[4px] last:border-0">
           <span className="min-w-0">
             <span className="block truncate text-[11px] text-fg">{e.product ?? e.kind}</span>
-            <span className="block truncate text-[10px] text-dim">
+            <span className="block truncate text-[11px] text-dim">
               {e.product ? `${e.kind}, ` : ''}
               {e.here ? 'on this stage' : e.place.toLowerCase()}
             </span>
           </span>
           <span className="shrink-0 text-right">
             <span className="num block text-[11px] text-fg">{e.daysLeft === 0 ? 'today' : `in ${e.daysLeft} d`}</span>
-            <span className="num block text-[10px] text-faint">{fmtDate(e.day)}</span>
+            <span className="num block text-[11px] text-faint">{fmtDate(e.day)}</span>
           </span>
         </div>
       ))}

@@ -119,7 +119,7 @@ export function Research() {
             <line x1={trunkX(industry) + NODE_W / 2} y1={HEAD_H - 6} x2={trunkX(industry) + NODE_W / 2} y2={height} stroke="var(--color-warn)" strokeWidth={1} strokeDasharray="2 4" opacity={0.7} />
             {lines}
           </svg>
-          <div className="num absolute text-[9px] text-warn" style={{ left: trunkX(industry) + NODE_W / 2 + 4, top: 2 }}>
+          <div className="num absolute text-[11px] text-warn" style={{ left: trunkX(industry) + NODE_W / 2 + 4, top: 2 }}>
             INDUSTRY {industry.toFixed(1)}
           </div>
           {Array.from({ length: MAX_LEVEL + 1 }, (_, l) => (
@@ -131,11 +131,11 @@ export function Research() {
             <div key={t}>
               <div className="absolute border-t border-line" style={{ left: 0, top: bandY(row), width }} />
               <div className="absolute px-2" style={{ left: 0, top: trunkY(row) + 2, width: LABEL_W }}>
-                <div className={`flex items-center gap-[6px] text-xs font-semibold uppercase tracking-wider ${g.activeResearch.includes(t) ? 'text-accent' : 'text-fg'}`}>
+                <div className={`flex items-center gap-[6px] text-xs font-semibold ${g.activeResearch.includes(t) ? 'text-accent' : 'text-fg'}`}>
                   <Icon name={trackIcon(t)} size={14} className={g.activeResearch.includes(t) ? '' : 'text-dim'} />
                   {TRACK_INFO[t].name}
                 </div>
-                <div className="num pl-5 text-[10px] text-dim">
+                <div className="num pl-5 text-[11px] text-dim">
                   L{g.levels[t]} / {MAX_LEVEL}
                 </div>
               </div>
@@ -147,7 +147,7 @@ export function Research() {
                 return (
                   <button key={l} onClick={() => setSel({ kind: 'trunk', track: t, level: l })} title={TRACK_INFO[t].unlocks[l]} className={`absolute overflow-hidden border px-2 text-left transition-colors hover:border-accent ${cls} ${picked ? 'outline outline-1 outline-offset-2 outline-accent' : ''}`} style={{ left: trunkX(l), top: trunkY(row), width: NODE_W, height: NODE_H }}>
                     <div className="truncate text-[11px] leading-tight">{TRACK_INFO[t].unlocks[l]}</div>
-                    <div className="num whitespace-nowrap text-[9px] leading-tight text-dim">
+                    <div className="num whitespace-nowrap text-[11px] leading-tight text-dim">
                       {st === 'owned' ? (
                         <>
                           <Lead icon="check" size={9} />
@@ -185,7 +185,7 @@ export function Research() {
               <button key={f.id} onClick={() => setSel({ kind: 'feature', id: f.id })} title={f.note} className={`absolute overflow-hidden border px-2 text-left transition-colors hover:border-accent ${cls} ${picked ? 'outline outline-1 outline-offset-2 outline-accent' : ''}`} style={{ left: featX(f.level), top: featY(row), width: FEAT_W, height: FEAT_H }}>
                 <div className="flex items-center justify-between gap-1">
                   <span className="truncate text-[11px]">{f.name}</span>
-                  <span className="num shrink-0 text-[9px] text-dim">{owned ? <Icon name="check" size={10} className="text-accent" /> : running ? <Icon name="play" size={10} className="text-accent" /> : money(featureCost(f), 1)}</span>
+                  <span className="num shrink-0 text-[11px] text-dim">{owned ? <Icon name="check" size={10} className="text-accent" /> : running ? <Icon name="play" size={10} className="text-accent" /> : money(featureCost(f), 1)}</span>
                 </div>
                 {running && <div className="absolute bottom-0 left-0 h-[3px] bg-accent" style={{ width: `${Math.min(100, ((g.progress[id] ?? 0) / featureCost(f)) * 100)}%` }} />}
               </button>
@@ -196,7 +196,7 @@ export function Research() {
 
       <div className="flex min-h-0 flex-col gap-2 overflow-y-auto">
         <Panel title={detail.title} icon={detail.icon} className="shrink-0" bodyClass="px-2 py-2">
-          <div className="text-sm text-fg">{detail.sub}</div>
+          <div className="text-[13px] text-fg">{detail.sub}</div>
           <div className="mt-1 text-[11px] leading-snug text-dim">{detail.note}</div>
           <div className="mt-2">
             <Row icon="cash" k="Cost" v={detail.cost ? money(detail.cost) : 'starting tech'} />

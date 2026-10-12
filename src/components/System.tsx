@@ -122,7 +122,7 @@ export function ThemePicker() {
   return (
     <div className="grid grid-cols-4 gap-1">
       {THEMES.map((t) => (
-        <button key={t.id} aria-pressed={theme === t.id} onClick={() => (applyTheme(t.id), setTheme(t.id), sfx.toggle())} className={`flex h-8 items-center gap-2 border px-2 text-[11px] uppercase tracking-wider transition-colors ${theme === t.id ? 'border-accent text-fg' : 'border-line2 text-dim hover:text-fg'}`}>
+        <button key={t.id} aria-pressed={theme === t.id} onClick={() => (applyTheme(t.id), setTheme(t.id), sfx.toggle())} className={`flex h-8 items-center gap-2 border px-2 text-[11px] transition-colors ${theme === t.id ? 'border-accent text-fg' : 'border-line2 text-dim hover:text-fg'}`}>
           <span className="h-3 w-3 shrink-0" style={{ background: t.swatch }} />
           {t.name}
         </button>
@@ -221,7 +221,7 @@ function Saves() {
         </Panel>
         <Panel title="Company logo" icon="brand" className="shrink-0" bodyClass="p-2">
           <LogoPicker value={player(g).logo} onChange={(logo) => act((s) => void (player(s).logo = logo))} />
-          <div className="mt-2 text-[10px] leading-snug text-faint">Shown in the top bar and on new devices. On an existing draft, select the logo part in the advanced editor to switch it to the image.</div>
+          <div className="mt-2 text-[11px] leading-snug text-faint">Shown in the top bar and on new devices. On an existing draft, select the logo part in the advanced editor to switch it to the image.</div>
         </Panel>
         <Panel title="This game" icon="info" className="shrink-0" bodyClass="px-2 py-1">
           <Row icon="box" k="Mode" v="Sandbox" />
@@ -239,7 +239,7 @@ function Saves() {
               <NameInput aria-label={c.isPlayer ? 'Your company name' : `Name of ${c.name}`} value={c.name} maxLength={18} onChange={(v) => act(() => void (c.name = v))} className="h-6 min-w-0 flex-1" />
             </div>
           ))}
-          <div className="py-1 text-[10px] text-faint">Renaming applies to this save. Devices already on sale keep their model names.</div>
+          <div className="py-1 text-[11px] text-faint">Renaming applies to this save. Devices already on sale keep their model names.</div>
         </Panel>
         {g.config.progression === 'guided' && (
           <ConfirmBtn tone="default" icon="unlock" className="shrink-0" confirm="This cannot be undone. Open everything?" title="Open every screen and lever now, as in a sandbox game. This cannot be undone." onClick={() => (act((s) => openEverything(s)), say('Everything is open.'))}>

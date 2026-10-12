@@ -929,7 +929,7 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
 
   const part = design.parts.find((p) => p.id === selectedId)
   const st = useStore.getState()
-  const chip = 'h-5 border border-line2 bg-panel/95 px-[6px] text-[10px] uppercase tracking-wider text-dim hover:border-accent hover:text-accent'
+  const chip = 'h-5 border border-line2 bg-panel/95 px-[6px] text-[11px] text-dim hover:border-accent hover:text-accent'
   return (
     <group ref={turn}>
       <primitive object={group} onPointerDown={down} onPointerMove={move} onDoubleClick={twice} />
@@ -957,8 +957,8 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
         <Html position={adding.at} zIndexRange={[6, 0]}>
           <div className="w-40 border border-line2 bg-panel/95" onPointerDown={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-line px-2 py-1">
-              <span className="text-[9px] uppercase tracking-[0.12em] text-faint">Add to {faceLabel(adding.face, design.type)}</span>
-              <button className="num text-[10px] text-dim hover:text-accent" onClick={() => setAdding(null)}>
+              <span className="text-[11px] text-faint">Add to {faceLabel(adding.face, design.type)}</span>
+              <button className="num text-[11px] text-dim hover:text-accent" onClick={() => setAdding(null)}>
                 x
               </button>
             </div>

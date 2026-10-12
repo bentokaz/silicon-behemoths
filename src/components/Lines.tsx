@@ -33,7 +33,7 @@ function DeviceLines() {
           return (
             <div key={type} className={`flex flex-col border bg-panel p-3 ${have ? 'border-line2' : 'border-line'}`}>
               <div className="flex items-center justify-between gap-2">
-                <span className={`flex min-w-0 items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.14em] ${have ? 'text-fg' : 'text-dim'}`}>
+                <span className={`flex min-w-0 items-center gap-2 text-[12px] font-semibold ${have ? 'text-fg' : 'text-dim'}`}>
                   <Icon name={typeIcon(type)} size={18} className={have ? 'text-accent' : 'text-faint'} />
                   <span className="truncate">{T.plural}</span>
                 </span>
@@ -49,7 +49,7 @@ function DeviceLines() {
                   </Tag>
                 )}
               </div>
-              <div className="num mt-1 text-[10px] text-faint">
+              <div className="num mt-1 text-[11px] text-faint">
                 {segmentsOf(type).length} markets / {num(segmentsOf(type).reduce((a, s) => a + s.size, 0))} buyers a year
               </div>
               <div className="mt-2 flex-1 text-[11px] leading-snug text-dim">

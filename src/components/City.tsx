@@ -81,8 +81,8 @@ export function CityScreen() {
             >
               <Icon name={d.home ? 'campus' : 'world'} size={12} className={d.open ? '' : 'text-faint'} />
               <span className={d.open ? '' : 'text-faint'}>{d.region.name}</span>
-              {d.home && <span className="num text-[9px] text-accent">HOME</span>}
-              {!d.open && <span className="num text-[9px] text-faint">NOT ENTERED</span>}
+              {d.home && <span className="num text-[11px] text-accent">HOME</span>}
+              {!d.open && <span className="num text-[11px] text-faint">NOT ENTERED</span>}
             </Btn>
           ))}
         </div>
@@ -109,8 +109,8 @@ export function CityScreen() {
             <button key={p.id} onClick={() => enter(p)} onMouseEnter={() => setHover(p.id)} onMouseLeave={() => setHover(null)} className="pointer-events-auto flex items-start gap-2 border border-warn/60 bg-panel/95 px-2 py-[5px] text-left hover:bg-hover">
               <Icon name="alert" size={13} className="mt-[1px] text-warn" />
               <span className="min-w-0">
-                <span className="block truncate text-[10px] uppercase tracking-wider text-fg">{p.name}</span>
-                <span className="block text-[10px] leading-snug text-dim">{p.warn}</span>
+                <span className="block truncate text-[11px] text-fg">{p.name}</span>
+                <span className="block text-[11px] leading-snug text-dim">{p.warn}</span>
               </span>
             </button>
           ))}

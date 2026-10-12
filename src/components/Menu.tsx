@@ -19,7 +19,7 @@ function Wordmark() {
   return (
     <div>
       <div className="label text-accent">Tech company simulation / build 0.1</div>
-      <h1 className="mt-2 text-5xl font-semibold leading-none tracking-[0.18em] text-fg">
+      <h1 className="mt-2 text-5xl font-semibold leading-none text-fg">
         SILICON<span className="text-accent">/</span>
         <br />
         BEHEMOTHS
@@ -52,7 +52,7 @@ export function MainMenu() {
             <ThemePicker />
           </div>
         </div>
-        <div className="num text-[10px] leading-relaxed text-faint">
+        <div className="num text-[11px] leading-relaxed text-faint">
           DESIGN / LAUNCH / OUTSELL / REINVEST
           <br />
           Saves are stored in this browser. Export them to keep a copy.
@@ -160,11 +160,11 @@ export function NewGame() {
               return (
                 <button key={id} onClick={() => (up({ progression: id }), sfx.toggle())} className={`flex-1 border px-3 py-2 text-left transition-colors ${on ? 'border-accent bg-accent/10' : 'border-line2 bg-raise hover:border-accent'}`}>
                   <div className="flex items-center justify-between gap-2">
-                    <span className={`flex items-center gap-2 text-xs uppercase tracking-wider ${on ? 'text-accent' : 'text-fg'}`}>
+                    <span className={`flex items-center gap-2 text-xs ${on ? 'text-accent' : 'text-fg'}`}>
                       <Icon name={icon} size={14} className={on ? '' : 'text-dim'} />
                       {name}
                     </span>
-                    <span className="num text-[9px] uppercase tracking-wider text-faint">{tag}</span>
+                    <span className="num text-[11px] text-faint">{tag}</span>
                   </div>
                   <div className="mt-1 text-[11px] leading-snug text-dim">{note}</div>
                 </button>
@@ -176,19 +176,19 @@ export function NewGame() {
             <div className="grid grid-cols-4 gap-1">
               {START_TYPES.map((type) => (
                 <button key={type} onClick={() => (up({ startType: type }), sfx.toggle())} className={`border px-2 py-2 text-left transition-colors ${cfg.startType === type ? 'border-accent bg-accent/10' : 'border-line2 bg-raise hover:border-accent'}`}>
-                  <div className={`flex items-center gap-2 text-xs uppercase tracking-wider ${cfg.startType === type ? 'text-accent' : 'text-fg'}`}>
+                  <div className={`flex items-center gap-2 text-xs ${cfg.startType === type ? 'text-accent' : 'text-fg'}`}>
                     <Icon name={typeIcon(type)} size={18} className={cfg.startType === type ? '' : 'text-dim'} />
                     <span className="min-w-0 truncate">{TYPES[type].plural}</span>
                   </div>
-                  <div className="num pl-[26px] text-[10px] text-faint">{segmentsOf(type).length} markets{['console', 'handheld', 'speaker'].includes(type) ? ' / slow start' : ''}</div>
+                  <div className="num pl-[26px] text-[11px] text-faint">{segmentsOf(type).length} markets{['console', 'handheld', 'speaker'].includes(type) ? ' / slow start' : ''}</div>
                 </button>
               ))}
               <button onClick={() => (up({ startType: 'all' }), sfx.toggle())} className={`border px-2 py-2 text-left transition-colors ${cfg.startType === 'all' ? 'border-accent bg-accent/10' : 'border-line2 bg-raise hover:border-accent'}`}>
-                <div className={`flex items-center gap-2 text-xs uppercase tracking-wider ${cfg.startType === 'all' ? 'text-accent' : 'text-fg'}`}>
+                <div className={`flex items-center gap-2 text-xs ${cfg.startType === 'all' ? 'text-accent' : 'text-fg'}`}>
                   <Icon name="overview" size={18} className={cfg.startType === 'all' ? '' : 'text-dim'} />
                   <span className="min-w-0 truncate">Everything</span>
                 </div>
-                <div className="num pl-[26px] text-[10px] text-faint">nothing to unlock</div>
+                <div className="num pl-[26px] text-[11px] text-faint">nothing to unlock</div>
               </button>
             </div>
             <div className="mt-2 text-[11px] leading-snug text-dim">You begin as a maker of one kind of device and open other lines under Research as you grow. Related lines are cheaper to open; the most demanding need your technology to be far enough along. "Everything" starts with every line open.</div>
@@ -201,7 +201,7 @@ export function NewGame() {
           <Panel title="Mode" icon="box" bodyClass="p-3">
             <div className="flex gap-2">
               {/* the only mode there is yet: shown as chosen, with nothing to press */}
-              <div className="flex h-7 flex-1 items-center justify-center gap-[6px] border border-accent bg-accent/10 px-3 text-xs uppercase tracking-wider text-accent">
+              <div className="flex h-7 flex-1 items-center justify-center gap-[6px] border border-accent bg-accent/10 px-3 text-xs text-accent">
                 <Icon name="box" size={13} />
                 Sandbox
               </div>
@@ -216,7 +216,7 @@ export function NewGame() {
             <div className="grid grid-cols-3 gap-2">
               {(Object.keys(DIFFICULTY) as Difficulty[]).map((k) => (
                 <button key={k} onClick={() => up({ difficulty: k, startCash: DIFFICULTY[k].startCash })} className={`border p-3 text-left transition-colors ${cfg.difficulty === k ? 'border-accent bg-accent/10' : 'border-line2 bg-raise hover:border-accent'}`}>
-                  <div className={`text-sm uppercase tracking-wider ${cfg.difficulty === k ? 'text-accent' : 'text-fg'}`}>{DIFFICULTY[k].label}</div>
+                  <div className={`text-[13px] ${cfg.difficulty === k ? 'text-accent' : 'text-fg'}`}>{DIFFICULTY[k].label}</div>
                   <div className="mt-1 text-[11px] leading-snug text-dim">{DIFFICULTY[k].blurb}</div>
                 </button>
               ))}

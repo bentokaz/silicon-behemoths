@@ -50,7 +50,7 @@ export class CrashGuard extends Component<{ children: ReactNode }, CrashState> {
     return (
       <div className="flex h-full items-center justify-center bg-carbon p-6">
         <div className="w-[560px] max-w-full border border-neg bg-panel">
-          <div className="flex items-center gap-2 border-b border-line px-4 py-3 text-[12px] font-semibold uppercase tracking-[0.14em] text-neg">
+          <div className="flex items-center gap-2 border-b border-line px-4 py-3 text-[12px] font-semibold text-neg">
             <Icon name="alert" size={15} />
             Something broke
           </div>
@@ -59,7 +59,7 @@ export class CrashGuard extends Component<{ children: ReactNode }, CrashState> {
             <p>
               Reload the page, or go to the main menu, and load {saved === 'yes' ? `"${CRASH_SLOT}"` : 'your last save'} from the Continue list to carry on.{saved === 'yes' ? ' If it breaks again in the same place, load the Autosave instead.' : ''} Either way, please report it with the lines below.
             </p>
-            <pre className="num max-h-32 select-text overflow-auto whitespace-pre-wrap break-words border border-line bg-carbon p-2 text-[10px] leading-snug text-dim">{detail}</pre>
+            <pre className="num max-h-32 select-text overflow-auto whitespace-pre-wrap break-words border border-line bg-carbon p-2 text-[11px] leading-snug text-dim">{detail}</pre>
             <div className="flex flex-wrap gap-2">
               <Btn tone="primary" icon="refresh" onClick={() => window.location.reload()}>
                 Reload
@@ -125,7 +125,7 @@ export function SizeNotice() {
       <span className="min-w-0 flex-1">
         {touchOnly ? 'This game is made for a computer with a mouse and keyboard. It will not play well on a phone or tablet.' : `This window is ${size.w} x ${size.h}. The game is laid out for ${MIN_WIDTH} x ${MIN_HEIGHT} or larger: make the window bigger, go fullscreen, or zoom the page out.`}
       </span>
-      <button onClick={() => setHidden(true)} className="shrink-0 border border-warn px-2 py-[2px] uppercase tracking-wider hover:bg-warn/10">
+      <button onClick={() => setHidden(true)} className="shrink-0 border border-warn px-2 py-[2px] hover:bg-warn/10">
         Hide
       </button>
     </div>
@@ -134,7 +134,7 @@ export function SizeNotice() {
 
 /** Where to send bug reports and ideas. */
 export function FeedbackLinks({ className = '' }: { className?: string }) {
-  const link = 'inline-flex items-center gap-[6px] border border-line2 bg-raise px-2 py-[5px] text-[10px] uppercase tracking-wider text-dim hover:border-accent hover:text-fg'
+  const link = 'inline-flex items-center gap-[6px] border border-line2 bg-raise px-2 py-[5px] text-[11px] text-dim hover:border-accent hover:text-fg'
   return (
     <div className={`flex flex-wrap items-center gap-2 ${className}`}>
       <FeedbackButton small />

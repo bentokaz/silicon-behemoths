@@ -144,8 +144,8 @@ function NextSteps({ g }: { g: GameState }) {
           <Icon name={cap.icon as IconName} size={14} className="mt-[2px] shrink-0 text-dim" />
           <span className="min-w-0 flex-1">
             <span className="flex items-baseline justify-between gap-2">
-              <span className="truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-fg">{cap.name}</span>
-              <span className="num shrink-0 text-[10px] text-faint">{pct(ratio, 0)}</span>
+              <span className="truncate text-[11px] font-semibold text-fg">{cap.name}</span>
+              <span className="num shrink-0 text-[11px] text-faint">{pct(ratio, 0)}</span>
             </span>
             <span className="block truncate text-[11px] text-dim">To open it: {needText(g, cap.id)}.</span>
             <Meter value={ratio} className="mt-[3px]" />
@@ -153,7 +153,7 @@ function NextSteps({ g }: { g: GameState }) {
         </button>
       ))}
       {!next.length && <Empty icon="check" text="Every part of the company is open." />}
-      <button onClick={() => go({ tab: 'goals', view: 'growth' })} className="flex h-7 w-full items-center justify-between border-t border-line px-2 text-[10px] uppercase tracking-wider text-dim hover:bg-hover hover:text-accent">
+      <button onClick={() => go({ tab: 'goals', view: 'growth' })} className="flex h-7 w-full items-center justify-between border-t border-line px-2 text-[11px] text-dim hover:bg-hover hover:text-accent">
         Everything the company can grow into
         <Icon name="branch" size={11} />
       </button>
@@ -245,7 +245,7 @@ export function Dashboard() {
       <Panel title="Your devices" icon="devices" right={<Btn small tone="primary" icon="plus" data-coach-target="new-device" onClick={() => openDesigner()}>New device</Btn>} className="col-span-8" bodyClass="overflow-auto">
         {products.length === 0 ? (
           <Empty icon="devices" text={`Design your first device to enter the market. ${g.companies.filter((c) => !c.isPlayer && c.alive).length} rivals are already selling.`}>
-            <Btn tone="primary" icon="plus" className="h-11 px-8 text-sm" data-coach-target="new-device always" onClick={() => openDesigner()}>
+            <Btn tone="primary" icon="plus" className="h-11 px-8 text-[13px]" data-coach-target="new-device always" onClick={() => openDesigner()}>
               Design your first device
             </Btn>
           </Empty>
@@ -258,7 +258,7 @@ export function Dashboard() {
           <button key={goal.id} onClick={() => setTab("goals")} title={`${goal.name}: ${goal.note}`} className="block w-full py-[3px] text-left">
             <div className="flex items-baseline justify-between gap-2">
               <span className="truncate text-[11px] text-fg">{goal.name}</span>
-              <span className="truncate text-[10px] text-faint">{goal.note}</span>
+              <span className="truncate text-[11px] text-faint">{goal.note}</span>
             </div>
             <Meter value={progress} tone={progress > 0.66 ? 'pos' : 'accent'} />
           </button>
@@ -404,11 +404,11 @@ export function Products() {
                   const blocked = open ? null : unlockBlocked(g, t)
                   return (
                     <button key={t} onClick={() => (setPicking(false), open ? openDesigner({ type: t }) : useStore.getState().setTab('research'))} className="flex w-full items-center justify-between border-b border-line px-2 py-[6px] text-left last:border-0 hover:bg-hover">
-                      <span className={`flex items-center gap-[7px] text-[11px] uppercase tracking-wider ${open ? 'text-fg' : 'text-faint'}`}>
+                      <span className={`flex items-center gap-[7px] text-[11px] ${open ? 'text-fg' : 'text-faint'}`}>
                         <Icon name={open ? typeIcon(t) : 'lock'} size={13} className={open ? 'text-accent' : 'text-faint'} />
                         {TYPES[t].name}
                       </span>
-                      <span className="num text-[10px] text-faint">
+                      <span className="num text-[11px] text-faint">
                         {open ? `${segmentsOf(t).length} markets / ${num(segmentsOf(t).reduce((a, s) => a + segmentDemand(s, g.day) * 360, 0))} a year` : blocked ? 'needs research' : `open for ${money(unlockCost(g, t), 1)}`}
                       </span>
                     </button>
@@ -428,8 +428,8 @@ export function Products() {
             return (
               <div key={family}>
                 <div className="flex items-center justify-between border-b border-line2 bg-raise px-2 py-1">
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-fg">{family}</span>
-                  <span className="num text-[10px] text-faint">
+                  <span className="text-[11px] font-semibold text-fg">{family}</span>
+                  <span className="num text-[11px] text-faint">
                     {group.length} {group.length === 1 ? 'model' : 'models'} / {num(group.reduce((a, p) => a + p.unitsSold, 0))} sold / {money(group.reduce((a, p) => a + p.revenue, 0), 1)}
                   </span>
                 </div>
@@ -439,7 +439,7 @@ export function Products() {
           })
         )}
       </Panel>
-      <div className="shrink-0 text-[10px] text-faint">Click a device to open it. From there you can order production, change the price, or build a Pro, Lite, Max or successor on the same platform.</div>
+      <div className="shrink-0 text-[11px] text-faint">Click a device to open it. From there you can order production, change the price, or build a Pro, Lite, Max or successor on the same platform.</div>
     </div>
   )
 }
@@ -470,13 +470,13 @@ export function Market() {
       <Tabs fit value={type} onChange={(t) => (setType(t), setSeg('all'))} options={DEVICE_TYPES.map((t) => ({ value: t, label: TYPES[t].plural, icon: typeIcon(t), badge: g.products.filter((p) => p.status === 'sale' && p.type === t).length }))} />
       <div className="grid shrink-0 gap-1" style={{ gridTemplateColumns: `repeat(${segs.length + 1}, minmax(0, 1fr))` }}>
         <button onClick={() => setSeg('all')} className={`border px-2 py-1 text-left ${seg === 'all' ? 'border-accent bg-accent/10' : 'border-line hover:border-line2'}`}>
-          <div className="text-[11px] uppercase tracking-wider text-fg">All {TYPES[type].plural.toLowerCase()}</div>
-          <div className="num text-[10px] text-faint">{num(segs.reduce((a, s) => a + segmentDemand(s, g.day) * 360, 0))} buyers / yr</div>
+          <div className="text-[11px] text-fg">All {TYPES[type].plural.toLowerCase()}</div>
+          <div className="num text-[11px] text-faint">{num(segs.reduce((a, s) => a + segmentDemand(s, g.day) * 360, 0))} buyers / yr</div>
         </button>
         {segs.map((s) => (
           <button key={s.id} onClick={() => setSeg(s.id)} className={`border px-2 py-1 text-left ${seg === s.id ? 'border-accent bg-accent/10' : 'border-line hover:border-line2'}`}>
-            <div className="truncate text-[11px] uppercase tracking-wider text-fg">{s.name}</div>
-            <div className="num text-[10px] text-faint">
+            <div className="truncate text-[11px] text-fg">{s.name}</div>
+            <div className="num text-[11px] text-faint">
               {num(segmentDemand(s, g.day) * 360)} / yr at ~{money(s.priceRef)}
             </div>
           </button>

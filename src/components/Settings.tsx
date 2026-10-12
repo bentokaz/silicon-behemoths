@@ -14,7 +14,7 @@ function Toggle({ on, onChange, title, note, icon }: { on: boolean; onChange: (v
         <span className={`h-full w-3 ${on ? 'bg-accent' : 'bg-dim'}`} />
       </span>
       <span>
-        <span className="block text-xs uppercase tracking-wider text-fg">
+        <span className="block text-xs text-fg">
           <Lead icon={icon} size={12} />
           {title}
         </span>
@@ -38,11 +38,11 @@ export function SettingsPanel() {
         </Head>
         {(Object.keys(QUALITY) as Quality[]).map((q) => (
           <button key={q} onClick={() => (set({ quality: q }), sfx.toggle())} className={`mb-1 block w-full border p-2 text-left ${settings.quality === q ? 'border-accent bg-accent/10' : 'border-line hover:border-line2'}`}>
-            <div className={`text-xs uppercase tracking-wider ${settings.quality === q ? 'text-accent' : 'text-fg'}`}>{QUALITY[q].label}</div>
+            <div className={`text-xs ${settings.quality === q ? 'text-accent' : 'text-fg'}`}>{QUALITY[q].label}</div>
             <div className="text-[11px] leading-snug text-dim">{QUALITY[q].note}</div>
           </button>
         ))}
-        <div className="mt-1 text-[10px] leading-snug text-faint">If moving the camera around a building feels heavy, drop this a step. Shadows are only redrawn when something on the site changes, so a big campus costs little once it is built.</div>
+        <div className="mt-1 text-[11px] leading-snug text-faint">If moving the camera around a building feels heavy, drop this a step. Shadows are only redrawn when something on the site changes, so a big campus costs little once it is built.</div>
         <Head icon="theme" className="mb-1 mt-3 text-faint">
           Interface colours
         </Head>
@@ -76,7 +76,7 @@ export function SettingsPanel() {
             </Btn>
           ))}
         </div>
-        <div className="mt-2 text-[10px] leading-snug text-faint">Every sound is generated in the browser.</div>
+        <div className="mt-2 text-[11px] leading-snug text-faint">Every sound is generated in the browser.</div>
         <ConfirmBtn small tone="default" icon="reset" className="mt-4 w-full" confirm="Put every setting back?" title="Graphics, camera, play and sound go back to how they were at first. Keys and colours are left alone." onClick={() => (resetSettings(), setVol(0.5), setVolume(0.5), setAmbienceLevel(DEFAULT_SETTINGS.ambience), sfx.confirm())}>
           Reset all settings
         </ConfirmBtn>
@@ -127,7 +127,7 @@ export function SavesBeyond() {
                 </Btn>
               )}
             </div>
-            <div className={`num mt-1 text-[10px] ${folder.state === 'ready' ? 'text-pos' : folder.state === 'locked' ? 'text-warn' : 'text-faint'}`}>
+            <div className={`num mt-1 text-[11px] ${folder.state === 'ready' ? 'text-pos' : folder.state === 'locked' ? 'text-warn' : 'text-faint'}`}>
               <Lead icon={folder.state === 'ready' ? 'check' : folder.state === 'locked' ? 'alert' : 'folder'} size={10} />
               {folder.state === 'ready' ? `Writing to "${folder.name}"` : folder.state === 'locked' ? `"${folder.name}" needs reconnecting: the browser asks again each visit` : 'No folder chosen'}
             </div>
@@ -257,7 +257,7 @@ export function KeysPanel() {
                     {[0, 1].map((slot) => {
                       const on = waiting?.action === a.id && waiting.slot === slot
                       return (
-                        <button key={slot} data-keyslot aria-label={`${a.label}, ${slot ? 'second' : 'first'} key: ${on ? 'press a key' : keys[slot] ? keyName(keys[slot]) : 'not set'}`} onClick={() => (setNote(''), setWaiting(on ? null : { action: a.id, slot: Math.min(slot, keys.length) }))} className={`num h-6 min-w-12 border px-2 text-[10px] uppercase ${on ? 'border-accent bg-accent/10 text-accent' : keys[slot] ? 'border-line2 text-fg hover:border-accent' : 'border-line text-faint hover:border-line2'}`}>
+                        <button key={slot} data-keyslot aria-label={`${a.label}, ${slot ? 'second' : 'first'} key: ${on ? 'press a key' : keys[slot] ? keyName(keys[slot]) : 'not set'}`} onClick={() => (setNote(''), setWaiting(on ? null : { action: a.id, slot: Math.min(slot, keys.length) }))} className={`num h-6 min-w-12 border px-2 text-[11px] ${on ? 'border-accent bg-accent/10 text-accent' : keys[slot] ? 'border-line2 text-fg hover:border-accent' : 'border-line text-faint hover:border-line2'}`}>
                           {on ? '...' : keys[slot] ? keyName(keys[slot]) : '--'}
                         </button>
                       )
@@ -266,7 +266,7 @@ export function KeysPanel() {
                 </div>
               )
             })}
-            {group === 'Building' && <div className="px-2 py-2 text-[10px] leading-snug text-faint">In any building view: drag to turn, right-drag to slide, scroll to zoom. The designer has its own keys: Ctrl+Z and Ctrl+Y undo and redo, Delete removes the selected part.</div>}
+            {group === 'Building' && <div className="px-2 py-2 text-[11px] leading-snug text-faint">In any building view: drag to turn, right-drag to slide, scroll to zoom. The designer has its own keys: Ctrl+Z and Ctrl+Y undo and redo, Delete removes the selected part.</div>}
           </Panel>
         ))}
       </div>

@@ -19,7 +19,7 @@ const Scene = lazy(load)
 if (typeof window !== 'undefined') window.setTimeout(() => void load().catch(() => {}), 1200)
 
 function Waiting() {
-  return <div className="num flex h-full w-full items-center justify-center bg-bg text-[11px] uppercase tracking-[0.2em] text-faint">Loading the 3D view</div>
+  return <div className="num flex h-full w-full items-center justify-center bg-bg text-[11px] text-faint">Loading the 3D view</div>
 }
 
 export function SiteView(props: SiteViewProps) {

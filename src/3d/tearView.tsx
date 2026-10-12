@@ -36,8 +36,8 @@ export function CompLabel({ pick, compact, cost = 0, unitCost = 0, grams = 0, we
   if (compact) {
     return (
       <div className="ml-4 mt-3 whitespace-nowrap border border-line2 bg-panel/90 px-[6px] py-[3px]">
-        <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-fg">{pick.label}</div>
-        {pick.figure && <div className="num text-[9px] text-dim">{pick.figure}</div>}
+        <div className="text-[11px] font-semibold text-fg">{pick.label}</div>
+        {pick.figure && <div className="num text-[11px] text-dim">{pick.figure}</div>}
       </div>
     )
   }
@@ -46,13 +46,13 @@ export function CompLabel({ pick, compact, cost = 0, unitCost = 0, grams = 0, we
       <div className="flex items-stretch">
         <span className={`w-[3px] ${hot ? (hot.bad ? 'bg-neg' : 'bg-warn') : 'bg-accent'}`} />
         <div className="px-2 py-[5px]">
-          {step && <div className="num text-[9px] uppercase tracking-[0.16em] text-faint">{step}</div>}
-          <div className="whitespace-nowrap text-[11px] font-semibold uppercase tracking-[0.12em] text-fg">{pick.label}</div>
-          {pick.figure && <div className="num whitespace-nowrap text-[10px] text-dim">{pick.figure}</div>}
-          {hot && <div className={`num whitespace-nowrap text-[10px] ${hot.bad ? 'text-neg' : 'text-warn'}`}>{hot.text}</div>}
-          {pick.note && <div className="mt-[2px] w-52 whitespace-normal text-[9px] leading-snug text-faint">Derived. {pick.note}</div>}
+          {step && <div className="num text-[11px] text-faint">{step}</div>}
+          <div className="whitespace-nowrap text-[11px] font-semibold text-fg">{pick.label}</div>
+          {pick.figure && <div className="num whitespace-nowrap text-[11px] text-dim">{pick.figure}</div>}
+          {hot && <div className={`num whitespace-nowrap text-[11px] ${hot.bad ? 'text-neg' : 'text-warn'}`}>{hot.text}</div>}
+          {pick.note && <div className="mt-[2px] w-52 whitespace-normal text-[11px] leading-snug text-faint">Derived. {pick.note}</div>}
           {(cost > 0 || grams > 0) && (
-            <div className="num mt-[3px] flex gap-3 whitespace-nowrap border-t border-line pt-[3px] text-[10px] text-faint">
+            <div className="num mt-[3px] flex gap-3 whitespace-nowrap border-t border-line pt-[3px] text-[11px] text-faint">
               {cost > 0 && (
                 <span>
                   <span className="text-accent">{usd(cost)}</span> {Math.round((cost / Math.max(unitCost, 0.01)) * 100)}% of cost

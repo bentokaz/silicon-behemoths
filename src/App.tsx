@@ -10,7 +10,7 @@ const loadShell = () => import('./components/Shell').then((m) => ({ default: m.S
 const Shell = lazy(loadShell)
 
 function Loading() {
-  return <div className="num flex h-full items-center justify-center bg-carbon text-[11px] uppercase tracking-[0.2em] text-faint">Loading the company</div>
+  return <div className="num flex h-full items-center justify-center bg-carbon text-[11px] text-faint">Loading the company</div>
 }
 
 export default function App() {

@@ -178,8 +178,8 @@ export function LaunchShow({ eventId }: { eventId: string }) {
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between p-3">
         <div className="flex items-center gap-2 border border-line2 bg-panel/90 px-3 py-[6px]">
           <span className="h-2 w-2 animate-pulse bg-neg" />
-          <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-fg">Live</span>
-          <span className="text-[11px] uppercase tracking-wider text-dim">
+          <span className="text-[11px] font-semibold text-fg">Live</span>
+          <span className="text-[11px] text-dim">
             {me.name} / {venue}
           </span>
         </div>
@@ -194,8 +194,8 @@ export function LaunchShow({ eventId }: { eventId: string }) {
       </div>
       {phase !== 'verdict' && (
         <div className="pointer-events-none absolute bottom-6 left-6 max-w-[60%] border-l-2 border-accent bg-carbon/75 py-2 pl-4 pr-6">
-          <div className="text-3xl font-semibold uppercase tracking-[0.08em] text-fg">{caption[phase][0]}</div>
-          <div className="mt-1 text-sm text-dim">{caption[phase][1]}</div>
+          <div className="text-3xl font-semibold text-fg">{caption[phase][0]}</div>
+          <div className="mt-1 text-[13px] text-dim">{caption[phase][1]}</div>
         </div>
       )}
       {phase === 'verdict' && (
@@ -205,7 +205,7 @@ export function LaunchShow({ eventId }: { eventId: string }) {
               <Head icon="mic" className="text-faint">
                 Launch keynote
               </Head>
-              <div className="text-lg text-fg">{p.name}</div>
+              <div className="text-base text-fg">{p.name}</div>
             </div>
             <div className={`num text-5xl leading-none ${score >= 70 ? 'text-pos' : score >= 45 ? 'text-fg' : 'text-neg'}`}>{score}</div>
           </div>
@@ -218,10 +218,10 @@ export function LaunchShow({ eventId }: { eventId: string }) {
                     <Lead icon={icon} />
                     {label}
                   </span>
-                  <span className="num text-[10px] text-dim">{Math.round(v * 100)}</span>
+                  <span className="num text-[11px] text-dim">{Math.round(v * 100)}</span>
                 </div>
                 <Meter value={v} tone={v > 0.7 ? 'pos' : v > 0.4 ? 'accent' : 'warn'} />
-                <div className="text-[10px] text-faint">{note}</div>
+                <div className="text-[11px] text-faint">{note}</div>
               </div>
             ))}
           </div>
@@ -230,13 +230,13 @@ export function LaunchShow({ eventId }: { eventId: string }) {
               <Head icon="trendUp" className="text-faint">
                 Launch hype
               </Head>
-              <div className="num text-sm text-accent">+{Math.round(p.hype * 100)}%</div>
+              <div className="num text-[13px] text-accent">+{Math.round(p.hype * 100)}%</div>
             </div>
             <div>
               <Head icon="tag" className="text-faint">
                 Priced at
               </Head>
-              <div className="num text-sm text-fg">{money(p.price, 0)}</div>
+              <div className="num text-[13px] text-fg">{money(p.price, 0)}</div>
             </div>
           </div>
           <div className="mt-3 flex gap-1">

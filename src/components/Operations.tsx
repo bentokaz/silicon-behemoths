@@ -93,7 +93,7 @@ function Supply() {
         return (
           <div key={c} className="border border-line bg-panel p-2">
             <div className="flex items-center justify-between">
-              <span className="flex min-w-0 items-center gap-[6px] text-[11px] font-semibold uppercase tracking-[0.12em] text-fg">
+              <span className="flex min-w-0 items-center gap-[6px] text-[11px] font-semibold text-fg">
                 <Icon name={supplyIcon(c)} size={13} className="text-dim" />
                 <span className="truncate" title={SUPPLY_LABELS[c]}>
                   {SUPPLY_LABELS[c]}
@@ -102,7 +102,7 @@ function Supply() {
               {short ? <Tag tone="neg" icon="alert">shortage</Tag> : price > 1.08 ? <Tag tone="warn" icon="trendUp">dear</Tag> : price < 0.94 ? <Tag tone="pos" icon="trendDown">cheap</Tag> : <Tag>normal</Tag>}
             </div>
             <div className={`num mt-2 text-2xl font-semibold leading-none ${price > 1.15 ? 'text-neg' : price > 1.05 ? 'text-warn' : 'text-fg'}`}>x{price.toFixed(2)}</div>
-            <div className="num mt-1 text-[10px] text-faint">market price against normal</div>
+            <div className="num mt-1 text-[11px] text-faint">market price against normal</div>
             <div className="mt-2 h-16">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={data} margin={{ top: 4, right: 2, bottom: 2, left: 2 }}>
@@ -164,7 +164,7 @@ export function FactoryScreen() {
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center justify-between border-b border-line bg-panel pr-2">
         <Tabs value={view} onChange={setView} options={[{ value: 'floor', label: 'Factory floor', icon: 'factory' }, { value: 'orders', label: 'Production orders', icon: 'package', badge: g.orders.length }, { value: 'supply', label: 'Component supply', icon: 'truck', badge: SUPPLY_CATS.filter((c) => g.supply.shockDays[c] > 0).length || undefined }]} className="border-b-0" />
-        <span className="num text-[10px] text-faint">
+        <span className="num text-[11px] text-faint">
           contract maker +{pct(CONTRACT.premium - 1, 0)} / own factory -{pct(1 - FACTORY_SAVING, 0)} on unit cost
         </span>
       </div>
@@ -185,7 +185,7 @@ export function FactoryScreen() {
           (!g.factory ? (
             <div className="flex h-full items-center justify-center p-6">
               <div className="w-[560px] border border-line bg-panel p-5">
-                <div className="flex items-center gap-3 text-lg font-semibold uppercase tracking-[0.14em] text-fg">
+                <div className="flex items-center gap-3 text-base font-semibold text-fg">
                   <Icon name="factory" size={20} className="text-accent" />
                   You do not own a factory
                 </div>
@@ -224,10 +224,10 @@ export function FactoryScreen() {
                           {name}
                         </span>
                         <Meter value={cap} max={peak} tone={line?.running && cap === line.throughput && name !== 'Testing' ? 'warn' : 'accent'} />
-                        <span className="num w-10 text-right text-[10px] text-fg">{cap}</span>
+                        <span className="num w-10 text-right text-[11px] text-fg">{cap}</span>
                       </div>
                     ))}
-                    <div className="mt-1 text-[10px] leading-snug text-faint">Output is set by the slowest of the first three. Testing only lowers the fault rate.</div>
+                    <div className="mt-1 text-[11px] leading-snug text-faint">Output is set by the slowest of the first three. Testing only lowers the fault rate.</div>
                   </div>
                 )}
                 {starterCost > 0 && !line?.running && (

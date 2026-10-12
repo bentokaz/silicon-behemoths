@@ -36,7 +36,7 @@ function Reqs({ list, mode }: { list: ReqState[]; mode: 'all' | 'any' }) {
               <Icon name={r.done ? 'check' : 'box'} size={r.done ? 11 : 8} className={r.done ? 'shrink-0' : 'mx-[1.5px] shrink-0 text-faint'} />
               {r.label}
             </span>
-            <span className={`num shrink-0 text-[10px] ${r.done ? 'text-pos' : 'text-dim'}`}>{amount(r)}</span>
+            <span className={`num shrink-0 text-[11px] ${r.done ? 'text-pos' : 'text-dim'}`}>{amount(r)}</span>
           </div>
           {r.need > 1 && !r.done && <Meter value={r.have} max={r.need} className="mt-[3px]" />}
         </div>
@@ -84,7 +84,7 @@ function CapHead({ cap, right }: { cap: Capability; right?: React.ReactNode }) {
         <Icon name={iconOf(cap)} size={15} />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[12px] font-semibold uppercase tracking-[0.14em] text-fg">{cap.name}</span>
+        <span className="block truncate text-[12px] font-semibold text-fg">{cap.name}</span>
         <span className="label flex items-center gap-1 text-faint">
           <Icon name="lock" size={9} />
           Not open yet
@@ -150,7 +150,7 @@ export function LockNote({ id }: { id: CapId }) {
   return (
     <button onClick={() => useStore.getState().showLock(id)} className="flex w-full shrink-0 items-center gap-2 border border-line bg-panel px-3 py-[6px] text-left hover:border-line2" title={`${cap.name} is not open yet: ${needText(g, id)}`}>
       <Icon name="lock" size={12} className="shrink-0 text-faint" />
-      <span className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-fg">{cap.name}</span>
+      <span className="shrink-0 text-[11px] font-semibold text-fg">{cap.name}</span>
       <span className="min-w-0 flex-1 truncate text-[11px] text-dim">
         {cap.opens.join(', ')}. Not open yet: {needText(g, id)} first.
       </span>
@@ -219,7 +219,7 @@ export function UnlockBanner() {
             return (
               <div key={one} className="flex items-center gap-2 border-b border-line py-[3px] pl-3 pr-2 last:border-0">
                 <Icon name={iconOf(cap)} size={14} className="shrink-0 text-accent" />
-                <span className="w-[150px] shrink-0 truncate text-[12px] font-semibold uppercase tracking-[0.14em] text-fg max-md:w-[104px]">{cap.name}</span>
+                <span className="w-[150px] shrink-0 truncate text-[12px] font-semibold text-fg max-md:w-[104px]">{cap.name}</span>
                 <span className="min-w-0 flex-1 truncate text-[11px] text-dim" title={cap.now}>
                   {cap.now}
                 </span>
@@ -245,7 +245,7 @@ export function UnlockBanner() {
             <Icon name="unlock" size={10} />
             Now open
           </span>
-          <span className="truncate text-[13px] font-semibold uppercase tracking-[0.16em] text-fg">{cap.name}</span>
+          <span className="truncate text-[13px] font-semibold text-fg">{cap.name}</span>
         </div>
         <div className="truncate text-[11px] text-dim">{cap.now}</div>
       </div>
@@ -276,7 +276,7 @@ function TreeCard({ g, cap }: { g: GameState; cap: Capability }) {
     <div className={`border bg-panel ${open ? 'border-line2' : near ? 'border-accent/50' : 'border-line'}`}>
       <div className="flex items-center gap-2 px-2 py-[6px]">
         <Icon name={iconOf(cap)} size={15} className={open ? 'text-accent' : near ? 'text-dim' : 'text-faint'} />
-        <span className={`min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-[0.14em] ${open ? 'text-fg' : near ? 'text-fg' : 'text-dim'}`}>{cap.name}</span>
+        <span className={`min-w-0 flex-1 truncate text-[11px] font-semibold ${open ? 'text-fg' : near ? 'text-fg' : 'text-dim'}`}>{cap.name}</span>
         {open ? (
           <Tag tone="pos" icon="check">
             open
@@ -298,7 +298,7 @@ function TreeCard({ g, cap }: { g: GameState; cap: Capability }) {
         )}
       </div>
       <div className="flex items-center justify-between gap-2 border-t border-line px-2 py-[5px]">
-        <span className="num truncate text-[10px] text-faint">{open ? (day !== undefined ? `since ${fmtDate(day)}` : '') : `${pct(ratioOf(g, cap.id), 0)} of the way`}</span>
+        <span className="num truncate text-[11px] text-faint">{open ? (day !== undefined ? `since ${fmtDate(day)}` : '') : `${pct(ratioOf(g, cap.id), 0)} of the way`}</span>
         {open ? (
           <Btn small tone="ghost" icon="arrowRight" className="shrink-0 whitespace-nowrap" onClick={() => go(homeOf(cap))}>
             Go
@@ -324,12 +324,12 @@ function SeatChip({ g, id }: { g: GameState; id: ExecId }) {
   return (
     <button onClick={() => go(SEARCH)} title={`${def.title}. ${def.effect}`} className={`min-w-0 border px-2 py-[5px] text-left hover:bg-hover ${vacant ? 'border-warn/60' : holder ? 'border-line2' : ready ? 'border-accent/50' : 'border-line'}`}>
       <span className="flex items-center justify-between gap-1">
-        <span className="num text-[10px] tracking-wider" style={{ color: holder || ready ? def.color : undefined }}>
+        <span className="num text-[11px]" style={{ color: holder || ready ? def.color : undefined }}>
           {def.short}
         </span>
         <Icon name={holder ? 'check' : vacant ? 'alert' : ready ? 'hire' : 'lock'} size={10} className={holder ? 'text-pos' : vacant ? 'text-warn' : ready ? 'text-accent' : 'text-faint'} />
       </span>
-      <span className={`block truncate text-[10px] ${holder ? 'text-fg' : vacant ? 'text-warn' : ready ? 'text-dim' : 'text-faint'}`}>{holder ? holder.name : vacant ? 'Seat empty' : ready ? 'Would join' : 'Not yet'}</span>
+      <span className={`block truncate text-[11px] ${holder ? 'text-fg' : vacant ? 'text-warn' : ready ? 'text-dim' : 'text-faint'}`}>{holder ? holder.name : vacant ? 'Seat empty' : ready ? 'Would join' : 'Not yet'}</span>
     </button>
   )
 }
@@ -346,7 +346,7 @@ export function GrowthTree() {
             <Head icon="branch" className="text-faint">
               Company growth
             </Head>
-            <span className="num text-sm text-fg">
+            <span className="num text-[13px] text-fg">
               {open} <span className="text-faint">of {CAPS.length} open</span>
             </span>
           </div>
@@ -379,12 +379,12 @@ export function GrowthTree() {
           return (
             <section key={stage} className="border border-line bg-carbon">
               <header className="flex h-8 items-center justify-between border-b border-line bg-panel px-2">
-                <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-fg">
+                <span className="flex items-center gap-2 text-[11px] font-semibold text-fg">
                   <span className={`h-3 w-[3px] ${done ? 'bg-accent' : 'bg-line2'}`} />
                   <span className="num text-faint">{stage}</span>
                   {GROWTH_STAGES[stage]}
                 </span>
-                <span className={`num text-[10px] ${done === list.length ? 'text-pos' : 'text-faint'}`}>
+                <span className={`num text-[11px] ${done === list.length ? 'text-pos' : 'text-faint'}`}>
                   {done} / {list.length} open
                 </span>
               </header>
@@ -423,12 +423,12 @@ function Seat({ g, id }: { g: GameState; id: ExecId }) {
   return (
     <div className={`border bg-panel ${!holder && seat ? 'border-warn/60' : 'border-line'}`}>
       <div className="flex items-center gap-2 border-b border-line px-2 py-[6px]">
-        <span className="num flex h-6 w-9 shrink-0 items-center justify-center border text-[10px] tracking-wider" style={{ borderColor: def.color, color: def.color }}>
+        <span className="num flex h-6 w-9 shrink-0 items-center justify-center border text-[11px]" style={{ borderColor: def.color, color: def.color }}>
           {def.short}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-fg">{def.title}</span>
-          <span className="block truncate text-[10px] text-dim" title={def.effect}>
+          <span className="block truncate text-[11px] font-semibold text-fg">{def.title}</span>
+          <span className="block truncate text-[11px] text-dim" title={def.effect}>
             {def.effect}
           </span>
         </span>
@@ -445,7 +445,7 @@ function Seat({ g, id }: { g: GameState; id: ExecId }) {
           <button className="flex w-full items-center gap-3 text-left hover:text-accent" onClick={() => useStore.getState().openPerson(holder.id)}>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[12px] text-fg">{holder.name}</span>
-              <span className="num block text-[10px] text-dim">
+              <span className="num block text-[11px] text-dim">
                 skill {Math.floor(holder.skill)} / {money(holder.salary, 0)} a month / morale {Math.round(holder.morale)}
               </span>
             </span>
@@ -476,7 +476,7 @@ function Seat({ g, id }: { g: GameState; id: ExecId }) {
                   </span>
                   <span className="mt-[3px] flex items-center gap-2">
                     <Meter value={e.skill} max={100} tone={e.skill >= 75 ? 'pos' : 'accent'} className="!w-20" />
-                    <span className="num text-[10px] text-dim">
+                    <span className="num text-[11px] text-dim">
                       skill {Math.floor(e.skill)} / {money(e.salary, 0)} a month
                     </span>
                   </span>
@@ -530,11 +530,11 @@ export function ExecShortlist({ close }: { close?: () => void }) {
   return (
     <div className="mt-2 border-t border-line2 pt-2">
       <div className="mb-1 flex items-center justify-between">
-        <span className="flex items-center gap-[6px] text-[10px] uppercase tracking-wider text-dim">
+        <span className="flex items-center gap-[6px] text-[11px] text-dim">
           <Icon name="briefcase" size={11} />
           Executive search
         </span>
-        <button className="text-[10px] uppercase tracking-wider text-faint hover:text-accent" onClick={() => (close?.(), useStore.getState().go(SEARCH))}>
+        <button className="text-[11px] text-faint hover:text-accent" onClick={() => (close?.(), useStore.getState().go(SEARCH))}>
           All seats
         </button>
       </div>
@@ -542,10 +542,10 @@ export function ExecShortlist({ close }: { close?: () => void }) {
         <div key={e.id} className="flex items-center justify-between gap-2 border-b border-line py-[5px] last:border-0">
           <span className="min-w-0">
             <span className="block truncate text-[11px] text-fg">{e.name}</span>
-            <span className="block truncate text-[10px]" style={{ color: EXECS[e.exec!].color }}>
+            <span className="block truncate text-[11px]" style={{ color: EXECS[e.exec!].color }}>
               {EXECS[e.exec!].title}
             </span>
-            <span className="num block text-[10px] text-faint">
+            <span className="num block text-[11px] text-faint">
               skill {Math.round(e.skill)} / {money(e.salary, 0)} a month
             </span>
           </span>

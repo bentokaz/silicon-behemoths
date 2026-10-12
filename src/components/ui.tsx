@@ -1,10 +1,12 @@
 // Shared dashboard primitives: panels, buttons, sliders, readouts.
 import { type ButtonHTMLAttributes, type InputHTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject, type ThHTMLAttributes, isValidElement, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { keepView, keptView, viewKept } from '../store/focus'
 import { readNumber } from './format'
 import { Icon, type IconName } from './icons'
 
-export { int, money, num, pct } from './format'
+export { int, money, moneyDelta, num, pct, price } from './format'
+export { Table, type Column, type TableGroup } from './Table'
 
 /** An icon set into a line of text, sitting on the text's own baseline. */
 export function Lead({ icon, size = 11 }: { icon?: IconName; size?: number }) {
@@ -211,7 +213,7 @@ export function Stage3D({ label, children }: { label: string; children: ReactNod
       {phase < 2 && (
         <div role="status" className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-carbon">
           <Icon name="layers" size={22} className="text-line2" />
-          <span className="num text-[11px] uppercase tracking-[0.2em] text-faint">{label}</span>
+          <span className="text-[11px] text-faint">{label}</span>
         </div>
       )}
     </>
@@ -221,21 +223,27 @@ export function Stage3D({ label, children }: { label: string; children: ReactNod
 /** True when the player has asked their system for less motion. */
 export const reducedMotion = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-export function Panel({ title, icon, right, children, className = '', bodyClass = '', keep }: { title?: ReactNode; icon?: IconName; right?: ReactNode; children: ReactNode; className?: string; bodyClass?: string; /** A name for the body's scroll position, so it is found where it was left. */ keep?: string }) {
+/**
+ * A panel: a 32px header with a sentence-case title, an optional count and
+ * its actions at the right (outline or quiet buttons), over a body. Only the
+ * one panel a screen has selected wears the accent bar.
+ */
+export function Panel({ title, icon, count, right, children, className = '', bodyClass = '', keep, selected }: { title?: ReactNode; icon?: IconName; /** A count shown beside the title. */ count?: ReactNode; right?: ReactNode; children: ReactNode; className?: string; bodyClass?: string; /** A name for the body's scroll position, so it is found where it was left. */ keep?: string; /** The one selected panel of a screen. */ selected?: boolean }) {
   const body = useKeptScroll(keep)
   const tight = useTight(body)
   return (
-    <section className={`flex min-h-0 flex-col border border-line bg-panel ${className}`}>
+    <section className={`flex min-h-0 flex-col border bg-panel ${selected ? 'border-accent' : 'border-line'} ${className}`}>
       {title !== undefined && (
-        <header className="flex h-8 shrink-0 items-center justify-between gap-2 border-b border-line px-2">
-          <span className="flex min-w-0 items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-fg">
-            <span className="h-3 w-[3px] shrink-0 bg-accent" />
-            {icon && <Icon name={icon} size={13} className="text-dim" />}
-            <span className="truncate" title={typeof title === "string" ? title : undefined}>
+        <header className="flex h-8 shrink-0 items-center justify-between gap-2 border-b border-line pl-3 pr-2">
+          <span className="t-title flex min-w-0 items-center gap-2">
+            {selected && <span className="h-3 w-[3px] shrink-0 bg-accent" />}
+            {icon && <Icon name={icon} size={13} className="shrink-0 text-dim" />}
+            <span className="truncate" title={typeof title === 'string' ? title : undefined}>
               {title}
             </span>
+            {count !== undefined && <span className="num shrink-0 text-[11px] font-normal text-faint">{count}</span>}
           </span>
-          {right}
+          {right !== undefined && <span className="flex shrink-0 items-center gap-1">{right}</span>}
         </header>
       )}
       <div ref={body} className={`min-h-0 flex-1 ${bodyClass} ${tight ? 'tight' : ''}`}>
@@ -254,21 +262,32 @@ function hasWords(node: ReactNode): boolean {
   return false
 }
 
+/**
+ * The four kinds of button.
+ *   primary  filled accent: the ONE action a view exists for. Never more than one on screen.
+ *   default  (secondary) a 1px outline: everything else that does something
+ *   ghost    (quiet) text only: navigation, "show more", closing
+ *   danger   a 1px red outline: used with a confirmation (ConfirmBtn)
+ * Heights are 28 and, with `large`, 36. A disabled button keeps readable text
+ * and wears a dashed border; it is never faded.
+ */
 type Tone = 'default' | 'primary' | 'danger' | 'ghost'
 const BTN_TONES: Record<Tone, string> = {
-  default: 'border-line2 bg-raise text-fg enabled:hover:border-accent enabled:hover:text-accent',
+  default: 'border-line2 bg-transparent text-fg enabled:hover:border-fg enabled:hover:bg-hover',
   primary: 'border-accent bg-accent font-semibold text-carbon enabled:hover:bg-transparent enabled:hover:text-accent',
-  danger: 'border-neg/60 bg-transparent text-neg enabled:hover:bg-neg enabled:hover:text-carbon',
-  ghost: 'border-transparent bg-transparent text-dim enabled:hover:text-fg',
+  danger: 'border-neg bg-transparent text-neg enabled:hover:bg-neg enabled:hover:text-carbon',
+  ghost: 'border-transparent bg-transparent text-dim enabled:hover:bg-hover enabled:hover:text-fg',
 }
 const BTN_ON = 'border-accent bg-accent/10 text-accent'
+/** A control that cannot be used: the same size and place, readable, with a dashed edge. */
+const BTN_OFF = 'disabled:cursor-not-allowed disabled:border-dashed disabled:border-line2 disabled:bg-transparent disabled:font-normal disabled:text-faint'
 // The icon carries its own colour: the unlayered `button { color: inherit }` in
 // index.css outranks the text-colour classes above, so they cannot tint it.
 const ICON_TONES: Record<Tone, string> = {
-  default: 'text-fg opacity-70 group-enabled/btn:group-hover/btn:text-accent group-enabled/btn:group-hover/btn:opacity-100',
-  primary: 'text-carbon group-enabled/btn:group-hover/btn:text-accent',
-  danger: 'text-neg group-enabled/btn:group-hover/btn:text-carbon',
-  ghost: 'text-dim group-enabled/btn:group-hover/btn:text-fg',
+  default: 'text-dim group-enabled/btn:group-hover/btn:text-fg group-disabled/btn:text-faint',
+  primary: 'text-carbon group-enabled/btn:group-hover/btn:text-accent group-disabled/btn:text-faint',
+  danger: 'text-neg group-enabled/btn:group-hover/btn:text-carbon group-disabled/btn:text-faint',
+  ghost: 'text-dim group-enabled/btn:group-hover/btn:text-fg group-disabled/btn:text-faint',
 }
 
 /**
@@ -283,15 +302,16 @@ export interface LockProps {
   /** Where a locked button wears its lock: before the label, or in the corner where a row of narrow buttons has no room to spare. */
   lockMark?: 'inline' | 'corner'
 }
-/** How a locked control looks: dimmed, and plainly not something to press. */
-const LOCKED = 'cursor-not-allowed opacity-45'
+/** How a locked control looks: readable, dashed, and plainly not something to press. */
+const LOCKED = 'cursor-not-allowed border-dashed'
 
-type BtnProps = ButtonHTMLAttributes<HTMLButtonElement> & { tone?: Tone; active?: boolean; small?: boolean; icon?: IconName } & LockProps
+type BtnProps = ButtonHTMLAttributes<HTMLButtonElement> & { tone?: Tone; active?: boolean; /** Tighter side padding, for a button in a row of a table or a toolbar. */ small?: boolean; /** 36px high: the confirm of a form or a dialog. */ large?: boolean; icon?: IconName } & LockProps
+const btnSize = (small?: boolean, large?: boolean) => (large ? 'h-9 px-4 text-xs' : small ? 'h-7 px-2 text-xs' : 'h-7 px-3 text-xs')
 /**
  * A button. With `icon`, the icon sits left of the label and is a touch dimmer than it until the button is hovered or active.
- * With `locked` it is dimmed behind a lock and does nothing of its own; it stays hoverable so the tooltip can say why.
+ * With `locked` it is dashed behind a lock and does nothing of its own; it stays hoverable so the tooltip can say why.
  */
-export function Btn({ tone = 'default', active, small, icon, locked, onLocked, lockMark = 'inline', className = '', children, ...rest }: BtnProps) {
+export function Btn({ tone = 'default', active, small, large, icon, locked, onLocked, lockMark = 'inline', className = '', children, ...rest }: BtnProps) {
   if (locked) {
     const corner = lockMark === 'corner'
     return (
@@ -301,9 +321,9 @@ export function Btn({ tone = 'default', active, small, icon, locked, onLocked, l
         aria-disabled
         title={locked}
         onClick={(e) => (e.preventDefault(), e.stopPropagation(), onLocked?.())}
-        className={`rounded-none border ${small ? 'h-6 px-2 text-[11px]' : 'h-7 px-3 text-xs'} uppercase tracking-wider ${corner ? 'relative' : 'inline-flex items-center justify-center gap-[5px] whitespace-nowrap'} ${LOCKED} ${active ? BTN_ON : tone === 'ghost' ? 'border-transparent bg-transparent text-dim' : 'border-line2 bg-raise text-dim'} ${className}`}
+        className={`rounded-none border ${btnSize(small, large)} ${corner ? 'relative' : 'inline-flex items-center justify-center gap-[5px] whitespace-nowrap'} ${LOCKED} ${active ? BTN_ON : 'border-line2 bg-transparent text-faint'} ${className}`}
       >
-        <Icon name="lock" size={corner ? 8 : small ? 10 : 11} className={`${corner ? 'absolute right-[3px] top-[3px]' : 'shrink-0'} ${active ? 'text-accent' : 'text-dim'}`} />
+        <Icon name="lock" size={corner ? 9 : 11} className={`${corner ? 'absolute right-[3px] top-[3px]' : 'shrink-0'} ${active ? 'text-accent' : 'text-faint'}`} />
         {children}
       </button>
     )
@@ -316,17 +336,17 @@ export function Btn({ tone = 'default', active, small, icon, locked, onLocked, l
       {...rest}
       aria-label={named}
       aria-pressed={rest['aria-pressed'] ?? (active === undefined ? undefined : active)}
-      className={`group/btn rounded-none border ${small ? 'h-6 px-2 text-[11px]' : 'h-7 px-3 text-xs'} uppercase tracking-wider transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${icon ? 'inline-flex items-center justify-center gap-[6px]' : ''} ${active ? BTN_ON : BTN_TONES[tone]} ${className}`}
+      className={`group/btn inline-flex items-center justify-center gap-[6px] whitespace-nowrap rounded-none border ${btnSize(small, large)} transition-colors ${BTN_OFF} ${active ? BTN_ON : BTN_TONES[tone]} ${className}`}
     >
-      {icon && <Icon name={icon} size={small ? 12 : 13} className={active ? 'text-accent' : tone === 'primary' ? '' : ICON_TONES[tone]} />}
+      {icon && <Icon name={icon} size={13} className={`shrink-0 ${active ? 'text-accent' : ICON_TONES[tone]}`} />}
       {children}
     </button>
   )
 }
 
 type IconBtnProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'title' | 'children'> & { icon: IconName; title: string; tone?: Tone; active?: boolean; small?: boolean }
-/** A square button that is only an icon. The title is its tooltip and its name for screen readers. */
-export function IconBtn({ icon, title, tone = 'default', active, small = true, className = '', ...rest }: IconBtnProps) {
+/** A square button that is only an icon. The title is its tooltip and its name for screen readers. 28px; 24px with `small`, inside a row. */
+export function IconBtn({ icon, title, tone = 'default', active, small = false, className = '', ...rest }: IconBtnProps) {
   return (
     <button
       type="button"
@@ -334,9 +354,9 @@ export function IconBtn({ icon, title, tone = 'default', active, small = true, c
       title={title}
       aria-label={title}
       aria-pressed={rest['aria-pressed'] ?? (active === undefined ? undefined : active)}
-      className={`group/btn inline-flex shrink-0 items-center justify-center rounded-none border align-middle ${small ? 'h-6 w-6' : 'h-7 w-7'} transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${active ? BTN_ON : BTN_TONES[tone]} ${className}`}
+      className={`group/btn inline-flex shrink-0 items-center justify-center rounded-none border align-middle ${small ? 'h-6 w-6' : 'h-7 w-7'} transition-colors ${BTN_OFF} ${active ? BTN_ON : BTN_TONES[tone]} ${className}`}
     >
-      <Icon name={icon} size={small ? 12 : 14} className={active ? 'text-accent' : tone === 'default' ? 'text-fg group-enabled/btn:group-hover/btn:text-accent' : ICON_TONES[tone]} />
+      <Icon name={icon} size={small ? 12 : 14} className={active ? 'text-accent' : ICON_TONES[tone]} />
     </button>
   )
 }
@@ -374,10 +394,10 @@ export function ConfirmIconBtn({ title, icon, onClick, tone = 'ghost', className
   return <IconBtn {...rest} tone={tone} icon={armed ? 'alert' : icon} title={armed ? `${title}: click again to confirm` : title} className={`${className} ${armed ? '!border-neg !bg-neg [&_svg]:!text-carbon' : ''}`} onBlur={() => setArmed(false)} onClick={(e) => (armed ? (setArmed(false), onClick?.(e)) : setArmed(true))} />
 }
 
-/** A small uppercase heading inside a panel, with an optional icon. */
+/** A small heading inside a panel, with an optional icon. */
 export function Head({ icon, children, right, className = '' }: { icon?: IconName; children: ReactNode; right?: ReactNode; className?: string }) {
   return (
-    <div className={`label flex items-center gap-[5px] ${className}`}>
+    <div className={`flex items-center gap-[5px] text-[11px] font-semibold text-dim ${className}`}>
       {icon && <Icon name={icon} size={11} />}
       <span className="min-w-0 flex-1">{children}</span>
       {right}
@@ -432,20 +452,45 @@ function FitLabel({ icon, label, size, className }: { icon?: IconName; label: st
   )
 }
 
-export function Stat({ label, icon, value, sub, tone }: { label: string; icon?: IconName; value: ReactNode; sub?: ReactNode; tone?: 'pos' | 'neg' | 'warn' | 'accent' }) {
-  const color = tone === 'pos' ? 'text-pos' : tone === 'neg' ? 'text-neg' : tone === 'warn' ? 'text-warn' : tone === 'accent' ? 'text-accent' : 'text-fg'
-  return (
-    <div className="border border-line bg-panel px-3 py-2">
+const TONE_TEXT = { pos: 'text-pos', neg: 'text-neg', warn: 'text-warn', accent: 'text-accent' } as const
+type FigureTone = keyof typeof TONE_TEXT
+
+/** A tile: an 11px label over a 16px value, with an optional line under it. With `onClick` it is a button that goes to where the figure comes from. */
+export function Stat({ label, icon, value, sub, tone, onClick, title }: { label: string; icon?: IconName; value: ReactNode; sub?: ReactNode; tone?: FigureTone; onClick?: () => void; title?: string }) {
+  const body = (
+    <>
       <FitLabel icon={icon} label={label} size={11} className="label gap-[5px]" />
-      <div className={`num mt-1 text-lg leading-none ${color}`}>{value}</div>
-      {sub !== undefined && <div className="num mt-1 text-[11px] text-dim">{sub}</div>}
+      <div className={`t-value mt-1 ${tone ? TONE_TEXT[tone] : 'text-fg'}`}>{value}</div>
+      {sub !== undefined && <div className="mt-1 truncate text-[11px] text-dim">{sub}</div>}
+    </>
+  )
+  if (onClick)
+    return (
+      <button type="button" onClick={onClick} title={title} className="min-w-0 border border-line bg-panel px-3 py-2 text-left transition-colors hover:border-line2 hover:bg-hover">
+        {body}
+      </button>
+    )
+  return (
+    <div className="min-w-0 border border-line bg-panel px-3 py-2" title={title}>
+      {body}
+    </div>
+  )
+}
+
+/** The one headline figure of a screen: 20px. A screen has one of these, or none. */
+export function Headline({ label, icon, value, sub, tone }: { label: string; icon?: IconName; value: ReactNode; sub?: ReactNode; tone?: FigureTone }) {
+  return (
+    <div className="min-w-0 border border-line bg-panel px-3 py-2">
+      <FitLabel icon={icon} label={label} size={11} className="label gap-[5px]" />
+      <div className={`t-headline mt-1 ${tone ? TONE_TEXT[tone] : 'text-fg'}`}>{value}</div>
+      {sub !== undefined && <div className="mt-1 truncate text-[11px] text-dim">{sub}</div>}
     </div>
   )
 }
 
 export function Slider({ label, icon, value, min, max, step = 1, onChange, format, disabled, hint, locked, onLocked }: { label: string; icon?: IconName; value: number; min: number; max: number; step?: number; onChange: (v: number) => void; format?: (v: number) => string; disabled?: boolean; hint?: string } & LockProps) {
   return (
-    <label className={`block py-1 ${locked ? LOCKED : ''}`} title={locked || hint} onClick={locked ? (e) => (e.preventDefault(), onLocked?.()) : undefined}>
+    <label className={`block py-1 ${locked ? 'cursor-not-allowed' : ''}`} title={locked || hint} onClick={locked ? (e) => (e.preventDefault(), onLocked?.()) : undefined}>
       <div className="flex items-baseline justify-between">
         <span className="text-[11px] text-dim">
           <Lead icon={locked ? 'lock' : icon} />
@@ -471,7 +516,7 @@ export function Choice<T extends string | number>({ label, icon, value, options,
         {label}
       </span>
       <select
-        className="h-6 min-w-0 max-w-[62%] flex-1 rounded-none border border-line2 bg-raise px-1 text-[11px] outline-none focus:border-accent"
+        className="h-7 min-w-0 max-w-[62%] flex-1 rounded-none border border-line2 bg-raise px-1 text-xs outline-none focus:border-accent"
         value={String(value)}
         onChange={(e) => {
           const o = options.find((x) => String(x.value) === e.target.value)
@@ -491,8 +536,8 @@ export function Choice<T extends string | number>({ label, icon, value, options,
   return (
     <div>
       {row}
-      <div className="flex items-start gap-[5px] pb-1 text-[10px] leading-snug text-faint" data-lock-note>
-        <Icon name="lock" size={10} className="mt-[2px] shrink-0" />
+      <div className="flex items-start gap-[5px] pb-1 text-[11px] leading-snug text-faint" data-lock-note>
+        <Icon name="lock" size={11} className="mt-[2px] shrink-0" />
         <span>{lockNote}</span>
       </div>
     </div>
@@ -500,7 +545,7 @@ export function Choice<T extends string | number>({ label, icon, value, options,
 }
 
 export function Meter({ value, max = 1, tone = 'accent', className = '' }: { value: number; max?: number; tone?: 'accent' | 'pos' | 'neg' | 'warn' | 'dim'; className?: string }) {
-  const bg = { accent: 'bg-accent', pos: 'bg-pos', neg: 'bg-neg', warn: 'bg-warn', dim: 'bg-faint' }[tone]
+  const bg = { accent: 'bg-accent', pos: 'bg-pos', neg: 'bg-neg', warn: 'bg-warn', dim: 'bg-mute' }[tone]
   return (
     <div className={`h-1 w-full bg-line ${className}`}>
       <div className={`h-full ${bg}`} style={{ width: `${Math.max(0, Math.min(1, value / max)) * 100}%` }} />
@@ -590,7 +635,7 @@ export function NumInput({ value, onChange, className = '', min = 0, max = 1e9, 
 }
 
 export const chart = {
-  axis: { fill: 'var(--color-dim)', fontSize: 10, fontFamily: 'Cascadia Mono, Consolas, monospace' },
+  axis: { fill: 'var(--color-dim)', fontSize: 11, fontFamily: 'Cascadia Mono, Consolas, monospace' },
   grid: 'var(--color-line)',
   tooltip: {
     contentStyle: { background: 'var(--color-panel)', border: '1px solid var(--color-line2)', borderRadius: 0, fontSize: 11, fontFamily: 'Cascadia Mono, Consolas, monospace' },
@@ -602,71 +647,64 @@ export const chart = {
 // ---------------------------------------------------------------- layout helpers
 
 /**
- * Underlined tab bar. With `fit`, the tabs share the width instead of running
- * off the side: when every tab has an icon and the full labels no longer fit,
- * only the chosen tab keeps its label and the rest show their icon and count
- * (the label is the tooltip); without icons the labels are shortened.
+ * The one second-level navigation there is: a row of underlined text tabs.
+ * Every tab always shows its label; a count sits beside it in the quiet
+ * colour, or in the warning colour when it counts things waiting for the
+ * player (`alert`). A tab that has just opened wears "New". When the row is
+ * short of room the labels are cut short (the tooltip has them in full); it
+ * never turns into icons and never scrolls.
  */
-export function Tabs<T extends string>({ value, options, onChange, className = '', fit }: { value: T; options: { value: T; label: ReactNode; badge?: ReactNode; icon?: IconName }[]; onChange: (v: T) => void; className?: string; fit?: boolean }) {
-  const strip = useRef<HTMLDivElement>(null)
-  const [tight, setTight] = useState(false)
-  const iconic = !!fit && options.every((o) => o.icon)
-  const shape = options.map((o) => `${o.value}/${typeof o.label === 'string' ? o.label : ''}/${typeof o.badge === 'object' ? '' : (o.badge ?? '')}`).join('|')
-  useLayoutEffect(() => {
-    const el = strip.current
-    if (!el || !iconic) return setTight(false)
-    const check = () => {
-      let need = 0
-      el.querySelectorAll('[data-ruler]').forEach((r) => (need += r.getBoundingClientRect().width))
-      setTight(need > el.clientWidth + 0.5)
-    }
-    check()
-    const watch = new ResizeObserver(check)
-    watch.observe(el)
-    return () => watch.disconnect()
-  }, [iconic, shape])
-  const tab = fit ? 'min-w-0 shrink gap-1 px-2 tracking-[0.08em] [&>*]:shrink-0' : 'gap-2 px-3 tracking-[0.14em]'
-  const base = 'flex h-8 items-center whitespace-nowrap border-b-2 text-[11px] uppercase transition-colors'
+export interface TabOption<T extends string> {
+  value: T
+  label: ReactNode
+  badge?: ReactNode
+  /** The count is of things that need the player. */
+  alert?: boolean
+  /** Just opened and not yet visited. */
+  fresh?: boolean
+  icon?: IconName
+  /** Not open yet: the sentence saying what opens it. A click calls `onLocked`. */
+  locked?: string | null
+}
+export function Tabs<T extends string>({ value, options, onChange, onLocked, className = '', right }: { value: T; options: TabOption<T>[]; onChange: (v: T) => void; onLocked?: (v: T) => void; className?: string; /** Kept for older callers: tabs always share the width now. */ fit?: boolean; /** Controls at the right end of the strip. */ right?: ReactNode }) {
   return (
-    <div ref={strip} className={`relative flex shrink-0 border-b border-line ${className}`}>
+    <div role="tablist" className={`flex h-9 min-w-0 shrink-0 items-stretch border-b border-line ${className}`}>
       {options.map((o) => {
         const on = value === o.value
-        const bare = tight && !on
+        const text = typeof o.label === 'string' ? o.label : undefined
         return (
-          <button key={o.value} onClick={() => onChange(o.value)} title={fit && typeof o.label === 'string' ? o.label : undefined} aria-label={bare && typeof o.label === 'string' ? o.label : undefined} className={`${base} ${tab} ${on ? 'border-accent text-accent' : 'border-transparent text-dim hover:text-fg'}`}>
-            {o.icon && <Icon name={o.icon} size={bare ? 15 : 13} className={on ? 'text-accent' : 'text-dim'} />}
-            {bare ? null : fit ? <span className="!shrink truncate">{o.label}</span> : o.label}
-            {o.badge !== undefined && <span className="num text-[10px] text-faint">{o.badge}</span>}
+          <button
+            key={o.value}
+            role="tab"
+            aria-selected={on}
+            aria-disabled={o.locked ? true : undefined}
+            onClick={() => (o.locked ? onLocked?.(o.value) : onChange(o.value))}
+            title={o.locked ?? text}
+            className={`-mb-px flex min-w-0 items-center gap-[6px] whitespace-nowrap border-b-2 px-3 text-xs transition-colors ${on ? 'border-accent font-semibold text-fg' : o.locked ? 'border-transparent text-faint' : 'border-transparent text-dim hover:text-fg'}`}
+          >
+            {o.locked ? <Icon name="lock" size={11} className="shrink-0 text-faint" /> : o.icon && <Icon name={o.icon} size={13} className={`shrink-0 ${on ? 'text-accent' : 'text-dim'}`} />}
+            <span className="min-w-0 truncate">{o.label}</span>
+            {o.fresh && !o.locked ? <span className="shrink-0 border border-accent px-1 text-[11px] font-normal leading-[14px] text-accent">New</span> : o.badge !== undefined && o.badge !== null && o.badge !== false && <span className={`num shrink-0 text-[11px] font-normal ${o.alert ? 'text-warn' : 'text-faint'}`}>{o.badge}</span>}
           </button>
         )
       })}
-      {iconic && (
-        // the same tabs at their full width, never shown: what the strip would need
-        <div aria-hidden className="pointer-events-none invisible absolute left-0 top-0 h-0 w-0 overflow-hidden">
-          <div className="flex w-max">
-            {options.map((o) => (
-              <button key={o.value} data-ruler tabIndex={-1} disabled className={`${base} shrink-0 gap-1 px-2 tracking-[0.08em]`}>
-                {o.icon && <Icon name={o.icon} size={13} />}
-                <span>{o.label}</span>
-                {o.badge !== undefined && <span className="num text-[10px]">{o.badge}</span>}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      {right !== undefined && <div className="ml-auto flex shrink-0 items-center gap-1 pl-2 pr-2">{right}</div>}
     </div>
   )
 }
 
 /** A panel whose body can be folded away. Closed panels show only their heading. */
-export function Fold({ title, icon, right, children, open: initial = true, className = '', bodyClass = '' }: { title: ReactNode; icon?: IconName; right?: ReactNode; children: ReactNode; open?: boolean; className?: string; bodyClass?: string }) {
-  const [open, setOpen] = useState(initial)
+export function Fold({ title, icon, right, children, open: initial = true, className = '', bodyClass = '', keep }: { title: ReactNode; icon?: IconName; right?: ReactNode; children: ReactNode; open?: boolean; className?: string; bodyClass?: string; /** A name under which open or closed is remembered. */ keep?: string }) {
+  const [openState, setOpenState] = useState(initial)
+  const [keptOpen, setKeptOpen] = useKept<boolean>(`fold:${keep ?? ''}`, initial)
+  const open = keep ? keptOpen : openState
+  const setOpen = keep ? setKeptOpen : setOpenState
   return (
     <section className={`shrink-0 border border-line bg-panel ${className}`}>
-      <header className="flex h-8 items-center justify-between px-2">
-        <button onClick={() => setOpen(!open)} aria-expanded={open} className="flex min-w-0 flex-1 items-center gap-2 text-left text-[11px] font-semibold uppercase tracking-[0.14em] text-fg hover:text-accent">
-          <Icon name={open ? 'minus' : 'plus'} size={9} className="text-accent" />
-          {icon && <Icon name={icon} size={13} className="text-dim" />}
+      <header className="flex h-8 items-center justify-between gap-2 pl-3 pr-2">
+        <button onClick={() => setOpen(!open)} aria-expanded={open} className="t-title flex min-w-0 flex-1 items-center gap-2 text-left hover:text-accent">
+          <Icon name={open ? 'minus' : 'plus'} size={10} className="shrink-0 text-dim" />
+          {icon && <Icon name={icon} size={13} className="shrink-0 text-dim" />}
           <span className="truncate">{title}</span>
         </button>
         {right}
@@ -676,59 +714,49 @@ export function Fold({ title, icon, right, children, open: initial = true, class
   )
 }
 
-/** A slide-over panel covering the right side of its positioned parent. */
+/**
+ * The drawer: details of one thing, at the right-hand edge, over the news
+ * feed and never over the list it was opened from (which stays live: another
+ * row can be picked without closing it). There is one drawer at a time; the
+ * frame gives it its place (the element with id "sb-drawer").
+ */
 export function Drawer({ open, onClose, title, children, width = 420, footer }: { open: boolean; onClose: () => void; title: ReactNode; children: ReactNode; width?: number; footer?: ReactNode }) {
   const box = useRef<HTMLElement>(null)
   useLayer(open, onClose, { box })
   if (!open) return null
-  return (
-    <div className="absolute inset-0 z-[35] flex justify-end">
-      <div className="absolute inset-0 bg-carbon/60" onClick={onClose} />
-      <aside ref={box} role="dialog" aria-label={typeof title === 'string' ? title : 'Details'} className="relative flex h-full min-h-0 flex-col border-l border-line2 bg-carbon outline-none" style={{ width, maxWidth: '100%' }}>
-        <header className="flex h-9 shrink-0 items-center justify-between border-b border-line bg-panel px-3">
-          <span className="truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-fg">{title}</span>
-          <button onClick={onClose} className="-mr-1 flex h-6 w-6 shrink-0 items-center justify-center text-dim hover:text-accent" title="Close (Esc)" aria-label="Close">
-            <Icon name="close" size={13} />
-          </button>
-        </header>
-        <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
-        {footer && <div className="shrink-0 border-t border-line bg-panel p-2">{footer}</div>}
-      </aside>
-    </div>
+  const host = typeof document !== 'undefined' ? document.getElementById('sb-drawer') : null
+  const drawer = (
+    <aside ref={box} role="dialog" aria-label={typeof title === 'string' ? title : 'Details'} data-layer="drawer" className="pointer-events-auto absolute bottom-0 right-0 top-0 z-[35] flex min-h-0 flex-col border-l border-line2 bg-carbon outline-none" style={{ width, maxWidth: '100%' }}>
+      <header className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-line bg-panel pl-3 pr-1">
+        <span className="t-title min-w-0 truncate">{title}</span>
+        <IconBtn icon="close" tone="ghost" title="Close (Esc)" onClick={onClose} />
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+      {footer && <div className="shrink-0 border-t border-line bg-panel p-2">{footer}</div>}
+    </aside>
   )
+  return host ? createPortal(drawer, host) : drawer
 }
 
-/** A headline number. Use for the few figures that matter most on a screen. */
-export function Kpi({ label, icon, value, sub, tone }: { label: string; icon?: IconName; value: ReactNode; sub?: ReactNode; tone?: 'pos' | 'neg' | 'warn' | 'accent' }) {
-  const color = tone === 'pos' ? 'text-pos' : tone === 'neg' ? 'text-neg' : tone === 'warn' ? 'text-warn' : tone === 'accent' ? 'text-accent' : 'text-fg'
-  return (
-    <div className="border border-line bg-panel px-3 py-2">
-      <FitLabel icon={icon} label={label} size={12} className="label gap-[5px] text-faint" />
-      <div className={`num mt-1 text-xl font-semibold leading-none ${color}`}>{value}</div>
-      {sub !== undefined && (
-        <div className="num mt-1 truncate text-[10px] text-faint" title={typeof sub === 'string' ? sub : undefined}>
-          {sub}
-        </div>
-      )}
-    </div>
-  )
-}
+/** A tile. The same as `Stat`: kept under its old name for the screens that use it. */
+export const Kpi = Stat
 
-/** A small supporting figure, visually quieter than a Kpi. */
+/** A small supporting figure on one line: label left, value right. Quieter than a tile. */
 export function Mini({ label, icon, value, tone, title }: { label: string; icon?: IconName; value: ReactNode; tone?: string; /** Said on hover when the label is a short form. */ title?: string }) {
   return (
-    <div className="border border-line px-2 py-1" title={title}>
-      <FitLabel icon={icon} label={label} size={10} className="gap-1 text-[9px] uppercase tracking-[0.12em] text-faint" />
-      <div className={`num text-xs ${tone ?? 'text-dim'}`}>{value}</div>
+    <div className="min-w-0 border border-line px-2 py-1" title={title}>
+      <FitLabel icon={icon} label={label} size={11} className="gap-1 text-[11px] text-faint" />
+      <div className={`num text-xs ${tone ?? 'text-fg'}`}>{value}</div>
     </div>
   )
 }
 
+/** A status mark. Use it only for a status that is NOT the default one: a list whose every row says "On sale" says nothing. */
 export function Tag({ children, tone = 'dim', icon }: { children?: ReactNode; tone?: 'dim' | 'accent' | 'pos' | 'neg' | 'warn'; icon?: IconName }) {
-  const c = { dim: 'border-line2 text-dim', accent: 'border-accent text-accent', pos: 'border-pos/60 text-pos', neg: 'border-neg/60 text-neg', warn: 'border-warn/60 text-warn' }[tone]
+  const c = { dim: 'border-line2 text-dim', accent: 'border-accent text-accent', pos: 'border-pos text-pos', neg: 'border-neg text-neg', warn: 'border-warn text-warn' }[tone]
   return (
-    <span className={`num inline-block whitespace-nowrap border px-1 text-[9px] uppercase leading-4 tracking-wider ${c}`}>
-      {icon && <Icon name={icon} size={9} className={`inline-block ${children !== undefined ? 'mr-[3px]' : ''}`} style={{ verticalAlign: -1 }} />}
+    <span className={`inline-block whitespace-nowrap border px-[5px] text-[11px] leading-4 ${c}`}>
+      {icon && <Icon name={icon} size={10} className={`inline-block ${children !== undefined ? 'mr-[3px]' : ''}`} style={{ verticalAlign: -1 }} />}
       {children}
     </span>
   )
@@ -738,8 +766,192 @@ export function Empty({ text, icon, children }: { text: string; icon?: IconName;
   return (
     <div className="flex h-full min-h-24 flex-col items-center justify-center gap-3 px-6 py-6 text-center">
       {icon && <Icon name={icon} size={22} className="text-line2" />}
-      <div className="max-w-sm text-[11px] leading-snug text-faint">{text}</div>
+      <div className="max-w-sm text-xs leading-snug text-dim">{text}</div>
       {children}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------- the redesign's shared pieces
+
+/**
+ * The frame of an ordinary (non-3D) screen: a 16px gutter, 8px between
+ * panels, and one column that scrolls when the window is short.
+ */
+export function Page({ children, className = '', keep }: { children: ReactNode; className?: string; keep?: string }) {
+  const ref = useKeptScroll(keep)
+  return (
+    <div ref={ref} className={`flex h-full min-h-0 flex-col gap-2 overflow-y-auto p-4 ${className}`}>
+      {children}
+    </div>
+  )
+}
+
+export interface Figure {
+  label: string
+  value: ReactNode
+  tone?: FigureTone
+  icon?: IconName
+  title?: string
+  onClick?: () => void
+}
+/**
+ * A one-line strip of figures: what a screen needs to say at a glance
+ * (headcount, payroll, morale, raise requests), or the status of a 3D place.
+ * Given children it can be opened for the detail behind the line.
+ */
+export function Strip({ items, right, children, keep, className = '' }: { items: Figure[]; right?: ReactNode; /** The detail behind the line; when given, the strip can be opened. */ children?: ReactNode; /** A name under which open or closed is remembered. */ keep?: string; className?: string }) {
+  const [open, setOpen] = useKept<boolean>(`strip:${keep ?? ''}`, false)
+  const can = children !== undefined && children !== null && children !== false
+  return (
+    <section className={`shrink-0 border border-line bg-panel ${className}`}>
+      <div className="flex min-h-9 items-center gap-x-4 gap-y-1 px-3 py-1">
+        <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-5 gap-y-1">
+          {items.map((f) => {
+            const body = (
+              <>
+                <span className="text-[11px] text-dim">
+                  <Lead icon={f.icon} />
+                  {f.label}
+                </span>
+                <span className={`num text-[13px] font-semibold ${f.tone ? TONE_TEXT[f.tone] : 'text-fg'}`}>{f.value}</span>
+              </>
+            )
+            return f.onClick ? (
+              <button key={f.label} type="button" onClick={f.onClick} title={f.title} className="flex items-baseline gap-2 whitespace-nowrap hover:[&>span:first-child]:text-fg">
+                {body}
+              </button>
+            ) : (
+              <span key={f.label} title={f.title} className="flex items-baseline gap-2 whitespace-nowrap">
+                {body}
+              </span>
+            )
+          })}
+        </div>
+        {right}
+        {can && <IconBtn icon={open ? 'minus' : 'plus'} tone="ghost" title={open ? 'Show less' : 'Show more'} aria-expanded={open} onClick={() => setOpen(!open)} />}
+      </div>
+      {can && open && <div className="border-t border-line">{children}</div>}
+    </section>
+  )
+}
+
+/** What the colours of a set of bars mean. Any bars that use colour carry one of these. */
+export function Legend({ items, className = '' }: { items: { label: string; tone?: 'accent' | 'pos' | 'neg' | 'warn' | 'dim' | 'fg'; color?: string }[]; className?: string }) {
+  const bg = { accent: 'bg-accent', pos: 'bg-pos', neg: 'bg-neg', warn: 'bg-warn', dim: 'bg-mute', fg: 'bg-fg' }
+  return (
+    <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-dim ${className}`}>
+      {items.map((i) => (
+        <span key={i.label} className="flex items-center gap-[5px] whitespace-nowrap">
+          <span aria-hidden className={`h-2 w-2 shrink-0 ${i.color ? '' : bg[i.tone ?? 'accent']}`} style={i.color ? { background: i.color } : undefined} />
+          {i.label}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * A company's (or anything's) own colour, as a small square beside its name.
+ * The name itself is always drawn in a readable text colour: brand colours
+ * are never used for text.
+ */
+export function Swatch({ color, children, className = '' }: { color: string; children?: ReactNode; className?: string }) {
+  return (
+    <span className={`inline-flex min-w-0 items-center gap-[6px] ${className}`}>
+      <span aria-hidden className="h-2 w-2 shrink-0 border border-line2" style={{ background: color }} />
+      {children !== undefined && <span className="min-w-0 truncate">{children}</span>}
+    </span>
+  )
+}
+
+/** A key the player can press, as a chip. */
+export function Key({ children }: { children: ReactNode }) {
+  return <kbd className="kbd">{children}</kbd>
+}
+
+/** A compact drop-down with its label in front: a filter, a picker of one thing out of many (a device type, a store). */
+export function Pick<T extends string | number>({ label, value, options, onChange, className = '' }: { label: string; value: T; options: { value: T; label: string; disabled?: boolean }[]; onChange: (v: T) => void; className?: string }) {
+  return (
+    <label className={`flex min-w-0 items-center gap-2 text-[11px] text-dim ${className}`}>
+      <span className="shrink-0">{label}</span>
+      <select
+        className="h-7 min-w-0 rounded-none border border-line2 bg-raise px-1 text-xs text-fg outline-none focus:border-accent"
+        value={String(value)}
+        onChange={(e) => {
+          const o = options.find((x) => String(x.value) === e.target.value)
+          if (o) onChange(o.value)
+        }}
+      >
+        {options.map((o) => (
+          <option key={String(o.value)} value={String(o.value)} disabled={o.disabled}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
+/** A row of filter chips: one is on. Use for a handful of filters ("Needs you", "All"); for many, use `Pick`. */
+export function Filters<T extends string>({ value, options, onChange, label }: { value: T; options: { value: T; label: string; count?: number; alert?: boolean }[]; onChange: (v: T) => void; label?: string }) {
+  return (
+    <div role="group" aria-label={label ?? 'Filter'} className="flex min-w-0 items-center gap-1">
+      {options.map((o) => (
+        <button key={o.value} type="button" aria-pressed={value === o.value} onClick={() => onChange(o.value)} className={`flex h-7 items-center gap-[6px] whitespace-nowrap border px-2 text-xs transition-colors ${value === o.value ? 'border-accent bg-accent/10 text-accent' : 'border-line2 text-dim hover:border-fg hover:text-fg'}`}>
+          {o.label}
+          {o.count !== undefined && <span className={`num text-[11px] ${value === o.value ? '' : o.alert && o.count > 0 ? 'text-warn' : 'text-faint'}`}>{o.count}</span>}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * A trend in a table cell: the last twelve months as a line, no axes. The
+ * line is the quiet colour; `tone` colours it when the trend itself is the
+ * news (falling, sold out).
+ */
+export function Spark({ values, width = 72, height = 20, tone = 'dim', title }: { values: number[]; width?: number; height?: number; tone?: 'dim' | 'pos' | 'neg' | 'warn' | 'accent'; title?: string }) {
+  const stroke = { dim: 'var(--color-dim)', pos: 'var(--color-pos)', neg: 'var(--color-neg)', warn: 'var(--color-warn)', accent: 'var(--color-accent)' }[tone]
+  const v = values.filter((x) => Number.isFinite(x))
+  if (v.length < 2) return <span aria-hidden className="inline-block" style={{ width, height }} />
+  const max = Math.max(...v, 1e-9)
+  const min = Math.min(...v, 0)
+  const span = max - min || 1
+  const step = (width - 2) / (v.length - 1)
+  const pts = v.map((y, i) => `${(1 + i * step).toFixed(1)},${(height - 2 - ((y - min) / span) * (height - 4)).toFixed(1)}`).join(' ')
+  return (
+    <svg role="img" aria-label={title ?? 'Trend'} width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="inline-block align-middle">
+      {title && <title>{title}</title>}
+      <polyline points={pts} fill="none" stroke={stroke} strokeWidth={1.25} strokeLinejoin="miter" />
+    </svg>
+  )
+}
+
+/**
+ * A question mark that opens a short explanation: how a screen works, what a
+ * figure means. What used to be a permanent "How it works" panel.
+ */
+export function Help({ title = 'How this works', children }: { title?: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+  useLayer(open, () => setOpen(false))
+  useEffect(() => {
+    if (!open) return
+    const away = (e: PointerEvent) => !box.current?.contains(e.target as Node) && setOpen(false)
+    window.addEventListener('pointerdown', away, true)
+    return () => window.removeEventListener('pointerdown', away, true)
+  }, [open])
+  return (
+    <div ref={box} className="relative inline-flex">
+      <IconBtn icon="help" tone="ghost" title={title} aria-expanded={open} onClick={() => setOpen(!open)} />
+      {open && (
+        <div role="note" className="absolute right-0 top-8 z-30 w-[320px] max-w-[80vw] border border-line2 bg-panel p-3 text-xs leading-relaxed text-dim">
+          <div className="t-title mb-1">{title}</div>
+          {children}
+        </div>
+      )}
     </div>
   )
 }

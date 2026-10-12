@@ -140,7 +140,7 @@ export function SharesScreen() {
       </div>
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,7fr)_minmax(0,4fr)] gap-2">
         <div className="flex min-h-0 flex-col gap-2">
-          <Panel title="Share price" icon="shares" className="h-[38%] shrink-0" bodyClass="p-1" right={<span className="num text-[10px] text-faint">12-month sales {big(t.revenue)} / profit {big(t.profit)}</span>}>
+          <Panel title="Share price" icon="shares" className="h-[38%] shrink-0" bodyClass="p-1" right={<span className="num text-[11px] text-faint">12-month sales {big(t.revenue)} / profit {big(t.profit)}</span>}>
             {data.length < 2 ? (
               <Empty icon="shares" text="The price is recorded at the end of each month." />
             ) : (
@@ -215,7 +215,7 @@ export function SharesScreen() {
                 <span key={i} style={{ width: `${(inv.shares / k.shares) * 100}%`, background: ['#5a9bd4', '#58b368', '#9c6ade', '#d6a24f'][i % 4] }} />
               ))}
             </div>
-            <div className="py-1 text-[10px] leading-snug text-faint">{g.config.difficulty === 'relaxed' || g.config.unlimitedMoney ? 'On this difficulty the board never removes you.' : `Next round or issue possible ${Math.max(0, RAISE_GAP - (g.day - k.lastRaise)) ? `in ${RAISE_GAP - (g.day - k.lastRaise)} days` : 'now'}.`}</div>
+            <div className="py-1 text-[11px] leading-snug text-faint">{g.config.difficulty === 'relaxed' || g.config.unlimitedMoney ? 'On this difficulty the board never removes you.' : `Next round or issue possible ${Math.max(0, RAISE_GAP - (g.day - k.lastRaise)) ? `in ${RAISE_GAP - (g.day - k.lastRaise)} days` : 'now'}.`}</div>
           </Panel>
           <Panel title={k.listed ? 'Capital' : 'Raise money'} icon="bank" className="flex-1" bodyClass="overflow-y-auto">
             <Raise />
@@ -297,7 +297,7 @@ function RegionPanel({ r }: { r: RegionDef }) {
     <div className="space-y-2 p-2">
       <div>
         <div className="flex items-center justify-between">
-          <span className="text-sm text-fg">{r.name}</span>
+          <span className="text-[13px] text-fg">{r.name}</span>
           {home ? <Tag tone="accent" icon="home">home</Tag> : st.open ? <Tag tone="pos" icon="check">selling</Tag> : <Tag icon="lock">not entered</Tag>}
         </div>
         <div className="text-[11px] leading-snug text-dim">{r.blurb}</div>
@@ -332,7 +332,7 @@ function RegionPanel({ r }: { r: RegionDef }) {
               {st.history.slice(-24).map((u, i) => (
                 <span key={i} className="flex-1 bg-accent/70" style={{ height: `${Math.max(2, (u / peak) * 100)}%` }} />
               ))}
-              {!st.history.length && <span className="pb-1 text-[10px] text-faint">Recorded at each month end.</span>}
+              {!st.history.length && <span className="pb-1 text-[11px] text-faint">Recorded at each month end.</span>}
             </div>
           </div>
           <Slider label="Local price" icon="tag" value={st.priceAdj} min={0.7} max={1.4} step={0.01} format={(v) => `${v > 1 ? '+' : ''}${Math.round((v - 1) * 100)}% on list`} onChange={(v) => act((s) => setRegionPrice(s, r.id, v))} hint={r.wealth < 0.9 ? 'Buyers here are price-sensitive: a lower local price can sell far more.' : r.wealth > 1.05 ? 'Buyers here will pay more for the same device.' : undefined} />
@@ -386,7 +386,7 @@ function RegionPanel({ r }: { r: RegionDef }) {
             </span>
           </div>
         ))}
-        <div className="mt-1 text-[10px] leading-snug text-faint">Rivals are strongest at home and patchier abroad.</div>
+        <div className="mt-1 text-[11px] leading-snug text-faint">Rivals are strongest at home and patchier abroad.</div>
       </div>
     </div>
   )
@@ -414,7 +414,7 @@ export function WorldScreen() {
       </div>
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,7fr)_minmax(0,3fr)] gap-2">
         <div className="flex min-h-0 flex-col gap-2">
-          <Panel title="World" icon="world" className="flex-1" bodyClass="p-3" right={<span className="num text-[10px] text-faint">brighter = better known / grey = not entered</span>}>
+          <Panel title="World" icon="world" className="flex-1" bodyClass="p-3" right={<span className="num text-[11px] text-faint">brighter = better known / grey = not entered</span>}>
             <WorldMap g={g} selected={selected} onSelect={setSelected} />
           </Panel>
           <Panel className="shrink-0" bodyClass="@container overflow-auto">
@@ -443,7 +443,7 @@ export function WorldScreen() {
                         )}
                       </td>
                       <td className="num r text-dim">{pct(r.share, 0)}</td>
-                      <td>{st.open ? <Meter value={st.awareness} tone="accent" /> : <span className="text-[10px] text-faint">not entered ({money(r.entry, 1)})</span>}</td>
+                      <td>{st.open ? <Meter value={st.awareness} tone="accent" /> : <span className="text-[11px] text-faint">not entered ({money(r.entry, 1)})</span>}</td>
                       <td className="num r text-fg">{st.open ? num(st.history.at(-1) ?? 0) : '--'}</td>
                       <td className="num r text-dim @max-[640px]:hidden">{st.open && total > 0 ? pct((st.history.at(-1) ?? 0) / total, 0) : '--'}</td>
                       <td className="num r text-dim">{st.open ? `${st.priceAdj >= 1 ? '+' : ''}${Math.round((st.priceAdj - 1) * 100)}%` : '--'}</td>
@@ -469,11 +469,11 @@ function Option({ on, onClick, title, note, right, locked, onLocked }: { on: boo
   return (
     <button onClick={locked ? onLocked : onClick} aria-pressed={on} aria-disabled={locked ? true : undefined} title={locked || undefined} className={`block w-full border p-2 text-left ${locked ? 'cursor-not-allowed border-line' : on ? 'border-accent bg-accent/10' : 'border-line hover:border-line2'}`}>
       <div className="flex items-baseline justify-between">
-        <span className={`text-xs uppercase tracking-wider ${locked ? 'text-dim opacity-45' : on ? 'text-accent' : 'text-fg'}`}>
+        <span className={`text-xs ${locked ? 'text-dim opacity-45' : on ? 'text-accent' : 'text-fg'}`}>
           <Lead icon={locked ? 'lock' : on ? 'check' : 'ban'} size={12} />
           {title}
         </span>
-        {right && <span className="num text-[10px] text-dim">{right}</span>}
+        {right && <span className="num text-[11px] text-dim">{right}</span>}
       </div>
       <div className="mt-[2px] text-[11px] leading-snug text-dim">{note}</div>
     </button>
@@ -533,7 +533,7 @@ export function CareScreen() {
                   </button>
                   {p.recall!.state === 'open' ? <Tag tone="neg" icon="hourglass">{Math.max(0, RECALL_DEADLINE - (g.day - p.recall!.day))} days left</Tag> : p.recall!.state === 'done' ? <Tag tone="pos" icon="check">recalled</Tag> : <Tag tone="warn" icon="ban">ignored</Tag>}
                 </div>
-                <div className="num text-[10px] text-dim">
+                <div className="num text-[11px] text-dim">
                   fault rate {pct(p.defectRate)} / {num(p.unitsSold)} sold
                 </div>
                 {p.recall!.state === 'open' && (
@@ -586,7 +586,7 @@ export function CareScreen() {
           <Row icon="staff" k="Members now" v={num(c.subscribers)} />
           <Row icon="coins" k="Income last month" v={money(m.planIncome, 1)} tone="text-pos" />
           <Row icon="receipt" k="Claims last month (est.)" v={money(m.planIncome * 0.4, 1)} />
-          <div className="border-t border-line pt-2 text-[10px] leading-snug text-faint">Support agents at head office and support bars in your stores also raise satisfaction. Their effect shows on each device's page.</div>
+          <div className="border-t border-line pt-2 text-[11px] leading-snug text-faint">Support agents at head office and support bars in your stores also raise satisfaction. Their effect shows on each device's page.</div>
         </Panel>
       </div>
     </div>
@@ -602,11 +602,11 @@ function GoalRow({ goal, g }: { goal: Goal; g: GameState }) {
   return (
     <div className={`border-b border-line px-2 py-[6px] ${done !== undefined ? 'opacity-70' : ''}`}>
       <div className="flex items-baseline justify-between gap-2">
-        <span className={`min-w-0 break-words text-xs uppercase tracking-wider ${done !== undefined ? 'text-pos' : 'text-fg'}`}>
+        <span className={`min-w-0 break-words text-xs ${done !== undefined ? 'text-pos' : 'text-fg'}`}>
           {done !== undefined && <Lead icon="check" size={12} />}
           {goal.name}
         </span>
-        <span className="num shrink-0 text-[10px] text-dim">{done !== undefined ? fmtDate(done) : prize}</span>
+        <span className="num shrink-0 text-[11px] text-dim">{done !== undefined ? fmtDate(done) : prize}</span>
       </div>
       <div className="text-[11px] leading-snug text-dim">{goal.note}</div>
       {done === undefined && <Meter value={p} tone={p > 0.66 ? 'pos' : 'accent'} className="mt-1" />}
@@ -629,9 +629,9 @@ export function GoalsScreen() {
             <Head icon="goals" className="text-faint">
               Standing
             </Head>
-            <div className="text-lg uppercase tracking-[0.14em] text-accent">{stage.name}</div>
+            <div className="text-base text-accent">{stage.name}</div>
           </div>
-          <span className="num text-sm text-fg">
+          <span className="num text-[13px] text-fg">
             {stage.done} <span className="text-faint">of {stage.total} goals</span>
           </span>
         </div>
@@ -639,7 +639,7 @@ export function GoalsScreen() {
           {STAGES.map((name, i) => (
             <div key={name} className="flex-1">
               <div className={`h-[3px] ${i <= stage.index ? 'bg-accent' : 'bg-line2'}`} />
-              <div className={`mt-1 truncate text-[9px] uppercase tracking-wider ${i === stage.index ? 'text-fg' : 'text-faint'}`}>{name}</div>
+              <div className={`mt-1 truncate text-[11px] ${i === stage.index ? 'text-fg' : 'text-faint'}`}>{name}</div>
             </div>
           ))}
         </div>
@@ -649,7 +649,7 @@ export function GoalsScreen() {
         {groups.map((group) => {
           const list = GOALS.filter((x) => x.group === group && (view === 'all' || g.goals[x.id] === undefined)).sort((a, b) => (g.goals[a.id] !== undefined ? 1 : 0) - (g.goals[b.id] !== undefined ? 1 : 0) || b.progress(g) - a.progress(g))
           return (
-            <Panel key={group} title={group} icon={GROUP_ICON[group]} bodyClass="overflow-y-auto overflow-x-hidden" right={<span className="num text-[10px] text-faint">{GOALS.filter((x) => x.group === group && g.goals[x.id] !== undefined).length} / {GOALS.filter((x) => x.group === group).length}</span>}>
+            <Panel key={group} title={group} icon={GROUP_ICON[group]} bodyClass="overflow-y-auto overflow-x-hidden" right={<span className="num text-[11px] text-faint">{GOALS.filter((x) => x.group === group && g.goals[x.id] !== undefined).length} / {GOALS.filter((x) => x.group === group).length}</span>}>
               {list.length === 0 && <Empty icon="check" text="All done here." />}
               {list.map((goal) => (
                 <GoalRow key={goal.id} goal={goal} g={g} />

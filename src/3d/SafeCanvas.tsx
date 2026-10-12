@@ -32,11 +32,11 @@ function Notice({ title, children, action, onAction }: { title: string; children
   return (
     <div className="absolute inset-0 z-[5] flex items-center justify-center bg-bg/90 p-4" role="alert">
       <div className="w-[420px] max-w-full border border-line2 bg-panel">
-        <div className="border-b border-line px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-warn">{title}</div>
+        <div className="border-b border-line px-3 py-2 text-[11px] font-semibold text-warn">{title}</div>
         <div className="space-y-2 p-3 text-[11px] leading-relaxed text-dim">
           {children}
           {action && (
-            <button type="button" onClick={onAction} className="mt-1 border border-accent bg-raise px-3 py-[5px] text-[10px] font-semibold uppercase tracking-wider text-fg hover:bg-accent/15">
+            <button type="button" onClick={onAction} className="mt-1 border border-accent bg-raise px-3 py-[5px] text-[11px] font-semibold text-fg hover:bg-accent/15">
               {action}
             </button>
           )}
@@ -477,7 +477,7 @@ export function SafeCanvas({ children, dpr, what = '3D view', adaptive = false, 
       {broke && (
         <Notice title={copy.brokeTitle} action="Try again" onAction={retry}>
           <p className="text-fg">{copy.broke}</p>
-          <p className="num break-words text-[10px] text-faint">{broke.message.slice(0, 200)}</p>
+          <p className="num break-words text-[11px] text-faint">{broke.message.slice(0, 200)}</p>
         </Notice>
       )}
       {software && !broke && !lost && (
@@ -491,7 +491,7 @@ export function SafeCanvas({ children, dpr, what = '3D view', adaptive = false, 
               softwareTold = true
               setSoftware(false)
             }}
-            className="shrink-0 border border-warn px-2 py-[2px] uppercase tracking-wider hover:bg-warn/10"
+            className="shrink-0 border border-warn px-2 py-[2px] hover:bg-warn/10"
           >
             Hide
           </button>

@@ -189,7 +189,7 @@ function ScoreBars({ product }: { product: Product }) {
           <span className="num w-8 text-right text-[11px] text-fg">{Math.round(n[k] * 100)}</span>
         </div>
       ))}
-      <div className="mt-1 text-[10px] text-faint">100 = level with the best the market can build today</div>
+      <div className="mt-1 text-[11px] text-faint">100 = level with the best the market can build today</div>
     </div>
   )
 }
@@ -246,7 +246,7 @@ function Voices({ product }: { product: Product }) {
                 {f.stars}
               </span>
               <span className="flex-1 text-[11px] text-fg">{f.text}</span>
-              <span className="num shrink-0 text-[9px] text-faint">{fmtDate(f.day)}</span>
+              <span className="num shrink-0 text-[11px] text-faint">{fmtDate(f.day)}</span>
             </div>
           ))}
         </>
@@ -306,12 +306,12 @@ function Manage({ p }: { p: Product }) {
               Order {money(qty * cost, 1)}
             </Btn>
           </div>
-          <div className="mt-1 text-[10px] leading-snug text-faint">
+          <div className="mt-1 text-[11px] leading-snug text-faint">
             {mode === 'contract' ? `Starts after ${CONTRACT.leadDays} days, then about ${num(CONTRACT.perDay / TYPES[p.type].capacity)} a day. ${pct(CONTRACT.defectRate)} arrive faulty.` : `About ${num((line?.throughput ?? 0) / TYPES[p.type].capacity)} a day, shared with other orders. ${pct(line?.defectRate ?? 0)} arrive faulty.`}
           </div>
           {orders.map((o) => (
             <div key={o.id} className="mt-2">
-              <div className="num flex justify-between text-[10px] text-dim">
+              <div className="num flex justify-between text-[11px] text-dim">
                 <span>
                   <Lead icon={o.mode === 'contract' ? 'doc' : 'factory'} size={10} />
                   {o.mode === 'contract' ? 'CONTRACT' : 'FACTORY'}
@@ -333,7 +333,7 @@ function Manage({ p }: { p: Product }) {
           </Head>
           <div className="flex items-center gap-2">
             <NumInput value={price} onChange={setP} step={10} max={MAX_PRICE} onEnter={reprice} aria-label="Retail price" className="h-7 w-28 text-right" />
-            <span className="flex-1 text-[10px] text-faint">{p.tiers.length ? `Storage options move with it (avg paid ${money(avg.price)})` : `Retailers keep ${pct(RETAIL_CUT, 0)}`}</span>
+            <span className="flex-1 text-[11px] text-faint">{p.tiers.length ? `Storage options move with it (avg paid ${money(avg.price)})` : `Retailers keep ${pct(RETAIL_CUT, 0)}`}</span>
             <Btn small icon="check" disabled={price === p.price || price <= 0} title={price <= 0 ? 'Enter a price above zero' : price === p.price ? 'This is the price already' : undefined} onClick={reprice}>
               Apply
             </Btn>
@@ -355,7 +355,7 @@ function Manage({ p }: { p: Product }) {
             Successor
           </Btn>
         </div>
-        <div className="mt-1 text-[10px] leading-snug text-faint">A variant in the same family reuses the platform: about 45% cheaper and 40% faster to develop.</div>
+        <div className="mt-1 text-[11px] leading-snug text-faint">A variant in the same family reuses the platform: about 45% cheaper and 40% faster to develop.</div>
       </div>
 
       <div className="border border-line p-2">
@@ -459,11 +459,11 @@ export function ProductDrawer() {
           ] as const
         ).map(([k, v, icon]) => (
           <div key={k} className="bg-panel px-2 py-[6px]">
-            <div className="flex items-center gap-1 text-[9px] uppercase tracking-[0.12em] text-faint">
+            <div className="flex items-center gap-1 text-[11px] text-faint">
               <Icon name={icon} size={10} />
               {k}
             </div>
-            <div className="num text-sm font-semibold text-fg">{v}</div>
+            <div className="num text-[13px] font-semibold text-fg">{v}</div>
           </div>
         ))}
       </div>
@@ -506,7 +506,7 @@ export function ProductDrawer() {
       )}
       {mine && product.recall?.state === 'open' && (
         <div className="m-2 border border-neg p-2">
-          <div className="flex items-center gap-[6px] text-[11px] font-semibold uppercase tracking-wider text-neg">
+          <div className="flex items-center gap-[6px] text-[11px] font-semibold text-neg">
             <Icon name="alert" size={13} />
             Recall decision
           </div>

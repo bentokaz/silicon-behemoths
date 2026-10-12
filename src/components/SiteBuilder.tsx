@@ -330,7 +330,7 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
               Demolish
             </Btn>
           </div>
-          <span className="num border border-line2 bg-panel/95 px-2 py-[5px] text-[10px] uppercase tracking-wider text-dim">
+          <span className="num border border-line2 bg-panel/95 px-2 py-[5px] text-[11px] text-dim">
             {tierOf(site).name} <span className="text-faint">/ {site.w} x {site.h} m / {tiles ? `${tiles} m² built` : site.items.length ? `open air, ${site.items.length} ${site.items.length === 1 ? 'fitting' : 'fittings'}` : 'nothing built'}</span>
           </span>
         </div>
@@ -347,7 +347,7 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
               <Btn small className="flex items-center gap-[5px] !px-2" tone="ghost" title={light === 'clock' ? `Site time ${clock.time}. The light follows the site clock: day, dusk, then a short night. People come in around eight and go home after five. The clock runs with the game speed and stops when the game is paused.` : `Site time ${clock.time}. The light is held at ${light}; people still keep to the clock. Click to let the light follow the clock again.`} active={light === 'clock'} onClick={() => setLight('clock')}>
                 <Icon name="clock" size={15} />
                 <span className="num text-[11px]">{clock.time}</span>
-                <span className={`text-[9px] uppercase tracking-wider ${light === 'clock' ? 'text-accent' : 'text-faint'}`}>{light === 'clock' ? 'auto' : 'held'}</span>
+                <span className={`text-[11px] ${light === 'clock' ? 'text-accent' : 'text-faint'}`}>{light === 'clock' ? 'auto' : 'held'}</span>
               </Btn>
             )}
             {(['day', 'dusk', 'night'] as Mood[]).map((m) => (
@@ -368,7 +368,7 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
               <div className={`grid gap-1 ${tab === 'Rooms' ? 'grid-cols-5' : 'grid-cols-4'}`}>
                 {(tab === 'Rooms' ? ROOM_SHAPES : GROUND_SHAPES).map((sh) => (
                   <Btn key={sh} small className="!h-[34px] !px-0" active={(tab === 'Rooms' ? shape : drawn) === sh} onClick={() => setShape(sh)} title={SHAPE_NOTES[sh]}>
-                    <span className="flex flex-col items-center gap-[3px] py-[2px] text-[9px] leading-none">
+                    <span className="flex flex-col items-center gap-[3px] py-[2px] text-[11px] leading-none">
                       <Icon name={SHAPE_ICONS[sh]} size={14} />
                       {SHAPE_NAMES[sh]}
                     </span>
@@ -379,14 +379,14 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
                 <div className="mt-1 grid grid-cols-5 gap-1">
                   {ARCS.map((a) => (
                     <Btn key={a.sweep} small className="!h-[34px] !px-0" active={sweep === a.sweep} onClick={() => setSweep(a.sweep)} title={a.note}>
-                      <span className="flex flex-col items-center gap-[3px] py-[2px] text-[9px] leading-none">
+                      <span className="flex flex-col items-center gap-[3px] py-[2px] text-[11px] leading-none">
                         <Icon name={a.icon} size={14} />
                         {a.name}
                       </span>
                     </Btn>
                   ))}
                   <Btn small className="!h-[34px] !px-0" disabled={sweep >= 360} onClick={() => setRot((r) => (r + 1) % 4)} title={sweep < 360 ? `Turn the arc. It is open to the ${OPEN_SIDE[sweep][rot]}.` : 'A full circle has no open side to turn'}>
-                    <span className="flex flex-col items-center gap-[3px] py-[2px] text-[9px] leading-none">
+                    <span className="flex flex-col items-center gap-[3px] py-[2px] text-[11px] leading-none">
                       <Icon name="turn" size={14} />
                       Turn
                     </span>
@@ -395,7 +395,7 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
               )}
               {shape === 'ring' && (
                 <div className="mt-[6px] flex items-center gap-[5px]">
-                  <span className="mr-1 text-[10px] uppercase tracking-wider text-dim" title="How deep the building is, from its outer wall to the courtyard">
+                  <span className="mr-1 text-[11px] text-dim" title="How deep the building is, from its outer wall to the courtyard">
                     Depth
                   </span>
                   <Btn small className="!px-2" data-repeat aria-label="Shallower" title="Shallower" disabled={thick <= MIN_THICK} onClick={() => setThick((t) => Math.max(MIN_THICK, t - 1))}>
@@ -421,19 +421,19 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
                 return (
                   <button key={id} aria-pressed={on} aria-disabled={shut ? true : undefined} title={shut ? (lockTip(g, need!) ?? undefined) : undefined} onClick={() => (shut ? useStore.getState().showLock(need!) : pick(on ? null : { type: 'room', room: id, shape }))} className={`${row(on)} ${shut ? 'opacity-45' : ''}`}>
                     <span className="min-w-0">
-                      <span className="flex items-center gap-2 text-xs uppercase tracking-wider">
+                      <span className="flex items-center gap-2 text-xs">
                         <span className="h-3 w-3 shrink-0 border border-line2" style={{ background: r.styles[0].floor }} />
                         {r.name}
                         {shut && <Icon name="lock" size={10} />}
                       </span>
-                      <span className="mt-[2px] block text-[10px] normal-case leading-snug tracking-normal text-dim">{r.note}</span>
+                      <span className="mt-[2px] block text-[11px] normal-case leading-snug tracking-normal text-dim">{r.note}</span>
                     </span>
                     <span className="num shrink-0 text-[11px] text-dim">{money(r.cost, 0)}/m²</span>
                   </button>
                 )
               })}
             {tab === 'Furnish' && room && (
-              <div className="flex items-center justify-between border-b border-line px-2 py-[6px] text-[10px] uppercase tracking-wider text-dim">
+              <div className="flex items-center justify-between border-b border-line px-2 py-[6px] text-[11px] text-dim">
                 <span>For the {rooms[room.type].name}</span>
                 <Btn small tone="ghost" onClick={() => setSelected(0)}>
                   Show all
@@ -447,10 +447,10 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
                   const usable = d.rooms.some((r) => r === OUT || site.rooms.some((x) => x.type === r))
                   return (
                     <button key={kind} onClick={() => pick(on ? null : { type: 'item', kind, rot })} className={row(on)}>
-                      <span className={`truncate text-xs uppercase tracking-wider ${usable ? '' : 'text-faint'}`}>
+                      <span className={`truncate text-xs ${usable ? '' : 'text-faint'}`}>
                         {d.name}
                         {(d.w > 1 || d.h > 1) && (
-                          <span className="num ml-2 text-[9px] text-faint">
+                          <span className="num ml-2 text-[11px] text-faint">
                             {d.w}x{d.h}
                           </span>
                         )}
@@ -469,7 +469,7 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
                   const on = tool?.type === 'edge' && tool.kind === e.kind
                   return (
                     <button key={e.kind} onClick={() => pick(on ? null : { type: 'edge', kind: e.kind })} className={row(on)}>
-                      <span className="flex items-center gap-2 text-xs uppercase tracking-wider">
+                      <span className="flex items-center gap-2 text-xs">
                         <Icon name={EDGE_ICONS[e.kind]} size={14} />
                         {e.name}
                       </span>
@@ -485,7 +485,7 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
                 return (
                   <button key={f.id} onClick={() => pick(on ? null : { type: 'ground', id: f.id, shape })} className={`${row(on)} !items-center !justify-start`}>
                     <span className="h-4 w-4 shrink-0 border border-line2" style={{ background: f.color }} />
-                    <span className="text-xs uppercase tracking-wider">{f.name}</span>
+                    <span className="text-xs">{f.name}</span>
                   </button>
                 )
               })}
@@ -493,12 +493,12 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
               <div className="space-y-3 p-2">
                 <div className="text-[11px] leading-snug text-dim">How the building looks from outside. Switch to the Outside view to see it.</div>
                 <div>
-                  <div className="mb-1 text-[10px] uppercase tracking-wider text-dim">Cladding</div>
+                  <div className="mb-1 text-[11px] text-dim">Cladding</div>
                   {FACADES.map((f, i) => {
                     const cost = lookCost(site, { facade: i })
                     return (
                       <button key={f.id} onClick={() => report(act((s) => setLook(s, siteRef, { facade: i })), () => (sfx.zone(), setMode('full')))} className={`${row(site.facade === i)} !items-center`}>
-                        <span className="flex items-center gap-2 text-xs uppercase tracking-wider">
+                        <span className="flex items-center gap-2 text-xs">
                           <span className="h-4 w-4 shrink-0 border border-line2" style={{ background: f.color }} />
                           {f.name}
                         </span>
@@ -508,12 +508,12 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
                   })}
                 </div>
                 <div>
-                  <div className="mb-1 text-[10px] uppercase tracking-wider text-dim">Roof</div>
+                  <div className="mb-1 text-[11px] text-dim">Roof</div>
                   {ROOFS.map((r, i) => {
                     const cost = lookCost(site, { roof: i })
                     return (
                       <button key={r.id} onClick={() => report(act((s) => setLook(s, siteRef, { roof: i })), () => (sfx.zone(), setMode('full')))} className={`${row(site.roof === i)} !items-center`}>
-                        <span className="flex items-center gap-2 text-xs uppercase tracking-wider">
+                        <span className="flex items-center gap-2 text-xs">
                           <span className="h-4 w-4 shrink-0 border border-line2" style={{ background: r.color }} />
                           {r.name}
                         </span>
@@ -523,7 +523,7 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
                   })}
                 </div>
                 <div>
-                  <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-wider text-dim">
+                  <div className="mb-1 flex items-center justify-between text-[11px] text-dim">
                     <span>Storeys</span>
                     <span className="num text-fg">{site.floors}</span>
                   </div>
@@ -535,7 +535,7 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
                       Add one {tiles ? `(${money(lookCost(site, { floors: site.floors + 1 }), 0)})` : ''}
                     </Btn>
                   </div>
-                  <div className="mt-1 text-[10px] leading-snug text-dim">Upper floors hold the departments you do not manage desk by desk. They add prestige and upkeep, and make new rooms cost more.</div>
+                  <div className="mt-1 text-[11px] leading-snug text-dim">Upper floors hold the departments you do not manage desk by desk. They add prestige and upkeep, and make new rooms cost more.</div>
                 </div>
               </div>
             )}
@@ -546,14 +546,14 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
       {room && !tool && (
         <div className={`absolute bottom-12 ${open ? 'left-[278px]' : 'left-2'} w-[250px] border border-line2 bg-panel/95`}>
           <div className="flex items-center justify-between border-b border-line px-2 py-[6px]">
-            <span className="text-xs uppercase tracking-wider text-fg">{rooms[room.type].name}</span>
-            <span className="num text-[10px] text-dim">{roomTiles(site, room.n)} m²</span>
+            <span className="text-xs text-fg">{rooms[room.type].name}</span>
+            <span className="num text-[11px] text-dim">{roomTiles(site, room.n)} m²</span>
           </div>
           <div className="space-y-2 p-2">
-            <div className="text-[10px] uppercase tracking-wider text-dim">Finish</div>
+            <div className="text-[11px] text-dim">Finish</div>
             <div className="grid grid-cols-2 gap-1">
               {rooms[room.type].styles.map((st, i) => (
-                <button key={st.name} onClick={() => (act((s) => setRoomStyle(s, siteRef, room.n, i)), sfx.toggle())} className={`flex items-center gap-2 border px-[6px] py-[5px] text-left text-[10px] uppercase tracking-wider ${room.style === i ? 'border-accent text-accent' : 'border-line2 text-dim hover:text-fg'}`}>
+                <button key={st.name} onClick={() => (act((s) => setRoomStyle(s, siteRef, room.n, i)), sfx.toggle())} className={`flex items-center gap-2 border px-[6px] py-[5px] text-left text-[11px] ${room.style === i ? 'border-accent text-accent' : 'border-line2 text-dim hover:text-fg'}`}>
                   <span className="flex h-4 w-6 shrink-0 border border-line2">
                     <span className="flex-1" style={{ background: st.floor }} />
                     <span className="flex-1" style={{ background: st.wall }} />
@@ -584,7 +584,7 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
           >
             <Icon name="alert" size={13} />
             <span className="num">{cutOff}</span>
-            <span className="uppercase tracking-wider">{cutOff === 1 ? 'room cut off' : 'rooms cut off'}</span>
+            <span className="">{cutOff === 1 ? 'room cut off' : 'rooms cut off'}</span>
           </div>
         )}
         <div className={`pointer-events-auto inline-block min-w-0 max-w-full border bg-panel/95 px-3 py-[7px] text-[11px] ${(sealed.length && !tool) || (tool?.type === 'room' && drawn === 'fill' && note?.error) ? 'border-warn text-warn' : pending || (run && tool) ? 'border-accent text-fg' : 'border-line2 text-dim'}`}>{info}</div>

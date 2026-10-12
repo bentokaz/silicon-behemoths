@@ -54,7 +54,7 @@ function Ask() {
   const q = QUESTION[ask.kind]
   return (
     <div className="absolute bottom-4 right-4 z-[80] w-[340px] max-w-[calc(100%-2rem)] border border-accent bg-panel" role="dialog" aria-label={q.title}>
-      <div className="flex items-center gap-2 border-b border-line px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">
+      <div className="flex items-center gap-2 border-b border-line px-3 py-2 text-[11px] font-semibold text-accent">
         <Icon name="review" size={14} />
         <span className="flex-1">{q.title}</span>
         <button className="-mr-1 flex h-6 w-6 items-center justify-center text-faint hover:text-fg" onClick={() => dismiss()} title="Close (Esc)" aria-label="Close">
@@ -70,7 +70,7 @@ function Ask() {
           <Btn small icon="check" onClick={() => dismiss()}>
             All fine
           </Btn>
-          <button className="ml-auto text-[10px] uppercase tracking-wider text-faint hover:text-fg" onClick={() => dismiss(true)}>
+          <button className="ml-auto text-[11px] text-faint hover:text-fg" onClick={() => dismiss(true)}>
             Do not ask again
           </button>
         </div>
@@ -108,7 +108,7 @@ function Form() {
   return (
     <div className="absolute inset-0 z-[90] flex items-center justify-center bg-black/60 p-4" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div ref={box} className="flex max-h-full w-[560px] max-w-full flex-col border border-line2 bg-panel outline-none" role="dialog" aria-modal="true" aria-label="Send feedback">
-        <div className="flex items-center gap-2 border-b border-line px-4 py-3 text-[12px] font-semibold uppercase tracking-[0.14em] text-fg">
+        <div className="flex items-center gap-2 border-b border-line px-4 py-3 text-[12px] font-semibold text-fg">
           <Icon name="review" size={15} className="text-accent" />
           <span className="flex-1">Tell us about it</span>
           <button className="-mr-1 flex h-6 w-6 items-center justify-center text-faint hover:text-fg" onClick={close} title="Close (Esc)" aria-label="Close">
@@ -134,7 +134,7 @@ function Form() {
           <div className="min-h-0 space-y-3 overflow-y-auto p-4 text-[12px] text-dim">
             <div className="grid grid-cols-2 gap-1">
               {KINDS.map((k) => (
-                <button key={k.id} onClick={() => setKind(k.id)} className={`flex items-center gap-2 border px-2 py-2 text-left text-[11px] uppercase tracking-wider transition-colors ${kind === k.id ? 'border-accent bg-accent/10 text-accent' : 'border-line2 bg-raise text-fg hover:border-accent'}`}>
+                <button key={k.id} onClick={() => setKind(k.id)} className={`flex items-center gap-2 border px-2 py-2 text-left text-[11px] transition-colors ${kind === k.id ? 'border-accent bg-accent/10 text-accent' : 'border-line2 bg-raise text-fg hover:border-accent'}`}>
                   <Icon name={k.icon} size={14} className={kind === k.id ? '' : 'text-dim'} />
                   {k.label}
                 </button>
@@ -155,7 +155,7 @@ function Form() {
                 className="max-h-[40vh] min-h-20 w-full resize-y border border-line2 bg-carbon p-2 text-[12px] leading-relaxed text-fg outline-none focus:border-accent"
                 placeholder="A sentence or two is plenty."
               />
-              <div className="num mt-[2px] flex justify-between text-[10px] text-faint">
+              <div className="num mt-[2px] flex justify-between text-[11px] text-faint">
                 <span>{text.trim().length < 3 ? 'Write a few words to send.' : 'Ctrl+Enter sends.'}</span>
                 {text.length > 3600 && <span className={text.length >= 4000 ? 'text-warn' : ''}>{text.length} / 4000</span>}
               </div>
@@ -170,7 +170,7 @@ function Form() {
                 </button>
               </span>
             </label>
-            {peek && <pre className="num max-h-28 overflow-auto border border-line bg-carbon p-2 text-[10px] leading-snug text-faint">{Object.entries(context).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(' | ') || 'none' : v}`).join('\n')}</pre>}
+            {peek && <pre className="num max-h-28 overflow-auto border border-line bg-carbon p-2 text-[11px] leading-snug text-faint">{Object.entries(context).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(' | ') || 'none' : v}`).join('\n')}</pre>}
             {state === 'failed' && (
               <p className="flex items-start gap-2 text-warn">
                 <Icon name="alert" size={14} className="mt-[1px] shrink-0" />
@@ -182,7 +182,7 @@ function Form() {
                 {state === 'sending' ? 'Sending' : 'Send'}
               </Btn>
               <Btn onClick={close}>Cancel</Btn>
-              <span className="ml-auto flex items-center gap-3 text-[10px] uppercase tracking-wider">
+              <span className="ml-auto flex items-center gap-3 text-[11px]">
                 <a href={text.trim() ? issue : ISSUES_URL} target="_blank" rel="noreferrer" className="text-faint hover:text-fg">
                   Post on GitHub instead
                 </a>

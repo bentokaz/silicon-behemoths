@@ -213,7 +213,7 @@ function CashDelta() {
   }, [delta])
   if (!delta || g.config.unlimitedMoney) return null
   return (
-    <span role="status" className={`num pointer-events-none absolute bottom-0 right-3 text-[9px] leading-[11px] ${delta.amount < 0 ? 'text-neg' : 'text-pos'}`}>
+    <span role="status" className={`num pointer-events-none absolute bottom-0 right-3 text-[11px] leading-[14px] ${delta.amount < 0 ? 'text-neg' : 'text-pos'}`}>
       {delta.amount < 0 ? '-' : '+'}
       {money(Math.abs(delta.amount), 1)}
     </span>
@@ -232,7 +232,7 @@ function GameOver() {
     <div className="absolute inset-0 z-50 flex items-center justify-center bg-carbon/85 p-4">
       <div ref={box} role="alertdialog" aria-label={g.overReason === 'ousted' ? 'Removed by the board' : 'Bankrupt'} className="w-[420px] max-w-full border border-neg bg-panel p-4 outline-none">
         <div className="label text-neg">{g.overReason === 'ousted' ? 'Removed by the board' : 'Bankrupt'}</div>
-        <div className="mt-2 text-lg text-fg">{g.overReason === 'ousted' ? `The board of ${me.name} has replaced you.` : `${me.name} has run out of credit.`}</div>
+        <div className="mt-2 text-base text-fg">{g.overReason === 'ousted' ? `The board of ${me.name} has replaced you.` : `${me.name} has run out of credit.`}</div>
         <div className="num mt-2 text-[11px] text-dim">
           Survived until {fmtDate(g.day)}. Sold {num(me.unitsTotal)} devices for {money(me.revenueTotal)}.
         </div>
@@ -251,7 +251,7 @@ function GameOver() {
             Main menu
           </Btn>
         </div>
-        <div className="mt-2 text-[10px] text-faint">{checkpoint ? 'The same copy is in the load menu as "Before the debt", along with the monthly autosave.' : 'Your saves and the monthly autosave are in the load menu.'}</div>
+        <div className="mt-2 text-[11px] text-faint">{checkpoint ? 'The same copy is in the load menu as "Before the debt", along with the monthly autosave.' : 'Your saves and the monthly autosave are in the load menu.'}</div>
       </div>
     </div>
   )
@@ -332,7 +332,7 @@ export function Shell() {
           <Icon name={TAB_ICON[t.id] ?? 'system'} size={railOpen ? 14 : 17} />
           {railOpen && <span className="text-xs uppercase tracking-wider">{t.label}</span>}
         </span>
-        {n > 0 ? <span className={`num text-[10px] text-warn ${railOpen ? '' : 'absolute right-1 top-0'}`}>{n}</span> : isNew ? <span className={`num text-[9px] tracking-wider text-accent ${railOpen ? '' : 'absolute right-[3px] top-0'}`}>{railOpen ? 'NEW' : '+'}</span> : railOpen && keyOf(t.id) && <span className="num text-[9px] text-faint">{keyOf(t.id)}</span>}
+        {n > 0 ? <span className={`num text-[11px] text-warn ${railOpen ? '' : 'absolute right-1 top-0'}`}>{n}</span> : isNew ? <span className={`num text-[11px] tracking-wider text-accent ${railOpen ? '' : 'absolute right-[3px] top-0'}`}>{railOpen ? 'NEW' : '+'}</span> : railOpen && keyOf(t.id) && <span className="num text-[11px] text-faint">{keyOf(t.id)}</span>}
       </button>
     )
   }
@@ -346,17 +346,17 @@ export function Shell() {
         <div className="flex items-center gap-2 border-r border-line px-3">
           {me.logo ? <img src={me.logo} alt="" className="h-6 w-6 object-contain" /> : <span className="h-2 w-2" style={{ background: me.color }} />}
           <span className="text-xs text-dim">{me.name}</span>
-          <button className="num hidden border border-line2 px-[5px] py-[1px] text-[9px] uppercase tracking-wider text-faint hover:text-fg xl:block" onClick={() => setTab('goals')} title={`${stage.done} of ${stage.total} goals reached`}>
+          <button className="num hidden border border-line2 px-[5px] py-[1px] text-[11px] uppercase tracking-wider text-faint hover:text-fg xl:block" onClick={() => setTab('goals')} title={`${stage.done} of ${stage.total} goals reached`}>
             {stage.name}
           </button>
         </div>
         <div className="flex items-center gap-2 border-r border-line px-3">
           <Icon name="calendar" className="text-faint" />
-          <span className="num text-sm font-semibold text-fg">{fmtDate(g.day)}</span>
+          <span className="num text-[13px] font-semibold text-fg">{fmtDate(g.day)}</span>
         </div>
         <div className="relative flex items-center gap-2 border-r border-line px-3">
           <Icon name="cash" className="text-faint" />
-          <span className={`num min-w-[4.5rem] text-sm font-semibold ${g.cash < 0 && !g.config.unlimitedMoney ? "text-neg" : "text-accent"}`}>{g.config.unlimitedMoney ? 'UNLIMITED' : money(g.cash)}</span>
+          <span className={`num min-w-[4.5rem] text-[13px] font-semibold ${g.cash < 0 && !g.config.unlimitedMoney ? "text-neg" : "text-accent"}`}>{g.config.unlimitedMoney ? 'UNLIMITED' : money(g.cash)}</span>
           <CashDelta />
         </div>
         <div className="hidden items-center gap-2 border-r border-line px-3 lg:flex">
@@ -404,7 +404,7 @@ export function Shell() {
               .filter((n) => n.items.length)
               .map((n) => (
                 <div key={n.group} className="border-b border-line py-1">
-                  {railOpen && <div className="px-3 pb-[2px] pt-1 text-[9px] uppercase tracking-[0.18em] text-faint">{n.group}</div>}
+                  {railOpen && <div className="px-3 pb-[2px] pt-1 text-[11px] uppercase tracking-[0.18em] text-faint">{n.group}</div>}
                   {n.items.map(navButton)}
                 </div>
               ))}
@@ -419,13 +419,13 @@ export function Shell() {
                   <Icon name="branch" size={railOpen ? 14 : 17} />
                   {railOpen && <span className="text-[11px] uppercase tracking-wider">More to unlock</span>}
                 </span>
-                {railOpen && <span className="num text-[10px]">{later}</span>}
+                {railOpen && <span className="num text-[11px]">{later}</span>}
               </button>
             )}
           </div>
           <div className="border-t border-line py-1">
             {navButton({ id: 'system', label: 'System', code: 'SYS' })}
-            <button onClick={toggleRail} className={`flex h-7 w-full items-center text-[10px] uppercase tracking-wider text-faint hover:text-fg ${railOpen ? 'px-3' : 'justify-center'}`} title={railOpen ? 'Collapse the menu' : 'Expand the menu'} aria-label={railOpen ? 'Collapse the menu' : 'Expand the menu'} aria-expanded={railOpen}>
+            <button onClick={toggleRail} className={`flex h-7 w-full items-center text-[11px] uppercase tracking-wider text-faint hover:text-fg ${railOpen ? 'px-3' : 'justify-center'}`} title={railOpen ? 'Collapse the menu' : 'Expand the menu'} aria-label={railOpen ? 'Collapse the menu' : 'Expand the menu'} aria-expanded={railOpen}>
               <Icon name={railOpen ? 'collapse' : 'expand'} size={12} />
               {railOpen && <span className="ml-2">Collapse</span>}
             </button>
@@ -466,14 +466,14 @@ export function Shell() {
           <aside data-chrome="feed" aria-label="News feed" className="flex w-[236px] shrink-0 flex-col border-l border-line bg-panel">
             <div className="flex h-8 shrink-0 items-center justify-between border-b border-line px-2">
               <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-fg">Feed</span>
-              <button className="num text-[10px] text-faint hover:text-fg" onClick={toggleFeed}>
+              <button className="num text-[11px] text-faint hover:text-fg" onClick={toggleFeed}>
                 HIDE
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
               {g.news.map((n) => (
                 <div key={n.id} {...(n.productId ? { role: 'button', ...pressable(() => focus(n.productId!)) } : {})} className={`border-b border-line px-2 py-[5px] ${n.productId ? 'cursor-pointer hover:bg-hover' : ''}`}>
-                  <div className="num flex justify-between text-[9px] text-faint">
+                  <div className="num flex justify-between text-[11px] text-faint">
                     <span>{fmtDate(n.day)}</span>
                     <span className={NEWS_TONE[n.kind]}>{n.kind.toUpperCase()}</span>
                   </div>

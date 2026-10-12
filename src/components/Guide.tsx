@@ -326,8 +326,8 @@ export function Coach() {
     >
       <Icon name={done ? 'check' : icon} size={12} className={`shrink-0 ${done ? 'text-pos' : 'text-accent'}`} />
       <span className="label shrink-0 text-faint">Guide</span>
-      <span className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">{step.title}</span>
-      <span className="num shrink-0 text-[10px] text-faint">
+      <span className="min-w-0 truncate text-[11px] font-semibold text-accent">{step.title}</span>
+      <span className="num shrink-0 text-[11px] text-faint">
         {at + 1} / {mine.length}
       </span>
       <Icon name="arrowUp" size={11} className="shrink-0 text-dim" />
@@ -337,12 +337,12 @@ export function Coach() {
   const card = (
     <div ref={cardRef} data-coach="card" data-coach-slot={placing?.card ?? 'none'} aria-hidden={cramped || undefined} style={styleOf(placing, placing?.card ?? 'bottom')} className={`absolute z-30 w-[440px] border border-accent bg-panel ${cramped ? 'pointer-events-none invisible' : 'pointer-events-auto'}`}>
       <div className="flex items-center justify-between gap-2 border-b border-line py-[3px] pl-3 pr-1">
-        <span className="flex min-w-0 items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">
+        <span className="flex min-w-0 items-center gap-2 text-[11px] font-semibold text-accent">
           <Icon name={icon} size={13} className="shrink-0" />
           <span className="truncate">{step.title}</span>
         </span>
         <span className="flex shrink-0 items-center gap-2">
-          <span className="num text-[10px] text-faint">
+          <span className="num text-[11px] text-faint">
             {at + 1} / {mine.length}
           </span>
           <IconBtn icon="arrowDown" tone="ghost" title="Fold the guide down to a bar. It stays that way until you open it again." aria-expanded onClick={() => fold(true)} />
@@ -416,8 +416,8 @@ export function Decision() {
       <div ref={box} role="alertdialog" aria-label={def.title} className="max-h-full w-[460px] max-w-full overflow-y-auto border border-warn bg-panel outline-none">
         <div className="flex items-center gap-2 border-b border-line px-3 py-2">
           <Icon name={INCIDENT_ICON[i.kind] ?? 'alert'} className="text-warn" />
-          <span className="text-[12px] font-semibold uppercase tracking-[0.14em] text-fg">{def.title}</span>
-          <span className="num ml-auto text-[10px] text-faint">
+          <span className="text-[12px] font-semibold text-fg">{def.title}</span>
+          <span className="num ml-auto text-[11px] text-faint">
             <Lead icon="hourglass" size={10} />
             {Math.max(0, INCIDENT_WAIT - (g.day - i.day))} days to decide
           </span>
@@ -435,7 +435,7 @@ export function Decision() {
               className="block w-full border border-line2 p-2 text-left hover:border-accent hover:bg-accent/10"
             >
               <div className="flex items-baseline justify-between gap-2">
-                <span className="text-xs uppercase tracking-wider text-fg">{o.label}</span>
+                <span className="text-xs text-fg">{o.label}</span>
                 {o.cost ? <span className={`num text-[11px] ${o.cost > 0 ? 'text-neg' : 'text-pos'}`}>{o.cost > 0 ? `-${money(o.cost, 1)}` : `+${money(-o.cost, 1)}`}</span> : null}
               </div>
               <div className="mt-[2px] text-[11px] leading-snug text-dim">{o.note}</div>
@@ -483,7 +483,7 @@ export function YearEnd() {
       <div ref={box} role="dialog" aria-label={`${year}: the year in review`} className="max-h-full w-[560px] max-w-full overflow-y-auto border border-line2 bg-panel outline-none">
         <div className="border-b border-line px-4 py-3">
           <div className="label text-faint">{player(g).name}</div>
-          <div className="text-2xl font-semibold tracking-[0.12em] text-fg">
+          <div className="text-2xl font-semibold text-fg">
             {year} <span className="text-accent">/</span> THE YEAR IN REVIEW
           </div>
         </div>
@@ -494,8 +494,8 @@ export function YearEnd() {
                 <Icon name={icon} size={12} />
                 {label}
               </div>
-              <div className="num text-lg text-fg">{value}</div>
-              {sub && <div className="text-[10px] text-dim">{sub}</div>}
+              <div className="num text-base text-fg">{value}</div>
+              {sub && <div className="text-[11px] text-dim">{sub}</div>}
             </div>
           ))}
         </div>

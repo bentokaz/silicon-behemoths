@@ -155,7 +155,7 @@ function BodyPanel({ simple }: { simple: boolean }) {
         <Group title="Fold">
           <Toggle label="Form" value={body.fold ?? 'book'} options={['book', 'flip'] as const} onChange={setFold} />
           {isFlip(body) && <Choice label="Cover screen" value={body.cover ?? 1} options={FLIP_COVERS.map((x, i) => ({ value: i, label: x.name }))} onChange={(v) => (setBody({ cover: v }), useStore.getState().setSimple({}))} />}
-          <div className="text-[10px] leading-snug text-faint">{isFlip(body) ? 'A flip is a tall phone that folds in half across the middle. Its cameras and its cover screen share the outside of the upper half; a larger cover screen costs more and uses a little more power.' : 'A book opens sideways to a screen the size of a small tablet, with a full cover screen on the outside.'}</div>
+          <div className="text-[11px] leading-snug text-faint">{isFlip(body) ? 'A flip is a tall phone that folds in half across the middle. Its cameras and its cover screen share the outside of the upper half; a larger cover screen costs more and uses a little more power.' : 'A book opens sideways to a screen the size of a small tablet, with a full cover screen on the outside.'}</div>
         </Group>
       )}
       {type === 'speaker' && (
@@ -165,7 +165,7 @@ function BodyPanel({ simple }: { simple: boolean }) {
             <input type="checkbox" className="mr-2 accent-accent" checked={!!body.screen} onChange={(e) => setBody({ screen: e.target.checked })} />
             Touch screen in the front
           </label>
-          <div className="text-[10px] leading-snug text-faint">A screen lets the assistant show its answers, and buyers of smart displays expect one. It is as large as the flat front allows, so a wider body gives a bigger screen. The panel is chosen under Internals.</div>
+          <div className="text-[11px] leading-snug text-faint">A screen lets the assistant show its answers, and buyers of smart displays expect one. It is as large as the flat front allows, so a wider body gives a bigger screen. The panel is chosen under Internals.</div>
         </Group>
       )}
       {!T.noScreen && (
@@ -182,11 +182,11 @@ function BodyPanel({ simple }: { simple: boolean }) {
               <Slider label={flank ? 'Sides, with the controls' : 'Sides'} value={body.bezelSide} min={minBez + flank} max={minBez * 6 + 4 + flank} step={0.05} format={mm} onChange={(v) => setBody({ bezelSide: v })} />
             </>
           )}
-          <div className="text-[10px] text-faint">
+          <div className="text-[11px] text-faint">
             Minimum {minBez} mm at Industrial design level {g.levels.design}
             {flank ? `, plus ${flank} mm each side for the controls` : ''}
           </div>
-          {type === 'foldable' && <div className="mt-1 text-[10px] leading-snug text-faint">{isFlip(body) ? 'Use the Shut button above the model to see it folded.' : 'The cover screen on the outside follows the side bezel. Use the Shut button above the model to see it.'}</div>}
+          {type === 'foldable' && <div className="mt-1 text-[11px] leading-snug text-faint">{isFlip(body) ? 'Use the Shut button above the model to see it folded.' : 'The cover screen on the outside follows the side bezel. Use the Shut button above the model to see it.'}</div>}
         </Group>
       )}
       <Group title={frameName}>
@@ -202,7 +202,7 @@ function BodyPanel({ simple }: { simple: boolean }) {
         <Group title="Head strap">
           <Choice label="Style" value={headStrap(body.strap).id} options={HEAD_STRAPS.map((s) => ({ value: s.id, label: `${s.name} (${money(s.cost)})`, locked: s.level > g.levels.materials }))} onChange={(v) => setBody({ strap: v })} />
           <ColorPick label="Strap and cushions" value={body.strapColor ?? '#2f3237'} onChange={(v) => setBody({ strapColor: v })} />
-          <div className="text-[10px] leading-snug text-faint">A rigid band spreads the weight. One with the battery at the back also balances the visor and holds half as much charge again.</div>
+          <div className="text-[11px] leading-snug text-faint">A rigid band spreads the weight. One with the battery at the back also balances the visor and holds half as much charge again.</div>
         </Group>
       )}
       {type === 'watch' && (
@@ -214,13 +214,13 @@ function BodyPanel({ simple }: { simple: boolean }) {
       {standsFor(type).length > 0 && (
         <Group title="Stand">
           <Choice label="Style" value={standInfo(type, body.stand).id} options={standsFor(type).map((s) => ({ value: s.id, label: `${s.name} (${money(s.cost)}+)` }))} onChange={(v) => setBody({ stand: v })} />
-          <div className="text-[10px] leading-snug text-faint">It is made of the frame material. A better stand scores higher on design.</div>
+          <div className="text-[11px] leading-snug text-faint">It is made of the frame material. A better stand scores higher on design.</div>
         </Group>
       )}
       {type === 'earbuds' && (
         <Group title="Buds">
           <Toggle label="Shape" value={body.buds ?? 'stem'} options={['stem', 'bean'] as const} onChange={(buds) => setBody({ buds })} />
-          <div className="text-[10px] leading-snug text-faint">Stems hold a larger battery. Beans are lighter and seal the ear better, which helps noise cancelling.</div>
+          <div className="text-[11px] leading-snug text-faint">Stems hold a larger battery. Beans are lighter and seal the ear better, which helps noise cancelling.</div>
         </Group>
       )}
       {(!T.noScreen || (type === 'speaker' && body.screen)) && (
@@ -271,7 +271,7 @@ function LayoutPanel() {
         <Group title="Tracking cameras">
           <Slider label="Number of cameras" value={Math.max(2, Math.round(o.cams / 2) * 2)} min={2} max={6} step={2} onChange={(v) => setSimple({ cams: v })} />
           <Choice label="Sensor" value={o.sensor} options={SENSOR_NAMES.map((n, i) => ({ value: i, label: `${n} (${money(sensorInfo(i).cost * 0.6)} each)`, locked: i > g.levels.camera }))} onChange={(v) => setSimple({ sensor: v })} />
-          <div className="text-[10px] leading-snug text-faint">Four cameras see everything around the wearer. A third pair, low down, keeps hold of hands in the lap. Sharper sensors track more steadily.</div>
+          <div className="text-[11px] leading-snug text-faint">Four cameras see everything around the wearer. A third pair, low down, keeps hold of hands in the lap. Sharper sensors track more steadily.</div>
         </Group>
       )}
       {slab && (
@@ -283,7 +283,7 @@ function LayoutPanel() {
             <input type="checkbox" className="mr-2 accent-accent" checked={o.flash} onChange={(e) => setSimple({ flash: e.target.checked })} />
             Flash
           </label>
-          <div className="text-[10px] leading-snug text-faint">Extra cameras are added in this order: ultrawide, telephoto{owned('periscope') ? ' (periscope from 108 MP up)' : ''}, macro.</div>
+          <div className="text-[11px] leading-snug text-faint">Extra cameras are added in this order: ultrawide, telephoto{owned('periscope') ? ' (periscope from 108 MP up)' : ''}, macro.</div>
         </Group>
       )}
       {slab && (
@@ -309,13 +309,13 @@ function LayoutPanel() {
             ]}
             onChange={(v) => setSimple({ fingerprint: v })}
           />
-          <div className="text-[10px] leading-snug text-faint">With a thick enough top bezel the camera sits in the bezel instead.</div>
+          <div className="text-[11px] leading-snug text-faint">With a thick enough top bezel the camera sits in the bezel instead.</div>
         </Group>
       )}
       {webcam && (
         <Group title="Webcam">
           <Choice label="Sensor" value={o.sensor} options={SENSOR_NAMES.map((n, i) => ({ value: i, label: `${n} (${money(sensorInfo(i).cost * 0.6)})`, locked: i > g.levels.camera }))} onChange={(v) => setSimple({ sensor: v })} />
-          <div className="text-[10px] leading-snug text-faint">It sits in the top bezel, or in a small notch if the bezel is too thin.{d.type === 'laptop' ? ' Ports are chosen under Internals.' : ''}</div>
+          <div className="text-[11px] leading-snug text-faint">It sits in the top bezel, or in a small notch if the bezel is too thin.{d.type === 'laptop' ? ' Ports are chosen under Internals.' : ''}</div>
         </Group>
       )}
       {LIGHT_NAMES[d.type] && (
@@ -338,7 +338,7 @@ function LayoutPanel() {
               <span className="text-[11px] text-dim">Logo text</span>
               <TextInput value={o.logo} maxLength={14} onChange={(v) => setSimple({ logo: v })} className="h-6 w-40" />
             </label>
-            {LOGO_PLACE[d.type] && <div className="text-[10px] leading-snug text-faint">It goes on the {LOGO_PLACE[d.type]}.</div>}
+            {LOGO_PLACE[d.type] && <div className="text-[11px] leading-snug text-faint">It goes on the {LOGO_PLACE[d.type]}.</div>}
           </>
         )}
       </Group>
@@ -360,7 +360,7 @@ function PartsPanel() {
             </Btn>
           ))}
         </div>
-        <div className="mt-2 text-[10px] leading-snug text-faint">
+        <div className="mt-2 text-[11px] leading-snug text-faint">
           Or work on the model itself: double-click a surface to add a part there, drag a part to move it, and pull the square handles to resize it or the round one to turn it. With nothing selected, the handles around the body resize the body. Arrow keys nudge, Delete removes, Ctrl+Z undoes.
         </div>
       </Group>
@@ -459,30 +459,30 @@ function InternalsPanel({ maxBattery }: { maxBattery: number }) {
             <Mini label="Enclosure" value={`${shape.litres.toFixed(2)} L`} tone={shape.litres < woofer.litres ? 'text-neg' : undefined} />
             <Mini label="These drivers need" value={woofer.litres ? `${woofer.litres.toFixed(1)} L` : 'any size'} />
           </div>
-          <div className="mt-1 text-[10px] leading-snug text-faint">Better drivers need Materials research and a bigger body; a bigger body also gives more bass on its own. More microphones need Chipset research and let the assistant hear across a noisy room.</div>
+          <div className="mt-1 text-[11px] leading-snug text-faint">Better drivers need Materials research and a bigger body; a bigger body also gives more bass on its own. More microphones need Chipset research and let the assistant hear across a noisy room.</div>
         </Group>
       )}
       {shape && !d.body.screen ? null : type === 'earbuds' ? (
         <Group title="Sound">
           <Spec k="driver"><Choice label="Driver" value={s.driver ?? 0} options={DRIVERS.map((x, i) => ({ value: i, label: `${x.name} (${money(x.cost)})`, locked: x.level > lv.materials }))} onChange={(v) => setSpecs({ driver: v })} /></Spec>
           <Spec k="anc"><Choice label="Noise cancelling" value={s.anc ?? 0} options={ANC.map((x, i) => ({ value: i, label: x.cost ? `${x.name} (${money(x.cost)})` : x.name, locked: x.level > lv.chipset }))} onChange={(v) => setSpecs({ anc: v })} /></Spec>
-          <div className="text-[10px] leading-snug text-faint">Better drivers need Materials research, better noise cancelling needs Chipset research. Both use more power and add weight to each bud.</div>
+          <div className="text-[11px] leading-snug text-faint">Better drivers need Materials research, better noise cancelling needs Chipset research. Both use more power and add weight to each bud.</div>
         </Group>
       ) : (
         <Group title={type === 'console' ? 'Video output' : type === 'headset' ? 'Displays and lenses' : type === 'foldable' ? 'Display and hinge' : type === 'speaker' ? 'Screen' : 'Display'}>
           <Spec k="panel"><Choice label={type === 'console' ? 'Drives up to' : type === 'headset' ? 'Panels' : 'Panel'} value={s.panel} options={PANEL_NAMES.map((_, i) => ({ value: i, label: panelName(type, i), locked: i > lv.display }))} onChange={(v) => setSpecs({ panel: v })} /></Spec>
           <Spec k="refresh">{type !== 'watch' && <Choice label="Refresh rate" value={s.refresh} options={REFRESH.map((r) => ({ value: r.hz, label: `${r.hz} Hz`, locked: !!r.feat && !g.features.includes(r.feat) }))} onChange={(v) => setSpecs({ refresh: v })} />}</Spec>
-          {type === 'console' && <div className="text-[10px] leading-snug text-faint">A sharper output only pays off with the graphics card to drive it.</div>}
+          {type === 'console' && <div className="text-[11px] leading-snug text-faint">A sharper output only pays off with the graphics card to drive it.</div>}
           {type === 'headset' && (
             <>
               <Spec k="optics"><Choice label="Lenses" value={s.optics ?? 0} options={OPTICS.map((x, i) => ({ value: i, label: `${x.name} (${money(x.cost)})`, locked: x.level > lv.display }))} onChange={(v) => setSpecs({ optics: v })} /></Spec>
-              <div className="text-[10px] leading-snug text-faint">The picture reaches the eye through the lenses, so they count as much as the panels. Better ones are also thinner and lighter: these need {OPTICS[s.optics ?? 0].depth} mm of extra depth in the visor.</div>
+              <div className="text-[11px] leading-snug text-faint">The picture reaches the eye through the lenses, so they count as much as the panels. Better ones are also thinner and lighter: these need {OPTICS[s.optics ?? 0].depth} mm of extra depth in the visor.</div>
             </>
           )}
           {type === 'foldable' && (
             <>
               <Spec k="hinge"><Choice label="Hinge" value={s.hinge ?? 0} options={HINGES.map((x, i) => ({ value: i, label: `${x.name} (${money(x.cost)})`, locked: x.level > lv.materials }))} onChange={(v) => setSpecs({ hinge: v })} /></Spec>
-              <div className="text-[10px] leading-snug text-faint">A better hinge leaves a shallower crease in the screen and a smaller gap when shut. With this one it closes to {foldedThickness(d).toFixed(1)} mm.</div>
+              <div className="text-[11px] leading-snug text-faint">A better hinge leaves a shallower crease in the screen and a smaller gap when shut. With this one it closes to {foldedThickness(d).toFixed(1)} mm.</div>
             </>
           )}
         </Group>
@@ -513,7 +513,7 @@ function InternalsPanel({ maxBattery }: { maxBattery: number }) {
       {!T.mains && (
         <Group title="Power">
           <Spec k="battery"><Slider label={type === 'earbuds' ? 'Case battery' : 'Battery'} value={Math.min(s.battery, Math.max(maxBattery, 100))} min={small ? 100 : 500} max={Math.max(maxBattery, small ? 100 : 500)} step={small ? 10 : 50} format={(v) => batteryLabel(type, v)} onChange={(v) => setSpecs({ battery: v })} /></Spec>
-          <div className="text-[10px] text-faint">
+          <div className="text-[11px] text-faint">
             This {type === 'earbuds' ? 'case' : type === 'headset' ? 'headset' : 'body'} holds up to {batteryLabel(type, maxBattery)}. A thicker or larger {type === 'earbuds' ? 'case' : type === 'headset' ? 'visor' : 'body'} holds more.{type === 'earbuds' ? ' The case recharges the buds; each bud has a small cell of its own.' : type === 'headset' ? ' So does a band with the battery at the back.' : ''}
           </div>
           <Spec k="charging"><Choice label="Charging" value={s.charging} options={CHARGE_W.map((_, i) => ({ value: i, label: `${chargeWatts(type, i)} W`, locked: i > lv.charging }))} onChange={(v) => setSpecs({ charging: v })} /></Spec>
@@ -526,13 +526,13 @@ function InternalsPanel({ maxBattery }: { maxBattery: number }) {
             <Mini label="Heat to shed" value={`${Math.round(heat.heat)} W`} />
             <Mini label="Headroom" value={`${Math.round(heat.headroom * 100)}%`} tone={heat.headroom < 0.5 ? 'text-neg' : heat.headroom < 0.8 ? 'text-warn' : 'text-pos'} />
           </div>
-          <div className="mt-1 text-[10px] leading-snug text-faint">At 100% or more it runs cool and quiet. Below 80% it runs hot and loud, and below 50% it cannot be sold. A larger body or better cooling adds headroom.</div>
+          <div className="mt-1 text-[11px] leading-snug text-faint">At 100% or more it runs cool and quiet. Below 80% it runs hot and loud, and below 50% it cannot be sold. A larger body or better cooling adds headroom.</div>
         </Group>
       )}
       {!!T.mains?.sound && (
         <Group title="Sound">
           <Spec k="speakers"><Choice label="Speakers" value={s.speakers ?? 0} options={SPEAKERS.map((x, i) => ({ value: i, label: `${x.name} (${money(x.cost)})`, locked: x.level > lv.design }))} onChange={(v) => setSpecs({ speakers: v })} /></Spec>
-          {speakers.thick > 0 && <div className={`text-[10px] leading-snug ${d.body.thickness < speakers.thick ? 'text-neg' : 'text-faint'}`}>These need a body at least {speakers.thick} mm thick.</div>}
+          {speakers.thick > 0 && <div className={`text-[11px] leading-snug ${d.body.thickness < speakers.thick ? 'text-neg' : 'text-faint'}`}>These need a body at least {speakers.thick} mm thick.</div>}
         </Group>
       )}
       {(T.input || ioOptions(type).length > 0) && (
@@ -575,10 +575,10 @@ function ColoursPanel({ preview, setPreview }: { preview: number; setPreview: (i
               </button>
             </div>
             <div className="mt-1 grid grid-cols-2 gap-2">
-              <label className="flex items-center justify-between text-[10px] text-dim">
+              <label className="flex items-center justify-between text-[11px] text-dim">
                 Body <input type="color" value={c.back} onChange={(e) => (update(i, { back: e.target.value }), setPreview(i))} />
               </label>
-              <label className="flex items-center justify-between text-[10px] text-dim">
+              <label className="flex items-center justify-between text-[11px] text-dim">
                 Frame <input type="color" value={c.frame} onChange={(e) => (update(i, { frame: e.target.value }), setPreview(i))} />
               </label>
             </div>
@@ -613,8 +613,8 @@ function PartInspector({ part }: { part: PlacedPart }) {
   return (
     <div className="pointer-events-auto w-[280px] border border-line2 bg-panel/95">
       <div className="flex h-8 items-center justify-between border-b border-line px-2">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-fg">{partLabel(part, d.type)}</span>
-        <button className="num text-[10px] text-dim hover:text-accent" onClick={() => selectPart(null)}>
+        <span className="text-[11px] font-semibold text-fg">{partLabel(part, d.type)}</span>
+        <button className="num text-[11px] text-dim hover:text-accent" onClick={() => selectPart(null)}>
           CLOSE
         </button>
       </div>
@@ -664,7 +664,7 @@ function PartInspector({ part }: { part: PlacedPart }) {
             <TextInput value={part.text ?? ''} maxLength={14} onChange={(v) => set({ text: v })} className="h-6 w-40" />
           </label>
         )}
-        {(part.kind === 'port' || part.kind === 'slot') && part.text && <div className="py-1 text-[10px] leading-snug text-faint">This is the socket for: {socketName(d.type, part.text)}. Ports are added and removed under Internals.</div>}
+        {(part.kind === 'port' || part.kind === 'slot') && part.text && <div className="py-1 text-[11px] leading-snug text-faint">This is the socket for: {socketName(d.type, part.text)}. Ports are added and removed under Internals.</div>}
         {part.kind === 'camera' && (
           <>
             <Choice
@@ -683,7 +683,7 @@ function PartInspector({ part }: { part: PlacedPart }) {
                 Under-display {g.features.includes('udc') ? '' : '(not researched)'}
               </label>
             )}
-            <div className="text-[10px] text-faint">Needs a lens of at least {front ? selfieMinDia(part.sensor ?? 0) : sensorInfo(part.sensor ?? 0).minDia} mm</div>
+            <div className="text-[11px] text-faint">Needs a lens of at least {front ? selfieMinDia(part.sensor ?? 0) : sensorInfo(part.sensor ?? 0).minDia} mm</div>
           </>
         )}
       </div>
@@ -722,8 +722,8 @@ function StudioCaption() {
         <div className="flex items-stretch border border-line2 bg-panel/95">
           <span className="w-[3px] bg-accent" />
           <span className="px-3 py-[5px]">
-            <span className="num block text-[9px] uppercase tracking-[0.16em] text-faint">{caption.note}</span>
-            <span className="block text-xs font-semibold uppercase tracking-[0.12em] text-fg">{caption.title}</span>
+            <span className="num block text-[11px] text-faint">{caption.note}</span>
+            <span className="block text-xs font-semibold text-fg">{caption.title}</span>
           </span>
         </div>
       )}
@@ -918,7 +918,7 @@ function Workbench() {
                 </Btn>
               ) : (
                 <>
-                  <span className="num border-l border-line2 px-2 text-[10px] text-dim">
+                  <span className="num border-l border-line2 px-2 text-[11px] text-dim">
                     {tour + 1} / {tourSteps}
                   </span>
                   <Btn small tone="ghost" icon="arrowRight" title="Next stop" onClick={() => useStudio.setState({ tour: tour + 1 < tourSteps ? tour + 1 : -1 })}>
@@ -996,8 +996,8 @@ function Workbench() {
               ['Best fit', best.seg.name, 'text-fg'],
             ].map(([k, v, tone]) => (
               <div key={k} className="bg-panel px-2 py-[6px]">
-                <div className="text-[9px] uppercase tracking-[0.12em] text-faint">{k}</div>
-                <div className={`num truncate text-sm font-semibold ${tone}`} title={String(v)}>
+                <div className="text-[11px] text-faint">{k}</div>
+                <div className={`num truncate text-[13px] font-semibold ${tone}`} title={String(v)}>
                   {v}
                 </div>
               </div>
@@ -1010,7 +1010,7 @@ function Workbench() {
                 <div key={b.key} className="flex items-center gap-2 py-[3px]">
                   <span className="w-32 text-[11px] text-dim">{b.label}</span>
                   {b.max > 0 ? <Meter value={b.score} max={b.max} tone={b.score / b.max > 0.75 ? 'pos' : b.score / b.max > 0.4 ? 'accent' : 'warn'} /> : <div className="flex-1" />}
-                  <span className={`num w-12 text-right text-[10px] ${b.score < 0 ? 'text-neg' : 'text-dim'}`}>{b.max > 0 ? `${b.score.toFixed(0)}/${b.max}` : b.score.toFixed(0)}</span>
+                  <span className={`num w-12 text-right text-[11px] ${b.score < 0 ? 'text-neg' : 'text-dim'}`}>{b.max > 0 ? `${b.score.toFixed(0)}/${b.max}` : b.score.toFixed(0)}</span>
                 </div>
               ))}
               <div className="mt-2 grid grid-cols-2 gap-1">
@@ -1120,7 +1120,7 @@ function Workbench() {
       {launching && (
         <div className="absolute inset-0 z-40 flex items-center justify-center bg-carbon/85 p-4">
           <div ref={planBox} role="dialog" aria-label="Launch plan" className="flex max-h-full w-[760px] max-w-full flex-col border border-line2 bg-panel outline-none">
-            <div className="flex h-9 shrink-0 items-center border-b border-line px-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-fg">Launch plan</div>
+            <div className="flex h-9 shrink-0 items-center border-b border-line px-3 text-[11px] font-semibold text-fg">Launch plan</div>
             <div className="grid min-h-0 flex-1 grid-cols-2 overflow-y-auto">
               <div className="border-r border-line p-3">
                 <div className="label mb-1 text-faint">Name</div>
@@ -1128,7 +1128,7 @@ function Workbench() {
                   <TextInput value={meta.family} onChange={(v) => setMeta({ family: v })} maxLength={24} className="min-w-0 flex-1" placeholder="Product line" aria-label="Product line name" />
                   <TextInput value={meta.variant} onChange={(v) => setMeta({ variant: v })} maxLength={10} className="w-24" placeholder="Variant" aria-label="Variant label" />
                 </div>
-                <div className="mt-1 text-[10px] leading-snug text-faint">{variant ? 'Shares a platform with a device you already make in this line, so development is cheaper and faster.' : 'Reuse an existing line name with a variant label (Pro, Lite) to share its platform.'}</div>
+                <div className="mt-1 text-[11px] leading-snug text-faint">{variant ? 'Shares a platform with a device you already make in this line, so development is cheaper and faster.' : 'Reuse an existing line name with a variant label (Pro, Lite) to share its platform.'}</div>
 
                 <div className="label mb-1 mt-3 text-faint">Price</div>
                 <div className="flex items-center gap-2">
@@ -1145,7 +1145,7 @@ function Workbench() {
                       <div key={t.storage} className="mt-1 flex items-center gap-2">
                         <span className="num w-16 text-[11px] text-fg">{storageLabel(t.storage)}</span>
                         <NumInput value={t.price} onChange={(v) => setTiers(tiers.map((x, k) => (k === i ? { ...x, price: v } : x)))} step={10} max={MAX_PRICE} className="h-6 w-24 text-right" aria-label={`Price of the ${storageLabel(t.storage)} option`} />
-                        <button className="num text-[10px] text-dim hover:text-neg" title={i < tiers.length - 1 ? 'Removes this option and the larger ones after it' : undefined} onClick={() => setTiers(tiers.slice(0, i))}>
+                        <button className="num text-[11px] text-dim hover:text-neg" title={i < tiers.length - 1 ? 'Removes this option and the larger ones after it' : undefined} onClick={() => setTiers(tiers.slice(0, i))}>
                           REMOVE
                         </button>
                       </div>
@@ -1155,7 +1155,7 @@ function Workbench() {
                         + {storageLabel(nextTier)} option
                       </Btn>
                     )}
-                    <div className="mt-1 text-[10px] leading-snug text-faint">Some buyers pay extra for more storage, which costs you little to add.</div>
+                    <div className="mt-1 text-[11px] leading-snug text-faint">Some buyers pay extra for more storage, which costs you little to add.</div>
                   </>
                 )}
 
@@ -1176,7 +1176,7 @@ function Workbench() {
                   <NumInput value={quantity} onChange={setQuantity} step={1000} max={MAX_RUN} className="w-28 text-right" aria-label="Units in the first production run" />
                   <span className="num text-[11px] text-dim">units at {money(buildEach)} each</span>
                 </div>
-                <div className="mt-1 text-[10px] leading-snug text-faint">
+                <div className="mt-1 text-[11px] leading-snug text-faint">
                   {mode === 'contract' ? `A contractor starts after ${CONTRACT.leadDays} days and delivers about ${num(CONTRACT.perDay / T.capacity)} a day.` : `Your line builds about ${num((line?.throughput ?? 0) / T.capacity)} a day.`} You pay for units as they are built, not up front.
                 </div>
 
