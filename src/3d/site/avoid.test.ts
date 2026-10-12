@@ -4,7 +4,7 @@ import type { Site } from '../../sim/types'
 import { Body, Crowd, GAP, GAP_FIXED, Kind, Mode } from './crowd'
 import { buildNav } from './nav'
 import { bigOffice, crowdFor } from './scene.fixture'
-import { buildSpots } from './spots'
+import { USE, buildSpots } from './spots'
 
 /** A crowd whose people can be sent to a tile by hand. */
 class Lab extends Crowd {
@@ -133,6 +133,30 @@ describe('keeping out of the way of others', () => {
     expect(nearest).toBeGreaterThan(GAP - 0.03)
     expect(visitor.spot?.key).toBe('r1:0')
     expect(crowd.ghosts).toBe(0)
+  })
+
+  it('brings the receptionist in by the end of a counter that has its back to a wall, and leaves the desk unmanned if there is no way in at all', () => {
+    const site = newSite('office', 2)
+    zone(site, 'lobby', areaTiles(2, 4, 13, 6))
+    // the counter faces south into the room; behind it is the wall
+    site.items.push({ id: 'r1', kind: 'reception', x: 7, y: 4, rot: 0 })
+    site.rev++
+    let { crowd, nav, tile } = lab(site)
+    const desk = crowd.spots.find((s) => s.use & USE.front)!
+    expect(desk).toBeDefined()
+    // stepped into from the tile at one end, and round behind the counter from there: not across it
+    expect([tile(6, 4), tile(9, 4)]).toContain(desk.access)
+    expect(desk.via!.length).toBe(3)
+    const behind = 4 - site.h / 2 + 0.5
+    expect(desk.via![2]).toBeLessThan(behind - 0.3)
+    expect(desk.z).toBeLessThan(behind - 0.3)
+    expect(nav.walk[desk.access]).toBe(1)
+    // both ends boxed in as well: nobody is dropped in behind it
+    site.items.push({ id: 'p1', kind: 'plant', x: 6, y: 4, rot: 0 }, { id: 'p2', kind: 'plant', x: 9, y: 4, rot: 0 })
+    site.rev++
+    ;({ crowd, nav, tile } = lab(site))
+    expect(crowd.spots.some((s) => s.use & USE.front)).toBe(false)
+    expect(crowd.fronts.length).toBe(0)
   })
 
   it('uses both leaves of a double door when there is a queue', () => {

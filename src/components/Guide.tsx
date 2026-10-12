@@ -215,9 +215,10 @@ function usePlacing(card: React.RefObject<HTMLElement | null>, bar: React.RefObj
       const next: Placing = { card: find(card.current), bar: find(bar.current) ?? 'bottom', left: Math.round(m.left - h.left), right: Math.round(h.right - m.right), top: Math.round(m.top - h.top), width: Math.round(m.width), bottom: Math.round(h.bottom - floor) }
       setPlacing((was) => (was && JSON.stringify(was) === JSON.stringify(next) ? was : next))
     }
-    // however much changes in a frame, look once
+    // However much changes at once, look once. On a timer, not on the next frame: a window that is
+    // not being drawn gets no frames, and the coach should be in the right place when it is shown again.
     let queued = 0
-    const soon = () => void (queued ||= requestAnimationFrame(() => ((queued = 0), measure())))
+    const soon = () => void (queued ||= window.setTimeout(() => ((queued = 0), measure()), 30))
     const sizes = new ResizeObserver(soon)
     const nodes = new MutationObserver(soon)
     sizes.observe(main)
@@ -228,7 +229,7 @@ function usePlacing(card: React.RefObject<HTMLElement | null>, bar: React.RefObj
     // a list scrolled inside the screen moves what the step points at
     document.addEventListener('scroll', soon, true)
     measure()
-    return () => (sizes.disconnect(), nodes.disconnect(), window.removeEventListener('resize', soon), document.removeEventListener('scroll', soon, true), cancelAnimationFrame(queued))
+    return () => (sizes.disconnect(), nodes.disconnect(), window.removeEventListener('resize', soon), document.removeEventListener('scroll', soon, true), window.clearTimeout(queued))
   }, [card, bar, target, key])
   return placing
 }

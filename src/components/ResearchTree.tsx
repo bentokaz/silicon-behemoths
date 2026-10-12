@@ -209,7 +209,7 @@ export function Research() {
               OWNED
             </div>
           ) : (
-            <Btn tone={active ? 'default' : 'primary'} icon={active ? 'stop' : detail.startable && detail.item.available ? 'play' : 'lock'} className="mt-2 h-9 w-full" disabled={!active && !(detail.startable && detail.item.available)} onClick={() => toggle(detail.id)}>
+            <Btn tone={active ? 'default' : 'primary'} icon={active ? 'stop' : detail.startable && detail.item.available ? 'play' : 'lock'} className="mt-2 h-9 w-full" data-coach-target="research" disabled={!active && !(detail.startable && detail.item.available)} onClick={() => toggle(detail.id)}>
               {active ? 'Stop researching' : detail.startable && detail.item.available ? 'Start research' : 'Locked'}
             </Btn>
           )}

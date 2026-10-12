@@ -377,7 +377,9 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
     const plateFor = (room?: Room) => (plateKey === 'plate' && room && dark?.has(room.n) ? 'wall' : plateKey)
     /** Upper floors seen through a glass wall are lit from within at night. */
     const plateKey = full && glow > 0.05 && facade.kind === 'glass' ? 'plate' : 'wall'
-    const postH = full ? top + 0.345 : H + 0.035
+    /** A post inside the building stops at the ceiling in the outside view, or it would show through the roof; in the cut views it stands just proud of the wall caps. */
+    const lowH = full ? H - 0.02 : H + 0.035
+    const postH = full ? top + 0.345 : lowH
     const post = (px: number, pz: number, h = postH) => {
       const key = `${Math.round(px * 200)},${Math.round(pz * 200)}`
       const old = loose.get(key)
@@ -462,7 +464,7 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
         // (a stretch of a centimetre or two only squares off a corner the curve clips, and needs none; nor does a
         // short stub, whose end lies inside the curved wall's own thickness: a second post that close to the one
         // at the grid corner would read as a lump, so the stub simply runs into the curve)
-        if (len >= STUB) for (const u of [u0, u1]) if (u > 0.001 && u < 0.999) post(ox + x + (side === 'n' ? u : 0), oz + y + (side === 'w' ? u : 0), full && exterior ? top + 0.345 : H + 0.035)
+        if (len >= STUB) for (const u of [u0, u1]) if (u > 0.001 && u < 0.999) post(ox + x + (side === 'n' ? u : 0), oz + y + (side === 'w' ? u : 0), full && exterior ? top + 0.345 : lowH)
         if (len > 0.08 && u0 <= 0.001) edges.set(`${x},${y},${side}:0`, glassWall ? 'glass' : 'wall')
         if (len > 0.08 && u1 >= 0.999) edges.set(`${x},${y},${side}:1`, glassWall ? 'glass' : 'wall')
       }
@@ -557,7 +559,7 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
         return v
       }
       /** The stretches actually drawn, to find where the wall stops or turns a corner. */
-      const drawn: { f: number; t0: number; t1: number }[] = []
+      const drawn: { f: number; t0: number; t1: number; inner: boolean }[] = []
 
       /**
        * A strip of wall following a facet from t0 to t1, between two offsets
@@ -627,7 +629,7 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
           const kind = whole ? c.walls?.[f.bay] : undefined
           const seed = baySeed(ci, f.bay)
           const glassWall = kind === 'glass' || (!farStyle && facade.kind === 'glass' && kind === undefined)
-          if (kind !== 'open') drawn.push({ f: piece.facet, t0, t1 })
+          if (kind !== 'open') drawn.push({ f: piece.facet, t0, t1, inner: !!farStyle })
           if (kind === 'open') {
             strip('trim', f, t0, t1, -half, half, 0, 0.012, 't', CAP)
             continue
@@ -722,15 +724,17 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
           const f = geom.facets[p.f]
           return [f.x0 + (f.x1 - f.x0) * t, f.y0 + (f.y1 - f.y0) * t]
         }
+        // a post on a stretch two rooms share stops at the ceiling: only one on the outside of the building carries on up it
+        const tall = (inner: boolean) => (full && !inner ? top + 0.345 : lowH)
         list.forEach((p, i) => {
           const next = list[(i + 1) % list.length]
           const [ex, ez] = at(p, p.t1)
           const [sx, sz] = at(next, next.t0)
           // a gap of a centimetre or two is only a corner the curve clips; anything wider is a real end
           if (Math.hypot(sx - ex, sz - ez) > 0.08) {
-            post(ox + ex, oz + ez)
-            post(ox + sx, oz + sz)
-          } else if (geom.facets[p.f].band !== geom.facets[next.f].band) post(ox + ex, oz + ez)
+            post(ox + ex, oz + ez, tall(p.inner))
+            post(ox + sx, oz + sz, tall(next.inner))
+          } else if (geom.facets[p.f].band !== geom.facets[next.f].band) post(ox + ex, oz + ez, tall(p.inner && next.inner))
         })
       }
     })
@@ -790,7 +794,7 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
         if (straight || slanted) continue
         // only corners that touch the outside carry on up the building
         const ext = !gridAt(site, x, y) || !gridAt(site, x - 1, y) || !gridAt(site, x, y - 1) || !gridAt(site, x - 1, y - 1)
-        const h = full && ext ? top + 0.345 : H + 0.035
+        const h = full && ext ? top + 0.345 : lowH
         b.box('trim', ox + x, h / 2, oz + y, WALL_T + 0.03, h, WALL_T + 0.03, POST)
       }
     }

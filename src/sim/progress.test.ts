@@ -267,15 +267,14 @@ describe('a guided company starts small', () => {
     // nothing has moved: the first stage, in its own order
     expect(next()).toEqual(['research', 'market', 'studio'])
     // a little progress on something far off does not put it first
-    s.regions[player(s).home].awareness = 0.1
+    s.regions[player(s).home!].awareness = 0.1
     expect(ratioOf(s, 'world')).toBeGreaterThan(0)
     expect(isNear(s, 'world')).toBe(false)
     expect(next()).toEqual(['research', 'market', 'studio'])
     // but something of a later stage that is most of the way there comes before a first-stage one not begun
     s.companies[0].unitsTotal = 8000
     expect(ratioOf(s, 'rivals')).toBeCloseTo(0.8)
-    expect(next()[0]).toBe('rivals')
-    expect(next().indexOf('rivals')).toBeLessThan(next().indexOf('research') < 0 ? 99 : next().indexOf('research'))
+    expect(next()).toEqual(['rivals', 'events', 'research'])
     // the navigation keeps to the stages
     expect(nearTabs(s)).toEqual(['research', 'market', 'marketing'])
   })

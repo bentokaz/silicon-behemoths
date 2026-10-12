@@ -23,46 +23,25 @@ export const INDOOR_SKY: Record<Mood, string> = { day: '#8d887e', dusk: '#5f5650
 export const isIndoor = (env: Env) => env === 'mall'
 /**
  * The light indoors. By day the roof light does the work. As it goes the
- * hall's own lamps come up from straight overhead, and by night they are all
- * there is: plainly warmer and lower than daylight, an evening in a place
- * that is still open, with the shop signs and the shopfronts brighter than
- * the hall around them. It never gets dark in there.
+ * hall's own lamps come up, and by night they are all there is: plainly
+ * warmer and lower than daylight, an evening in a place that is still open,
+ * with the shop signs and the shopfronts brighter than the hall around them.
+ * The light keeps much the same slant at every hour, so the walls of the
+ * hall are lit as well as its floor. It never gets dark in there.
  */
 export const INDOOR_MOODS: typeof MOODS = {
   day: { ...MOODS.day, sky: INDOOR_SKY.day, sunDir: [0.4, 1, 0.4] },
-  dusk: { sky: INDOOR_SKY.dusk, ground: 0.9, sun: 1.5, sunColor: '#ffdcb4', sunDir: [0.3, 1, 0.36], hemi: 0.5, glow: 1.25 },
-  night: { sky: INDOOR_SKY.night, ground: 0.74, sun: 0.9, sunColor: '#ffc084', sunDir: [0.2, 1, 0.3], hemi: 0.3, glow: 1.6 },
+  dusk: { sky: INDOOR_SKY.dusk, ground: 0.9, sun: 1.5, sunColor: '#ffdcb4', sunDir: [0.37, 1, 0.41], hemi: 0.5, glow: 1.25 },
+  night: { sky: INDOOR_SKY.night, ground: 0.72, sun: 0.82, sunColor: '#ffbd7e', sunDir: [0.34, 1, 0.42], hemi: 0.4, glow: 1.6 },
 }
-/**
- * What the hall's own surfaces are tinted by, on top of that light: the
- * lamps and the hemisphere light are shared with the unit, but the fill that
- * comes off the surroundings is the same white at every hour, and would
- * otherwise leave the walls of the hall as pale by night as by day.
- */
-const INDOOR_TONE: Record<Mood, string | null> = { day: null, dusk: '#f4e9dc', night: '#d9c2a6' }
 /** How bright the hall's lit glass and lamps are, and whether its shop signs are lit, at each hour. */
-const INDOOR_GLOW: Record<Mood, { lit: number; signs: number }> = { day: { lit: 0.5, signs: 0 }, dusk: { lit: 1.5, signs: 0.8 }, night: { lit: 2.3, signs: 1.05 } }
+const INDOOR_GLOW: Record<Mood, { lit: number; signs: number }> = { day: { lit: 0.5, signs: 0 }, dusk: { lit: 1.2, signs: 0.8 }, night: { lit: 1.7, signs: 1 } }
 const signs = new Map<number, THREE.Material>()
 /** The material of a lit shop sign: its own colour, glowing, whatever the light around it. */
 function signLit(level: number): THREE.Material {
   let m = signs.get(level)
   if (!m) signs.set(level, (m = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(level, level, level), toneMapped: false })))
   return m
-}
-/** A batch that tints every colour it is given, apart from those of glass and of things that give light. */
-function toned(b: Batch, tone: string): Batch {
-  const by = new THREE.Color(tone)
-  const seen = new Map<string, string>()
-  const tint = (key: string, hex: string) => {
-    if (key === 'lit' || key === 'sign' || key === 'glass') return hex
-    let out = seen.get(hex)
-    if (!out) seen.set(hex, (out = `#${new THREE.Color(hex).multiply(by).getHexString()}`))
-    return out
-  }
-  const t = Object.create(b) as Batch
-  t.box = (key, x, y, z, sx, sy, sz, color, shade) => b.box(key, x, y, z, sx, sy, sz, tint(key, color), shade)
-  t.quad = (key, x0, z0, x1, z1, y, color, shade, up) => b.quad(key, x0, z0, x1, z1, y, tint(key, color), shade, up)
-  return t
 }
 /** The light a site stands in: the hour's own out of doors, the hall's indoors. */
 export const moodOf = (env: Env, mood: Mood) => (isIndoor(env) ? INDOOR_MOODS[mood] : MOODS[mood])
@@ -533,8 +512,7 @@ function build(env: Env, w: number, h: number, mood: Mood): Layout {
     for (const sx of [-1, 1]) for (let i = 0; i < 3; i++) block(b, sx * (hw + 34), -hh + i * 26, 20, 20, 10 + Math.floor(hash(i + sx * 9) * 12), ['#bfc6cc', '#d9d6cf', '#9fb0bd'][i], i + 30 + sx, lit)
     for (let i = 0; i < 10; i++) for (const sx of [-1, 1]) trees.push([sx * (hw + 6 + (i % 2) * 5), -hh - 10 + i * ((h + 12) / 10), 1.8])
   } else if (env === 'mall') {
-    const tone = INDOOR_TONE[mood]
-    mall(tone ? toned(b, tone) : b, w, h, dimHex, mood)
+    mall(b, w, h, dimHex, mood)
   }
 
   const hall = INDOOR_GLOW[mood]

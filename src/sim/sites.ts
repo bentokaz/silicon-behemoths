@@ -803,6 +803,8 @@ export interface Pocket {
   walls: number
   /** Metres of its outline that are the edge of the plot. */
   rim: number
+  /** Which of the plot's four sides it reaches. */
+  reaches: Side[]
 }
 
 /** Largest courtyard, in tiles, that is filled in one go. */
@@ -820,7 +822,7 @@ const WAYS: [Side, Side, number, number][] = [['n', 's', 0, -1], ['s', 'n', 0, 1
  */
 export function pocketAt(site: Site, x: number, y: number, curved: Map<string, LiveTile> = curveTiles(site)): Pocket | null {
   if (!inPlot(site, x, y) || gridAt(site, x, y)) return null
-  const out: Pocket = { tiles: [], enclosed: true, curved: [], walls: 0, rim: 0 }
+  const out: Pocket = { tiles: [], enclosed: true, curved: [], walls: 0, rim: 0, reaches: [] }
   const seen = new Uint8Array(site.w * site.h)
   /** How much of one side of a built tile ground shows through, in metres. */
   const open = (tx: number, ty: number, side: Side): number => {
@@ -856,6 +858,7 @@ export function pocketAt(site: Site, x: number, y: number, curved: Map<string, L
       if (!inPlot(site, nx, ny)) {
         out.enclosed = false
         out.rim += here
+        if (!out.reaches.includes(side)) out.reaches.push(side)
         continue
       }
       const j = ny * site.w + nx
@@ -870,21 +873,22 @@ export function pocketAt(site: Site, x: number, y: number, curved: Map<string, L
   // the same courtyard comes out the same wherever in it the asking started
   out.tiles.sort((a, b) => a[1] - b[1] || a[0] - b[0])
   out.curved.sort()
+  out.reaches.sort()
   return out
 }
 
 /**
  * Why a stretch of open ground cannot be filled with a room in one go, or
- * null if it can. The edge of the plot may close some of it, as long as
- * buildings close at least as much: a notch between a building and the
- * boundary is a courtyard, the open land round a building is not.
+ * null if it can. The edge of the plot may close some of it: a yard against
+ * one side of the plot, in a corner of it, or running from one side to the
+ * other between buildings. Ground that reaches three or four sides of the
+ * plot is the open land round the buildings, not a courtyard: buildings
+ * stand along at most one side of it.
  */
 export function fillError(pocket: Pocket | null): string | null {
   if (!pocket) return 'That land is already built on'
-  if (pocket.rim > pocket.walls + 1e-6) {
-    const walls = Math.round(pocket.walls)
-    const said = walls ? `walls stand along only ${walls.toLocaleString()} m of its outline, and the other ${Math.round(pocket.rim).toLocaleString()} m is the edge of the plot` : 'nothing but the edge of the plot stands round it'
-    return `That ground is not closed in: ${said}. Fill takes ground that buildings close in along at least half of its outline (the edge of the plot may close the rest); mark the room out with a box instead.`
+  if (pocket.reaches.length > 2) {
+    return `That ground is not closed in: it runs out to ${pocket.reaches.length === 4 ? 'all four' : 'three'} sides of the plot, so it is the open land round the buildings and not a courtyard. Fill takes ground that buildings close in, with the edge of the plot along no more than two sides of it; mark the room out with a box instead.`
   }
   if (pocket.tiles.length > FILL_MAX) return `That courtyard is ${pocket.tiles.length.toLocaleString()} m², too large to fill in one go (the most is ${FILL_MAX.toLocaleString()} m²). Mark the room out in parts instead.`
   return null

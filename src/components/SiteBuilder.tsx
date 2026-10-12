@@ -46,11 +46,11 @@ const TAB_ICONS: Record<Tab, IconName> = { Rooms: 'rooms', Furnish: 'furnish', W
 const SHAPE_ICONS: Record<AreaShape, IconName> = { rect: 'box', round: 'round', ring: 'ring', diag: 'diagonal', fill: 'fill' }
 const SHAPE_NAMES: Record<AreaShape, string> = { rect: 'Box', round: 'Round', ring: 'Ring', diag: 'Slant', fill: 'Fill' }
 const SHAPE_NOTES: Record<AreaShape, string> = {
-  rect: 'A plain rectangle. Drawn across most of a round courtyard, it takes the whole courtyard',
+  rect: 'A plain rectangle. Drawn across half or more of a courtyard with a curved wall, it takes the whole courtyard',
   round: 'A circle or oval with a smooth curved wall, inside the box you mark out',
   ring: 'A curved building round an open courtyard',
   diag: 'A triangle: the square corner sits where you click first',
-  fill: 'One click fills a courtyard: all the open ground walled in with the tile you click, up to every wall and round every curve',
+  fill: 'One click fills a courtyard: all the open ground closed in with the tile you click, up to every wall, round every curve, and out to the edge of the plot where that closes it',
 }
 /** The shapes each tab offers. Only rooms are built by filling a courtyard. */
 const ROOM_SHAPES: AreaShape[] = ['rect', 'round', 'ring', 'diag', 'fill']
@@ -232,15 +232,15 @@ export function SiteBuilder({ siteRef, site, children, seated, idle, line, produ
       : tool?.type === 'room' && roomTool
         ? drawn === 'fill'
           ? pending
-            ? `${roomTool.name}: fill this courtyard, ${pending} m² for ${money(roomCost(site, tool.room, pending), 0)}. The room takes all the open ground walled in here and shares every wall round it, curved ones included. Click to build. ${apartTip}`
+            ? `${roomTool.name}: fill this courtyard, ${pending} m² for ${money(roomCost(site, tool.room, pending), 0)}. The room takes all the open ground closed in here and shares every wall round it, curved ones included.${note?.rim ? ` The edge of the plot closes ${note.rim} m of it: the room gets a wall of its own there.` : ''} Click to build. ${apartTip}`
             : note?.error
               ? `${roomTool.name}: ${note.error}`
-              : `${roomTool.name}: ${roomTool.note} Click open ground that is walled in all the way round, such as the courtyard of a ring, to fill it with this room in one go. Esc cancels.`
+              : `${roomTool.name}: ${roomTool.note} Click open ground that buildings close in, such as the courtyard of a ring or a yard between a building and the edge of the plot, to fill it with this room in one go. Esc cancels.`
           : pending
             ? note?.filled
-              ? `${roomTool.name}: this box covers most of the courtyard, so the room takes all of it and shares the curved wall all round: ${pending} m² for ${money(roomCost(site, tool.room, pending), 0)}. Click to build, or draw a smaller box for a room that stands clear of the curve. ${apartTip}`
-              : `${roomTool.name}: ${pending} m² for ${money(roomCost(site, tool.room, pending), 0)}. Click to build. ${apartTip}`
-            : `${roomTool.name}: ${roomTool.note} ${areaHint} Floor laid against a room of the same kind joins it into one room; hold Alt on the second click for a separate room.`
+              ? `${roomTool.name}: this box covers half or more of the courtyard, so the room takes all of it and shares the curved wall all round: ${pending} m² for ${money(roomCost(site, tool.room, pending), 0)}. Click to build, or draw a smaller box for a room that stands clear of the curve. ${apartTip}`
+              : `${roomTool.name}: ${pending} m² for ${money(roomCost(site, tool.room, pending), 0)}.${note?.yard ? ` This courtyard is ${note.yard} m²: a box across half of it or more (${Math.ceil(note.yard / 2)} m²) takes all of it.` : ''} Click to build. ${apartTip}`
+            : `${roomTool.name}: ${roomTool.note} ${areaHint} Floor laid against a room of the same kind joins it into one room; hold Alt on the second click for a separate room.${note?.yard ? ` This courtyard has a curved wall: a box across half or more of its ${note.yard} m² takes the whole courtyard, so no slivers of ground are left against the curve; a smaller box stays a box.` : ''}`
         : tool?.type === 'clear'
           ? pending
             ? `Demolish ${pending} m² of rooms. Anything inside is sold for half its price.`
