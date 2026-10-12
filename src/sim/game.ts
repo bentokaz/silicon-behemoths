@@ -2452,10 +2452,8 @@ export function migrate(input: GameState): GameState {
     s.stock = newStock(Math.max(1e6, s.cash))
     s.stock.price = valuation(s) / s.stock.shares
   }
-  if (!s.goals) {
-    s.goals = {}
-    checkGoals(s)
-  }
+  const hadGoals = !!s.goals
+  s.goals = s.goals ?? {}
   s.incidents = s.incidents ?? []
   // a company that predates the guided start has no use for it
   s.guide = s.guide ?? -1
@@ -2468,6 +2466,9 @@ export function migrate(input: GameState): GameState {
   s.unlocks = s.unlocks ?? {}
   s.execSeats = s.execSeats ?? {}
   s.execPool = s.execPool ?? []
+  // goals a company from before goals had already reached are marked as reached, without their rewards.
+  // Done last: the goals look at every part of the company, and all of it has to be there first
+  if (!hadGoals) checkGoals(s)
   refreshCandidates(s)
   stepProgress(s)
   s.version = SAVE_VERSION
