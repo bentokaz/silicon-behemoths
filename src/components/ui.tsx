@@ -336,7 +336,7 @@ export function Btn({ tone = 'default', active, small, large, icon, locked, onLo
       {...rest}
       aria-label={named}
       aria-pressed={rest['aria-pressed'] ?? (active === undefined ? undefined : active)}
-      className={`group/btn inline-flex items-center justify-center gap-[6px] whitespace-nowrap rounded-none border ${btnSize(small, large)} transition-colors ${BTN_OFF} ${active ? BTN_ON : BTN_TONES[tone]} ${className}`}
+      className={`group/btn inline-flex items-center justify-center gap-[6px] whitespace-nowrap rounded-none border ${btnSize(small, large)} ${BTN_OFF} ${active ? BTN_ON : BTN_TONES[tone]} ${className}`}
     >
       {icon && <Icon name={icon} size={13} className={`shrink-0 ${active ? 'text-accent' : ICON_TONES[tone]}`} />}
       {children}
@@ -354,7 +354,7 @@ export function IconBtn({ icon, title, tone = 'default', active, small = false, 
       title={title}
       aria-label={title}
       aria-pressed={rest['aria-pressed'] ?? (active === undefined ? undefined : active)}
-      className={`group/btn inline-flex shrink-0 items-center justify-center rounded-none border align-middle ${small ? 'h-6 w-6' : 'h-7 w-7'} transition-colors ${BTN_OFF} ${active ? BTN_ON : BTN_TONES[tone]} ${className}`}
+      className={`group/btn inline-flex shrink-0 items-center justify-center rounded-none border align-middle ${small ? 'h-6 w-6' : 'h-7 w-7'} ${BTN_OFF} ${active ? BTN_ON : BTN_TONES[tone]} ${className}`}
     >
       <Icon name={icon} size={small ? 12 : 14} className={active ? 'text-accent' : ICON_TONES[tone]} />
     </button>
@@ -466,7 +466,7 @@ export function Stat({ label, icon, value, sub, tone, onClick, title }: { label:
   )
   if (onClick)
     return (
-      <button type="button" onClick={onClick} title={title} className="min-w-0 border border-line bg-panel px-3 py-2 text-left transition-colors hover:border-line2 hover:bg-hover">
+      <button type="button" onClick={onClick} title={title} className="min-w-0 border border-line bg-panel px-3 py-2 text-left hover:border-line2 hover:bg-hover">
         {body}
       </button>
     )
@@ -680,7 +680,7 @@ export function Tabs<T extends string>({ value, options, onChange, onLocked, cla
             aria-disabled={o.locked ? true : undefined}
             onClick={() => (o.locked ? onLocked?.(o.value) : onChange(o.value))}
             title={o.locked ?? text}
-            className={`-mb-px flex min-w-0 items-center gap-[6px] whitespace-nowrap border-b-2 px-3 text-xs transition-colors ${on ? 'border-accent font-semibold text-fg' : o.locked ? 'border-transparent text-faint' : 'border-transparent text-dim hover:text-fg'}`}
+            className={`-mb-px flex min-w-0 items-center gap-[6px] whitespace-nowrap border-b-2 px-3 text-xs ${on ? 'border-accent font-semibold text-fg' : o.locked ? 'border-transparent text-faint' : 'border-transparent text-dim hover:text-fg'}`}
           >
             {o.locked ? <Icon name="lock" size={11} className="shrink-0 text-faint" /> : o.icon && <Icon name={o.icon} size={13} className={`shrink-0 ${on ? 'text-accent' : 'text-dim'}`} />}
             <span className="min-w-0 truncate">{o.label}</span>
@@ -898,7 +898,7 @@ export function Filters<T extends string>({ value, options, onChange, label }: {
   return (
     <div role="group" aria-label={label ?? 'Filter'} className="flex min-w-0 items-center gap-1">
       {options.map((o) => (
-        <button key={o.value} type="button" aria-pressed={value === o.value} onClick={() => onChange(o.value)} className={`flex h-7 items-center gap-[6px] whitespace-nowrap border px-2 text-xs transition-colors ${value === o.value ? 'border-accent bg-accent/10 text-accent' : 'border-line2 text-dim hover:border-fg hover:text-fg'}`}>
+        <button key={o.value} type="button" aria-pressed={value === o.value} onClick={() => onChange(o.value)} className={`flex h-7 items-center gap-[6px] whitespace-nowrap border px-2 text-xs ${value === o.value ? 'border-accent bg-accent/10 text-accent' : 'border-line2 text-dim hover:border-fg hover:text-fg'}`}>
           {o.label}
           {o.count !== undefined && <span className={`num text-[11px] ${value === o.value ? '' : o.alert && o.count > 0 ? 'text-warn' : 'text-faint'}`}>{o.count}</span>}
         </button>

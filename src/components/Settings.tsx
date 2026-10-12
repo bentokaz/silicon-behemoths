@@ -36,7 +36,7 @@ export function SettingsPanel({ theme = false }: { /** Offer the interface colou
         <div className="mb-1 text-[11px] text-dim">Detail in the 3D views</div>
         <div className="flex flex-col gap-1" role="group" aria-label="Detail in the 3D views">
           {(Object.keys(QUALITY) as Quality[]).map((q) => (
-            <button key={q} type="button" aria-pressed={settings.quality === q} onClick={() => (set({ quality: q }), sfx.toggle())} className={`block w-full border px-3 py-2 text-left transition-colors ${settings.quality === q ? 'border-accent bg-accent/10' : 'border-line2 bg-raise hover:border-fg'}`}>
+            <button key={q} type="button" aria-pressed={settings.quality === q} onClick={() => (set({ quality: q }), sfx.toggle())} className={`block w-full border px-3 py-2 text-left ${settings.quality === q ? 'border-accent bg-accent/10' : 'border-line2 bg-raise hover:border-fg'}`}>
               <div className={`text-xs ${settings.quality === q ? 'font-semibold text-accent' : 'text-fg'}`}>{QUALITY[q].label}</div>
               <div className="text-[11px] leading-snug text-dim">{QUALITY[q].note}</div>
             </button>
@@ -272,7 +272,7 @@ export function KeysPanel() {
         data-keyslot
         aria-label={`${a.label}, ${slot ? 'second' : 'first'} key: ${on ? 'press a key' : set ? keyName(keys[slot]) : 'not set'}`}
         onClick={() => (setNote(''), setWaiting(on ? null : { action: a.id, slot: Math.min(slot, keys.length) }))}
-        className={`h-7 min-w-14 shrink-0 whitespace-nowrap border px-2 text-xs transition-colors ${on ? 'border-accent bg-accent/10 text-accent' : set ? 'num border-line2 bg-raise text-fg hover:border-fg' : 'border-dashed border-line2 text-faint hover:border-fg hover:text-fg'}`}
+        className={`h-7 min-w-14 shrink-0 whitespace-nowrap border px-2 text-xs ${on ? 'border-accent bg-accent/10 text-accent' : set ? 'num border-line2 bg-raise text-fg hover:border-fg' : 'border-dashed border-line2 text-faint hover:border-fg hover:text-fg'}`}
       >
         {on ? 'Press a key' : set ? keyName(keys[slot]) : 'Not set'}
       </button>

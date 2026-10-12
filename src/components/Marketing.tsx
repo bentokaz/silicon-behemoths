@@ -34,7 +34,7 @@ function Reason({ children }: { children: string }) {
 /** One of a short list of options with a figure at the right, of which one is chosen. A locked one is dashed and opens what it takes. */
 function Option({ on, locked, onClick, icon, name, children }: { on: boolean; locked?: string | null; onClick: () => void; icon?: IconName; name: string; children?: ReactNode }) {
   return (
-    <button type="button" role="radio" aria-checked={on} aria-disabled={locked ? true : undefined} title={locked ?? undefined} onClick={onClick} className={`flex h-8 w-full items-center gap-2 border px-2 text-left text-xs transition-colors ${locked ? 'cursor-not-allowed border-dashed border-line2 text-dim' : on ? 'border-accent bg-accent/10 text-fg' : 'border-line2 text-fg hover:border-fg hover:bg-hover'}`}>
+    <button type="button" role="radio" aria-checked={on} aria-disabled={locked ? true : undefined} title={locked ?? undefined} onClick={onClick} className={`flex h-8 w-full items-center gap-2 border px-2 text-left text-xs ${locked ? 'cursor-not-allowed border-dashed border-line2 text-dim' : on ? 'border-accent bg-accent/10 text-fg' : 'border-line2 text-fg hover:border-fg hover:bg-hover'}`}>
       {(locked || icon) && <Icon name={locked ? 'lock' : icon!} size={13} className={`shrink-0 ${on && !locked ? 'text-accent' : 'text-dim'}`} />}
       <span className="min-w-0 flex-1 truncate">{name}</span>
       {children}
@@ -228,7 +228,7 @@ function Campaigns() {
             <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-x-6 gap-y-1 px-3 py-2">
               {regions.map((r) => (
                 <div key={r.id} className="flex items-center gap-2">
-                  <span className="w-28 shrink-0 truncate text-[11px] text-dim">{r.name}</span>
+                  <span className="w-28 shrink-0 truncate text-[11px] text-dim" title={r.name}>{r.name}</span>
                   <Meter value={g.regions[r.id]?.awareness ?? 0} tone="accent" />
                   <span className="num w-10 shrink-0 text-right text-xs text-fg">{pct(g.regions[r.id]?.awareness ?? 0, 0)}</span>
                 </div>

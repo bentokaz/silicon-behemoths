@@ -125,7 +125,7 @@ export function ThemePicker() {
     <div className="@container" role="group" aria-label="Interface colours">
       <div className="grid grid-cols-2 gap-1 @[300px]:grid-cols-4">
       {THEMES.map((t) => (
-        <button key={t.id} type="button" aria-pressed={theme === t.id} onClick={() => (applyTheme(t.id), setTheme(t.id), sfx.toggle())} className={`flex h-7 min-w-0 items-center gap-2 border px-2 text-xs transition-colors ${theme === t.id ? 'border-accent bg-accent/10 text-fg' : 'border-line2 text-dim hover:border-fg hover:text-fg'}`}>
+        <button key={t.id} type="button" aria-pressed={theme === t.id} onClick={() => (applyTheme(t.id), setTheme(t.id), sfx.toggle())} className={`flex h-7 min-w-0 items-center gap-2 border px-2 text-xs ${theme === t.id ? 'border-accent bg-accent/10 text-fg' : 'border-line2 text-dim hover:border-fg hover:text-fg'}`}>
           <span aria-hidden className="h-3 w-3 shrink-0" style={{ background: t.swatch }} />
           <span className="min-w-0 truncate">{t.name}</span>
         </button>

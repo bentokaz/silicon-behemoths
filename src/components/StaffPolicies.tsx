@@ -13,7 +13,7 @@ const signed = (v: number) => (v > 0 ? `+${v}` : String(v))
 /** One choice in a list of which exactly one is on. */
 function Option({ on, name, note, effect, onPick }: { on: boolean; name: string; note?: string; effect: ReactNode; onPick: () => void }) {
   return (
-    <button type="button" role="radio" aria-checked={on} onClick={onPick} className={`flex min-h-9 w-full items-center gap-3 border px-3 py-2 text-left transition-colors ${on ? 'border-accent bg-accent/10' : 'border-line hover:border-line2 hover:bg-hover'}`}>
+    <button type="button" role="radio" aria-checked={on} onClick={onPick} className={`flex min-h-9 w-full items-center gap-3 border px-3 py-2 text-left ${on ? 'border-accent bg-accent/10' : 'border-line hover:border-line2 hover:bg-hover'}`}>
       <span aria-hidden className={`h-2 w-2 shrink-0 border ${on ? 'border-accent bg-accent' : 'border-line2'}`} />
       <span className="min-w-0 flex-1">
         <span className="block text-xs text-fg">{name}</span>

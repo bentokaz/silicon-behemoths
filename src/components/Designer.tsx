@@ -56,7 +56,7 @@ function ColorPick({ label, value, onChange }: { label: string; value: string; o
     <div className="py-1">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] text-dim">{label}</span>
-        <button type="button" aria-expanded={open} aria-label={`${label}: ${open ? 'hide the colours' : 'choose a colour'}`} title={open ? 'Hide the colours' : 'Choose a colour'} onClick={() => setOpen(!open)} className={`flex h-7 items-center gap-2 border px-2 text-xs transition-colors ${open ? 'border-accent text-fg' : 'border-line2 text-dim hover:border-fg hover:text-fg'}`}>
+        <button type="button" aria-expanded={open} aria-label={`${label}: ${open ? 'hide the colours' : 'choose a colour'}`} title={open ? 'Hide the colours' : 'Choose a colour'} onClick={() => setOpen(!open)} className={`flex h-7 items-center gap-2 border px-2 text-xs ${open ? 'border-accent text-fg' : 'border-line2 text-dim hover:border-fg hover:text-fg'}`}>
           <span className="h-3 w-7 border border-line2" style={{ background: value }} />
           {open ? 'Done' : 'Change'}
         </button>

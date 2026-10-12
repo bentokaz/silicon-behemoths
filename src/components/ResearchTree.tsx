@@ -271,7 +271,7 @@ export function Research() {
 
   // ---- one box of the tree
   const box = (key: string, state: NodeState, on: boolean, x: number, y: number, w: number, h: number, title: string, onClick: () => void, body: ReactNode, share?: number) => (
-    <button key={key} type="button" data-picked={on ? '' : undefined} aria-pressed={on} onClick={onClick} title={title} className={`absolute overflow-hidden border px-2 text-left transition-colors hover:border-fg ${NODE_LOOK[state]} ${on ? 'outline outline-1 outline-offset-2 outline-accent' : ''}`} style={{ left: x, top: y, width: w, height: h }}>
+    <button key={key} type="button" data-picked={on ? '' : undefined} aria-pressed={on} onClick={onClick} title={title} className={`absolute overflow-hidden border px-2 text-left hover:border-fg ${NODE_LOOK[state]} ${on ? 'outline outline-1 outline-offset-2 outline-accent' : ''}`} style={{ left: x, top: y, width: w, height: h }}>
       {share !== undefined && <span aria-hidden className="absolute inset-y-0 left-0 bg-accent/30" style={{ width: `${Math.max(0, Math.min(1, share)) * 100}%` }} />}
       <span className="relative flex h-full flex-col justify-center">{body}</span>
     </button>

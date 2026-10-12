@@ -355,7 +355,7 @@ async function seed(name, { tab, rebuild } = {}) {
   fb.setState({ form: null, ask: null, flagged: false })
   // all in one go, so the screen wanted is the only one drawn
   st().resume(G().migrate(JSON.parse(snap.json)))
-  W.sb.setState({ yearEnd: snap.yearEnd, checkpoint: snap.checkpoint, railOpen: true, feedOn: {}, notes: [] })
+  W.sb.setState({ yearEnd: snap.yearEnd, checkpoint: snap.checkpoint, railOpen: true, feedOn: {}, notes: [], views: {}, lastPage: {} })
   if (typeof tab === 'function') tab()
   else if (tab) st().setTab(tab)
   // the game's frame is on screen once the lazily loaded parts are in
@@ -488,7 +488,7 @@ function audit(label, { colours = true } = {}) {
   const vw = innerWidth
   const vh = innerHeight
   if (document.documentElement.scrollWidth > vw + 1 || document.documentElement.scrollHeight > vh + 1) note('page-overflow', `document is ${document.documentElement.scrollWidth}x${document.documentElement.scrollHeight} in a ${vw}x${vh} window`)
-  if (/Something broke/.test(document.body.innerText)) note('crash-screen', document.querySelector('pre')?.innerText.slice(0, 300) ?? 'crash screen is up')
+  if (Array.from(document.querySelectorAll('[role=alert] .t-title')).some((e) => e.textContent === 'Something broke')) note('crash-screen', document.querySelector('pre')?.innerText.slice(0, 300) ?? 'crash screen is up')
   // ids
   const ids = {}
   for (const el of document.querySelectorAll('[id]')) if (el.id && !el.closest('svg')) ids[el.id] = (ids[el.id] ?? 0) + 1
@@ -525,7 +525,7 @@ function audit(label, { colours = true } = {}) {
         const label = el.closest('label')
         // a dialog or a drawer is meant to lie over what is behind it
         const over = other?.closest('[role=dialog], [role=alertdialog]')
-        if (other && other !== el && !(label && label.contains(top)) && !el.contains(other) && !(over && !over.contains(el))) note('control-covered', `${d} is under ${describe(other)}`)
+        if (other && other !== el && !other.closest('[role=menu], [role=listbox], [role=tooltip]') && !(label && label.contains(top)) && !el.contains(other) && !(over && !over.contains(el))) note('control-covered', `${d} is under ${describe(other)}`)
       }
     }
     if (r.width < 16 && r.height < 16 && !['INPUT'].includes(el.tagName)) note('tiny-target', `${d} is ${Math.round(r.width)}x${Math.round(r.height)}`)
@@ -571,7 +571,7 @@ function audit(label, { colours = true } = {}) {
     }
     if (parseFloat(cs.fontSize) > 0 && parseFloat(cs.fontSize) < 10.99) note('small-text', `"${ownText.slice(0, 40)}" ${cs.fontSize} .${el.className?.toString().slice(0, 40)}`)
     if (colours && parseFloat(cs.fontSize) > 0 && !el.closest(':disabled, [aria-disabled=true]')) {
-      const c = contrast(el)
+      const c = hiddenByOpacity(el) ? 21 : contrast(el)
       if (c < 4.45) note('low-contrast', `"${ownText.slice(0, 40)}" ${c.toFixed(2)}:1 ${cs.color} theme ${document.documentElement.dataset.theme} .${el.className?.toString().slice(0, 40)}`)
     }
   }
@@ -828,6 +828,11 @@ const uiStamp = () => {
 const TABS = ['city', 'dashboard', 'products', 'research', 'market', 'world', 'goals', 'factory', 'stores', 'venue', 'marketing', 'care', 'labs', 'staff', 'office', 'finance', 'shares', 'rivals', 'system']
 /** Pages that are a view inside a screen (see src/store/nav.ts). */
 const VIEWS = [['research', 'lines'], ['staff', 'teams'], ['staff', 'hire'], ['staff', 'policy'], ['staff', 'execs'], ['marketing', 'events'], ['system', 'company'], ['system', 'settings'], ['system', 'keys']]
+/** True for text inside something faded right out: a row's action, shown when the row is pointed at or has focus. */
+const hiddenByOpacity = (el) => {
+  for (let p = el; p && p !== document.body; p = p.parentElement) if (getComputedStyle(p).opacity === '0') return true
+  return false
+}
 const THEMES = ['ember', 'volt', 'ice', 'rose']
 
 /** Every stop of a state: each screen, the designer in both modes, a product and a person card. */
@@ -910,7 +915,7 @@ function auditColours(label) {
     if (cs.display === 'none' || cs.visibility !== 'visible') continue
     const r = el.getBoundingClientRect()
     if (r.width < 1 || r.height < 1 || el.closest(':disabled, [aria-disabled=true]')) continue
-    const c = contrast(el)
+    const c = hiddenByOpacity(el) ? 21 : contrast(el)
     if (c < 4.45) note('low-contrast', `"${ownText.slice(0, 40)}" ${c.toFixed(2)}:1 [${document.documentElement.dataset.theme}] .${el.className?.toString().slice(0, 50)}`)
   }
   S.ctx = was

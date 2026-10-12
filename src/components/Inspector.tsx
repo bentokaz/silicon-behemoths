@@ -593,7 +593,7 @@ export function ProductDrawer() {
         {big && <Model product={product} onClose={() => setBig(false)} />}
         <section className="flex gap-3 border-b border-line p-3">
           {!big && (
-            <button type="button" title="Show it in 3D" aria-label={`Show ${product.name} in 3D`} onClick={() => setBig(true)} className="h-24 w-24 shrink-0 border border-line bg-panel transition-colors hover:border-line2 hover:bg-hover">
+            <button type="button" title="Show it in 3D" aria-label={`Show ${product.name} in 3D`} onClick={() => setBig(true)} className="h-24 w-24 shrink-0 border border-line bg-panel hover:border-line2 hover:bg-hover">
               <Thumb product={product} className="h-full w-full" />
             </button>
           )}

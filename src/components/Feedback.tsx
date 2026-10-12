@@ -135,7 +135,7 @@ function Form() {
           <div className="min-h-0 space-y-3 overflow-y-auto p-4 text-xs text-dim">
             <div className="grid grid-cols-2 gap-1">
               {KINDS.map((k) => (
-                <button key={k.id} type="button" aria-pressed={kind === k.id} onClick={() => setKind(k.id)} className={`flex h-9 items-center gap-2 border px-3 text-left text-xs transition-colors ${kind === k.id ? 'border-accent bg-accent/10 font-semibold text-accent' : 'border-line2 bg-raise text-fg hover:border-fg'}`}>
+                <button key={k.id} type="button" aria-pressed={kind === k.id} onClick={() => setKind(k.id)} className={`flex h-9 items-center gap-2 border px-3 text-left text-xs ${kind === k.id ? 'border-accent bg-accent/10 font-semibold text-accent' : 'border-line2 bg-raise text-fg hover:border-fg'}`}>
                   <Icon name={k.icon} size={14} className={kind === k.id ? 'text-accent' : 'text-dim'} />
                   {k.label}
                 </button>

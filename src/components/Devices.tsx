@@ -417,11 +417,11 @@ export function Market() {
     ...(info ? [{ id: 'win', head: 'Wins', title: `Of ten ${info.name.toLowerCase()} buyers choosing today, the share that picks this device`, num: true, min: 72, sort: (p: Product) => view.win?.get(p.id) ?? 0, cell: (p: Product) => <span className="text-fg">{pct(view.win?.get(p.id) ?? 0)}</span> }] : []),
   ]
   const typeOptions = DEVICE_TYPES.filter((t) => t === type || (counts.get(t) ?? 0) > 0).map((t) => ({ value: t, label: `${TYPES[t].plural} (${counts.get(t) ?? 0})` }))
-  const tile = (on: boolean) => `min-w-0 border px-3 py-2 text-left transition-colors ${on ? 'border-accent bg-accent/10' : 'border-line bg-panel hover:border-line2 hover:bg-hover'}`
+  const tile = (on: boolean) => `min-w-0 border px-3 py-2 text-left ${on ? 'border-accent bg-accent/10' : 'border-line bg-panel hover:border-line2 hover:bg-hover'}`
   return (
     <DevicePage keep="market">
       <div className="grid shrink-0 gap-2" style={{ gridTemplateColumns: `repeat(${segs.length + 1}, minmax(0, 1fr))` }}>
-        <button type="button" aria-pressed={!info} onClick={() => setSeg('all')} className={tile(!info)}>
+        <button type="button" aria-pressed={!info} onClick={() => setSeg('all')} className={tile(!info)} title="Every segment: all the buyers of this kind of device in a year">
           <div className="truncate text-xs font-semibold text-fg">Every segment</div>
           <div className="truncate text-[11px] text-dim">
             <span className="num">{num(segs.reduce((a, s) => a + segmentDemand(s, g.day) * 360, 0))}</span> buyers a year

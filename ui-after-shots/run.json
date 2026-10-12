@@ -1,6 +1,6 @@
 {
  "url": "http://localhost:5214",
- "date": "2026-10-12T23:28:52.695Z",
+ "date": "2026-10-12T23:35:54.855Z",
  "browser": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
  "flags": [
   "--headless=new",
@@ -34,7 +34,9 @@
   "renderer": "ANGLE (Intel, Intel(R) UHD Graphics (0x0000A788) Direct3D11 vs_5_0 ps_5_0, D3D11)"
  },
  "sizes": [
-  "1440x900"
+  "1180x620",
+  "1280x720",
+  "1920x1080"
  ],
  "states": [
   "fresh",
@@ -43,7 +45,404 @@
  "themes": [
   "ember"
  ],
- "seconds": 0,
- "skipped": [],
+ "seconds": 273,
+ "skipped": [
+  {
+   "screen": "inspector",
+   "state": "fresh",
+   "size": "1180x620",
+   "why": "no device of our own yet"
+  },
+  {
+   "screen": "inspector-scores",
+   "state": "fresh",
+   "size": "1180x620",
+   "why": "no device of our own yet"
+  },
+  {
+   "screen": "inspector-specs",
+   "state": "fresh",
+   "size": "1180x620",
+   "why": "no device of our own yet"
+  },
+  {
+   "screen": "inspector-reviews",
+   "state": "fresh",
+   "size": "1180x620",
+   "why": "no device of our own yet"
+  },
+  {
+   "screen": "research",
+   "state": "fresh",
+   "size": "1180x620",
+   "why": "locked: needs research"
+  },
+  {
+   "screen": "research-lines",
+   "state": "fresh",
+   "size": "1180x620",
+   "why": "locked: needs research"
+  },
+  {
+   "screen": "labs",
+   "state": "fresh",
+   "size": "1180x620",
+   "why": "locked: needs labs"
+  },
+  {
+   "screen": "labs-os",
+   "state": "fresh",
+   "size": "1180x620",
+   "why": "locked: needs labs"
+  },
+  {
+   "screen": "factory-floor",
+   "state": "fresh",
+   "size": "1180x620",
+   "why": "locked: needs factory"
+  },
+  {
+   "screen": "stores",
+   "state": "fresh",
+   "size": "1180x620",
+   "why": "locked: needs stores"
+  },
+  {
+   "screen": "store-single",
+   "state": "fresh",
+   "size": "1180x620",
+   "why": "no store yet"
+  },
+  {
+   "screen": "venue",
+   "state": "fresh",
+   "size": "1180x620",
+   "why": "locked: needs venue"
+  },
+  {
+   "screen": "marketing",
+   "state": "fresh",
+   "size": "1180x620",
+   "why": "locked: needs marketing"
+  },
+  {
+   "screen": "marketing-events",
+   "state": "fresh",
+   "size": "1180x620",
+   "why": "locked: needs marketing"
+  },
+  {
+   "screen": "owners",
+   "state": "fresh",
+   "size": "1180x620",
+   "why": "locked: needs care"
+  },
+  {
+   "screen": "staff-teams",
+   "state": "fresh",
+   "size": "1180x620",
+   "why": "locked: needs teams"
+  },
+  {
+   "screen": "person",
+   "state": "fresh",
+   "size": "1180x620",
+   "why": "nobody hired yet"
+  },
+  {
+   "screen": "market",
+   "state": "fresh",
+   "size": "1180x620",
+   "why": "locked: needs market"
+  },
+  {
+   "screen": "regions",
+   "state": "fresh",
+   "size": "1180x620",
+   "why": "locked: needs world"
+  },
+  {
+   "screen": "rivals",
+   "state": "fresh",
+   "size": "1180x620",
+   "why": "locked: needs rivals"
+  },
+  {
+   "screen": "finance",
+   "state": "fresh",
+   "size": "1180x620",
+   "why": "locked: needs finance"
+  },
+  {
+   "screen": "shares",
+   "state": "fresh",
+   "size": "1180x620",
+   "why": "locked: needs shares"
+  },
+  {
+   "screen": "inspector",
+   "state": "fresh",
+   "size": "1280x720",
+   "why": "no device of our own yet"
+  },
+  {
+   "screen": "inspector-scores",
+   "state": "fresh",
+   "size": "1280x720",
+   "why": "no device of our own yet"
+  },
+  {
+   "screen": "inspector-specs",
+   "state": "fresh",
+   "size": "1280x720",
+   "why": "no device of our own yet"
+  },
+  {
+   "screen": "inspector-reviews",
+   "state": "fresh",
+   "size": "1280x720",
+   "why": "no device of our own yet"
+  },
+  {
+   "screen": "research",
+   "state": "fresh",
+   "size": "1280x720",
+   "why": "locked: needs research"
+  },
+  {
+   "screen": "research-lines",
+   "state": "fresh",
+   "size": "1280x720",
+   "why": "locked: needs research"
+  },
+  {
+   "screen": "labs",
+   "state": "fresh",
+   "size": "1280x720",
+   "why": "locked: needs labs"
+  },
+  {
+   "screen": "labs-os",
+   "state": "fresh",
+   "size": "1280x720",
+   "why": "locked: needs labs"
+  },
+  {
+   "screen": "factory-floor",
+   "state": "fresh",
+   "size": "1280x720",
+   "why": "locked: needs factory"
+  },
+  {
+   "screen": "stores",
+   "state": "fresh",
+   "size": "1280x720",
+   "why": "locked: needs stores"
+  },
+  {
+   "screen": "store-single",
+   "state": "fresh",
+   "size": "1280x720",
+   "why": "no store yet"
+  },
+  {
+   "screen": "venue",
+   "state": "fresh",
+   "size": "1280x720",
+   "why": "locked: needs venue"
+  },
+  {
+   "screen": "marketing",
+   "state": "fresh",
+   "size": "1280x720",
+   "why": "locked: needs marketing"
+  },
+  {
+   "screen": "marketing-events",
+   "state": "fresh",
+   "size": "1280x720",
+   "why": "locked: needs marketing"
+  },
+  {
+   "screen": "owners",
+   "state": "fresh",
+   "size": "1280x720",
+   "why": "locked: needs care"
+  },
+  {
+   "screen": "staff-teams",
+   "state": "fresh",
+   "size": "1280x720",
+   "why": "locked: needs teams"
+  },
+  {
+   "screen": "person",
+   "state": "fresh",
+   "size": "1280x720",
+   "why": "nobody hired yet"
+  },
+  {
+   "screen": "market",
+   "state": "fresh",
+   "size": "1280x720",
+   "why": "locked: needs market"
+  },
+  {
+   "screen": "regions",
+   "state": "fresh",
+   "size": "1280x720",
+   "why": "locked: needs world"
+  },
+  {
+   "screen": "rivals",
+   "state": "fresh",
+   "size": "1280x720",
+   "why": "locked: needs rivals"
+  },
+  {
+   "screen": "finance",
+   "state": "fresh",
+   "size": "1280x720",
+   "why": "locked: needs finance"
+  },
+  {
+   "screen": "shares",
+   "state": "fresh",
+   "size": "1280x720",
+   "why": "locked: needs shares"
+  },
+  {
+   "screen": "inspector",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "no device of our own yet"
+  },
+  {
+   "screen": "inspector-scores",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "no device of our own yet"
+  },
+  {
+   "screen": "inspector-specs",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "no device of our own yet"
+  },
+  {
+   "screen": "inspector-reviews",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "no device of our own yet"
+  },
+  {
+   "screen": "research",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs research"
+  },
+  {
+   "screen": "research-lines",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs research"
+  },
+  {
+   "screen": "labs",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs labs"
+  },
+  {
+   "screen": "labs-os",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs labs"
+  },
+  {
+   "screen": "factory-floor",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs factory"
+  },
+  {
+   "screen": "stores",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs stores"
+  },
+  {
+   "screen": "store-single",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "no store yet"
+  },
+  {
+   "screen": "venue",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs venue"
+  },
+  {
+   "screen": "marketing",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs marketing"
+  },
+  {
+   "screen": "marketing-events",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs marketing"
+  },
+  {
+   "screen": "owners",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs care"
+  },
+  {
+   "screen": "staff-teams",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs teams"
+  },
+  {
+   "screen": "person",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "nobody hired yet"
+  },
+  {
+   "screen": "market",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs market"
+  },
+  {
+   "screen": "regions",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs world"
+  },
+  {
+   "screen": "rivals",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs rivals"
+  },
+  {
+   "screen": "finance",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs finance"
+  },
+  {
+   "screen": "shares",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs shares"
+  }
+ ],
  "pageErrors": []
 }

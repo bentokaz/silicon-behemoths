@@ -394,7 +394,7 @@ export function Shell() {
     const locks = d.pages.map((p) => pageLock(g, p))
     const shut = locks.every(Boolean)
     const label = d.id === 'system' ? 'Save / settings' : d.label
-    const base = `relative flex h-9 w-full items-center justify-between border-l-2 text-left transition-colors ${railOpen ? 'pl-3 pr-2' : 'justify-center px-0'}`
+    const base = `relative flex h-9 w-full items-center justify-between border-l-2 text-left ${railOpen ? 'pl-3 pr-2' : 'justify-center px-0'}`
     const name = (
       <span className="flex min-w-0 items-center gap-2">
         <Icon name={d.icon as IconName} size={railOpen ? 15 : 18} />
@@ -474,7 +474,7 @@ export function Shell() {
               data-coach-target="new-device"
               title={designing ? 'The designer is open' : kept ? 'Go back to the design you set aside' : `Design a new device${keysFor('newDevice')[0] ? ` (${keyName(keysFor('newDevice')[0])})` : ''}`}
               aria-label={designing ? 'Designing' : kept ? 'Resume design' : 'New device'}
-              className={`flex h-10 w-full items-center border text-left text-[13px] font-semibold transition-colors ${railOpen ? 'justify-between px-3' : 'justify-center'} ${designing ? 'border-accent bg-transparent text-accent' : 'border-accent bg-accent text-carbon hover:bg-transparent hover:text-accent'}`}
+              className={`flex h-10 w-full items-center border text-left text-[13px] font-semibold ${railOpen ? 'justify-between px-3' : 'justify-center'} ${designing ? 'border-accent bg-transparent text-accent' : 'border-accent bg-accent text-carbon hover:bg-transparent hover:text-accent'}`}
             >
               {railOpen && (designing ? 'Designing' : kept ? 'Resume design' : 'New device')}
               <Icon name={kept && !designing ? 'design' : 'plus'} size={16} />

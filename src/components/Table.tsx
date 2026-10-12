@@ -84,6 +84,18 @@ export function Table<R>({ cols, rows, groups, rowKey, onRow, selected, action, 
     return () => watch.disconnect()
   }, [])
 
+  // a cell whose text is cut short says it in full on hover
+  useLayoutEffect(() => {
+    const el = box.current
+    if (!el) return
+    for (const td of el.querySelectorAll<HTMLElement>('tbody td, thead th span')) {
+      const cut = td.scrollWidth > td.clientWidth + 1
+      if (cut && !td.title && !td.querySelector('[title]')) (td.title = (td.textContent ?? '').trim()), (td.dataset.autoTitle = '1')
+      else if (!cut && td.dataset.autoTitle) (td.removeAttribute('title'), delete td.dataset.autoTitle)
+      else if (cut && td.dataset.autoTitle) td.title = (td.textContent ?? '').trim()
+    }
+  })
+
   const key = keep ? `sort:${keep}` : ''
   const [sort, setSortState] = useState<SortState | null>(() => (key && viewKept(key) ? keptView<SortState | null>(key) : (initial ?? null)))
   const setSort = (next: SortState) => (key && keepView(key, next), setSortState(next))

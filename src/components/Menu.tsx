@@ -118,7 +118,7 @@ const logMax = 9
 /** One of a few choices, drawn as a tile: a name, an optional mark at the right, a line under it. */
 function Option({ on, onClick, icon, name, tag, children, big, className = '' }: { on: boolean; onClick: () => void; icon?: IconName; name: string; tag?: string; children?: ReactNode; /** A 13px name, for a choice with no icon. */ big?: boolean; className?: string }) {
   return (
-    <button type="button" aria-pressed={on} onClick={() => (onClick(), sfx.toggle())} className={`min-w-0 border px-3 py-2 text-left transition-colors ${on ? 'border-accent bg-accent/10' : 'border-line2 bg-raise hover:border-fg'} ${className}`}>
+    <button type="button" aria-pressed={on} onClick={() => (onClick(), sfx.toggle())} className={`min-w-0 border px-3 py-2 text-left ${on ? 'border-accent bg-accent/10' : 'border-line2 bg-raise hover:border-fg'} ${className}`}>
       <div className="flex items-center justify-between gap-2">
         <span className={`flex min-w-0 items-center gap-2 ${big ? 'text-[13px]' : 'text-xs'} ${on ? 'font-semibold text-accent' : 'text-fg'}`}>
           {icon && <Icon name={icon} size={16} className={`shrink-0 ${on ? 'text-accent' : 'text-dim'}`} />}
