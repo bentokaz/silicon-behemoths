@@ -10,7 +10,7 @@ import { SITE_TIERS, sitePrestige, storeStats, tierOf, upkeep, venueStats } from
 import { staffEffects } from '../sim/staff'
 import type { ChannelId, EventType, GameState, Store } from '../sim/types'
 import { takeAim } from '../store/focus'
-import { useGame, useStore } from '../store/game'
+import { useGame, useStore, useView } from '../store/game'
 import { LockedPane } from './Progress'
 import { SiteBuilder } from './SiteBuilder'
 import { Icon, channelIcon, eventIcon } from './icons'
@@ -151,7 +151,7 @@ function Campaigns() {
 
 // ------------------------------------------------------------------ fans
 
-function Fans() {
+export function Fans() {
   const g = useGame()
   const { focus, setTab } = useStore.getState()
   const products = own(g).filter((p) => p.status === 'sale')
@@ -357,7 +357,7 @@ function Events() {
 export function MarketingScreen() {
   const g = useGame()
   const me = player(g)
-  const [view, setView] = useKept<'campaigns' | 'fans' | 'events'>('marketing:view', 'campaigns')
+  const [view] = useView<'campaigns' | 'events'>('marketing', 'campaigns')
   const spend = g.campaigns.reduce((a, c) => a + c.monthly, 0)
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-2">
@@ -367,10 +367,8 @@ export function MarketingScreen() {
         <Kpi label="Fans" icon="heart" value={num(g.fans)} sub={`buy again about every ${Math.round(800 / 360 * 10) / 10} years`} />
         <Kpi label="Campaign spend" icon="cash" value={money(spend, 1)} sub={`${g.campaigns.length} running, per month`} />
       </div>
-      <Tabs value={view} onChange={setView} options={[{ value: 'campaigns', label: 'Campaigns', icon: 'marketing', badge: g.campaigns.length }, { value: 'fans', label: 'Fans and feedback', icon: 'heart' }, { value: 'events', label: 'Events', icon: has(g, 'events') ? 'mic' : 'lock', badge: g.events.filter((e) => !e.done).length || undefined }]} />
       <div className="min-h-0 flex-1">
         {view === 'campaigns' && <Campaigns />}
-        {view === 'fans' && <Fans />}
         {view === 'events' && (has(g, 'events') ? <Events /> : <LockedPane id="events" />)}
       </div>
     </div>

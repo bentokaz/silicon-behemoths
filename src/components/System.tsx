@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { getVolume, setVolume, sfx } from '../audio/sfx'
 import { DIFFICULTY, fmtDate, player } from '../sim/game'
 import { openEverything } from '../sim/progress'
-import { useGame, useStore } from '../store/game'
+import { useGame, useStore, useView } from '../store/game'
 import { AUTOSAVE, BEFORE_DEBT, type SaveMeta, deleteSave, exportGame, importGame, listSaves, loadGame, saveGame, slotName } from '../store/saves'
 import { THEMES, type ThemeId, applyTheme, getTheme } from '../store/theme'
 import { LogoPicker } from './LogoPicker'
@@ -165,12 +165,11 @@ export function ImportButton({ label = 'Import save file', icon = 'import' }: { 
 }
 
 export function System() {
-  const [view, setView] = useKept<'saves' | 'settings' | 'keys'>('system:view', 'saves')
+  const [view] = useView<'saves' | 'company' | 'settings' | 'keys'>('system', 'saves')
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-2">
-      <Tabs value={view} onChange={setView} options={[{ value: 'saves', label: 'Saves and company', icon: 'save' }, { value: 'settings', label: 'Settings', icon: 'gear' }, { value: 'keys', label: 'Keys', icon: 'keys' }]} />
       <div className="min-h-0 flex-1">
-        {view === 'saves' && <Saves />}
+        {(view === 'saves' || view === 'company') && <Saves />}
         {view === 'settings' && <SettingsPanel />}
         {view === 'keys' && <KeysPanel />}
       </div>

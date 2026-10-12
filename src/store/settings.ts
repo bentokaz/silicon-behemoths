@@ -31,7 +31,7 @@ export const QUALITY: Record<Quality, { label: string; note: string; dpr: number
 
 export interface Action {
   id: string
-  group: 'Game' | 'Screens' | 'Building' | 'Designer'
+  group: 'Game' | 'Screens' | 'Pages' | 'Building' | 'Designer'
   label: string
   /** Default keys, as KeyboardEvent.code values. */
   keys: string[]
@@ -45,17 +45,28 @@ export const ACTIONS: Action[] = [
   { id: 'save', group: 'Game', label: 'Quick save', keys: ['F5'] },
   { id: 'newDevice', group: 'Game', label: 'Design a new device', keys: ['KeyN'] },
   { id: 'feed', group: 'Game', label: 'Show or hide the news feed', keys: ['KeyF'] },
-  { id: 'tab:city', group: 'Screens', label: 'City', keys: ['KeyG'] },
-  { id: 'tab:dashboard', group: 'Screens', label: 'Overview', keys: ['F1'] },
-  { id: 'tab:products', group: 'Screens', label: 'Devices', keys: ['F2'] },
-  { id: 'tab:research', group: 'Screens', label: 'Research', keys: ['F3'] },
-  { id: 'tab:market', group: 'Screens', label: 'Market', keys: ['F4'] },
-  { id: 'tab:office', group: 'Screens', label: 'Campus', keys: ['KeyC'] },
-  { id: 'tab:factory', group: 'Screens', label: 'Factory', keys: ['F6'] },
-  { id: 'tab:stores', group: 'Screens', label: 'Stores', keys: ['F7'] },
+  // The rail: seven destinations and System. Each key goes to the page of the destination that was last open.
+  // (The ids are the screen ids the game has always used, so a key someone bound long ago still means what it did.)
+  { id: 'tab:city', group: 'Screens', label: 'City', keys: ['F1'] },
+  { id: 'tab:dashboard', group: 'Screens', label: 'Company', keys: ['F2'] },
+  { id: 'tab:products', group: 'Screens', label: 'Devices', keys: ['F3'] },
+  { id: 'tab:research', group: 'Screens', label: 'Research', keys: ['F4'] },
+  { id: 'tab:office', group: 'Screens', label: 'Campus', keys: ['F6'] },
+  { id: 'tab:factory', group: 'Screens', label: 'Sites', keys: ['F7'] },
   { id: 'tab:marketing', group: 'Screens', label: 'Marketing', keys: ['F8'] },
-  { id: 'tab:staff', group: 'Screens', label: 'Staff', keys: ['F9'] },
-  { id: 'tab:finance', group: 'Screens', label: 'Finance', keys: ['F10'] },
+  { id: 'tab:system', group: 'Screens', label: 'Save and settings', keys: ['F9'] },
+  // Single pages, for anyone who wants a key straight to one. None has a key until it is given one.
+  { id: 'tab:finance', group: 'Pages', label: 'Company: Finance', keys: [] },
+  { id: 'tab:shares', group: 'Pages', label: 'Company: Shares', keys: [] },
+  { id: 'tab:goals', group: 'Pages', label: 'Company: Growth', keys: [] },
+  { id: 'tab:market', group: 'Pages', label: 'Devices: Market', keys: [] },
+  { id: 'tab:rivals', group: 'Pages', label: 'Devices: Rivals', keys: [] },
+  { id: 'tab:labs', group: 'Pages', label: 'Research: Labs', keys: [] },
+  { id: 'tab:staff', group: 'Pages', label: 'Campus: People', keys: [] },
+  { id: 'tab:stores', group: 'Pages', label: 'Sites: Stores', keys: [] },
+  { id: 'tab:venue', group: 'Pages', label: 'Sites: Venue', keys: [] },
+  { id: 'tab:care', group: 'Pages', label: 'Marketing: Owners', keys: [] },
+  { id: 'tab:world', group: 'Pages', label: 'City: Regions', keys: [] },
   { id: 'camForward', group: 'Building', label: 'Move the camera forward', keys: ['KeyW', 'ArrowUp'] },
   { id: 'camBack', group: 'Building', label: 'Move the camera back', keys: ['KeyS', 'ArrowDown'] },
   { id: 'camLeft', group: 'Building', label: 'Move the camera left', keys: ['KeyA', 'ArrowLeft'] },
@@ -70,6 +81,9 @@ export const ACTIONS: Action[] = [
   { id: 'sell', group: 'Building', label: 'Sell item tool', keys: ['Delete'] },
   { id: 'viewNext', group: 'Building', label: 'Next view (cutaway, walls, outside)', keys: ['KeyV'] },
   { id: 'buildMenu', group: 'Building', label: 'Open or close the build menu', keys: ['KeyB'] },
+  // (Ctrl+Z and Ctrl+Shift+Z always work as well; these are the keys of your own choosing)
+  { id: 'undo', group: 'Building', label: 'Undo the last change to the building', keys: ['KeyU'] },
+  { id: 'redo', group: 'Building', label: 'Redo it', keys: ['KeyY'] },
 ]
 
 const KEY = 'sb-settings'

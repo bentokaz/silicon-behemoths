@@ -6,19 +6,21 @@ import { DAYS_PER_MONTH, START_YEAR } from '../data/catalog'
 import { TYPES } from '../data/devices'
 import { clampPart, isCoverCam, newPart, nextPartId } from '../sim/geometry'
 import { migrate, newGame, player, starterDesign, tick } from '../sim/game'
-import { type CapId, type Where, capOf, capOfTab, has, locked, stepProgress } from '../sim/progress'
+import { type CapId, type Where, capOf, capOfTab, has, isNear, locked, stepProgress } from '../sim/progress'
 import { monthCosts } from '../sim/types'
 import { hasType } from '../sim/world'
 import { type FingerprintStyle, type FrontStyle, type VariantId, deriveVariant, layoutParts, syncSockets } from '../sim/rivals'
 import type { Body, DeviceDesign, DeviceType, Face, GameConfig, GameState, PartKind, PlacedPart, Product, Specs } from '../sim/types'
 import { forgetViews } from './focus'
+import { type Dest, type Tab, defaultView, destOf, destOfTab, pageOf, resolve, whereOf } from './nav'
+import { type NewNote, type Note, dropNote, dropNotes, pushNote } from './notes'
 import { AUTOSAVE, BEFORE_DEBT, saveGame, saveSnapshot } from './saves'
 import { useSettings } from './settings'
 
 /** News that marks a moment worth an autosave. */
 const BIG_NEWS = /is on sale\.|now sells in|listed on the stock market|You bought|moved to a bigger|bought land|new store opened|invested \$|Goal reached|Now open: /
 
-export type Tab = 'city' | 'dashboard' | 'products' | 'research' | 'labs' | 'factory' | 'stores' | 'venue' | 'marketing' | 'care' | 'staff' | 'office' | 'market' | 'world' | 'rivals' | 'finance' | 'shares' | 'goals' | 'system'
+export type { Dest, Tab } from './nav'
 
 /** A copy of the game from a little earlier, kept so a doomed company can be rewound. */
 export interface Checkpoint {
@@ -61,6 +63,16 @@ function remember(key: string, value: string) {
     localStorage.setItem(key, value)
   } catch {
     /* storage unavailable */
+  }
+}
+
+function savedFeed(): Partial<Record<Tab, boolean>> {
+  try {
+    const raw = JSON.parse(saved('sb-feed-by-screen', '{}')) as unknown
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+    return Object.fromEntries(Object.entries(raw).filter(([, v]) => typeof v === 'boolean')) as Partial<Record<Tab, boolean>>
+  } catch {
+    return {}
   }
 }
 
@@ -114,8 +126,24 @@ interface Store {
   /** Product shown in the slide-over inspector. */
   inspect: string | null
   railOpen: boolean
-  feedOpen: boolean
+  /** The player's own choice of whether the news feed is open beside each screen. A screen with no entry follows its default. */
+  feedOn: Partial<Record<Tab, boolean>>
+  setFeed(tab: Tab, open: boolean): void
+  /** The last thing said in answer to the player (see `say`). What is on screen is the messenger's queue, `notes`. */
   toast: { text: string; tone: 'ok' | 'bad' } | null
+  /** The messenger's queue: everything waiting to be said in the one strip. */
+  notes: Note[]
+  /** Queue a line for the strip. */
+  note(add: NewNote): void
+  /** Take a line out of the strip: dismissed, acted on, or timed out. */
+  dismiss(id: number): void
+  /** The view each screen is showing, for the screens that have several pages. */
+  views: Partial<Record<Tab, string>>
+  setView(tab: Tab, view: string): void
+  /** The page of each destination that was last open, so the rail goes back to it. */
+  lastPage: Partial<Record<Dest, string>>
+  /** Go to a destination of the rail: its page that was last open, or the first that is. */
+  goDest(dest: Dest): void
   /** The game as it stood just before cash last went negative. */
   checkpoint: Checkpoint | null
   /** Id of the keynote being replayed, if any. */
@@ -124,16 +152,12 @@ interface Store {
   person: string | null
   /** The locked capability whose card is open, and how far down the screen it was asked for. */
   lockCard: { cap: CapId; y?: number } | null
-  /** Capabilities that have just opened and not been announced yet, oldest first. */
-  banners: CapId[]
   /** Screens that opened this session and have not been visited. */
   freshTabs: Tab[]
   /** A view inside a screen to show when it next opens ("take me there"). */
   hint: Where | null
   /** Open the card for a locked capability (null closes it). */
   showLock(cap: CapId | null, y?: number): void
-  /** Put away the announcement on screen and show the next. */
-  nextBanner(): void
   /** Go to where something can be done: a screen, and a view inside it. */
   go(where: Where): void
   takeHint(): void
@@ -165,7 +189,6 @@ interface Store {
   rewind(): void
   watch(eventId: string | null): void
   toggleRail(): void
-  toggleFeed(): void
 
   /**
    * True while a design that was being worked on is set aside: the designer
@@ -194,7 +217,6 @@ interface Store {
   redo(): void
 }
 
-let toastTimer = 0
 let lastEdit = 0
 
 export const useStore = create<Store>((set, get) => {
@@ -207,45 +229,90 @@ export const useStore = create<Store>((set, get) => {
     set({ draft, future: [], past: cur && !merge ? [...get().past.slice(-59), cur] : get().past, ...extra })
   }
   // everything that belongs to one game and must not follow the player into another
-  const reset = { designing: false, kept: false, draft: null, inspect: null, person: null, yearEnd: null, toast: null, past: [], future: [], selectedPart: null, lockCard: null, banners: [], freshTabs: [], hint: null }
+  const reset = { designing: false, kept: false, draft: null, inspect: null, person: null, yearEnd: null, toast: null, notes: [], views: {}, lastPage: {}, past: [], future: [], selectedPart: null, lockCard: null, freshTabs: [], hint: null }
   /** Whether the design on the bench is worth setting aside: it has been changed since it was opened. */
   const worthKeeping = () => get().designing && !!get().draft && get().past.length > 0
   /** Capabilities open before a step of the simulation, to tell which ones it opened. */
   const openBefore = (g: GameState) => new Set(Object.keys(g.unlocks ?? {}))
-  /** Announce whatever opened: a sound, a banner each, and a mark on any new screen. */
+  /** Announce whatever opened: a sound, a line in the strip each, and a "new" mark on any new screen. */
   const announce = (g: GameState, before: Set<string>) => {
     const opened = Object.keys(g.unlocks ?? {}).filter((id) => !before.has(id)) as CapId[]
     if (!opened.length) return false
     sfx.unlock()
-    set({ banners: [...get().banners, ...opened], freshTabs: [...get().freshTabs, ...opened.flatMap((id) => (capOf(id).tabs ?? []) as Tab[])], lockCard: null })
+    let notes = get().notes
+    for (const id of opened) {
+      const cap = capOf(id)
+      const where = cap.home ?? (cap.tabs?.[0] ? { tab: cap.tabs[0] } : undefined)
+      notes = pushNote(notes, { kind: 'unlock', tone: 'new', key: `unlock:${id}`, text: `Now open: ${capName(id)}. ${cap.now}`, action: where ? { label: 'Show me', where } : undefined })
+    }
+    set({ notes, freshTabs: [...get().freshTabs, ...opened.flatMap((id) => (capOf(id).tabs ?? []) as Tab[])], lockCard: null })
     return true
+  }
+  /** A screen the company has not earned yet: the capability that would open it. */
+  const lockOf = (g: GameState | null, tab: Tab, view?: string): CapId | undefined => {
+    if (!g) return undefined
+    const cap = capOfTab(tab)
+    if (cap && !has(g, cap)) return cap
+    const extra = pageOf(tab, view).cap
+    return extra && !has(g, extra) ? extra : undefined
   }
 
   return {
     screen: 'menu',
-    tab: 'dashboard',
+    tab: 'city',
     game: null,
     rev: 0,
     speed: 0,
     inspect: null,
     railOpen: saved('sb-rail', '1') === '1',
-    feedOpen: saved('sb-feed', '1') === '1',
+    feedOn: savedFeed(),
+    setFeed(tab, open) {
+      const feedOn = { ...get().feedOn, [tab]: open }
+      remember('sb-feed-by-screen', JSON.stringify(feedOn))
+      set({ feedOn })
+    },
     toast: null,
+    notes: [],
+    note: (add) => set({ notes: pushNote(get().notes, add) }),
+    dismiss: (id) => set({ notes: dropNote(get().notes, id) }),
+    views: {},
+    setView(tab, view) {
+      set({ views: { ...get().views, [tab]: view } })
+      if (get().tab === tab) set({ lastPage: { ...get().lastPage, [destOfTab(tab, view).id]: pageOf(tab, view).id } })
+    },
+    lastPage: {},
+    goDest(dest) {
+      const g = get().game
+      const d = destOf(dest)
+      const open = d.pages.filter((p) => !lockOf(g, p.tab, p.view))
+      const last = open.find((p) => p.id === get().lastPage[dest])
+      const to = last ?? open[0]
+      // nothing in it is open yet: say what the nearest part takes
+      if (!to) {
+        const caps = d.pages.map((p) => lockOf(g, p.tab, p.view)!).filter(Boolean)
+        return set({ lockCard: { cap: (g && caps.find((c) => isNear(g, c))) ?? caps[0] } })
+      }
+      get().go(whereOf(to))
+    },
     checkpoint: null,
     showing: null,
     person: null,
-    openPerson: (person) => set({ person }),
+    // one drawer at a time: a person's card takes the place of a device's
+    openPerson: (person) => set(person ? { person, inspect: null, lockCard: null } : { person }),
     yearEnd: null,
     closeYear: () => set({ yearEnd: null }),
     lockCard: null,
-    banners: [],
     freshTabs: [],
     hint: null,
     showLock: (cap, y) => set({ lockCard: cap ? { cap, y } : null }),
-    nextBanner: () => set({ banners: get().banners.slice(1) }),
     go(where) {
-      set({ hint: where, lockCard: null })
-      get().setTab(where.tab as Tab)
+      const to = resolve(where)
+      const view = to.view ?? get().views[to.tab]
+      // a page that is not open yet shows what it takes, and nothing moves
+      const lock = lockOf(get().game, to.tab, view)
+      if (lock) return set({ lockCard: { cap: lock } })
+      set({ hint: { ...where, tab: to.tab, view: to.view }, lockCard: null, views: to.view ? { ...get().views, [to.tab]: to.view } : get().views })
+      get().setTab(to.tab)
     },
     takeHint: () => set({ hint: null }),
 
@@ -267,26 +334,38 @@ export const useStore = create<Store>((set, get) => {
       if (g && cap && !has(g, cap)) return set({ lockCard: { cap } })
       // going to another screen from the designer sets the design aside rather than losing it
       const keep = worthKeeping()
-      set({ tab, designing: false, kept: keep || get().kept, selectedPart: null, person: null, inspect: null, lockCard: null, freshTabs: get().freshTabs.filter((t) => t !== tab) })
+      const view = get().views[tab] ?? defaultView(tab)
+      const page = pageOf(tab, view)
+      set({
+        tab,
+        designing: false,
+        kept: keep || get().kept,
+        selectedPart: null,
+        person: null,
+        inspect: null,
+        lockCard: null,
+        freshTabs: get().freshTabs.filter((t) => t !== tab),
+        lastPage: { ...get().lastPage, [destOfTab(tab, view).id]: page.id },
+        // what was announced as new here has now been seen
+        notes: dropNotes(get().notes, (n) => n.kind === 'unlock' && resolve(n.action?.where ?? { tab: '' }).tab === tab && !!n.action?.where),
+      })
       if (keep) get().say('Your design is set aside. New device picks it up again.')
     },
     setSpeed: (speed) => set({ speed }),
     begin(cfg) {
       rolling = null
       forgetViews()
-      clearTimeout(toastTimer)
       set({ game: newGame(cfg), screen: 'game', tab: 'city', speed: 0, rev: 0, checkpoint: null, showing: null, ...reset })
     },
     resume(state) {
       rolling = null
       forgetViews()
-      clearTimeout(toastTimer)
-      set({ game: state, screen: 'game', tab: 'dashboard', speed: 0, rev: 0, checkpoint: null, showing: null, ...reset })
+      // one home: a loaded game opens on the city, as a new one does
+      set({ game: state, screen: 'game', tab: 'city', speed: 0, rev: 0, checkpoint: null, showing: null, ...reset })
     },
     quit() {
       rolling = null
       forgetViews()
-      clearTimeout(toastTimer)
       set({ game: null, screen: 'menu', speed: 0, checkpoint: null, showing: null, ...reset })
     },
     rewind() {
@@ -294,8 +373,7 @@ export const useStore = create<Store>((set, get) => {
       if (!cp) return
       rolling = null
       forgetViews()
-      clearTimeout(toastTimer)
-      set({ game: migrate(JSON.parse(cp.json)), tab: 'dashboard', speed: 0, rev: get().rev + 1, showing: null, ...reset })
+      set({ game: migrate(JSON.parse(cp.json)), tab: 'city', speed: 0, rev: get().rev + 1, showing: null, ...reset })
     },
     watch: (showing) => set({ showing, speed: showing ? 0 : get().speed }),
 
@@ -335,6 +413,13 @@ export const useStore = create<Store>((set, get) => {
       const big = fresh.some((n) => BIG_NEWS.test(n.text))
       if (prefs.autosave && (Math.floor(g.day / DAYS_PER_MONTH) !== month || big)) void saveGame(AUTOSAVE, g).catch(() => {})
       const halt = prefs.pauseOnAlert && fresh.some((n) => n.kind === 'alert')
+      // what needs the player is said once in the strip; the same thing said again is counted on the line already there
+      const alerts = fresh.filter((n) => n.kind === 'alert')
+      if (alerts.length) {
+        let notes = get().notes
+        for (const n of alerts.reverse()) notes = pushNote(notes, { kind: 'alert', tone: 'warn', text: n.text, action: n.productId ? { label: 'Open', productId: n.productId } : undefined })
+        set({ notes })
+      }
       // a keynote that just happened plays out on screen
       const keynote = g.events.find((e) => e.done && e.type === 'keynote' && !shown.has(e.id) && e.beats)
       // the calendar turned: stop and look back on the year
@@ -357,20 +442,15 @@ export const useStore = create<Store>((set, get) => {
     },
 
     say(text, tone = 'ok') {
-      clearTimeout(toastTimer)
-      set({ toast: { text, tone } })
+      set({ toast: { text, tone }, notes: pushNote(get().notes, { kind: 'say', tone, text }) })
       if (tone === 'bad') sfx.error()
-      toastTimer = window.setTimeout(() => set({ toast: null }), 3400)
     },
 
-    focus: (inspect) => set({ inspect }),
+    // one drawer at a time: a device's details take the place of a person's card
+    focus: (inspect) => set(inspect ? { inspect, person: null, lockCard: null } : { inspect }),
     toggleRail() {
       remember('sb-rail', get().railOpen ? '0' : '1')
       set({ railOpen: !get().railOpen })
-    },
-    toggleFeed() {
-      remember('sb-feed', get().feedOpen ? '0' : '1')
-      set({ feedOpen: !get().feedOpen })
     },
 
     openDesigner(opts = {}) {
@@ -506,6 +586,20 @@ export const useStore = create<Store>((set, get) => {
     },
   }
 })
+
+/**
+ * What a part of the company is called on screen. The progression rules name
+ * a few of them as they were before the screens were regrouped; this is the
+ * one name each has now.
+ */
+const CAP_NAMES: Partial<Record<CapId, string>> = { care: 'Owners', world: 'Regions', carePolicy: 'Warranty and support policy', execs: 'Executives' }
+export const capName = (id: CapId) => CAP_NAMES[id] ?? capOf(id).name
+
+/** The view a screen with several pages is showing, and a way to change it. */
+export function useView<T extends string>(tab: Tab, fallback: T): [T, (v: T) => void] {
+  const view = useStore((s) => s.views[tab]) as T | undefined
+  return [view ?? (defaultView(tab) as T | undefined) ?? fallback, (v) => useStore.getState().setView(tab, v)]
+}
 
 /** The live game. Re-renders the caller whenever the simulation changes. */
 export function useGame(): GameState {

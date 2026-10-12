@@ -25,10 +25,11 @@ describe('settings as stored', () => {
 describe('key bindings', () => {
   beforeEach(() => useSettings.getState().resetKeys())
 
-  it('gives every action a default key and no key to two actions', () => {
+  it('gives every action but the single pages a default key, and no key to two actions', () => {
     const seen = new Map<string, string>()
     for (const a of ACTIONS) {
-      expect(a.keys.length, a.id).toBeGreaterThan(0)
+      // single pages have no key until the player gives them one
+      if (a.group !== 'Pages') expect(a.keys.length, a.id).toBeGreaterThan(0)
       for (const k of a.keys) {
         expect(seen.get(k), `${k} is on both ${seen.get(k)} and ${a.id}`).toBeUndefined()
         seen.set(k, a.id)

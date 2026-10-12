@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect } from 'react'
 import { installUiSounds } from './audio/sfx'
 import { MainMenu, NewGame } from './components/Menu'
 import { FeedbackHost } from './components/Feedback'
+import { MenuNote } from './components/MenuNote'
 import { CrashGuard, SizeNotice } from './components/Safety'
 import { useStore } from './store/game'
 
@@ -10,13 +11,12 @@ const loadShell = () => import('./components/Shell').then((m) => ({ default: m.S
 const Shell = lazy(loadShell)
 
 function Loading() {
-  return <div className="num flex h-full items-center justify-center bg-carbon text-[11px] text-faint">Loading the company</div>
+  return <div className="flex h-full items-center justify-center bg-carbon text-xs text-dim">Loading the company</div>
 }
 
 export default function App() {
   const screen = useStore((s) => s.screen)
   const hasGame = useStore((s) => !!s.game)
-  const toast = useStore((s) => s.toast)
   useEffect(installUiSounds, [])
   // fetch the rest while the player is still on the menu
   useEffect(() => {
@@ -32,9 +32,8 @@ export default function App() {
           <Suspense fallback={<Loading />}>{screen === 'game' && hasGame ? <Shell /> : screen === 'new' ? <NewGame /> : <MainMenu />}</Suspense>
         </CrashGuard>
         <FeedbackHost />
-        {toast && (
-          <div role={toast.tone === 'bad' ? 'alert' : 'status'} className={`num pointer-events-none absolute bottom-4 left-1/2 z-[100] max-w-[min(640px,calc(100%-2rem))] -translate-x-1/2 border bg-panel px-4 py-2 text-center text-xs ${toast.tone === 'bad' ? 'border-neg text-neg' : 'border-accent text-fg'}`}>{toast.text}</div>
-        )}
+        {/* outside a game there is no strip: what the menu has to say shows at the bottom of it */}
+        {!(screen === 'game' && hasGame) && <MenuNote />}
       </div>
     </div>
   )

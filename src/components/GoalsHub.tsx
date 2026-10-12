@@ -2,21 +2,20 @@
 // guided game) the tree of everything the company can still grow into.
 import { useEffect, useState } from 'react'
 import { CAPS, guided, has } from '../sim/progress'
-import { useGame, useStore } from '../store/game'
+import { useGame, useStore, useView } from '../store/game'
 import { GoalsScreen } from './Empire'
 import { GrowthTree } from './Progress'
-import { Tabs, useKept } from './ui'
+import { Tabs } from './ui'
 
 export function GoalsHub() {
   const g = useGame()
   const hint = useStore((s) => s.hint)
-  const [view, setView] = useKept<'goals' | 'growth'>('goals:view', 'goals')
+  const [view, setView] = useView<'goals' | 'growth'>('goals', 'growth')
   // "take me there" can ask for either page
   useEffect(() => {
     if (hint?.tab !== 'goals') return
-    if (hint.view === 'growth' || hint.view === 'goals') setView(hint.view)
     useStore.getState().takeHint()
-  }, [hint, setView])
+  }, [hint])
   if (!guided(g)) return <GoalsScreen />
   const open = CAPS.filter((c) => has(g, c.id)).length
   return (

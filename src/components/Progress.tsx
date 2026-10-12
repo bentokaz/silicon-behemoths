@@ -64,14 +64,11 @@ function CapBody({ g, cap, close }: { g: GameState; cap: Capability; close?: () 
         <Reqs list={reqsOf(g, cap.id)} mode={cap.mode} />
       </div>
       <div className="flex items-center justify-between gap-2 border-t border-line px-3 py-2">
-        <Btn small tone="ghost" icon="branch" onClick={() => (close?.(), go(GROWTH))} title="Everything the company can grow into">
-          Company growth
+        <span className="text-[11px] text-faint">Everything still to open is under Company, Growth.</span>
+        {/* one way on: to where the next thing it takes is done, or to the list of everything */}
+        <Btn small icon="arrowRight" onClick={() => (close?.(), sfx.confirm(), go(next?.where ?? GROWTH))}>
+          Show me how
         </Btn>
-        {next?.where && (
-          <Btn small tone="primary" icon="arrowRight" onClick={() => (close?.(), sfx.confirm(), go(next.where!))}>
-            Take me there
-          </Btn>
-        )}
       </div>
     </>
   )
@@ -169,99 +166,6 @@ export function lockProps(g: GameState, id: CapId, card = true): LockProps {
   const tip = lockTip(g, id)
   if (!tip) return {}
   return { locked: tip, onLocked: card ? () => useStore.getState().showLock(id) : undefined }
-}
-
-/** Seconds an announcement stays up if nobody touches it. */
-const BANNER_SECONDS = 14
-
-/** Put away announcements: the ones named, or all of them. */
-const dismiss = (ids?: CapId[]) => useStore.setState((s) => ({ banners: ids ? s.banners.filter((id) => !ids.includes(id)) : [] }))
-
-/**
- * A new part of the company has opened: one strip across the top. When
- * several open together (two hires on the same morning, a first device going
- * on sale) they share one card with a line each, instead of taking turns.
- */
-export function UnlockBanner() {
-  const queue = useStore((s) => s.banners)
-  const { go } = useStore.getState()
-  // the same capability is never listed twice
-  const ids = queue.filter((id, i) => queue.indexOf(id) === i)
-  const id = ids[0]
-  const key = ids.join(' ')
-  const [held, setHeld] = useState(false)
-  // each one added buys a little more reading time, and starts the clock again
-  useEffect(() => {
-    // with nothing on screen there is nothing under the pointer: the next announcement starts its clock afresh
-    if (!key) return setHeld(false)
-    if (held) return
-    const t = window.setTimeout(() => dismiss(), (BANNER_SECONDS + 4 * (key.split(' ').length - 1)) * 1000)
-    return () => window.clearTimeout(t)
-  }, [key, held])
-  if (!id) return null
-  if (ids.length > 1) {
-    return (
-      <div className="flex shrink-0 items-stretch border-b border-accent bg-panel" onMouseEnter={() => setHeld(true)} onMouseLeave={() => setHeld(false)} role="status">
-        <span className="flex w-12 shrink-0 flex-col items-center justify-center gap-[2px] bg-accent text-carbon">
-          <Icon name="unlock" size={18} />
-          <span className="num text-[11px] font-semibold leading-none">{ids.length}</span>
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2 border-b border-line py-[3px] pl-3 pr-2">
-            <span className="label flex min-w-0 items-center gap-1 text-accent">
-              <Icon name="unlock" size={10} className="shrink-0" />
-              <span className="truncate">Now open: {ids.length} new parts of the company</span>
-            </span>
-            <IconBtn icon="close" tone="ghost" title="Dismiss all" onClick={() => dismiss()} />
-          </div>
-          {ids.map((one) => {
-            const cap = capOf(one)
-            return (
-              <div key={one} className="flex items-center gap-2 border-b border-line py-[3px] pl-3 pr-2 last:border-0">
-                <Icon name={iconOf(cap)} size={14} className="shrink-0 text-accent" />
-                <span className="w-[150px] shrink-0 truncate text-[12px] font-semibold text-fg max-md:w-[104px]">{cap.name}</span>
-                <span className="min-w-0 flex-1 truncate text-[11px] text-dim" title={cap.now}>
-                  {cap.now}
-                </span>
-                <Btn small tone="primary" icon="arrowRight" className="shrink-0 whitespace-nowrap" title={`Go to ${cap.name}`} onClick={() => (sfx.confirm(), dismiss([one]), go(homeOf(cap)))}>
-                  Go
-                </Btn>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-    )
-  }
-  const cap = capOf(id)
-  return (
-    <div className="flex shrink-0 items-stretch border-b border-accent bg-panel" onMouseEnter={() => setHeld(true)} onMouseLeave={() => setHeld(false)} role="status">
-      <span className="flex w-12 shrink-0 items-center justify-center bg-accent text-carbon">
-        <Icon name={iconOf(cap)} size={20} />
-      </span>
-      <div className="min-w-0 flex-1 px-3 py-[7px]">
-        <div className="flex items-baseline gap-2">
-          <span className="label flex items-center gap-1 text-accent">
-            <Icon name="unlock" size={10} />
-            Now open
-          </span>
-          <span className="truncate text-[13px] font-semibold text-fg">{cap.name}</span>
-        </div>
-        <div className="truncate text-[11px] text-dim">{cap.now}</div>
-      </div>
-      <div className="hidden items-center gap-1 px-2 xl:flex">
-        {cap.opens.slice(0, 3).map((o) => (
-          <Tag key={o}>{o}</Tag>
-        ))}
-      </div>
-      <div className="flex shrink-0 items-center gap-1 border-l border-line px-2">
-        <Btn small tone="primary" icon="arrowRight" onClick={() => (sfx.confirm(), dismiss([id]), go(homeOf(cap)))}>
-          Take me there
-        </Btn>
-        <IconBtn icon="close" tone="ghost" title="Dismiss" onClick={() => dismiss()} />
-      </div>
-    </div>
-  )
 }
 
 // ---------------------------------------------------------------- the tree

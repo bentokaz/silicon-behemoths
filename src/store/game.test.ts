@@ -132,6 +132,8 @@ describe('what belongs to one game', () => {
       expect(st().person).toBeNull()
       expect(st().inspect).toBeNull()
       expect(st().toast).toBeNull()
+      expect(st().notes).toEqual([])
+      expect(st().views).toEqual({})
       expect(st().kept).toBe(false)
       expect(st().draft).toBeNull()
       expect(st().designing).toBe(false)

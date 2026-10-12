@@ -8,7 +8,7 @@ import { HOURS, PERKS, TEAM_SPAN, meetingFactor, perksCost, teamBonus, teamOf, u
 import type { StaffPolicy } from '../sim/types'
 import { EXECS, HEADHUNT_COST, ROLE_INFO, TRAITS, inTraining, jobTitle, marketPay, monthlySalaries, seatedStaff, staffEffects, titleFor, trainingCost } from '../sim/staff'
 import { type Employee, ROLES, type Role } from '../sim/types'
-import { useGame, useStore } from '../store/game'
+import { useGame, useStore, useView } from '../store/game'
 import { Executives, LockedPane } from './Progress'
 import { SiteBuilder } from './SiteBuilder'
 import { Icon, roleIcon } from './icons'
@@ -189,12 +189,11 @@ function EmployeeDrawer({ e, seated, onClose }: { e: Employee; seated: boolean; 
 export function Staff() {
   const g = useGame()
   const { act, say, setTab } = useStore.getState()
-  const [view, setView] = useKept<"team" | "teams" | "policy" | "hire" | "execs">("staff:view", () => (g.staff.length ? "team" : "hire"))
+  const [view, setView] = useView<'team' | 'teams' | 'policy' | 'hire' | 'execs'>('staff', 'team')
   // "take me there" from a requirement lands on the right view, filtered to the right job
   const hint = useStore((s) => s.hint)
   useEffect(() => {
     if (hint?.tab !== 'staff') return
-    if (hint.view === 'team' || hint.view === 'teams' || hint.view === 'policy' || hint.view === 'hire' || hint.view === 'execs') setView(hint.view)
     setRole(hint.role ?? 'all')
     useStore.getState().takeHint()
   }, [hint])
@@ -226,7 +225,11 @@ export function Staff() {
         <Mini label="Support, tickets / day" icon="headset" value={Math.round(fx.support + 20)} />
       </div>
       <div className="flex shrink-0 items-center justify-between">
-        <Tabs value={view} onChange={setView} options={[{ value: 'team', label: 'People', icon: 'staff', badge: g.staff.length }, { value: 'teams', label: 'Teams', icon: lockIcon('teams', 'team'), badge: loose ? `${loose} unled` : g.teams.length || undefined }, { value: 'policy', label: 'Policies', icon: lockIcon('people', 'policy') }, { value: 'hire', label: 'Applicants', icon: 'hire', badge: g.candidates.length }, { value: 'execs', label: 'Executives', icon: lockIcon('execs', 'briefcase'), badge: !has(g, 'execs') ? undefined : gone ? `${gone} empty` : execsWaiting || undefined }]} className="min-w-0 flex-1" fit />
+        {view === 'team' || view === 'policy' || view === 'execs' ? (
+          <Tabs value={view} onChange={setView} options={[{ value: 'team', label: 'People', badge: g.staff.length }, { value: 'policy', label: 'Policies', locked: has(g, 'people') ? null : 'Policies are not open yet' }, { value: 'execs', label: 'Executives', locked: has(g, 'execs') ? null : 'Executives are not open yet', badge: !has(g, 'execs') ? undefined : gone ? `${gone} empty` : execsWaiting || undefined, alert: !!gone }]} onLocked={(v) => useStore.getState().showLock(v === 'policy' ? 'people' : 'execs')} className="min-w-0 flex-1" />
+        ) : (
+          <div className="flex-1" />
+        )}
         <div className="flex gap-1 pl-2">
           <Btn small active={role === 'all'} onClick={() => setRole('all')}>
             All

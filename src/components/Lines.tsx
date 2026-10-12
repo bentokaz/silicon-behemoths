@@ -7,7 +7,7 @@ import { TYPES, segmentsOf } from '../data/devices'
 import { unlockType } from '../sim/game'
 import { DEVICE_TYPES, type DeviceType, TRACKS } from '../sim/types'
 import { hasType, unlockBlocked, unlockCost, unlockOf } from '../sim/world'
-import { useGame, useStore } from '../store/game'
+import { useGame, useStore, useView } from '../store/game'
 import { Research } from './ResearchTree'
 import { Icon, trackIcon, typeIcon } from './icons'
 import { Btn, Lead, Tabs, Tag, money, num, useKept } from './ui'
@@ -99,13 +99,11 @@ function DeviceLines() {
 
 export function ResearchScreen() {
   const g = useGame()
-  const [view, setView] = useKept<'tech' | 'lines'>('research:view', 'tech')
+  const [view] = useView<'tech' | 'lines'>('research', 'tech')
   const closed = DEVICE_TYPES.filter((t) => !hasType(g, t))
   const ready = closed.filter((t) => !unlockBlocked(g, t)).length
-  if (!closed.length && view === 'tech') return <Research />
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <Tabs value={view} onChange={setView} options={[{ value: 'tech', label: 'Technology', icon: 'research' }, { value: 'lines', label: 'Device lines', icon: 'devices', badge: ready || undefined }]} className="shrink-0 bg-panel" />
       <div className={`min-h-0 flex-1 ${view === 'lines' ? 'p-2' : ''}`}>{view === 'tech' ? <Research /> : <DeviceLines />}</div>
     </div>
   )
