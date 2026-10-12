@@ -128,17 +128,17 @@ function useOwnTable(g: GameState, rows: readonly Product[], compact: boolean) {
       head: 'Stock',
       title: 'Units in the warehouse, and what is on order',
       min: 116,
-      className: 'text-right',
+      num: true,
       sort: (p) => (p.status === 'ended' ? null : p.stock),
       first: 'asc',
       cell: (p) => {
         const { order } = f(p)
-        if (p.status === 'ended') return <span className="num text-dim">{p.stock > 0 ? num(p.stock) : '--'}</span>
+        if (p.status === 'ended') return <span className="text-dim">{p.stock > 0 ? num(p.stock) : '--'}</span>
         return (
           <span className="flex flex-col items-end leading-tight">
-            <span className={`num ${p.stock <= 0 && p.status === 'sale' ? 'text-neg' : 'text-fg'}`}>{num(p.stock)}</span>
+            <span className={p.stock <= 0 && p.status === 'sale' ? 'text-neg' : 'text-fg'}>{num(p.stock)}</span>
             {order && (
-              <span className={`text-[11px] ${order.days === null ? 'text-warn' : 'text-dim'}`} title={order.days === null ? 'On order from your factory, but the line is stopped' : 'On order: when the last unit arrives'}>
+              <span className={`font-sans text-[11px] ${order.days === null ? 'text-warn' : 'text-dim'}`} title={order.days === null ? 'On order from your factory, but the line is stopped' : 'On order: when the last unit arrives'}>
                 <span className="num">+{num(order.units)}</span> {order.days === null ? 'line stopped' : inDays(order.days)}
               </span>
             )}
@@ -236,11 +236,6 @@ export function MyDevices({ compact = false, limit }: { compact?: boolean; limit
       )}
     </div>
   )
-}
-
-/** Kept for any older caller: the company's devices as a table. New code uses `MyDevices`. */
-export function ProductTable({ compact = false }: { g?: GameState; rows?: Product[]; compact?: boolean }) {
-  return <MyDevices compact={compact} />
 }
 
 const MINE_SORT = 'devices:mine'
@@ -436,7 +431,7 @@ export function Market() {
           <button type="button" key={s.id} aria-pressed={seg === s.id} onClick={() => setSeg(s.id)} className={tile(seg === s.id)} title={`${s.name}: ${num(segmentDemand(s, g.day) * 360)} buyers a year, who expect to pay about ${price(s.priceRef * index)}`}>
             <div className="truncate text-xs font-semibold text-fg">{s.name}</div>
             <div className="truncate text-[11px] text-dim">
-              <span className="num">{num(segmentDemand(s, g.day) * 360)}</span> a year, about <span className="num">{money(s.priceRef * index)}</span>
+              <span className="num">{num(segmentDemand(s, g.day) * 360)}</span> at <span className="num">{money(s.priceRef * index)}</span>
             </div>
           </button>
         ))}

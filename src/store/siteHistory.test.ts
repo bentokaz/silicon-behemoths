@@ -139,6 +139,29 @@ describe('site history', () => {
     expect(picture(s)).toEqual(before)
   })
 
+  it('walks back through a curved room, a slanted one and their demolition, step by step', () => {
+    const s = game()
+    for (let i = 0; i < 3; i++) upgradeOffice(s)
+    const shots = [picture(s)]
+    const [x, y] = [1, 1]
+    expect(record(s, REF, 'Round', (g) => zoneRoom(g, REF, 'lounge', x, y, x + 6, y + 6, 'round'))).toBeNull()
+    shots.push(picture(s))
+    expect(s.office.curves?.length).toBe(1)
+    expect(record(s, REF, 'Slant', (g) => zoneRoom(g, REF, 'lab', x + 9, y, x + 13, y + 4, 'diag', undefined, undefined, true))).toBeNull()
+    shots.push(picture(s))
+    record(s, REF, 'Demolish', (g) => clearZone(g, REF, x, y, x + 14, y + 7))
+    shots.push(picture(s))
+    expect(s.office.curves?.length ?? 0).toBe(0)
+    for (let k = shots.length - 2; k >= 0; k--) {
+      expect(undo(s, REF).done).toBe(true)
+      expect(picture(s)).toEqual(shots[k])
+    }
+    for (let k = 1; k < shots.length; k++) {
+      expect(redo(s, REF).done).toBe(true)
+      expect(picture(s)).toEqual(shots[k])
+    }
+  })
+
   it('does nothing when there is nothing to undo or redo', () => {
     const s = game()
     const before = picture(s)

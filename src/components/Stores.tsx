@@ -12,7 +12,7 @@ import type { Store } from '../sim/types'
 import { takeAim } from '../store/focus'
 import { useGame, useStore } from '../store/game'
 import { SiteBuilder } from './SiteBuilder'
-import { PROFIT_NOTE, VISITORS_HELP, copyCost, monthNote, monthWord, signTone, storeLabel, storeStatus, visitorsADay, visitorsNote } from './SitesFigures'
+import { PROFIT_NOTE, VISITORS_HELP, copyCost, monthNote, profitLabel, signTone, storeLabel, storeStatus, visitorsADay, visitorsNote } from './SitesFigures'
 import { BarRow, Detail, Fact, Note, Sec } from './SitesParts'
 import { Icon } from './icons'
 import { Btn, type Column, ConfirmBtn, Drawer, Help, Page, Panel, Pick, Strip, Table, Tag, int, money, num, pct, useKept } from './ui'
@@ -241,7 +241,6 @@ export function StoresScreen() {
 
   const rows: StoreRow[] = g.stores.map((s) => ({ store: s, stats: storeStats(s.site), m: storeMonth(g, s.id) }))
   const all = storesMonth(g)
-  const when = monthWord(all.partial)
   const storeCols: Column<StoreRow>[] = [
     {
       id: 'name',
@@ -284,7 +283,7 @@ export function StoresScreen() {
         {g.stores.length > 1 && (
           <Strip
             items={[
-              { label: `Profit ${when}, all stores`, value: money(all.profit), tone: signTone(all.profit), title: `${monthNote(all.partial)} ${PROFIT_NOTE}` },
+              { label: `${profitLabel(all.partial)}, all stores`, value: money(all.profit), tone: signTone(all.profit), title: `${monthNote(all.partial)} ${PROFIT_NOTE}` },
               { label: 'Revenue', value: money(all.revenue) },
               { label: 'Units', value: num(all.units) },
             ]}

@@ -7,6 +7,7 @@ import { type Attention, attention, reorderQuote, suggestReorder } from '../sim/
 import { marketPrice } from '../sim/ops'
 import { capOfTab, has } from '../sim/progress'
 import { founderStake, takeoverPrice } from '../sim/stock'
+import { resolve } from '../store/nav'
 import { type Company, type CostKey, type GameState, type MonthReport, SUPPLY_CATS, type SupplyCat, monthCosts } from '../sim/types'
 import { price } from './format'
 
@@ -209,14 +210,13 @@ export const PLACE_NAME: Record<Attention['place'], string> = { campus: 'Campus'
 export const reorderable = (a: Attention) => (a.id === 'soldout' || a.id === 'lowstock') && !!a.productIds?.length
 
 /**
- * Where an item's one action leads. Stock is ordered from the device itself
- * (Devices, Mine) and component supply is on Company, Finance; everything else
- * goes where the item says.
+ * Where an item's one action leads, as the navigation resolves it today:
+ * stock is ordered from the device itself (Devices, Mine) and component
+ * supply is on Company, Finance; everything else goes where the item says.
  */
 export function placeOf(a: Attention): { tab: string; view?: string } {
-  if (a.id === 'shortage') return { tab: 'finance' }
-  if (a.id === 'soldout' || a.id === 'lowstock' || a.id === 'nostock') return { tab: 'products' }
-  return a.where
+  const to = resolve(a.where)
+  return to.view ? { tab: to.tab, view: to.view } : { tab: to.tab }
 }
 
 /** What needs the player. In a guided game a warning about a part of the company that is not open yet is left out; bad news never is. */

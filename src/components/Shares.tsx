@@ -255,9 +255,9 @@ export function SharesScreen() {
 
   const cols: Column<RivalRow>[] = [
     { id: 'name', head: 'Company', sort: (r) => r.company.name, cell: (r) => <Swatch color={r.company.color} className="text-fg">{r.company.name}</Swatch> },
-    { id: 'value', head: 'Value', num: true, sort: (r) => (r.company.acquired ? null : r.value), className: 'text-dim', cell: (r) => (r.company.acquired ? '' : money(r.value)) },
+    { id: 'value', head: 'Value', num: true, drop: 2, sort: (r) => (r.company.acquired ? null : r.value), className: 'text-dim', cell: (r) => (r.company.acquired ? '' : money(r.value)) },
     // the column only exists once there is a stake to show in it
-    ...(held ? [{ id: 'stake', head: 'You own', num: true, sort: (r: RivalRow) => r.stake || null, cell: (r: RivalRow) => (r.stake > 0 && !r.company.acquired ? pct(r.stake, 0) : '') } satisfies Column<RivalRow>] : []),
+    ...(held ? [{ id: 'stake', head: 'You own', num: true, min: 76, drop: 1, sort: (r: RivalRow) => r.stake || null, cell: (r: RivalRow) => (r.stake > 0 && !r.company.acquired ? pct(r.stake, 0) : '') } satisfies Column<RivalRow>] : []),
     {
       id: 'buyout',
       head: 'To buy it all',
@@ -286,7 +286,7 @@ export function SharesScreen() {
           title="Other companies"
           icon="rivals"
           count={rivals.filter((r) => !r.company.acquired).length}
-          bodyClass="overflow-y-auto"
+          bodyClass="overflow-y-auto overflow-x-hidden"
           keep="shares:rivals"
           right={
             <Help title="Stakes and takeovers">
@@ -300,7 +300,8 @@ export function SharesScreen() {
             rows={rivals}
             rowKey={(r) => r.company.id}
             keep="shares:rivals"
-            actionWidth={212}
+            firstMin={112}
+            actionWidth={204}
             rowClass={(r) => (r.company.acquired ? '[&>td]:text-dim' : '')}
             action={(r) => {
               if (r.company.acquired) return null

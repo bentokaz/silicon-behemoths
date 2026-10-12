@@ -100,23 +100,24 @@ function useSiteClock(): { time: string; light: Mood } {
   return { time, light: light as Mood }
 }
 
-/** Where the bottom edge of an element sits below the top of its positioned parent, kept up to date as either changes size. */
+/** How far down the view the top row reaches: the tools, and the status line beside or under them (not the detail that hangs from it). */
 function useBottom(ref: React.RefObject<HTMLElement | null>, fallback: number): number {
   const [bottom, setBottom] = useState(fallback)
   useLayoutEffect(() => {
     const el = ref.current
     if (!el || typeof ResizeObserver === 'undefined') return
+    const parts = () => [el.firstElementChild, el.querySelector('[data-site-status]')].filter(Boolean) as HTMLElement[]
     const measure = () => {
-      let low = 0
-      for (const child of Array.from(el.children) as HTMLElement[]) low = Math.max(low, child.offsetTop + child.offsetHeight)
-      setBottom(low ? el.offsetTop + low : fallback)
+      const top = el.getBoundingClientRect().top - el.offsetTop
+      const low = Math.max(0, ...parts().map((p) => p.getBoundingClientRect().bottom - top))
+      setBottom(low ? Math.round(low) : fallback)
     }
     measure()
     const watch = new ResizeObserver(measure)
     watch.observe(el)
-    for (const child of Array.from(el.children)) watch.observe(child)
+    for (const p of parts()) watch.observe(p)
     return () => watch.disconnect()
-  })
+  }, [ref, fallback])
   return bottom
 }
 
@@ -252,7 +253,7 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
       if (action === 'rotate') setRot((r) => (r + 1) % 4)
       else if (action === 'cancel') {
         // the first press takes back a half-drawn box or a drag (the view does that itself); the next puts the tool away
-        const half = (live.current.note?.anchored && live.current.drawn !== 'fill') || !!live.current.run
+        const half = (live.current.note?.anchored && live.current.drawn !== 'fill') || (!!live.current.run && !live.current.run.why)
         if (!half) setTool(null)
       } else if (action === 'sell') (setTool((cur) => (cur?.type === 'remove' ? null : { type: 'remove' })), setSelected(0))
       else if (action === 'viewNext') setMode((m) => (m === 'cut' ? 'walls' : m === 'walls' ? 'full' : 'cut'))
@@ -375,7 +376,10 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
   let hint: HintPart[]
   let hintTone: 'dim' | 'warn' | 'live' = 'dim'
   if (itemTool) {
-    if (run) {
+    if (run?.why) {
+      hintTone = 'warn'
+      hint = [`${itemTool.name}: ${run.why.replace(`${itemTool.name} goes in`, 'it goes in')}`, ...key('cancel'), 'puts it away']
+    } else if (run) {
       hintTone = 'live'
       hint = [`${itemTool.name}: ${num(run.count)} for ${money(run.cost)}${run.poor ? `, not enough cash for ${num(run.poor)} more` : ''}${run.blocked - (run.poor ?? 0) > 0 ? `, ${things(run.blocked - (run.poor ?? 0), 'spot is', 'spots are')} in the way` : ''}. Let go to place`, ...key('cancel'), 'cancels']
     } else if (itemTool.cost > budget) {
@@ -593,7 +597,7 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
 
       {open && (
         <div data-coach-target="build" data-site-palette className="absolute left-2 z-10 flex flex-col border border-line2 bg-panel/95" style={{ top: 48, width: PALETTE_W, maxHeight: 'calc(100% - 96px)' }}>
-          <Tabs value={tab} options={TABS.map((x) => ({ value: x, label: x }))} onChange={setTab} className="[&>button]:flex-1 [&>button]:justify-center [&>button]:px-1" />
+          <Tabs value={tab} options={TABS.map((x) => ({ value: x, label: x }))} onChange={(t) => (setTab(t), setTool(null))} className="[&>button]:flex-1 [&>button]:justify-center [&>button]:px-1" />
           {(tab === 'Rooms' || tab === 'Grounds') && (
             <div className="shrink-0 border-b border-line px-2 py-[6px]">
               <div className={`grid gap-1 ${tab === 'Rooms' ? 'grid-cols-5' : 'grid-cols-4'}`}>

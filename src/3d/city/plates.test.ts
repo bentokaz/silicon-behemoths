@@ -89,8 +89,7 @@ describe('what the plates say', () => {
     const plates = cityPlates(rich())
     expect(plates.map((p) => p.placeId)).toEqual(expect.arrayContaining(['office', 'port']))
     for (const p of plates) expect(p.lines.length).toBeLessThanOrEqual(3)
-    // the port's plate leads to the devices, which are open from the first day
-    expect(plates.find((p) => p.placeId === 'port')!.where).toEqual({ tab: 'products' })
+    for (const p of plates) expect(p.needs).toBe(0)
   })
 
   it('puts everything that needs the player on a plate, the homeless on the campus', () => {

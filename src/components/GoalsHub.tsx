@@ -19,8 +19,8 @@ export function GoalsHub() {
   useEffect(() => {
     if (hint?.tab !== 'goals') return
     // a plain visit (the menu, the row of pages) opens the page where it was left
-    const to = hint.view === 'goals' ? goals.current : hint.view === 'growth' ? growth.current : null
-    to?.scrollIntoView({ block: 'start' })
+    if (hint.view === 'goals') goals.current?.parentElement?.scrollTo({ top: 0 })
+    else if (hint.view === 'growth') growth.current?.scrollIntoView({ block: 'start' })
     useStore.getState().takeHint()
   }, [hint])
   return (

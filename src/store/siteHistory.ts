@@ -87,10 +87,16 @@ function historyOf(s: GameState, ref: string): History {
 
 const shoot = (s: GameState, site: Site): Shot => ({ site: JSON.stringify(site), cash: s.cash, booked: s.cur[bucketOf(site)], nextId: s.nextId, day: s.day })
 
-/** Puts a picture of the site back, in place: whatever holds the site keeps holding the same object. */
+/**
+ * Puts a picture of the site back, in place: whatever holds the site keeps
+ * holding the same object. Every field is taken off and set again in the
+ * picture's own order, so that the site reads back as exactly the same text
+ * (a field the sim had dropped, such as the last curve, would otherwise come
+ * back at the end and the next step down would not recognise the site).
+ */
 function restore(site: Site, json: string) {
   const was = JSON.parse(json) as Site
-  for (const key of Object.keys(site)) if (!(key in was)) delete (site as unknown as Record<string, unknown>)[key]
+  for (const key of Object.keys(site)) delete (site as unknown as Record<string, unknown>)[key]
   Object.assign(site, was)
 }
 

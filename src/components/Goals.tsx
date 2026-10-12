@@ -10,6 +10,24 @@ import { type Column, Fold, Meter, Panel, Table, money, num, pct } from './ui'
 /** What reaching a goal pays, in words. */
 export const prizeOf = (goal: Goal) => [goal.cash ? money(goal.cash) : '', goal.fans ? `${num(goal.fans)} fans` : ''].filter(Boolean).join(' and ')
 
+/** The goals still call the Campus by its old name; this is how they read now. */
+const plain = (text: string) => text.replace(/\bat head office\b/g, 'on the Campus').replace(/\bhead office\b/g, 'the Campus')
+
+/** The same, with the figures in the number face and the words not. */
+function Prize({ goal }: { goal: Goal }) {
+  return (
+    <>
+      {goal.cash > 0 && <span className="num">{money(goal.cash)}</span>}
+      {goal.cash > 0 && !!goal.fans && ' and '}
+      {!!goal.fans && (
+        <>
+          <span className="num">{num(goal.fans)}</span> fans
+        </>
+      )}
+    </>
+  )
+}
+
 /** The three goals closest to done, each with how far along it is and what it pays. */
 export function NextGoals({ g }: { g: GameState }) {
   const stage = stageOf(g)
@@ -28,11 +46,15 @@ export function NextGoals({ g }: { g: GameState }) {
                 </span>
                 <span className="num shrink-0 text-[11px] text-dim">{pct(progress, 0)}</span>
               </div>
-              <div className="mt-[2px] line-clamp-2 min-h-8 text-xs leading-4 text-dim" title={goal.note}>
-                {goal.note}
+              <div className="mt-[2px] line-clamp-2 min-h-8 text-xs leading-4 text-dim" title={plain(goal.note)}>
+                {plain(goal.note)}
               </div>
               <Meter value={progress} className="mt-2" />
-              {prizeOf(goal) && <div className="mt-2 text-[11px] text-dim">Pays {prizeOf(goal)}</div>}
+              {prizeOf(goal) && (
+                <div className="mt-2 text-[11px] text-dim">
+                  Pays <Prize goal={goal} />
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -47,8 +69,8 @@ export function AllGoals({ g }: { g: GameState }) {
   const rows = goalRows(g)
   const cols: Column<GoalRow>[] = [
     { id: 'name', head: 'Goal', sort: (r) => r.goal.name, cell: (r) => <span className={r.reached !== undefined ? 'text-dim' : 'text-fg'}>{r.goal.name}</span> },
-    { id: 'note', head: 'What it takes', min: 320, drop: 2, className: 'text-dim', cell: (r) => <span title={r.goal.note}>{r.goal.note}</span> },
-    { id: 'prize', head: 'Pays', min: 132, drop: 1, sort: (r) => r.goal.cash, first: 'desc', className: 'text-dim', cell: (r) => <span className="num">{prizeOf(r.goal)}</span> },
+    { id: 'note', head: 'What it takes', min: 320, drop: 2, className: 'text-dim', cell: (r) => <span title={plain(r.goal.note)}>{plain(r.goal.note)}</span> },
+    { id: 'prize', head: 'Pays', min: 168, drop: 1, sort: (r) => r.goal.cash, first: 'desc', className: 'text-dim', cell: (r) => <Prize goal={r.goal} /> },
     {
       id: 'progress',
       head: 'Progress',

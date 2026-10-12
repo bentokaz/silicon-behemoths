@@ -4,7 +4,7 @@ import { OWN_VENUE } from '../sim/growth'
 import { plates, storeMonth } from '../sim/insight'
 import { openEverything } from '../sim/progress'
 import type { GameState } from '../sim/types'
-import { PULL_MIN, aSite, copyCost, factoryNow, factoryOrders, factoryStatus, monthWord, nextEvent, signTone, starterStageCost, storeLabel, storeStatus, venueStatus, visitorsADay, visitorsNote } from './SitesFigures'
+import { PULL_MIN, aSite, copyCost, factoryNow, factoryOrders, factoryStatus, nextEvent, profitLabel, signTone, starterStageCost, storeLabel, storeStatus, venueStatus, visitorsADay, visitorsNote } from './SitesFigures'
 import { money } from './format'
 
 function game(seed = 11): GameState {
@@ -98,7 +98,8 @@ describe('a store in one line', () => {
     const store = s.stores[0]
     const m = storeMonth(s, store.id)
     const figures = storeStatus(s, store)
-    expect(figures[0].label).toBe(`Profit ${monthWord(m.partial)}`)
+    expect(figures[0].label).toBe(profitLabel(m.partial))
+    expect(m.partial ? figures[0].label : 'Projected').toContain('Projected')
     expect(value(figures[0])).toBe(money(m.profit))
     expect(figures[0].tone).toBe(signTone(m.profit))
     expect(figures[1].label).toBe('Revenue')
@@ -117,7 +118,7 @@ describe('a store in one line', () => {
     expect(value(figures[0])).toBe('Not trading')
     expect(figures[0].tone).toBe('neg')
     expect(figures[0].title).toBeTruthy()
-    expect(figures[1].label).toMatch(/^Profit/)
+    expect(figures[1].label).toMatch(/profit/i)
   })
 
   it('names a store with its region', () => {

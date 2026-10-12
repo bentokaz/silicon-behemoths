@@ -245,6 +245,8 @@ function Model({ product, onClose }: { product: Product; onClose: () => void }) 
 function Supply({ g, p }: { g: GameState; p: Product }) {
   const [qty, setQty] = useState(() => suggestReorder(g, p))
   const pending = g.orders.some((o) => o.productId === p.id)
+  // once an order is placed the field shows what is still worth ordering, which is usually nothing
+  const order = () => reorder(p, qty) && setQty(suggestReorder(g, p))
   // a device still in development has no sales to go by: the forecast for a design like it is the guide
   const month = Math.floor(g.day / 30)
   const guess = useMemo(() => (p.status === 'dev' ? demandEstimate(g, p.design, p.price) : null), [p.id, p.price, p.status, month]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -256,8 +258,8 @@ function Supply({ g, p }: { g: GameState; p: Product }) {
       </div>
       <div className="mt-2 flex items-center gap-3">
         <span className="label w-14 shrink-0">Order</span>
-        <NumInput value={qty} onChange={setQty} step={1000} max={MAX_RUN} onEnter={() => reorder(p, qty)} aria-label="Units to order" className="w-28 text-right" />
-        <Btn tone="primary" icon="package" className="ml-auto" disabled={qty <= 0} title={qty <= 0 ? 'Enter how many units to build' : undefined} onClick={() => reorder(p, qty)}>
+        <NumInput value={qty} onChange={setQty} step={1000} max={MAX_RUN} onEnter={order} aria-label="Units to order" className="w-28 text-right" />
+        <Btn tone="primary" icon="package" className="ml-auto" disabled={qty <= 0} title={qty <= 0 ? 'Enter how many units to build' : undefined} onClick={order}>
           Order {qty > 0 ? num(qty) : 'units'}
         </Btn>
       </div>

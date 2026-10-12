@@ -86,6 +86,8 @@ export interface RunInfo {
   short?: number
   /** Item tool: places it would fit where the money does not reach. */
   poor?: number
+  /** Item tool, pointing and not yet dragging: why the thing cannot stand where the pointer is. */
+  why?: string
 }
 
 /** What the area tool would do where the pointer is, beyond how much ground it covers. */
@@ -827,6 +829,11 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
   const span = Math.max(w, h)
   const [hover, setHover] = useState<{ x: number; y: number; edge: Edge } | null>(null)
   const [anchor, setAnchor] = useState<[number, number] | null>(null)
+  /** The view has drawn its first frames. */
+  const [up, setUp] = useState(false)
+  const drawnRef = useRef(onDrawn)
+  drawnRef.current = onDrawn
+  const onUp = useCallback(() => (setUp(true), drawnRef.current?.()), [])
   /** The pointer is over the land beyond the plot, where nothing can be built. */
   const [off, setOff] = useState(false)
   // cards keep clear of whatever panels lie over the view
@@ -1271,8 +1278,11 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
       const can = def.cost > 0 ? Math.floor(budget / def.cost) : Infinity
       let fits = 0
       let poor = 0
+      let why: string | undefined
       const spots = (drag ? rowSpots(def, drag.x, drag.y, hover.x, hover.y, tool.rot) : ([[hover.x, hover.y]] as [number, number][])).map(([x, y]) => {
-        const free = !canPlace(site, tool.kind, x, y, tool.rot)
+        const no = canPlace(site, tool.kind, x, y, tool.rot)
+        why ??= no ?? undefined
+        const free = !no
         const ok = free && fits < can
         if (ok) fits++
         else if (free) poor++
@@ -1281,7 +1291,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
       const good = spots.filter((s) => s.ok).flatMap((s) => tilesOf(def, s.x, s.y, tool.rot))
       const bad = spots.filter((s) => !s.ok).flatMap((s) => tilesOf(def, s.x, s.y, tool.rot).filter(([x, y]) => inPlot(site, x, y)))
       const count = spots.filter((s) => s.ok).length
-      return { good, bad, spots, run: { tool: 'item' as const, count, blocked: spots.length - count, cost: count * def.cost, poor } }
+      return { good, bad, spots, run: { tool: 'item' as const, count, blocked: spots.length - count, cost: count * def.cost, poor, why: drag ? undefined : why } }
     }
     if (tool.type === 'remove') {
       const items = drag ? sellRun(drag.x, drag.y, hover.x, hover.y) : sellRun(hover.x, hover.y, hover.x, hover.y)
@@ -1320,8 +1330,9 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
   }, [hover?.x, hover?.y, hover?.edge.x, hover?.edge.y, hover?.edge.side, hover?.edge.bay, hover?.edge.curve, anchor, drag, tool, site, site.rev, areaTool, shape, filling, optsKey, budget])
 
   // ---- a tool being dragged: say what it would do, and do it when the button comes up
-  const runInfo = drag && preview && 'run' in preview && preview.run ? preview.run : null
-  const runKey = runInfo ? `${runInfo.tool}|${runInfo.count}|${runInfo.blocked}|${runInfo.cost}|${runInfo.kept ?? 0}|${runInfo.short ?? 0}|${runInfo.poor ?? 0}` : ''
+  // (an item that cannot stand where the pointer is says why before anything is pressed)
+  const runInfo = preview && 'run' in preview && preview.run && (drag || ('why' in preview.run && preview.run.why)) ? preview.run : null
+  const runKey = runInfo ? `${'why' in runInfo ? (runInfo.why ?? '') : ''}|${drag ? 1 : 0}|${runInfo.tool}|${runInfo.count}|${runInfo.blocked}|${runInfo.cost}|${runInfo.kept ?? 0}|${runInfo.short ?? 0}|${runInfo.poor ?? 0}` : ''
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => onRun?.(runInfo), [runKey, onRun])
   const finish = useRef<() => void>(() => {})
@@ -1397,7 +1408,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
   }
   // while a tool is being dragged, a tag at the pointer says how many and how much
   const runTag =
-    hover && runInfo && (runInfo.count > 1 || runInfo.blocked > 0) ? (
+    hover && drag && runInfo && (runInfo.count > 1 || runInfo.blocked > 0) ? (
       <Html position={[hover.x - w / 2 + 0.5, mode === 'cut' ? 1.7 : STOREY + 0.4, hover.y - h / 2 + 0.5]} center zIndexRange={[30, 20]} style={{ pointerEvents: 'none' }}>
         <div className="pointer-events-none -translate-y-full whitespace-nowrap border border-accent bg-panel/95 px-2 py-[3px] text-center">
           <div className="num text-[11px] text-fg">
@@ -1856,7 +1867,9 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
           <Sized>{card(open, () => setOpen(null))}</Sized>
         </Html>
       )}
-      {!tool &&
+      {/* (put up once the view has drawn: signs mounted while the scene is still loading its parts come up empty) */}
+      {up &&
+        !tool &&
         plates.map((p) =>
           p.target.key === open?.key ? null : (
             <Html key={p.key} position={p.at} center zIndexRange={[19, 10]}>
@@ -1897,7 +1910,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
           <N8AO halfRes aoRadius={0.8} distanceFalloff={1} intensity={mood === 'night' ? 1.2 : 2} quality="medium" />
         </EffectComposer>
       )}
-      <Drawn on={onDrawn} />
+      <Drawn on={onUp} />
       {!autoRotate && <CameraKeys span={span} home={home} aim={aim} />}
       {autoRotate && <AutoTurn speed={3} />}
       <CameraFence span={span} top={height + 6} />

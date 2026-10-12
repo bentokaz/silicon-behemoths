@@ -201,6 +201,9 @@ function EmployeeDrawer({ e, seated, onClose }: { e: Employee; seated: boolean; 
 
 // ---------------------------------------------------------------- the People page
 
+/** Up to this many people fit on the page at a glance: no job filter is offered. */
+const FEW = 8
+
 const NEED_TAG: Record<Need, { tone: 'warn' | 'neg' | 'dim'; text: (e: Employee) => string }> = {
   raise: { tone: 'warn', text: (e) => `Asks ${price(e.ask ?? 0)}` },
   leaving: { tone: 'neg', text: (e) => (daysToQuit(e) === 1 ? 'May quit tomorrow' : `May quit in ${daysToQuit(e) ?? 0} days`) },
@@ -295,15 +298,21 @@ function People({ view }: { view: 'team' | 'policy' | 'execs' }) {
             { value: 'execs', label: 'Executives', locked: lockTip(g, 'execs'), badge: gone ? `${gone} empty` : undefined, alert: !!gone },
           ]}
           right={
-            view === 'team' && g.staff.length > 0 ? (
+            // a filter with one choice, or a job pick for a handful of people, is only something more to read
+            view === 'team' && (needs.total > 0 || g.staff.length > FEW) ? (
               <>
-                <Filters
-                  label="Which people"
-                  value={filter}
-                  onChange={setPicked}
-                  options={[...(needs.total ? [{ value: 'needs' as const, label: 'Needs you', count: needs.total, alert: true }] : []), { value: 'all' as const, label: 'All', count: g.staff.length }]}
-                />
-                <Pick label="Role" value={role} options={ROLE_OPTIONS} onChange={setRole} className="ml-2" />
+                {needs.total > 0 && (
+                  <Filters
+                    label="Which people"
+                    value={filter}
+                    onChange={setPicked}
+                    options={[
+                      { value: 'needs', label: 'Needs you', count: needs.total, alert: true },
+                      { value: 'all', label: 'All', count: g.staff.length },
+                    ]}
+                  />
+                )}
+                {(g.staff.length > FEW || role !== 'all') && <Pick label="Role" value={role} options={ROLE_OPTIONS} onChange={setRole} className="ml-2" />}
               </>
             ) : undefined
           }

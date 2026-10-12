@@ -110,6 +110,8 @@ export function visitorsNote(passers: number, capacity: number, open: boolean): 
  * store), and says so with `partial`.
  */
 export const monthWord = (partial: boolean) => (partial ? 'this month' : 'last month')
+/** The name of the profit figure: it says that it is a projection whenever it is one. */
+export const profitLabel = (partial: boolean) => (partial ? 'Projected profit this month' : 'Profit last month')
 /** The same in a sentence, for a tooltip or a note. */
 export const monthNote = (partial: boolean) => (partial ? 'This month, projected to its end from what the store has sold so far and what it sells in a day now.' : 'The last full month.')
 /** What a store's profit counts and what it leaves out. */
@@ -128,8 +130,8 @@ export function storeStatus(g: GameState, store: Store): Figure[] {
   const out: Figure[] = []
   if (!st.open) out.push({ label: 'Store', value: 'Not trading', tone: 'neg', title: st.problem })
   out.push(
-    { label: `Profit ${monthWord(m.partial)}`, value: money(m.profit), tone: signTone(m.profit), title: `${monthNote(m.partial)} ${PROFIT_NOTE}` },
-    { label: 'Revenue', value: money(m.revenue), title: `Costs ${money(m.costs)} a month.` },
+    { label: profitLabel(m.partial), value: money(m.profit), tone: signTone(m.profit), title: `${monthNote(m.partial)} ${PROFIT_NOTE}` },
+    { label: 'Revenue', value: money(m.revenue), title: `${monthNote(m.partial)} Costs ${money(m.costs)} a month.` },
     { label: 'Visitors a day', value: num(visitorsADay(store, m)), title: visitorsNote(tierOf(store.site).traffic ?? 0, st.capacity, st.open) },
   )
   return out

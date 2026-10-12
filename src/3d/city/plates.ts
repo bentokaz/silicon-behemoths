@@ -32,13 +32,6 @@ export const placeOfPlate = (p: Plate) => placeId(p.place, p.id)
 /** The place something that needs the player belongs to, if it has a building. */
 export const placeOfNeed = (a: Attention) => placeId(a.place, a.storeId)
 
-/**
- * Where the port's plate leads: to the company's devices, where stock is read
- * and reordered row by row, and which is open from the first day (the factory
- * screen, where the simulation points, is not).
- */
-const PORT_LEADS = { tab: 'products' }
-
 /** The first clause of a sentence: enough for a line on a plate. */
 const clause = (text: string) => text.split(/[:.](\s|$)/)[0]
 
@@ -55,7 +48,7 @@ export function cityPlates(g: GameState): CityPlate[] {
     const at = placeOfPlate(p)
     if (!at) continue
     const mine = todo.filter((a) => placeOfNeed(a) === at)
-    out.push({ placeId: at, storeId: p.place === 'store' ? p.id : undefined, title: p.title, lines: p.lines.slice(0, 2), needs: mine.length, tone: mine.some((a) => a.tone === 'neg') ? 'neg' : mine.length ? 'warn' : null, notes: mine.map((a) => a.text), where: p.place === 'port' ? PORT_LEADS : p.where })
+    out.push({ placeId: at, storeId: p.place === 'store' ? p.id : undefined, title: p.title, lines: p.lines.slice(0, 2), needs: mine.length, tone: mine.some((a) => a.tone === 'neg') ? 'neg' : mine.length ? 'warn' : null, notes: mine.map((a) => a.text), where: p.where })
   }
   const homeless = todo.filter((a) => !out.some((p) => p.placeId === placeOfNeed(a)))
   const campus = out.find((p) => p.placeId === 'office')
