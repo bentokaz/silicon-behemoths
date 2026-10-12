@@ -9,7 +9,7 @@ import { Canvas, type CanvasProps, useFrame, useThree } from '@react-three/fiber
 import { Component, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type * as THREE from 'three'
 import { useSettings } from '../store/settings'
-import { Meter, Pace, fence, isSoftwareRenderer, lostCopy, sharpness, sweep } from './canvasHelp'
+import { Meter, Pace, Sharpener, fence, isSoftwareRenderer, lostCopy, sweep } from './canvasHelp'
 
 let known: boolean | null = null
 /** Whether this browser can draw 3D at all. Asked once; asked again only after it has said no. */
@@ -249,7 +249,7 @@ function DensityWatch({ dpr, adaptive, onRatio }: { dpr: CanvasProps['dpr']; ada
   useEffect(() => {
     if (!adaptive || sharp.now === 1 || Math.abs(area - learnedAt.current) < learnedAt.current * 0.2) return
     learnedAt.current = area
-    sharp.now = 1
+    sharp.reset()
     apply()
   }, [area, adaptive, apply])
   // a computer that cannot keep up at full sharpness is given a slightly softer picture rather than a slow one
@@ -258,9 +258,7 @@ function DensityWatch({ dpr, adaptive, onRatio }: { dpr: CanvasProps['dpr']; ada
     if (!adaptive || document.hidden) return
     const average = meter.frame(dt)
     if (average === null) return
-    const next = sharpness(sharp.now, average)
-    if (next === sharp.now) return
-    sharp.now = next
+    if (!sharp.feed(average)) return
     learnedAt.current = area
     apply()
   })
@@ -273,7 +271,7 @@ function DensityWatch({ dpr, adaptive, onRatio }: { dpr: CanvasProps['dpr']; ada
  * not start sharp and slow and work its way down again; a change of quality
  * setting starts it afresh.
  */
-const sharp = { now: 1 }
+const sharp = new Sharpener()
 /** Pixels drawn per pixel of page: the screen's own density, held within the range a view asks for, less whatever has been given up for speed. */
 function ratioFor(dpr: CanvasProps['dpr'], adaptive: boolean): number {
   const low = Array.isArray(dpr) ? dpr[0] : (dpr ?? 1)
@@ -282,7 +280,7 @@ function ratioFor(dpr: CanvasProps['dpr'], adaptive: boolean): number {
   return +(adaptive ? full * sharp.now : full).toFixed(3)
 }
 useSettings.subscribe((now, was) => {
-  if (now.settings.quality !== was.settings.quality) sharp.now = 1
+  if (now.settings.quality !== was.settings.quality) sharp.reset()
 })
 
 /**

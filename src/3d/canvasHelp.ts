@@ -91,6 +91,56 @@ export function sharpness(now: number, averageFrame: number): number {
 }
 
 /**
+ * Remembers how sharply to draw, and learns it from how the frames go.
+ *
+ * Most screens show sixty frames a second and no more, so a computer with
+ * plenty to spare looks the same there as one that is only just keeping up:
+ * there is never a stretch fast enough to say "go back up". So after a while
+ * of keeping up at less than full sharpness, one step up is simply tried. If
+ * the next stretch runs long it is taken back, and the next try is left for
+ * twice as long, so a computer that really cannot do it is not tried forever.
+ */
+export class Sharpener {
+  now = 1
+  private calm = 0
+  private wait = 8
+  private trying = false
+  /** Give it the average frame time of the stretch just ended. Returns true if the sharpness changed. */
+  feed(averageFrame: number): boolean {
+    const was = this.now
+    if (averageFrame > 0.0215) {
+      if (this.trying) this.wait = Math.min(64, this.wait * 2)
+      this.trying = false
+      this.calm = 0
+      this.now = sharpness(this.now, averageFrame)
+    } else if (this.now < 1 && averageFrame < 0.013) {
+      this.trying = false
+      this.calm = 0
+      this.now = sharpness(this.now, averageFrame)
+    } else if (this.now < 1 && averageFrame < 0.019) {
+      // the try before this one held: the next need not wait so long
+      if (this.trying) this.wait = 8
+      this.trying = false
+      if (++this.calm >= this.wait) {
+        this.calm = 0
+        this.trying = true
+        this.now = Math.min(1, +(this.now / 0.85).toFixed(3))
+      }
+    } else {
+      this.trying = false
+      this.calm = 0
+    }
+    return this.now !== was
+  }
+  reset() {
+    this.now = 1
+    this.calm = 0
+    this.wait = 8
+    this.trying = false
+  }
+}
+
+/**
  * Adds up frame times and gives their average once a stretch of them is over:
  * so many frames, or a few seconds if the frames are so slow that that comes
  * first (a computer drawing two frames a second must not wait a minute to be

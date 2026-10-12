@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LEAST_SHARP, MAX_STEP, Meter, Pace, isSoftwareRenderer, fence, lostCopy, sharpness, stepOf, sweep } from './canvasHelp'
+import { LEAST_SHARP, MAX_STEP, Meter, Pace, Sharpener, isSoftwareRenderer, fence, lostCopy, sharpness, stepOf, sweep } from './canvasHelp'
 
 describe('stepOf', () => {
   it('passes an ordinary frame through and cuts a long pause down to one step', () => {
@@ -117,6 +117,42 @@ describe('Meter', () => {
     expect([m.frame(0.01), m.frame(0.02), m.frame(30), m.frame(0.03)]).toEqual([null, null, null, null])
     expect(m.frame(0.04)).toBeCloseTo(0.025, 6)
     expect(m.frame(0.01)).toBeNull()
+  })
+})
+
+describe('Sharpener', () => {
+  it('comes back to full sharpness on a sixty-a-second screen once a busy spell is over', () => {
+    const s = new Sharpener()
+    for (let i = 0; i < 3; i++) s.feed(1 / 30)
+    expect(s.now).toBeLessThan(0.65)
+    let stretches = 0
+    while (s.now < 1 && stretches < 200) {
+      s.feed(1 / 60)
+      stretches++
+    }
+    expect(s.now).toBe(1)
+    expect(stretches).toBeLessThanOrEqual(8 * 4)
+  })
+  it('stops trying so often on a computer that cannot do it', () => {
+    const s = new Sharpener()
+    s.feed(1 / 30)
+    const low = s.now
+    // keeping up at the lower sharpness, slow again every time a step up is tried
+    let tries = 0
+    for (let i = 0; i < 400; i++) {
+      const before = s.now
+      s.feed(s.now > low ? 1 / 30 : 1 / 60)
+      if (s.now > before) tries++
+    }
+    expect(s.now).toBe(low)
+    expect(tries).toBeGreaterThan(2)
+    expect(tries).toBeLessThan(12)
+  })
+  it('starts afresh when asked', () => {
+    const s = new Sharpener()
+    s.feed(0.1)
+    s.reset()
+    expect(s.now).toBe(1)
   })
 })
 
