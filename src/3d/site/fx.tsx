@@ -4,7 +4,7 @@
 import { type ReactNode, useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { CLIP, bayBeyond, bayStands, curveTiles, geomOf } from '../../sim/curves'
-import { FACADES, edgeIds, edgeRuns, styleOf, wholeRun } from '../../sim/sites'
+import { FACADES, doorFits, edgeIds, edgeRuns, styleOf } from '../../sim/sites'
 import type { Site } from '../../sim/types'
 import type { Crowd } from './crowd'
 import { rnd } from './crowd'
@@ -384,8 +384,7 @@ export function doorLeaves(site: Site): Leaf[] {
   for (const w of site.walls) {
     if (w.kind !== 'door') continue
     // a door needs its whole metre of wall; on a shorter stretch it is only a way through
-    const runs = edgeRuns(site, w.x, w.y, w.side, curved)
-    if (runs.length !== 1 || !wholeRun(runs[0])) continue
+    if (!doorFits(site, w.x, w.y, w.side, curved)) continue
     const [a, b] = edgeIds(site, w.x, w.y, w.side)
     const cx = ox + w.x + (w.side === 'n' ? 0.5 : 0)
     const cz = oz + w.y + (w.side === 'w' ? 0.5 : 0)

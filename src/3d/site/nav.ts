@@ -72,6 +72,8 @@ export function buildNav(site: Site): Nav {
   const portal = new Uint8Array(n)
   /** For each way through a curved wall: the middle of its bay and the way out of the room there, in tiles from the plot's corner. */
   const through = new Map<number, [number, number, number, number]>()
+  /** The two rooms such a doorway joins: the curved wall's own, and the one that owns the corner beyond it (0 for open ground). */
+  const joins = new Map<number, [number, number]>()
   const curved = curveTiles(site)
   for (const key of curved.keys()) {
     const [x, y] = key.split(',').map(Number)
@@ -90,7 +92,10 @@ export function buildNav(site: Site): Nav {
         if (blocked[i]) continue
         portal[i] = 1
         walk[i] = 1
-        if (!through.has(i)) through.set(i, [bay.x, bay.y, bay.nx, bay.ny])
+        if (!through.has(i)) {
+          through.set(i, [bay.x, bay.y, bay.nx, bay.ny])
+          joins.set(i, [c.room, curved.get(tileKey)!.beyond])
+        }
       }
     }
   })
@@ -106,6 +111,10 @@ export function buildNav(site: Site): Nav {
     if (px < 0 || py < 0 || px >= w || py >= h) return false
     const bay = through.get(py * w + px)
     if (!bay) return false
+    // the doorway leads between its own room and whatever lies beyond the curve there, not into a third room beside it
+    const rooms = joins.get(py * w + px)!
+    const far = gridAt(site, qx, qy)
+    if (far !== rooms[0] && far !== rooms[1]) return false
     // distance of q's middle from the line through the doorway, measured along the wall
     return Math.abs((qx + 0.5 - bay[0]) * -bay[3] + (qy + 0.5 - bay[1]) * bay[2]) <= 0.85
   }
@@ -320,3 +329,21 @@ export function buildNav(site: Site): Nav {
 
 /** Room number under a world position, 0 outdoors. */
 export const roomUnder = (site: Site, x: number, z: number) => gridAt(site, Math.floor(x + site.w / 2), Math.floor(z + site.h / 2))
+
+/**
+ * Rooms nobody can walk to from the way in: none of their floor is joined to
+ * the street. A room with no door at all is one of them; so is a room whose
+ * door is blocked by furniture or only leads into another such room. On a
+ * plot with no way in at all, that is every room.
+ */
+export function cutOffRooms(site: Site, nav: Nav): number[] {
+  const all = new Set<number>()
+  const ok = new Set<number>()
+  for (let i = 0; i < site.grid.length; i++) {
+    const room = site.grid[i]
+    if (!room) continue
+    all.add(room)
+    if (nav.reach[i]) ok.add(room)
+  }
+  return [...all].filter((n) => !ok.has(n)).sort((a, b) => a - b)
+}

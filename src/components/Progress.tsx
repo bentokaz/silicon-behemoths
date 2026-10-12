@@ -4,12 +4,12 @@
 import { useEffect, useState } from 'react'
 import { sfx } from '../audio/sfx'
 import { fmtDate, hireExec } from '../sim/game'
-import { CAPS, type CapId, type Capability, GROWTH_STAGES, type ReqState, START_WITH, type Where, capOf, capsOfExec, execAvailable, execNeeds, has, isNear, needText, nextReq, ratioOf, reqsOf, vacantSeats } from '../sim/progress'
+import { CAPS, type CapId, type Capability, GROWTH_STAGES, type ReqState, START_WITH, type Where, capOf, capsOfExec, execAvailable, execNeeds, has, isNear, lockTip, needText, nextReq, ratioOf, reqsOf, vacantSeats } from '../sim/progress'
 import { EXECS, TRAITS, execOf } from '../sim/staff'
 import { EXEC_IDS, type Employee, type ExecId, type GameState } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { Icon, type IconName } from './icons'
-import { Btn, Head, IconBtn, Meter, Tag, money, num, pct } from './ui'
+import { Btn, Head, IconBtn, type LockProps, Meter, Tag, money, num, pct } from './ui'
 
 const iconOf = (c: Capability) => c.icon as IconName
 /** Where "take me there" leads for something that is open. */
@@ -155,21 +155,78 @@ export function LockNote({ id }: { id: CapId }) {
   )
 }
 
+/**
+ * What to hand a control that belongs to a capability, so that while the
+ * capability is locked the control is dimmed behind a lock, says what opens
+ * it, and a click shows the card instead of doing anything. Nothing once it
+ * is open. Pass `card: false` where leaving the screen would lose work.
+ */
+export function lockProps(g: GameState, id: CapId, card = true): LockProps {
+  const tip = lockTip(g, id)
+  if (!tip) return {}
+  return { locked: tip, onLocked: card ? () => useStore.getState().showLock(id) : undefined }
+}
+
 /** Seconds an announcement stays up if nobody touches it. */
 const BANNER_SECONDS = 14
 
-/** A new part of the company has opened: one strip across the top, one at a time. */
+/** Put away announcements: the ones named, or all of them. */
+const dismiss = (ids?: CapId[]) => useStore.setState((s) => ({ banners: ids ? s.banners.filter((id) => !ids.includes(id)) : [] }))
+
+/**
+ * A new part of the company has opened: one strip across the top. When
+ * several open together (two hires on the same morning, a first device going
+ * on sale) they share one card with a line each, instead of taking turns.
+ */
 export function UnlockBanner() {
   const queue = useStore((s) => s.banners)
-  const { nextBanner, go } = useStore.getState()
-  const id = queue[0]
+  const { go } = useStore.getState()
+  // the same capability is never listed twice
+  const ids = queue.filter((id, i) => queue.indexOf(id) === i)
+  const id = ids[0]
+  const key = ids.join(' ')
   const [held, setHeld] = useState(false)
+  // each one added buys a little more reading time, and starts the clock again
   useEffect(() => {
-    if (!id || held) return
-    const t = window.setTimeout(nextBanner, BANNER_SECONDS * 1000)
+    if (!key || held) return
+    const t = window.setTimeout(() => dismiss(), (BANNER_SECONDS + 4 * (key.split(' ').length - 1)) * 1000)
     return () => window.clearTimeout(t)
-  }, [id, held, nextBanner])
+  }, [key, held])
   if (!id) return null
+  if (ids.length > 1) {
+    return (
+      <div className="flex shrink-0 items-stretch border-b border-accent bg-panel" onMouseEnter={() => setHeld(true)} onMouseLeave={() => setHeld(false)} role="status">
+        <span className="flex w-12 shrink-0 flex-col items-center justify-center gap-[2px] bg-accent text-carbon">
+          <Icon name="unlock" size={18} />
+          <span className="num text-[11px] font-semibold leading-none">{ids.length}</span>
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2 border-b border-line py-[3px] pl-3 pr-2">
+            <span className="label flex min-w-0 items-center gap-1 text-accent">
+              <Icon name="unlock" size={10} className="shrink-0" />
+              <span className="truncate">Now open: {ids.length} new parts of the company</span>
+            </span>
+            <IconBtn icon="close" tone="ghost" title="Dismiss all" onClick={() => dismiss()} />
+          </div>
+          {ids.map((one) => {
+            const cap = capOf(one)
+            return (
+              <div key={one} className="flex items-center gap-2 border-b border-line py-[3px] pl-3 pr-2 last:border-0">
+                <Icon name={iconOf(cap)} size={14} className="shrink-0 text-accent" />
+                <span className="w-[150px] shrink-0 truncate text-[12px] font-semibold uppercase tracking-[0.14em] text-fg max-md:w-[104px]">{cap.name}</span>
+                <span className="min-w-0 flex-1 truncate text-[11px] text-dim" title={cap.now}>
+                  {cap.now}
+                </span>
+                <Btn small tone="primary" icon="arrowRight" className="shrink-0 whitespace-nowrap" title={`Go to ${cap.name}`} onClick={() => (sfx.confirm(), dismiss([one]), go(homeOf(cap)))}>
+                  Go
+                </Btn>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
   const cap = capOf(id)
   return (
     <div className="flex shrink-0 items-stretch border-b border-accent bg-panel" onMouseEnter={() => setHeld(true)} onMouseLeave={() => setHeld(false)} role="status">
@@ -183,7 +240,6 @@ export function UnlockBanner() {
             Now open
           </span>
           <span className="truncate text-[13px] font-semibold uppercase tracking-[0.16em] text-fg">{cap.name}</span>
-          {queue.length > 1 && <span className="num text-[10px] text-faint">and {queue.length - 1} more</span>}
         </div>
         <div className="truncate text-[11px] text-dim">{cap.now}</div>
       </div>
@@ -193,10 +249,10 @@ export function UnlockBanner() {
         ))}
       </div>
       <div className="flex shrink-0 items-center gap-1 border-l border-line px-2">
-        <Btn small tone="primary" icon="arrowRight" onClick={() => (sfx.confirm(), nextBanner(), go(homeOf(cap)))}>
+        <Btn small tone="primary" icon="arrowRight" onClick={() => (sfx.confirm(), dismiss([id]), go(homeOf(cap)))}>
           Take me there
         </Btn>
-        <IconBtn icon={queue.length > 1 ? 'arrowRight' : 'close'} tone="ghost" title={queue.length > 1 ? 'Next' : 'Dismiss'} onClick={nextBanner} />
+        <IconBtn icon="close" tone="ghost" title="Dismiss" onClick={() => dismiss()} />
       </div>
     </div>
   )

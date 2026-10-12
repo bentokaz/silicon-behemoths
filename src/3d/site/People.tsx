@@ -41,6 +41,8 @@ const STANCE = 0.56
 const REACH = 0.812
 const FOOT_F = [0, 0]
 const FOOT_UP = [0, 0]
+const FOOT_DOWN = [0, 0]
+const SPLAY = [0, 0]
 
 // What someone has in their hands.
 const Prop = { None: 0, Box: 1, Bag: 2, Tray: 3, Cup: 4, Device: 5, Phone: 6, Weights: 7, Broom: 8, Clipboard: 9 } as const
@@ -84,7 +86,7 @@ const REST: Record<number, number[]> = {
   // on a high stool at a counter: legs hang nearly straight, so the knees stay clear of it
   [Pose.Bar]: [0.1, 0.05, 0.42, 0.42, 0.04, 0.04, 0.55, 0.55, 0.75, 0.75, 0.65, 0.65, 0.2, 0.2],
   [Pose.Present]: [0, 0, 0.5, 0.3, 0.06, 1.0, 0, 0, 0, 0, 1.2, 0.3, 0.3, 0],
-  [Pose.Shake]: [0.05, 0, 0.04, 0.75, 0.07, 0.03, 0, 0, 0, 0, 0.14, 0.55, 0.1, 0.1],
+  [Pose.Shake]: [0.16, -0.08, 0.04, 1.0, 0.07, 0.03, 0, 0, 0, 0, 0.14, 0.3, 0.1, 0.1],
   [Pose.Sweep]: [0.16, 0.2, 0.25, 0.5, 0.03, 0.03, 0, 0, 0, 0, 1.3, 0.9, 0.6, 0.5],
   [Pose.Fix]: [-0.04, -0.3, 1.9, 1.7, 0.08, 0.08, 0, 0, 0, 0, 0.5, 0.7, 0.1, 0.1],
   [Pose.Film]: [0.04, 0.05, 0.55, 0.55, 0.03, 0.03, 0, 0, 0, 0, 1.2, 1.2, 0.35, 0.35],
@@ -252,6 +254,7 @@ function pose(m: Meshes, i: number, b: Body, dt: number): boolean {
   const t = b.cycle
   const p = b.seed
   let stance = 0.08
+  let splayed = false
   if (c[AMP] > 0.02) {
     const a = c[AMP]
     // ---- the gait: each foot is planted while it bears weight and swung through while it does not, and the hip and
@@ -266,6 +269,7 @@ function pose(m: Meshes, i: number, b: Body, dt: number): boolean {
       let lift = 0
       if (ph < STANCE) {
         f = S * (STANCE - 2 * ph)
+        FOOT_DOWN[leg] = 1
         // the heel comes down first and the toe leaves last: the ankle is a little off the ground at both ends
         const edge = Math.abs(f) / 0.4
         lift = 0.07 * edge * edge
@@ -273,6 +277,7 @@ function pose(m: Meshes, i: number, b: Body, dt: number): boolean {
         if (reach < low) low = reach
       } else {
         const k = (ph - STANCE) / (1 - STANCE)
+        FOOT_DOWN[leg] = 0
         f = S * STANCE * (2 * (k * k * (3 - 2 * k)) - 1)
         lift = 0.035 + 0.1 * Math.sin(Math.PI * Math.pow(k, 0.8)) * Math.min(1, S / 0.5)
       }
@@ -280,9 +285,16 @@ function pose(m: Meshes, i: number, b: Body, dt: number): boolean {
       FOOT_UP[leg] = lift * a
     }
     const drop = (0.86 - low) * a
+    // stepping sideways along a row of seats: the same planted feet, but out to the side instead of fore and aft
+    const sideways = b.sidle !== 0
     for (let leg = 0; leg < 2; leg++) {
       const down = c[HIP] - drop - 0.035 - FOOT_UP[leg]
-      const f = FOOT_F[leg]
+      let f = FOOT_F[leg]
+      if (sideways) {
+        SPLAY[leg] = Math.asin(Math.max(-0.6, Math.min(0.6, (f * b.sidle) / 0.82)))
+        f = FOOT_DOWN[leg] ? 0 : 0.04
+        splayed = true
+      }
       const d = Math.min(THIGH_L + SHIN_L - 0.002, Math.hypot(f, down))
       const knee = Math.PI - Math.acos(Math.max(-1, Math.min(1, (THIGH_L * THIGH_L + SHIN_L * SHIN_L - d * d) / (2 * THIGH_L * SHIN_L))))
       const thigh = Math.atan2(f, down) + Math.acos(Math.max(-1, Math.min(1, (THIGH_L * THIGH_L + d * d - SHIN_L * SHIN_L) / (2 * THIGH_L * d))))
@@ -299,7 +311,7 @@ function pose(m: Meshes, i: number, b: Body, dt: number): boolean {
     lean += 0.025 * a * Math.min(1, b.speed / 1.6)
     // how far forward the left foot is, -1 to 1: the arms swing against the legs, less on a short step
     const s = Math.cos(t)
-    const swing = Math.min(1, S / 0.7)
+    const swing = sideways ? 0 : Math.min(1, S / 0.7)
     if (!arms) {
       // the elbow closes a little as the hand comes forward
       const one = prop === Prop.Bag || prop === Prop.Cup || prop === Prop.Broom
@@ -471,7 +483,8 @@ function pose(m: Meshes, i: number, b: Body, dt: number): boolean {
 
   for (let leg = 0; leg < 2; leg++) {
     const sgn = leg ? 1 : -1
-    F1.multiplyMatrices(R, A.makeRotationX(leg ? thighR : thighL).setPosition(sgn * stance, hip, 0))
+    if (splayed) F1.multiplyMatrices(R, B.makeRotationZ(SPLAY[leg]).multiply(A.makeRotationX(leg ? thighR : thighL)).setPosition(sgn * stance, hip, 0))
+    else F1.multiplyMatrices(R, A.makeRotationX(leg ? thighR : thighL).setPosition(sgn * stance, hip, 0))
     box(m, bx + THIGH + leg, F1, 0.125, 0.44, 0.135, 0, -0.2, 0)
     F2.multiplyMatrices(F1, A.makeRotationX(-(leg ? kneeR : kneeL)).setPosition(0, -0.42, 0))
     box(m, bx + SHIN + leg, F2, 0.108, 0.4, 0.112, 0, -0.18, 0)

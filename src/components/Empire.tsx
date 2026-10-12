@@ -11,9 +11,9 @@ import { IPO_MIN_VALUE, RAISE_GAP, founderStake, ipoBlocked, issueBlocked, marke
 import type { GameState } from '../sim/types'
 import { takeAim } from '../store/focus'
 import { useGame, useStore } from '../store/game'
-import { LockNote } from './Progress'
+import { LockNote, lockProps } from './Progress'
 import { Icon, type IconName } from './icons'
-import { Btn, Empty, Head, Kpi, Lead, Meter, Mini, Panel, Row, Slider, Tabs, Tag, chart, money, num, pct } from './ui'
+import { Btn, Empty, Head, Kpi, Lead, type LockProps, Meter, Mini, Panel, Row, Slider, Tabs, Tag, chart, money, num, pct } from './ui'
 
 const big = (v: number) => (Math.abs(v) >= 1e9 ? `$${(v / 1e9).toFixed(2)}B` : money(v, 1))
 
@@ -459,12 +459,13 @@ export function WorldScreen() {
 
 // ------------------------------------------------------------------ after-sales
 
-function Option({ on, onClick, title, note, right }: { on: boolean; onClick: () => void; title: string; note: string; right?: string }) {
+function Option({ on, onClick, title, note, right, locked, onLocked }: { on: boolean; onClick: () => void; title: string; note: string; right?: string } & LockProps) {
+  // locked, the switch is dimmed behind a lock but what it would do stays readable
   return (
-    <button onClick={onClick} aria-pressed={on} className={`block w-full border p-2 text-left ${on ? 'border-accent bg-accent/10' : 'border-line hover:border-line2'}`}>
+    <button onClick={locked ? onLocked : onClick} aria-pressed={on} aria-disabled={locked ? true : undefined} title={locked || undefined} className={`block w-full border p-2 text-left ${locked ? 'cursor-not-allowed border-line' : on ? 'border-accent bg-accent/10' : 'border-line hover:border-line2'}`}>
       <div className="flex items-baseline justify-between">
-        <span className={`text-xs uppercase tracking-wider ${on ? 'text-accent' : 'text-fg'}`}>
-          <Lead icon={on ? 'check' : 'ban'} size={12} />
+        <span className={`text-xs uppercase tracking-wider ${locked ? 'text-dim opacity-45' : on ? 'text-accent' : 'text-fg'}`}>
+          <Lead icon={locked ? 'lock' : on ? 'check' : 'ban'} size={12} />
           {title}
         </span>
         {right && <span className="num text-[10px] text-dim">{right}</span>}
@@ -488,6 +489,8 @@ export function CareScreen() {
   const recalls = g.products.filter((p) => p.companyId === 'player' && p.recall)
   const benches = repairBenches(g)
   const m = c.last
+  // until Care policies opens, every lever here is shown as it stands but cannot be moved
+  const lock = lockProps(g, 'carePolicy')
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-2">
       <div className="grid shrink-0 grid-cols-5 gap-2">
@@ -503,7 +506,7 @@ export function CareScreen() {
           <div className="text-[11px] leading-snug text-dim">Every faulty unit is repaired at your cost while it is under warranty. A longer warranty costs more per fault, makes owners happier and makes buyers trust you.</div>
           <div className="grid grid-cols-3 gap-1">
             {WARRANTY_YEARS.map((y) => (
-              <Btn key={y} active={c.warrantyYears === y} onClick={() => set({ warrantyYears: y })}>
+              <Btn key={y} active={c.warrantyYears === y} onClick={() => set({ warrantyYears: y })} {...lock} lockMark="corner">
                 {y} year{y > 1 ? 's' : ''}
               </Btn>
             ))}
@@ -551,7 +554,7 @@ export function CareScreen() {
           <div className="text-[11px] leading-snug text-dim">How long each device keeps getting updates after it is sold. Owners of well-supported devices stay happy and come back; the bill grows with every device in use.</div>
           <div className="grid grid-cols-5 gap-1">
             {UPDATE_YEARS.map((y) => (
-              <Btn key={y} active={c.updateYears === y} onClick={() => set({ updateYears: y })} className="!px-0">
+              <Btn key={y} active={c.updateYears === y} onClick={() => set({ updateYears: y })} className="!px-0" {...lock} lockMark="corner">
                 {y} yr
               </Btn>
             ))}
@@ -562,9 +565,9 @@ export function CareScreen() {
             <Head icon="swap" className="mb-1 text-faint">
               Trade-in programme
             </Head>
-            <Option on={c.tradeIn} onClick={() => set({ tradeIn: !c.tradeIn })} title={c.tradeIn ? 'Running' : 'Not offered'} note="Fans get credit for their old device when they buy a new one. They upgrade about 30% sooner; each of those sales costs you 6% of the price." />
+            <Option {...lock} on={c.tradeIn} onClick={() => set({ tradeIn: !c.tradeIn })} title={c.tradeIn ? 'Running' : 'Not offered'} note="Fans get credit for their old device when they buy a new one. They upgrade about 30% sooner; each of those sales costs you 6% of the price." />
             <div className="mt-1">
-              <Option on={c.refurb} onClick={() => set({ refurb: !c.refurb })} title={c.refurb ? 'Refurbishing' : 'No refurbishing'} note="Traded-in devices are refurbished and sold on, earning back most of the credit. Needs a factory or a store with a repair bench." />
+              <Option {...lock} on={c.refurb} onClick={() => set({ refurb: !c.refurb })} title={c.refurb ? 'Refurbishing' : 'No refurbishing'} note="Traded-in devices are refurbished and sold on, earning back most of the credit. Needs a factory or a store with a repair bench." />
             </div>
             <Row icon="swap" k="Trade-ins last month" v={num(m.tradeIns)} />
             <Row icon="coins" k="Refurbished sales last month" v={money(m.refurbIncome, 1)} />
@@ -572,8 +575,8 @@ export function CareScreen() {
         </Panel>
         <Panel title="Care plan" icon="heart" bodyClass="space-y-2 overflow-y-auto p-2">
           <div className="text-[11px] leading-snug text-dim">A monthly subscription that covers accidents and gets owners to the front of the queue. Happy owners sign up more readily; about two fifths of the income goes back out on claims.</div>
-          <Option on={c.plan} onClick={() => set({ plan: !c.plan })} title={c.plan ? 'On sale' : 'Not offered'} note={c.plan ? 'Members join and leave gradually as the price and their satisfaction change.' : 'Turn it on to start signing up owners.'} />
-          <Slider label="Price" icon="tag" value={c.planPrice} min={2} max={40} step={1} format={(v) => `$${v} / month`} onChange={(v) => act((s) => setCare(s, { planPrice: v }))} />
+          <Option {...lock} on={c.plan} onClick={() => set({ plan: !c.plan })} title={c.plan ? 'On sale' : 'Not offered'} note={c.plan ? 'Members join and leave gradually as the price and their satisfaction change.' : 'Turn it on to start signing up owners.'} />
+          <Slider {...lock} label="Price" icon="tag" value={c.planPrice} min={2} max={40} step={1} format={(v) => `$${v} / month`} onChange={(v) => act((s) => setCare(s, { planPrice: v }))} />
           <Row icon="percent" k="Owners who would join at this price" v={pct(planAttach(g, sat))} />
           <Row icon="staff" k="Members now" v={num(c.subscribers)} />
           <Row icon="coins" k="Income last month" v={money(m.planIncome, 1)} tone="text-pos" />

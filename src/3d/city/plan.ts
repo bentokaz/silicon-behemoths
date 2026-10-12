@@ -88,47 +88,121 @@ export const SHOP_LOT = { w: 24, d: 24 }
 /** Most stores one shop plot is divided between: four rows of four. */
 export const SHOP_SHARE = 16
 
+/**
+ * The ground a store needs beyond its own plot, at life size: a kerb and a
+ * way past at the sides and the back, and in front room for the queue that
+ * forms there on a launch day.
+ */
+export const SHOP_ROOM = { side: 1.6, back: 0.6, front: 2.8 }
+
+type Footprint = Pick<Site, 'w' | 'h'>
+
 export interface ShopLot {
   x: number
   z: number
   /** Width and depth of the ground this store has to itself. */
-  size: number
+  w: number
+  d: number
+  /** How much smaller than life it is drawn: 1 with room to spare, and the same for every store on one plot. */
+  scale: number
   /** The plot it is on, as "x,z", and how many stores share that plot. */
   lot: string
   shared: number
 }
 
+interface ShopRow {
+  /** Indexes of the stores in the row, from the west. */
+  at: number[]
+  width: number
+  depth: number
+}
+
+/** A plot's stores set out in rows from the street back at a given scale, in the order they opened; null if they do not fit. */
+function shopRows(sites: Footprint[], s: number): ShopRow[] | null {
+  const rows: ShopRow[] = []
+  let depth = 0
+  for (let i = 0; i < sites.length; i++) {
+    const cw = (sites[i].w + SHOP_ROOM.side) * s
+    const cd = (sites[i].h + SHOP_ROOM.back + SHOP_ROOM.front) * s
+    if (cw > SHOP_LOT.w + 1e-9) return null
+    let row = rows[rows.length - 1]
+    if (!row || row.width + cw > SHOP_LOT.w + 1e-9) rows.push((row = { at: [], width: 0, depth: 0 }))
+    row.at.push(i)
+    row.width += cw
+    if (cd > row.depth) {
+      depth += cd - row.depth
+      row.depth = cd
+    }
+    if (depth > SHOP_LOT.d + 1e-9) return null
+  }
+  return rows
+}
+
 /**
- * Where each of a district's stores stands. The first stores take a plot
- * each. Once every plot has one, the next go round again and share: a plot
- * with two to four stores is divided in quarters, up to nine in ninths, up
- * to sixteen in sixteenths, each store on its own piece (and drawn smaller
- * to fit, see `shopScale`). A plot fills from the street back. With
+ * The scale at which every store on a shared plot is drawn: life size if
+ * they all fit, otherwise the largest that lets them. One scale to a plot,
+ * so neighbours on it, and the people queueing outside them, stay in
+ * proportion to one another.
+ */
+export function plotScale(sites: Footprint[]): number {
+  if (shopRows(sites, 1)) return 1
+  let lo = 0
+  let hi = 1
+  for (let i = 0; i < 24; i++) {
+    const mid = (lo + hi) / 2
+    if (shopRows(sites, mid)) lo = mid
+    else hi = mid
+  }
+  return Math.floor(lo * 1000) / 1000
+}
+
+/**
+ * Where each of a district's stores stands, given the size of each one's
+ * site. The first stores take a plot each, in the middle of it. Once every
+ * plot has one, the next go round again and share, up to sixteen to a plot.
+ * A shared plot is set out in rows from the street back, in the order the
+ * stores opened, every store on it at the same scale (see `plotScale`):
+ * two or four mall units, or a pair of high-street shops, share a plot at
+ * or near life size, and only a plot that is really crowded shrinks. With
  * thirteen plots that is room for 208 stores at home and 192 on an island;
  * any beyond that are left off the map.
  */
-export function shopLots(slots: [number, number][], count: number): (ShopLot | null)[] {
-  const out: (ShopLot | null)[] = []
-  for (let j = 0; j < count; j++) {
-    const i = j % slots.length
-    const rank = Math.floor(j / slots.length)
-    if (rank >= SHOP_SHARE) {
-      out.push(null)
-      continue
+export function shopLots(slots: [number, number][], sites: Footprint[]): (ShopLot | null)[] {
+  const out: (ShopLot | null)[] = sites.map(() => null)
+  slots.forEach(([sx, sz], i) => {
+    // the stores on this plot, in the order they opened
+    const on: number[] = []
+    for (let j = i; j < sites.length && on.length < SHOP_SHARE; j += slots.length) on.push(j)
+    if (!on.length) return
+    const lot = `${sx},${sz}`
+    if (on.length === 1) {
+      const site = sites[on[0]]
+      out[on[0]] = { x: sx, z: sz, w: SHOP_LOT.w, d: SHOP_LOT.d, scale: Math.min(1, (SHOP_LOT.w - 1.2) / site.w, (SHOP_LOT.d - 1.2) / site.h), lot, shared: 1 }
+      return
     }
-    // how many stores this plot holds once all of them are placed
-    const shared = Math.min(SHOP_SHARE, Math.floor((count - 1 - i) / slots.length) + 1)
-    const k = Math.ceil(Math.sqrt(shared))
-    const size = SHOP_LOT.w / k
-    const [sx, sz] = slots[i]
-    const col = rank % k
-    const row = Math.floor(rank / k)
-    out.push({ x: sx - SHOP_LOT.w / 2 + size * (col + 0.5), z: sz + SHOP_LOT.d / 2 - size * (row + 0.5), size, lot: `${sx},${sz}`, shared })
-  }
+    const mine = on.map((j) => sites[j])
+    const scale = plotScale(mine)
+    const rows = shopRows(mine, scale) ?? []
+    // what is left over is shared out: between the stores of a row, and between the rows
+    const spare = (SHOP_LOT.d - rows.reduce((a, r) => a + r.depth, 0)) / Math.max(1, rows.length)
+    let front = sz + SHOP_LOT.d / 2
+    for (const row of rows) {
+      const gap = (SHOP_LOT.w - row.width) / row.at.length
+      let west = sx - SHOP_LOT.w / 2
+      for (const k of row.at) {
+        const site = mine[k]
+        const w = (site.w + SHOP_ROOM.side) * scale + gap
+        // its own ground is taken evenly round it, so the queue's strip in front is common ground
+        const d = (site.h + SHOP_ROOM.back * 2) * scale + spare
+        // every store in a row stands the same way back from the front of it, so their doors and queues line up
+        out[on[k]] = { x: west + w / 2, z: front - spare / 2 - (SHOP_ROOM.front + site.h / 2) * scale, w, d, scale, lot, shared: on.length }
+        west += w
+      }
+      front -= row.depth + spare
+    }
+  })
   return out
 }
-/** How much smaller than life a store is drawn so that its plot fits the ground it has. */
-export const shopScale = (site: Pick<Site, 'w' | 'h'>, size: number) => Math.min(1, (size - 1.2) / site.w, (size - 1.2) / site.h)
 /** Where billboards stand along the avenue, between the towers. */
 export const BOARD_SLOTS: [number, number][] = [-85, 111, -119, 145, -153, -45, 179].map((x) => [x, 5.5])
 /** The pier ships leave from, and its seaward end. */
@@ -269,7 +343,7 @@ export function places(g: GameState): Place[] {
   // ---- stores, each in its own region's high street
   const districtOf = (store: Store) => all.find((x) => x.region.id === store.region) ?? home
   const lots = new Map<string, (ShopLot | null)[]>()
-  for (const d of all) lots.set(d.region.id, shopLots(d.shops, g.stores.filter((s) => districtOf(s) === d).length))
+  for (const d of all) lots.set(d.region.id, shopLots(d.shops, g.stores.filter((s) => districtOf(s) === d).map((s) => s.site)))
   const taken = new Map<string, number>()
   for (const store of g.stores) {
     const d = districtOf(store)
@@ -277,7 +351,7 @@ export function places(g: GameState): Place[] {
     taken.set(d.region.id, i + 1)
     const slot = lots.get(d.region.id)?.[i]
     if (!slot) continue
-    const scale = shopScale(store.site, slot.size)
+    const scale = slot.scale
     const st = storeStats(store.site)
     out.push({
       id: `store:${store.id}`,
@@ -286,8 +360,8 @@ export function places(g: GameState): Place[] {
       lines: st.open ? [`${short(store.monthUnits)} sold this month`, `${short(store.lastVisitors)} visitors a day`] : [st.problem ?? 'Closed'],
       x: slot.x,
       z: slot.z,
-      w: slot.size,
-      d: slot.size,
+      w: slot.w,
+      d: slot.d,
       h: (store.site.floors * 3 + 5) * scale,
       scale,
       lot: slot.lot,
@@ -404,8 +478,26 @@ export function along(r: Route, dist: number): [number, number, number] {
 export interface Traffic {
   trucks: Route[]
   ships: Route[]
-  /** Store fronts with a launch-day queue: where the queue starts. */
-  queues: [number, number][]
+  /** Store fronts with a launch-day queue. */
+  queues: Queue[]
+}
+
+/** A queue outside a store: where its head stands, how many are in it, and the scale they are drawn at, which is the store's. */
+export interface Queue {
+  x: number
+  z: number
+  scale: number
+  people: number
+}
+/** Most people in one queue, two abreast, and how far apart they stand along it. */
+export const QUEUE = { people: 26, pitch: 0.95, head: 3 }
+
+/** The queue outside a store on a launch day. Alone on its plot it runs to its full length; on a shared plot it stops at the store's own corner, short of the neighbour's. */
+export function queueOf(p: Place): Queue {
+  const scale = p.scale ?? 1
+  const site = p.site
+  const pairs = p.crowded && site ? Math.floor((QUEUE.head + site.w / 2 + 0.6) / QUEUE.pitch) + 1 : QUEUE.people / 2
+  return { x: p.x, z: p.z + (site ? site.h / 2 + 1.5 : 8) * scale, scale, people: Math.min(QUEUE.people, pairs * 2) }
 }
 
 /** What is on the move today: lorries while there are devices to shift, ships to every market entered. */
@@ -447,6 +539,6 @@ export function traffic(g: GameState, list: Place[] = places(g)): Traffic {
   }
   // launch week: a queue outside every shop
   const launch = selling.some((p) => g.day - p.launchDay >= 0 && g.day - p.launchDay <= 6)
-  const queues = launch ? list.filter((p) => p.kind === 'store' && !p.warn).map((p): [number, number] => [p.x, p.z + (p.site ? (p.site.h * (p.scale ?? 1)) / 2 : 8) + 1.5]) : []
+  const queues = launch ? list.filter((p) => p.kind === 'store' && !p.warn).map(queueOf) : []
   return { trucks, ships, queues }
 }

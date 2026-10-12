@@ -5,7 +5,7 @@ import { useFrame } from '@react-three/fiber'
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 import { CLIP, type Facet, type Pt, bayStands, curveTiles, geomOf } from '../../sim/curves'
-import { FACADES, ROOFS, cutAt, defaultGround, edgeRuns, gridAt, groundAt, styleOf } from '../../sim/sites'
+import { FACADES, ROOFS, cutAt, defaultGround, edgeRuns, gridAt, groundAt, styleOf, wholeRun } from '../../sim/sites'
 import type { Corner, Room, Site } from '../../sim/types'
 import { hash } from './kit'
 
@@ -332,6 +332,9 @@ export function Ground({ site, dim }: { site: Site; dim: number }) {
 /**
  * Walls, doors, glazing, upper floors and roof. With `leaves` off the door
  * leaves are left out, for a view that draws its own and swings them.
+ * `dark` names the rooms nobody is in after dark: their windows stay unlit,
+ * in straight walls and curved ones alike, and so do most of the windows of
+ * the storeys above them.
  */
 export function Structure({ site, mode, glow, leaves = true, dark }: { site: Site; mode: ViewMode; glow: number; leaves?: boolean; dark?: ReadonlySet<number> }) {
   const meshes = useMeshes(() => {
@@ -354,6 +357,20 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
     const litKey = glow > 0.05 ? 'lit' : 'pane'
     /** Ground-floor windows of a room with nobody in it after dark stay unlit. */
     const litFor = (room?: Room) => (room && dark?.has(room.n) ? 'pane' : litKey)
+    /**
+     * A window on an upper storey follows the room below it: most are lit over a room in use, and only the odd
+     * one over an empty room. Which ones is fixed by the room, the storey and the place along the wall, so the
+     * pattern is the same every time the building is drawn.
+     */
+    const upperLit = (room: Room | undefined, seed: number, storey: number) => {
+      if (litKey === 'pane') return 'pane'
+      const empty = !!room && !!dark?.has(room.n)
+      return hash(seed * 3 + storey * 13 + (room?.n ?? 0) * 7) > (empty ? 0.88 : 0.26) ? 'lit' : 'pane'
+    }
+    /** The same for a wall that is all glass: a bay with no light behind it does not glow. */
+    const nightGlass = full && glow > 0.05
+    const glassFor = (room?: Room) => (nightGlass && room && dark?.has(room.n) ? 'glassoff' : 'glass')
+    const upperGlass = (room: Room | undefined, seed: number, storey: number) => (nightGlass && upperLit(room, seed, storey) === 'pane' ? 'glassoff' : 'glass')
     /** Upper floors seen through a glass wall are lit from within at night. */
     const plateKey = full && glow > 0.05 && facade.kind === 'glass' ? 'plate' : 'wall'
     const postH = full ? top + 0.345 : H + 0.035
@@ -408,10 +425,10 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
       } else slab('wall', x, y, side, toward, y0, y1, facade.color, 0.97 + j * 0.06, half, 0, u0, u1)
     }
 
-    const glazed = (x: number, y: number, side: 'n' | 'w', y0: number, y1: number, u0 = 0, u1 = 1) => {
+    const glazed = (x: number, y: number, side: 'n' | 'w', y0: number, y1: number, u0 = 0, u1 = 1, key = 'glass') => {
       const mid = (u0 + u1) / 2
       const len = u1 - u0
-      onEdge('glass', x, y, side, mid, len, y0 + 0.08, y1 - 0.06, 0.03, '#bfe0f2')
+      onEdge(key, x, y, side, mid, len, y0 + 0.08, y1 - 0.06, 0.03, '#bfe0f2')
       onEdge('trim', x, y, side, mid, len, y0, y0 + 0.08, 0.1, POST)
       onEdge('trim', x, y, side, mid, len, y1 - 0.06, y1, 0.1, POST)
       onEdge('trim', x, y, side, u0, 0.05, y0 + 0.08, y1 - 0.06, 0.08, POST)
@@ -426,8 +443,9 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
       const len = u1 - u0
       const mid = (u0 + u1) / 2
       let kind = overrides.get(`${x},${y},${side}`)
-      // a door needs the whole metre; on a shorter stretch it is simply a way through
-      if (kind === 'door' && !whole) kind = 'open'
+      // a door or an opening needs the whole metre: one left on a stretch a curved wall has since cut short
+      // is no way in (see doorFits), so the wall is drawn plain
+      if ((kind === 'door' || kind === 'open') && !wholeRun({ a, c, u0, u1 })) kind = undefined
       const exterior = !a || !c
       const seed = x * 53 + y * 97 + (side === 'n' ? 0 : 7)
       const ra = rooms.get(a)
@@ -463,7 +481,7 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
           else b.box('trim', ox + x + 0.42 + half, DOOR_H / 2, oz + y + 0.1, 0.82, DOOR_H - 0.06, 0.045, exterior ? '#2f3338' : '#8a6a4f')
         }
       } else if (glassWall) {
-        glazed(x, y, side, 0, H, u0, u1)
+        glazed(x, y, side, 0, H, u0, u1, exterior ? glassFor(ra ?? rc) : 'glass')
       } else {
         if (ra) slab('wall', x, y, side, 1, 0, H, styleOf(site, ra).wall, 0.97 + hash(seed) * 0.05, half, 0, u0, u1)
         else outer(x, y, side, 1, 0, H, seed, u0, u1)
@@ -488,12 +506,12 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
           const y0 = f * STOREY - 0.1
           const y1 = (f + 1) * STOREY - 0.1
           if (facade.kind === 'glass') {
-            glazed(x, y, side, y0 + 0.3, y1, u0, u1)
+            glazed(x, y, side, y0 + 0.3, y1, u0, u1, upperGlass(ra ?? rc, seed, f))
             onEdge('trim', x, y, side, mid, len, y0, y0 + 0.3, WALL_T, POST)
           } else {
             outer(x, y, side, toward, y0, y1, seed + f * 11, u0, u1)
             slab('wall', x, y, side, toward === 1 ? -1 : 1, y0, y1, '#d9d6cf', 1, half, 0, u0, u1)
-            if (whole && hash(seed + f * 5) > 0.2) slab(hash(seed + f * 13) > 0.5 ? litKey : 'pane', x, y, side, toward, y0 + 0.95, y0 + 2.4, '#27353f', 1, 0.014, half)
+            if (whole && hash(seed + f * 5) > 0.2) slab(upperLit(ra ?? rc, seed, f), x, y, side, toward, y0 + 0.95, y0 + 2.4, '#27353f', 1, 0.014, half)
           }
         }
         // parapet above the roof line
@@ -584,8 +602,8 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
           if (q > p) strip('trim', f, p, q, half * 0.5, half, y0 + 0.015, y1 - 0.015, 'ot', facade.color, 0.95 + j * 0.1, f.parts > 1)
         } else strip('wall', f, t0, t1, 0, half, y0, y1, 'o', facade.color, 1)
       }
-      const glazedStrip = (f: Facet, t0: number, t1: number, y0: number, y1: number) => {
-        strip('glass', f, t0, t1, -0.015, 0.015, y0 + 0.08, y1 - 0.06, 'oi', '#bfe0f2')
+      const glazedStrip = (f: Facet, t0: number, t1: number, y0: number, y1: number, key = 'glass') => {
+        strip(key, f, t0, t1, -0.015, 0.015, y0 + 0.08, y1 - 0.06, 'oi', '#bfe0f2')
         strip('trim', f, t0, t1, -0.05, 0.05, y0, y0 + 0.08, 'oit', POST)
         strip('trim', f, t0, t1, -0.05, 0.05, y1 - 0.06, y1, 'oitb', POST)
       }
@@ -620,7 +638,7 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
               }
             }
           } else if (glassWall) {
-            glazedStrip(f, t0, t1, 0, H)
+            glazedStrip(f, t0, t1, 0, H, farStyle ? 'glass' : glassFor(room))
           } else {
             strip('wall', f, t0, t1, -half, 0, 0, H, 'i', style.wall, 0.99)
             strip('trim', f, t0, t1, -half - 0.012, -half, 0, 0.09, 'it', style.trim)
@@ -629,7 +647,8 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
               strip('trim', f, t0, t1, half, half + 0.012, 0, 0.09, 'ot', farStyle.trim)
             } else {
               clad(f, t0, t1, 0, H, seed)
-              if (mode !== 'cut' && whole && hash(seed + 3) > 0.25) strip(hash(seed + 9) > 0.45 ? litKey : 'pane', f, t0, t1, half, half + 0.014, 0.95, 2.3, 'otb', '#27353f', 1, false)
+              // a window to the bay, lit or not with the room behind it like any other
+              if (mode !== 'cut' && whole && hash(seed + 3) > 0.25) strip(hash(seed + 9) > 0.45 ? litFor(room) : 'pane', f, t0, t1, half, half + 0.014, 0.95, 2.3, 'otb', '#27353f', 1, false)
             }
           }
           if (!(kind === 'door' && mode === 'cut') && !full) strip('trim', f, t0, t1, -half, half, H, H + 0.03, 'oit', CAP)
@@ -639,14 +658,14 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
             const y0 = fl * STOREY - 0.1
             const y1 = (fl + 1) * STOREY - 0.1
             if (facade.kind === 'glass') {
-              glazedStrip(f, t0, t1, y0 + 0.3, y1)
+              glazedStrip(f, t0, t1, y0 + 0.3, y1, upperGlass(room, seed, fl))
               strip('trim', f, t0, t1, -half, half, y0, y0 + 0.3, 'oi', POST)
               // the edge of the floor plate, seen through the glass below the band
               strip(plateKey, f, t0, t1, -half, -0.02, y0 - 0.2, y0, 'o', '#cfccc5')
             } else {
               clad(f, t0, t1, y0, y1, seed + fl * 11)
               strip('wall', f, t0, t1, -half, 0, y0, y1, 'i', '#d9d6cf')
-              if (whole && hash(seed + fl * 5) > 0.2) strip(hash(seed + fl * 13) > 0.5 ? litKey : 'pane', f, t0, t1, half, half + 0.014, y0 + 0.95, y0 + 2.4, 'otb', '#27353f', 1, false)
+              if (whole && hash(seed + fl * 5) > 0.2) strip(upperLit(room, seed, fl), f, t0, t1, half, half + 0.014, y0 + 0.95, y0 + 2.4, 'otb', '#27353f', 1, false)
             }
           }
           const base = site.floors * STOREY - 0.1
@@ -824,7 +843,8 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
       }
     }
     // only the outside view lights its glass: indoors, glowing partitions would get in the way
-    return b.build((k) => surface(k, k === 'lit' || k === 'plate' || (k === 'glass' && full) ? Math.round(glow * 10) / 10 : 0))
+    // (a glass bay with no light behind it is the same glass, without the glow)
+    return b.build((k) => (k === 'glassoff' ? surface('glass', 0) : surface(k, k === 'lit' || k === 'plate' || (k === 'glass' && full) ? Math.round(glow * 10) / 10 : 0)))
   }, [site, site.rev, mode, glow, leaves, dark])
   return (
     <>

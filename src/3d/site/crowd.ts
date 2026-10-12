@@ -17,7 +17,7 @@ import { Pose, type Spot, USE } from './spots'
 
 export const Act = { None: -1, Home: 0, Desk: 1, Station: 2, Meet: 3, Lunch: 4, Coffee: 5, Gym: 6, Wander: 7, Away: 8, Quit: 9, Visit: 10, Shop: 11, Watch: 12, Crew: 13, Host: 14 } as const
 export const Mode = { Off: 0, In: 1, Walk: 2, Enter: 3, Do: 4, Exit: 5, Out: 6 } as const
-export const Kind = { Staff: 0, Applicant: 1, Shopper: 2, Guest: 3, Crew: 4, Host: 5 } as const
+export const Kind = { Staff: 0, Applicant: 1, Shopper: 2, Guest: 3, Crew: 4, Host: 5, Front: 6 } as const
 /** Something carried that is not decided by what the person is doing. */
 export const Tool = { None: 0, Broom: 1, Clipboard: 2 } as const
 
@@ -40,8 +40,11 @@ export const strideFor = (speed: number) => Math.max(0.3, Math.min(0.74, 0.34 + 
 const SHIRTS = ['#c9553d', '#31506b', '#e9e4da', '#3f7d4d', '#d6a24f', '#6a5a7a', '#2c3036', '#7a8f9c']
 const WALK_SPEED = 1.6
 const ENTER_TIME = 0.42
-/** Speed along a row of seats or up a flight of steps. */
+/** Speed up a flight of steps or across a stage, and shuffling sideways along a row of seats. */
 const SIDLE_SPEED = 1.25
+const ROW_SPEED = 0.8
+/** The length of one sideways step along a row. */
+const ROW_STEP = 0.27
 /** How close two people on their feet may come, centre to centre. */
 export const GAP = 0.42
 /** How close someone may come to a person who is part-way into or out of a chair, and cannot step aside. */
@@ -88,11 +91,20 @@ export class Body {
   speed = 0
   /** Length of the step they are taking, in metres. */
   stride = 0.6
+  /** The way a row of seats faces, while they are on their way along it or out of it: they shuffle sideways, facing the front. */
+  crab = NaN
+  /** 1 while stepping sideways to their right, -1 to their left, 0 walking forwards. */
+  sidle = 0
   /** Seconds left of whatever they are doing, where that is timed. */
   wait = 0
   thinkIn = 0
   seat: Spot | null = null
   station: Spot | null = null
+  /** The reception desk they look after instead of sitting at their own, if they are the one on the front desk. */
+  post: Spot | null = null
+  /** Seconds left of a handshake across the reception desk, and who it is with. */
+  shake = 0
+  partner: Body | null = null
   team = -1
   teamIndex = 0
   morale = 70
@@ -164,6 +176,7 @@ export interface StaffEntry {
 
 /** What someone is up to, in a few words, for the label under the pointer. */
 export function describe(b: Body): string {
+  if (b.kind === Kind.Front) return b.shake > 0 ? 'Welcoming a new colleague' : b.walking ? 'On the way to the front desk' : b.pose === Pose.Meet ? 'Seeing to a visitor' : 'On reception'
   if (b.kind === Kind.Applicant) return b.hired ? 'Hired: starts in the morning' : 'Here about a job'
   if (b.kind === Kind.Shopper) return b.stage === 1 ? 'Queueing to pay' : b.bag ? 'Leaving with a new device' : 'Browsing'
   if (b.kind === Kind.Guest) return b.walking || b.striding ? (b.leaving ? 'On the way out' : 'Finding a seat') : b.cheer ? 'On their feet' : b.clap > 0.2 ? 'Applauding' : b.pose === Pose.Hold ? 'Trying the device' : 'In the audience'
@@ -175,6 +188,7 @@ export function describe(b: Body): string {
     case Act.Home:
       return 'Heading home'
     case Act.Desk:
+      if (b.post && !b.carry) return going ? 'On the way to the front desk' : b.shake > 0 ? 'Welcoming a new colleague' : b.pose === Pose.Meet ? 'Seeing to a visitor' : 'On reception'
       return going ? (b.carry ? 'First day: finding their desk' : 'Walking to their desk') : b.slump ? 'At their desk, struggling' : 'Working at their desk'
     case Act.Station:
       return going ? 'On the way to their station' : 'Working at their station'
@@ -215,6 +229,8 @@ export class Crowd {
   private tables: Spot[][] = []
   protected keepOff = (tile: number) => this.keepClear[tile] === 1
   private lobby = new Set<number>()
+  /** The chairs behind the reception desks. */
+  protected fronts: Spot[] = []
   private hours: OfficeLife['hours'] = 'standard'
   protected settled = false
   private counter = 0
@@ -312,6 +328,7 @@ export class Crowd {
       list.push(s)
     }
     this.tables = [...tables.values()]
+    this.fronts = spots.filter((s) => s.use & USE.front && s.access >= 0).slice(0, 2)
     this.claims.clear()
     for (const b of this.bodies) {
       b.gate = b.waitGate = b.nextGate = -1
@@ -329,6 +346,7 @@ export class Crowd {
       b.goalSpot = remap(b.goalSpot)
       b.seat = remap(b.seat)
       b.station = remap(b.station)
+      b.post = remap(b.post)
       if (b.spot) b.spot.taken = b
       if (b.goalSpot) b.goalSpot.taken = b
       if (!b.onSite) continue
@@ -516,6 +534,7 @@ export class Crowd {
           }
         }
       }
+      this.manFronts(life.stationed.get('support') ?? [])
       let n = 0
       for (const t of life.teams) {
         if (!t.leadId || t.members.length < 2) continue
@@ -540,6 +559,134 @@ export class Crowd {
       changed = true
     }
     if (changed) this.version++
+  }
+
+  /**
+   * Who looks after each reception desk. Where the support team has someone to spare, the newest hand among those
+   * drawn takes the first desk in place of their own; any other desk gets a receptionist who is only ever seen here.
+   */
+  protected manFronts(support: string[]) {
+    const live = support.map((id) => this.bodies.find((x) => x.kind === Kind.Staff && x.id === id && !x.quit)).filter((b): b is Body => !!b && !!b.seat)
+    // the best of them keep the support desks; with only one, nobody can be spared
+    const spare = live.length >= 2 && this.fronts.length ? live[live.length - 1] : null
+    for (const b of this.bodies) {
+      if (b.kind !== Kind.Staff) continue
+      const post = b === spare && this.fronts[0].access >= 0 && this.nav.zone[this.fronts[0].access] === this.nav.zone[b.seat!.access] ? this.fronts[0] : null
+      if (b.post === post) continue
+      b.post = post
+      if (b.act === Act.Desk) b.act = Act.None
+    }
+    this.fronts.forEach((spot, k) => {
+      const id = `front:${spot.key}`
+      const have = this.bodies.find((x) => x.kind === Kind.Front && x.id === id)
+      const staffed = this.bodies.some((x) => x.kind === Kind.Staff && x.post === spot)
+      if (staffed) {
+        if (have && !have.quit) {
+          have.quit = true
+          have.thinkIn = 0
+        }
+        return
+      }
+      if (have && !have.quit) {
+        have.post = spot
+        return
+      }
+      if (have) return
+      const b = new Body()
+      b.id = id
+      b.kind = Kind.Front
+      b.name = 'Receptionist'
+      b.look = 2311 + k * 4177
+      b.seed = b.look + 29
+      b.lane = 0.15 + rnd(b.seed + 8) * 0.07
+      b.shirt = '#3d4a5c'
+      b.post = spot
+      b.thinkIn = this.settled ? 0.5 : 0
+      this.bodies.push(b)
+      this.version++
+    })
+    for (const b of this.bodies) {
+      if (b.kind !== Kind.Front || b.quit || (b.post && this.fronts.includes(b.post))) continue
+      b.quit = true
+      b.thinkIn = 0
+    }
+  }
+
+  /** Whether the front desk is manned at this hour. */
+  protected frontHours(hour: number): boolean {
+    return hour >= 8.3 && hour < 17.7
+  }
+
+  /** The receptionist who is only a figure at the desk: in for the day, out at the end of it. */
+  private thinkFront(b: Body, hour: number) {
+    const on = !b.quit && !!b.post && this.frontHours(hour)
+    if (!on) {
+      if (b.mode === Mode.Off) {
+        if (b.quit) b.dead = true
+      } else if (b.mode === Mode.Do && !b.leaving && b.shake <= 0) this.leave(b)
+      return
+    }
+    const spot = b.post!
+    if (b.mode === Mode.Off) {
+      if (spot.taken && spot.taken !== b) return
+      b.act = Act.Desk
+      if (this.nav.entry < 0 || !this.nav.reach[spot.access]) return this.place(b, spot)
+      this.arriveOutside(b)
+      this.aim(b, spot)
+    } else if (b.mode === Mode.Do && b.spot !== spot && (!spot.taken || spot.taken === b)) {
+      this.aim(b, spot)
+      this.depart(b)
+    }
+  }
+
+  /** Whoever is sitting behind a reception desk right now, ready to see to someone. */
+  private receptionist(desk: Spot): Body | null {
+    const r = desk.taken as Body | null
+    return r && r.mode === Mode.Do && r.spot === desk && !r.quit ? r : null
+  }
+
+  /** A place to stand at a manned reception desk: the one they are at already if they are at one, else a free one they can walk to. */
+  private mannedDesk(b: Body): { visit: Spot; who: Body } | null {
+    const zone = this.zoneOf(b)
+    let found: { visit: Spot; who: Body } | null = null
+    for (const desk of this.fronts) {
+      const who = this.receptionist(desk)
+      if (!who || who.shake > 0) continue
+      for (const s of this.spots) {
+        if (s.item !== desk.item || !(s.use & USE.visit) || s.access < 0 || this.nav.zone[s.access] !== zone) continue
+        if (s === b.spot) return { visit: s, who }
+        if (!s.taken && !found) found = { visit: s, who }
+      }
+    }
+    return found
+  }
+
+  /** The front desks: a look up for whoever walks up to the counter, and on their feet for a handshake. */
+  private tendFronts(dt: number) {
+    for (const desk of this.fronts) {
+      const r = this.receptionist(desk)
+      if (!r) continue
+      let visitor: Body | null = r.shake > 0 ? r.partner : null
+      if (r.shake > 0) {
+        r.shake -= dt
+        r.pose = Pose.Shake
+        r.hip = 0.86
+        if (r.shake <= 0) r.partner = null
+      } else {
+        for (const s of this.spots) {
+          if (s.item !== desk.item || !(s.use & USE.visit)) continue
+          const v = s.taken as Body | null
+          if (v && v.mode === Mode.Do && v.spot === s) visitor = v
+        }
+        r.pose = visitor ? Pose.Meet : desk.pose
+        r.hip = desk.hip
+      }
+      // turned toward whoever they are dealing with, and square to the counter otherwise
+      const want = visitor ? Math.atan2(-(visitor.x - r.x), -(visitor.z - r.z)) : desk.face
+      let diff = want - r.yaw
+      diff -= Math.round(diff / (Math.PI * 2)) * Math.PI * 2
+      r.yaw += diff * Math.min(1, dt * 5)
+    }
   }
 
   /** People waiting in the lobby to be interviewed. */
@@ -675,7 +822,8 @@ export class Crowd {
       case Act.Visit:
         return this.pick(b, USE.visit | USE.wait, true)
     }
-    return b.seat
+    // whoever is on the front desk works there rather than at their own (once they have found their own, on a first day)
+    return b.carry ? b.seat : (b.post ?? b.seat)
   }
 
   /** Bodies the office and the store do not know about: a venue's guests, crew and presenter. */
@@ -683,6 +831,7 @@ export class Crowd {
 
   private think(b: Body, hour: number, day: number) {
     if (b.kind === Kind.Shopper) return this.thinkShopper(b, hour)
+    if (b.kind === Kind.Front) return this.thinkFront(b, hour)
     if (b.kind > Kind.Shopper) return this.thinkOther(b, hour, day)
     const want = this.desire(b, hour, day)
     if (want === Act.Quit) {
@@ -695,10 +844,25 @@ export class Crowd {
           b.hip = 0.86
           b.wait = 2.8
         } else if (b.hired && b.mode === Mode.Do) {
-          // got the job: a handshake across the desk (or a quiet fist in the air from the sofa), then home
-          if (b.hip > 0.8) b.pose = Pose.Shake
-          else b.cheer = true
-          b.wait = 2.2
+          // got the job: over to the front desk for a handshake with whoever is on it, then home
+          const desk = this.mannedDesk(b)
+          if (desk && desk.visit !== b.spot && b.stage === 0) {
+            b.stage = 1
+            b.act = Act.Visit
+            this.aim(b, desk.visit)
+            return this.depart(b)
+          }
+          if (desk && desk.visit === b.spot) {
+            const r = desk.who
+            r.shake = b.wait = 2.4
+            r.partner = b
+            b.pose = Pose.Shake
+            b.yaw = Math.atan2(-(r.x - b.x), -(r.z - b.z))
+          } else {
+            // nobody on the desk just now: a quiet fist in the air instead
+            b.cheer = true
+            b.wait = 2.2
+          }
         } else b.wait = 0
       } else if (b.wait <= 0 && !b.leaving) {
         b.cheer = false
@@ -849,6 +1013,7 @@ export class Crowd {
         way.push(b.x, b.y, b.z)
         if (from.via) for (let k = from.via.length - 3; k >= 0; k -= 3) way.push(from.via[k], from.via[k + 1], from.via[k + 2])
         way.push(this.nav.cx(from.access), 0, this.nav.cz(from.access))
+        b.crab = from.row ? from.face : NaN
         this.startWay(b)
         b.mode = Mode.Exit
         b.pathLen = 0
@@ -948,6 +1113,7 @@ export class Crowd {
     way.push(b.x, b.y, b.z)
     if (spot.via) for (let k = 0; k < spot.via.length; k++) way.push(spot.via[k])
     way.push(spot.x, spot.y, spot.z)
+    b.crab = spot.row ? spot.face : NaN
     this.startWay(b)
     b.mode = Mode.Enter
     if (!b.striding) {
@@ -981,11 +1147,13 @@ export class Crowd {
     b.speed = 0
     b.leaving = false
     b.striding = false
+    b.sidle = 0
     if (b.spot) {
       b.pose = b.spot.pose
       b.hip = b.spot.hip
     }
     if (b.spot === b.seat) b.carry = false
+    if (b.kind === Kind.Applicant && b.hired) b.thinkIn = 0
     if (b.kind === Kind.Shopper) b.wait = b.stage === 1 ? 2.2 + rnd(b.seed + b.browse) * 2 : 3 + rnd(b.seed + b.browse * 3) * 5
     this.onStop(b)
   }
@@ -1282,7 +1450,7 @@ export class Crowd {
 
   /** Moves the walking motion on by the ground just covered: a step is as long as the pace asks, so feet do not slide. */
   private pace(b: Body, moved: number, dt: number) {
-    b.stride += (strideFor(b.speed) - b.stride) * Math.min(1, dt * 5)
+    b.stride += ((b.sidle ? ROW_STEP : strideFor(b.speed)) - b.stride) * Math.min(1, dt * 5)
     b.cycle += (moved * Math.PI) / b.stride
   }
 
@@ -1419,7 +1587,8 @@ export class Crowd {
       b.speed = 0
       return b.wayAt >= 1
     }
-    const step = SIDLE_SPEED * dt
+    const speed = b.sidle ? ROW_SPEED : SIDLE_SPEED
+    const step = speed * dt
     b.wayAt = Math.min(b.wayLen, b.wayAt + step)
     let left = b.wayAt
     for (let k = 3; k < way.length; k += 3) {
@@ -1431,8 +1600,14 @@ export class Crowd {
         b.z = way[k - 1] + (way[k + 2] - way[k - 1]) * f
         const hx = way[k] - way[k - 3]
         const hz = way[k + 2] - way[k - 1]
-        if (hx * hx + hz * hz > 1e-4) {
-          let diff = Math.atan2(-hx, -hz) - b.yaw
+        const flat = Math.hypot(hx, hz)
+        if (flat > 1e-2) {
+          // along a row of seats they face the front and step sideways; the step back into the seat itself is taken facing the front too
+          const rowed = b.crab === b.crab
+          const along = rowed ? (hx * -Math.sin(b.crab) + hz * -Math.cos(b.crab)) / flat : 1
+          const sideways = rowed && Math.abs(along) < 0.25 && Math.abs(way[k + 1] - way[k - 2]) < 0.05
+          b.sidle = sideways ? (hx * Math.cos(b.crab) - hz * Math.sin(b.crab) > 0 ? 1 : -1) : 0
+          let diff = (sideways || (rowed && len < 0.6) ? b.crab : Math.atan2(-hx, -hz)) - b.yaw
           diff -= Math.round(diff / (Math.PI * 2)) * Math.PI * 2
           b.yaw += diff * Math.min(1, dt * 9)
         }
@@ -1440,7 +1615,7 @@ export class Crowd {
       }
       left -= len
     }
-    b.speed = SIDLE_SPEED
+    b.speed = speed
     this.pace(b, step, dt)
     return b.wayAt >= b.wayLen
   }
@@ -1483,6 +1658,7 @@ export class Crowd {
       case Mode.Exit:
         if (this.alongWay(b, dt)) {
           b.striding = false
+          b.sidle = 0
           b.y = 0
           this.route(b)
         }
@@ -1618,6 +1794,7 @@ export class Crowd {
     // twice, so that three people who meet in a corner are all clear of each other
     this.separate()
     this.separate()
+    if (this.fronts.length) this.tendFronts(step)
     if (dead) {
       for (const b of this.bodies) {
         if (!b.dead) continue
@@ -1644,6 +1821,13 @@ export class Crowd {
 
   /** Puts someone where the hour says they would be, without the walk. */
   private drop(b: Body, hour: number, day: number) {
+    if (b.kind === Kind.Front) {
+      if (b.post && !b.quit && this.frontHours(hour) && !b.post.taken) {
+        b.act = Act.Desk
+        this.place(b, b.post)
+      }
+      return
+    }
     if (b.kind !== Kind.Staff && b.kind !== Kind.Applicant) return
     const want = this.desire(b, hour, day)
     b.thinkIn = rnd(b.seed) * 0.6

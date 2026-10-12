@@ -1,6 +1,6 @@
 // Things that speak to the player directly: the guided first hour, decisions
 // that incidents ask for, and the summary at the end of each year.
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { sfx } from '../audio/sfx'
 import { DAYS_PER_YEAR, START_YEAR } from '../data/catalog'
 import { decide, player, trailingUnits } from '../sim/game'
@@ -13,11 +13,11 @@ import { type GameState, monthCosts } from '../sim/types'
 import { INCIDENTS, INCIDENT_WAIT } from '../sim/world'
 import { type Tab, useGame, useStore } from '../store/game'
 import { Icon, type IconName, TAB_ICON } from './icons'
-import { Btn, Lead, money, num, pct } from './ui'
+import { Btn, IconBtn, Lead, money, num, pct } from './ui'
 
 // ---------------------------------------------------------------- guided start
 
-interface Step {
+export interface Step {
   title: string
   text: string
   /** Screen where this is done. */
@@ -68,11 +68,81 @@ function following(s: GameState, from: number): number {
   return -1
 }
 
+/** The step the guide is on, if the guide is running and the step suits this game. */
+export function guideStep(s: GameState): Step | undefined {
+  const step = STEPS[s.guide]
+  return step && suits(s, step) ? step : undefined
+}
+/** Go to where a step is done: a screen, a view inside it, or the designer. */
+export function goStep(step: Step) {
+  const { go, openDesigner } = useStore.getState()
+  if (step.designer) openDesigner()
+  else go(step.where ?? { tab: step.tab ?? 'dashboard' })
+}
+
+// Whether the coach is folded down to a bar is the player's choice and outlives the session.
+const FOLD_KEY = 'sb-coach'
+function wasFolded(): boolean {
+  try {
+    return localStorage.getItem(FOLD_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+function keepFolded(folded: boolean) {
+  try {
+    localStorage.setItem(FOLD_KEY, folded ? '1' : '0')
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+/**
+ * How much of the bottom of the screen a builder's own information bar takes
+ * (the city, the campus, a factory, a store and a venue each have one, pinned
+ * across the bottom of the view), so the coach can sit above it rather than
+ * on it. Zero on the screens without one.
+ */
+function useBottomBar(): number {
+  const [height, setHeight] = useState(0)
+  useEffect(() => {
+    const main = document.querySelector('main')
+    if (!main) return
+    const seen = new WeakSet<Element>()
+    const measure = () => {
+      const floor = main.getBoundingClientRect().bottom
+      let top = 0
+      main.querySelectorAll('.absolute.inset-x-0.bottom-0').forEach((bar) => {
+        if (!seen.has(bar)) (seen.add(bar), sizes.observe(bar))
+        // the bar itself is as wide as the screen and see-through; what counts is what is in it
+        for (const part of bar.children) {
+          const r = part.getBoundingClientRect()
+          if (r.width && r.height) top = Math.max(top, floor - r.top)
+        }
+      })
+      setHeight(Math.max(0, Math.round(top)))
+    }
+    // however much changes in a frame, look once
+    let queued = 0
+    const soon = () => void (queued ||= requestAnimationFrame(() => ((queued = 0), measure())))
+    const sizes = new ResizeObserver(soon)
+    const nodes = new MutationObserver(soon)
+    sizes.observe(main)
+    nodes.observe(main, { childList: true, subtree: true })
+    measure()
+    return () => (sizes.disconnect(), nodes.disconnect(), cancelAnimationFrame(queued))
+  }, [])
+  return height
+}
+
 export function Coach() {
   const g = useGame()
-  const { act, go: goTo, openDesigner } = useStore.getState()
+  const { act } = useStore.getState()
   const tab = useStore((s) => s.tab)
   const designing = useStore((s) => s.designing)
+  const [folded, setFolded] = useState(wasFolded)
+  const fold = (to: boolean) => (keepFolded(to), setFolded(to), sfx.toggle())
+  const bar = useBottomBar()
   const step = STEPS[g.guide]
   const passed = !!step && !suits(g, step)
   const done = !!step?.done?.(g)
@@ -91,16 +161,35 @@ export function Coach() {
   const mine = STEPS.map((x, i) => i).filter((i) => !STEPS[i].only || (STEPS[i].only === 'guided') === guided(g))
   const at = mine.indexOf(g.guide)
   const last = following(g, g.guide) < 0
-  const go = () => (step.designer ? openDesigner() : goTo(step.where ?? { tab: step.tab ?? 'dashboard' }))
-  return (
-    <div className="pointer-events-auto absolute bottom-3 left-1/2 z-30 w-[440px] -translate-x-1/2 border border-accent bg-panel">
-      <div className="flex items-center justify-between border-b border-line px-3 py-[6px]">
-        <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">
-          <Icon name={step.opens ? (has(g, step.opens) ? 'unlock' : 'lock') : 'goals'} size={13} />
-          {step.title}
-        </span>
-        <span className="num text-[10px] text-faint">
+  const go = () => goStep(step)
+  const icon: IconName = step.opens ? (has(g, step.opens) ? 'unlock' : 'lock') : 'goals'
+  // above a builder's information bar where there is one, otherwise just off the bottom edge
+  const place = { bottom: bar ? bar + 4 : 12 }
+  if (folded) {
+    return (
+      <button onClick={() => fold(false)} style={place} title={`Guide, step ${at + 1} of ${mine.length}: ${step.title}. Click to open it.`} aria-expanded={false} className="pointer-events-auto absolute left-1/2 z-30 flex h-7 max-w-[calc(100%-16px)] -translate-x-1/2 items-center gap-2 border border-accent bg-panel px-2 text-left hover:bg-hover">
+        <Icon name={done ? 'check' : icon} size={12} className={`shrink-0 ${done ? 'text-pos' : 'text-accent'}`} />
+        <span className="label shrink-0 text-faint">Guide</span>
+        <span className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">{step.title}</span>
+        <span className="num shrink-0 text-[10px] text-faint">
           {at + 1} / {mine.length}
+        </span>
+        <Icon name="arrowUp" size={11} className="shrink-0 text-dim" />
+      </button>
+    )
+  }
+  return (
+    <div style={place} className="pointer-events-auto absolute left-1/2 z-30 w-[440px] max-w-[calc(100%-16px)] -translate-x-1/2 border border-accent bg-panel">
+      <div className="flex items-center justify-between gap-2 border-b border-line py-[3px] pl-3 pr-1">
+        <span className="flex min-w-0 items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent">
+          <Icon name={icon} size={13} className="shrink-0" />
+          <span className="truncate">{step.title}</span>
+        </span>
+        <span className="flex shrink-0 items-center gap-2">
+          <span className="num text-[10px] text-faint">
+            {at + 1} / {mine.length}
+          </span>
+          <IconBtn icon="arrowDown" tone="ghost" title="Fold the guide down to a bar. It stays that way until you open it again." aria-expanded onClick={() => fold(true)} />
         </span>
       </div>
       <div className="px-3 py-2 text-[12px] leading-relaxed text-fg">{step.text}</div>

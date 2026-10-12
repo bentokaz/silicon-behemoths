@@ -9,7 +9,7 @@ import type { Site } from '../../sim/types'
 import { Body, Kind, Mode } from './crowd'
 import { HAIR, SKIN, hash } from './kit'
 import { People } from './People'
-import { Pose, STAGE_H, frameOf, frameX, frameZ, seatPlaces } from './spots'
+import { Pose, STAGE_H, frameOf, frameX, frameZ, seatPlaces, seatRank } from './spots'
 import { useTick } from './tick'
 
 const SHIRTS = ['#c9553d', '#31506b', '#e9e4da', '#3f7d4d', '#d6a24f', '#6a5a7a', '#2c3036', '#8a5a44', '#4f8fd6', '#7a8f9c']
@@ -45,15 +45,15 @@ interface Props {
   state: () => House
   /** Seats to leave empty whatever the house: someone is walking to them, or sitting in them, as one of the crowd. Keys are `${item id}:${seat index}`. */
   skip?: (key: string) => boolean
+  /** When the crowd itself says who is in which seat: exactly these seats are drawn taken, and `house` is not used. */
+  filled?: (key: string) => boolean
 }
 
-export function Audience({ site, state, skip }: Props) {
+export function Audience({ site, state, skip, filled }: Props) {
   const seats = useMemo(() => {
     const list = seatPlaces(site)
-    // seats fill in an order of their own, so a half-full house is spread through the rows
-    const rank = list.map((_, i) => i).sort((a, b) => hash(a * 7.31 + 1.7) - hash(b * 7.31 + 1.7))
-    const order = new Int32Array(list.length)
-    rank.forEach((seat, k) => (order[seat] = k))
+    // the house fills from the front, row by row, and empties from the back
+    const order = seatRank(list)
     return { list, order, keys: list.map((s) => `${s.item.id}:${s.index}`) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [site, site.rev])
@@ -93,8 +93,10 @@ export function Audience({ site, state, skip }: Props) {
     },
     [meshes],
   )
-  /** For each seat: 0 empty, 1 seated, 2 standing. */
+  /** For each seat: 0 empty, 1 seated, 2 standing with arms up, 3 on their feet for a moment as they take the seat or leave it. */
   const shown = useMemo(() => new Uint8Array(Math.max(1, n)), [meshes]) // eslint-disable-line react-hooks/exhaustive-deps
+  /** When each seat was last taken or given up. */
+  const since = useMemo(() => new Float32Array(Math.max(1, n)).fill(-10), [meshes]) // eslint-disable-line react-hooks/exhaustive-deps
   const smooth = useRef({ house: -1, clap: 0 })
 
   useTick((dt, now) => {
@@ -102,7 +104,8 @@ export function Audience({ site, state, skip }: Props) {
     const st = state()
     const sm = smooth.current
     // the house fills and empties over a few seconds, never in one jump (except on the very first look)
-    sm.house = sm.house < 0 ? st.house : sm.house + Math.max(-dt * 0.4, Math.min(dt * 0.4, st.house - sm.house))
+    const first = sm.house < 0
+    sm.house = first ? st.house : sm.house + Math.max(-dt * 0.4, Math.min(dt * 0.4, st.house - sm.house))
     sm.clap += (st.applause - sm.clap) * Math.min(1, dt * 6)
     const full = Math.round(sm.house * n)
     const clapping = sm.clap > 0.03 || st.ovation
@@ -110,10 +113,15 @@ export function Audience({ site, state, skip }: Props) {
     let bodies = false
     let arms = false
     for (let i = 0; i < n; i++) {
-      const taken = seats.order[i] < full && !(skip && skip(seats.keys[i]))
+      const taken = filled ? filled(seats.keys[i]) : seats.order[i] < full && !(skip && skip(seats.keys[i]))
       const up = taken && st.ovation && hash(i * 2.3 + 9) > 0.3
-      const want = taken ? (up ? 2 : 1) : 0
-      const changed = shown[i] !== want
+      let want = taken ? (up ? 2 : 1) : 0
+      // nobody appears in a seat or vanishes from one sitting down: they are on their feet for a moment first
+      const was = shown[i]
+      if (!first && taken !== (was === 1 || was === 2 || (was === 3 && since[i] > 0))) since[i] = taken ? now : -now
+      if (taken && want === 1 && now - since[i] < 0.5) want = 3
+      else if (!taken && was !== 0 && since[i] < 0 && now + since[i] < 0.4) want = 3
+      const changed = was !== want
       if (!changed && !(want && clapping)) continue
       const p = seats.list[i]
       const bi = i * BOXES
@@ -129,13 +137,13 @@ export function Audience({ site, state, skip }: Props) {
       const sin = Math.sin(p.face)
       // a point in the seat's own frame (x to the sitter's right, z behind them), out in the world
       const at = (x: number, y: number, z: number) => V.set(p.x + x * cos + z * sin, p.y + y, p.z - x * sin + z * cos)
-      const rise = want === 2 ? 0.36 : 0
+      const rise = want >= 2 ? 0.36 : 0
       const phase = hash(i * 1.37) * 6.28
       if (changed) {
         shown[i] = want
         const tall = 0.9 + hash(i * 4.9) * 0.2
         boxes.setMatrixAt(bi, M.compose(at(0, SEAT + 0.29 + rise, 0.03), QY, S.set(0.33, 0.52 * tall, 0.2)))
-        if (want === 2) {
+        if (want >= 2) {
           // on their feet: legs straight down in front of the seat
           boxes.setMatrixAt(bi + 1, M.compose(at(0, 0.44, -0.12), QY, S.set(0.28, 0.88, 0.15)))
           boxes.setMatrixAt(bi + 2, ZERO)
@@ -152,7 +160,10 @@ export function Audience({ site, state, skip }: Props) {
       const clap = want === 2 ? 0 : sm.clap
       for (let arm = 0; arm < 2; arm++) {
         const sgn = arm ? 1 : -1
-        if (want === 2) {
+        if (want === 3) {
+          Q.copy(QY)
+          boxes.setMatrixAt(bi + 3 + arm, M.compose(at(sgn * 0.245, SEAT + 0.36 + 0.1, 0.03), Q, S.set(0.085, 0.46, 0.085)))
+        } else if (want === 2) {
           const wave = Math.sin(now * 7 + phase) * 0.12
           Q.setFromEuler(E.set(0, 0, sgn * (-0.22 + wave * sgn)))
           Q.premultiply(QY)

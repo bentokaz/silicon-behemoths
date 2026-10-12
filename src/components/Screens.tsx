@@ -8,6 +8,7 @@ import { companyOf, fmtDate, monthLabel, player, trailingUnits } from '../sim/ga
 import { OUTSIDE_OPTION, attraction, segmentDemand } from '../sim/market'
 import { factoryLine, marketPrice, pendingUnits } from '../sim/ops'
 import { nextGoals, stageOf } from '../sim/goals'
+import { type CapId, capOfTab, guided, has, lockTip, needText, nextCaps } from '../sim/progress'
 import { REGIONS } from '../sim/regions'
 import { sealedRooms } from '../sim/sites'
 import { staffEffects, unmanaged } from '../sim/staff'
@@ -15,8 +16,9 @@ import { founderStake, marketCap } from '../sim/stock'
 import { COST_KEYS, DEVICE_TYPES, type DeviceType, type GameState, type Product, SUPPLY_CATS, TRACKS, monthCosts } from '../sim/types'
 import { hasType, unlockBlocked, unlockCost } from '../sim/world'
 import { type Tab, useGame, useStore } from '../store/game'
+import { goStep, guideStep } from './Guide'
 import { Thumb, statusIcon, statusText, statusTone } from './Inspector'
-import { COST_ICON, Icon, TAB_ICON, trackIcon, typeIcon } from './icons'
+import { COST_ICON, Icon, type IconName, TAB_ICON, trackIcon, typeIcon } from './icons'
 // Table headings carry icons only where the table has room to spare at a
 // 1440 px window with the feed open; the dense ones keep plain words.
 import { Btn, Empty, Fold, Head, IconBtn, Kpi, Lead, Meter, Mini, Panel, Tabs, Tag, TextInput, Th, chart, money, num, pct } from './ui'
@@ -110,6 +112,59 @@ function todos(g: GameState): Todo[] {
   return out
 }
 
+/**
+ * In a guided game, while the charts have nothing to draw from: the step the
+ * guide is on, and the parts of the company nearest to opening. It takes the
+ * place the charts will have.
+ */
+function NextSteps({ g }: { g: GameState }) {
+  const { go, showLock } = useStore.getState()
+  const step = guideStep(g)
+  const next = nextCaps(g, 3)
+  return (
+    <>
+      {step && (
+        <div className="border-b border-line px-2 py-2">
+          <div className="flex items-center justify-between gap-2">
+            <Head icon="goals" className="min-w-0 flex-1 text-accent">
+              Guide / {step.title}
+            </Head>
+            <Btn small tone="primary" icon="arrowRight" className="shrink-0 whitespace-nowrap" onClick={() => goStep(step)}>
+              {step.designer ? 'New device' : 'Take me there'}
+            </Btn>
+          </div>
+          <div className="mt-1 line-clamp-3 text-[11px] leading-snug text-dim" title={step.text}>
+            {step.text}
+          </div>
+        </div>
+      )}
+      <div className="label px-2 pb-[2px] pt-2 text-faint">Opens next</div>
+      {next.map(({ cap, ratio }) => (
+        <button key={cap.id} onClick={() => showLock(cap.id)} title={lockTip(g, cap.id) ?? undefined} className="flex w-full items-start gap-2 border-b border-line px-2 py-[6px] text-left last:border-0 hover:bg-hover">
+          <Icon name={cap.icon as IconName} size={14} className="mt-[2px] shrink-0 text-dim" />
+          <span className="min-w-0 flex-1">
+            <span className="flex items-baseline justify-between gap-2">
+              <span className="truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-fg">{cap.name}</span>
+              <span className="num shrink-0 text-[10px] text-faint">{pct(ratio, 0)}</span>
+            </span>
+            <span className="block truncate text-[11px] text-dim">To open it: {needText(g, cap.id)}.</span>
+            <Meter value={ratio} className="mt-[3px]" />
+          </span>
+        </button>
+      ))}
+      {!next.length && <Empty icon="check" text="Every part of the company is open." />}
+      <button onClick={() => go({ tab: 'goals', view: 'growth' })} className="flex h-7 w-full items-center justify-between border-t border-line px-2 text-[10px] uppercase tracking-wider text-dim hover:bg-hover hover:text-accent">
+        Everything the company can grow into
+        <Icon name="branch" size={11} />
+      </button>
+    </>
+  )
+}
+
+/** Three, four or five figures across, whatever is shown. */
+const cols = (n: number) => ({ gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))` })
+const SPAN: Record<number, string> = { 1: 'col-span-12', 2: 'col-span-6', 3: 'col-span-4' }
+
 export function Dashboard() {
   const g = useGame()
   const { openDesigner, focus, setTab } = useStore.getState()
@@ -120,31 +175,48 @@ export function Dashboard() {
   const last = g.reports[g.reports.length - 1]
   const profit = last ? last.revenue + last.other - monthCosts(last) : 0
   const products = mine(g).filter((p) => p.status !== 'ended')
-  const list = todos(g)
+  // The overview only reports on what the company has: a figure or a panel
+  // for a part that is not open yet is left out. Outside a guided game
+  // everything is open, so everything is here.
+  const open = (id: CapId) => has(g, id)
+  // a warning that leads to a screen not open yet is kept only when it is serious
+  const list = todos(g).filter((t) => {
+    const cap = capOfTab(t.tab)
+    return !cap || open(cap) || t.tone === 'neg'
+  })
   const fx = staffEffects(g)
   const goals = nextGoals(g, 3)
   const stage = stageOf(g)
+  const kpis = [
+    <Kpi key="cash" label="Cash" icon="cash" value={g.config.unlimitedMoney ? 'UNLIMITED' : money(g.cash)} tone={g.cash < 0 && !g.config.unlimitedMoney ? 'neg' : 'accent'} sub={g.debtDays > 0 ? `in debt ${g.debtDays} days` : `this month +${money(g.cur.revenue + g.cur.other, 1)}`} />,
+    <Kpi key="profit" label="Profit, last month" icon={profit >= 0 ? 'trendUp' : 'trendDown'} value={last ? money(profit) : '--'} tone={profit >= 0 ? 'pos' : 'neg'} sub={last ? `income ${money(last.revenue + last.other, 1)}` : 'first month in progress'} />,
+    open('market') && <Kpi key="share" label="Market share" icon="pie" value={pct(units / total, 2)} sub={`${num(units)} of ${num(total)} devices in 12 months`} />,
+    <Kpi key="fans" label="Fans" icon="heart" value={num(g.fans)} sub={`${num(g.owners)} people own your devices`} />,
+    open('shares') && <Kpi key="value" label={g.stock.listed ? 'Market value' : 'Company value'} icon="chart" value={marketCap(g) >= 1e9 ? `${(marketCap(g) / 1e9).toFixed(2)}B` : money(marketCap(g), 1)} sub={`you own ${pct(founderStake(g), 0)}${g.stock.listed ? ` / ${g.stock.price.toFixed(2)} a share` : ''}`} />,
+  ].filter(Boolean)
+  const minis = [
+    open('marketing') && <Mini key="brand" label="Brand" icon="brand" value={Math.round(me.brand * 100)} />,
+    open('marketing') && <Mini key="aware" label="Awareness" icon="eye" value={pct(me.awareness)} />,
+    <Mini key="sale" label="Devices on sale" icon="devices" value={products.filter((p) => p.status === 'sale').length} />,
+    <Mini key="dev" label="In development" icon="hourglass" value={products.filter((p) => p.status === 'dev').length} />,
+    <Mini key="staff" label="Staff" icon="staff" value={`${g.staff.length}${g.staff.length ? ` / morale ${Math.round(fx.morale)}` : ''}`} />,
+    (open('stores') || open('world')) && <Mini key="reach" label="Stores / regions" icon="stores" value={`${g.stores.length} / ${REGIONS.filter((r) => g.regions[r.id].open).length}`} />,
+    open('market') && <Mini key="level" label="Industry level" icon="rivals" value={marketLevel(g.day).toFixed(1)} />,
+    open('research') && <Mini key="rd" label="R&D / month" icon="research" value={money(g.rdBudget, 1)} />,
+  ].filter(Boolean)
+  // the middle row: what needs a decision, then the charts that have a source, and the way forward while one is missing
+  const showNext = guided(g) && !(open('finance') && open('market'))
+  const span = SPAN[1 + (open('finance') ? 1 : 0) + (open('market') ? 1 : 0) + (showNext ? 1 : 0)] ?? 'col-span-4'
   return (
     <div className="grid h-full min-h-0 grid-cols-12 grid-rows-[auto_auto_minmax(0,1fr)_minmax(0,1fr)] gap-2 p-2">
-      <div className="col-span-12 grid grid-cols-5 gap-2">
-        <Kpi label="Cash" icon="cash" value={g.config.unlimitedMoney ? 'UNLIMITED' : money(g.cash)} tone={g.cash < 0 && !g.config.unlimitedMoney ? 'neg' : 'accent'} sub={g.debtDays > 0 ? `in debt ${g.debtDays} days` : `this month +${money(g.cur.revenue + g.cur.other, 1)}`} />
-        <Kpi label="Profit, last month" icon={profit >= 0 ? 'trendUp' : 'trendDown'} value={last ? money(profit) : '--'} tone={profit >= 0 ? 'pos' : 'neg'} sub={last ? `income ${money(last.revenue + last.other, 1)}` : 'first month in progress'} />
-        <Kpi label="Market share" icon="pie" value={pct(units / total, 2)} sub={`${num(units)} of ${num(total)} devices in 12 months`} />
-        <Kpi label="Fans" icon="heart" value={num(g.fans)} sub={`${num(g.owners)} people own your devices`} />
-        <Kpi label={g.stock.listed ? 'Market value' : 'Company value'} icon="chart" value={marketCap(g) >= 1e9 ? `${(marketCap(g) / 1e9).toFixed(2)}B` : money(marketCap(g), 1)} sub={`you own ${pct(founderStake(g), 0)}${g.stock.listed ? ` / ${g.stock.price.toFixed(2)} a share` : ''}`} />
+      <div className="col-span-12 grid gap-2" style={cols(kpis.length)}>
+        {kpis}
       </div>
-      <div className="col-span-12 grid grid-cols-8 gap-1">
-        <Mini label="Brand" icon="brand" value={Math.round(me.brand * 100)} />
-        <Mini label="Awareness" icon="eye" value={pct(me.awareness)} />
-        <Mini label="Devices on sale" icon="devices" value={products.filter((p) => p.status === 'sale').length} />
-        <Mini label="In development" icon="hourglass" value={products.filter((p) => p.status === 'dev').length} />
-        <Mini label="Staff" icon="staff" value={`${g.staff.length}${g.staff.length ? ` / morale ${Math.round(fx.morale)}` : ''}`} />
-        <Mini label="Stores / regions" icon="stores" value={`${g.stores.length} / ${REGIONS.filter((r) => g.regions[r.id].open).length}`} />
-        <Mini label="Industry level" icon="rivals" value={marketLevel(g.day).toFixed(1)} />
-        <Mini label="R&D / month" icon="research" value={money(g.rdBudget, 1)} />
+      <div className="col-span-12 grid gap-1" style={cols(minis.length)}>
+        {minis}
       </div>
 
-      <Panel title="Needs attention" icon="alert" className="col-span-4" bodyClass="overflow-y-auto">
+      <Panel title="Needs attention" icon="alert" className={span} bodyClass="overflow-y-auto">
         {list.length === 0 && <Empty icon="check" text="Nothing needs a decision right now." />}
         {list.map((t, i) => (
           <button key={i} onClick={() => (t.productId ? focus(t.productId) : setTab(t.tab))} className="flex w-full items-start gap-2 border-b border-line px-2 py-[7px] text-left hover:bg-hover">
@@ -154,12 +226,21 @@ export function Dashboard() {
           </button>
         ))}
       </Panel>
-      <Panel title="Income, costs and cash" icon="chart" className="col-span-4">
-        <FinanceChart g={g} />
-      </Panel>
-      <Panel title="Market share by units" icon="pie" className="col-span-4">
-        <ShareChart g={g} />
-      </Panel>
+      {open('finance') && (
+        <Panel title="Income, costs and cash" icon="chart" className={span}>
+          <FinanceChart g={g} />
+        </Panel>
+      )}
+      {open('market') && (
+        <Panel title="Market share by units" icon="pie" className={span}>
+          <ShareChart g={g} />
+        </Panel>
+      )}
+      {showNext && (
+        <Panel title="What to do next" icon="branch" className={span} bodyClass="overflow-y-auto">
+          <NextSteps g={g} />
+        </Panel>
+      )}
 
       <Panel title="Your devices" icon="devices" right={<Btn small tone="primary" icon="plus" onClick={() => openDesigner()}>New device</Btn>} className="col-span-8" bodyClass="overflow-auto">
         {products.length === 0 ? (
@@ -182,13 +263,15 @@ export function Dashboard() {
             <Meter value={progress} tone={progress > 0.66 ? 'pos' : 'accent'} />
           </button>
         ))}
-        <div className="mb-1 mt-2 flex items-center justify-between border-t border-line pt-1">
-          <Head icon="research" className="flex-1 text-faint">
-            Research
-          </Head>
-          <IconBtn icon="open" tone="ghost" title="Open research" className="!h-5 !w-5" onClick={() => setTab('research')} />
-        </div>
-        {TRACKS.map((t) => (
+        {open('research') && (
+          <div className="mb-1 mt-2 flex items-center justify-between border-t border-line pt-1">
+            <Head icon="research" className="flex-1 text-faint">
+              Research
+            </Head>
+            <IconBtn icon="open" tone="ghost" title="Open research" className="!h-5 !w-5" onClick={() => setTab('research')} />
+          </div>
+        )}
+        {(open('research') ? TRACKS : []).map((t) => (
           <div key={t} className="flex items-center gap-2 py-[3px]">
             <span className={`w-32 shrink-0 whitespace-nowrap text-[11px] ${g.activeResearch.includes(t) ? 'text-accent' : 'text-dim'}`}>
               <Lead icon={trackIcon(t)} />

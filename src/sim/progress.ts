@@ -417,6 +417,20 @@ export function locked(s: GameState, id: CapId): string | null {
   if (has(s, id)) return null
   return `${BY_ID[id].name} is not open yet: ${needText(s, id)} first.`
 }
+/**
+ * Everything still to do before a capability opens, as a sentence for the
+ * tooltip of a control that waits on it; null when it is open. Unlike
+ * `locked`, which names only the next step, this names them all.
+ */
+export function lockTip(s: GameState, id: CapId): string | null {
+  if (has(s, id)) return null
+  const c = BY_ID[id]
+  const todo = reqsOf(s, id)
+    .filter((r) => !r.done)
+    .map((r) => lower(r.label))
+  if (!todo.length) return `${c.name} is not open yet.`
+  return `${c.name} is not open yet. To open it: ${todo.join(c.mode === 'any' ? ', or ' : ', then ')}.`
+}
 /** The same for a room or a piece of furniture. */
 export function siteLocked(s: GameState, kind: SiteKind, what: 'room' | 'item', id: string): string | null {
   const cap = needsOf(kind, what, id) as CapId | undefined
