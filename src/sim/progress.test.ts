@@ -159,7 +159,7 @@ describe('a guided company starts small', () => {
     // either of two things opens the design studio
     expect(lockTip(s, 'studio')).toBe('Design studio is not open yet. To open it: hire a designer, or put your first device on sale.')
     // care policies need all three, in order
-    expect(lockTip(s, 'carePolicy')).toBe('Care policies are not open yet. To open them: open After-sales, then reach 100,000 owners, then hire a Head of Support.')
+    expect(lockTip(s, 'carePolicy')).toBe('Care policies are not open yet. To open them: open Owners, then reach 100,000 owners, then hire a Head of Support.')
     for (const c of CAPS) {
       const tip = lockTip(s, c.id)!
       expect(tip.startsWith(`${c.name} is not open yet.`) || tip.startsWith(`${c.name} are not open yet.`)).toBe(true)
