@@ -403,7 +403,7 @@ export function Market() {
           <span className={`truncate ${p.companyId === 'player' ? 'font-semibold text-fg' : 'text-fg'}`}>{p.name}</span>
           {p.companyId === 'player' && (
             <Tag tone={p.stock <= 0 ? 'neg' : 'accent'}>
-              {p.stock <= 0 ? 'Sold out, ' : ''}#{view.rank.get(p.id)} of {n}
+              #{view.rank.get(p.id)} of {n}
             </Tag>
           )}
         </span>

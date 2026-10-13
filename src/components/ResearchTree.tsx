@@ -457,7 +457,7 @@ export function Research() {
                   <span className="shrink-0 whitespace-nowrap text-[11px] text-dim">{`${pct(p.progress, 0)}${p.daysLeft !== null ? `, ${span(p.daysLeft)} left` : ''}`}</span>
                 </div>
               </button>
-              <Btn small tone="ghost" icon="stop" title={`Stop researching ${p.name}. What is paid is kept.`} onClick={() => toggle(p.id)}>
+              <Btn small tone="ghost" icon="stop" className="!h-auto self-stretch" title={`Stop researching ${p.name}. What is paid is kept.`} onClick={() => toggle(p.id)}>
                 Stop
               </Btn>
             </div>

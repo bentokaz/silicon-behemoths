@@ -41,14 +41,25 @@ export function Tips() {
     const show = (el: HTMLElement, delay: number) => {
       if (el === host) return
       hide()
-      const text = el.getAttribute('title')
+      // its own title, or, for text that is cut short with nothing to say it in full, the text itself
+      const own = el.getAttribute('title')
+      const text = own ?? (el.textContent ?? '').trim()
       if (!text?.trim()) return
       host = el
+      if (own === null) {
+        timer = window.setTimeout(() => host === el && el.isConnected && setTip({ text, box: el.getBoundingClientRect() }), delay)
+        return
+      }
       el.dataset.tip = text
       el.removeAttribute('title')
       timer = window.setTimeout(() => host === el && el.isConnected && setTip({ text, box: el.getBoundingClientRect() }), delay)
     }
-    const titled = (t: EventTarget | null) => (t instanceof Element ? (t.closest('[title], [data-tip]') as HTMLElement | null) : null)
+    /** Text cut short by an ellipsis: the element itself, if it is one that hides what does not fit. */
+    const cut = (t: Element) => {
+      const el = t.closest('.truncate, td, th') as HTMLElement | null
+      return el && el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).textOverflow === 'ellipsis' ? el : null
+    }
+    const titled = (t: EventTarget | null) => (t instanceof Element ? ((t.closest('[title], [data-tip]') as HTMLElement | null) ?? cut(t)) : null)
     const over = (e: MouseEvent) => {
       const el = titled(e.target)
       if (el) show(el, HOVER_MS)

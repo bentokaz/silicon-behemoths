@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fitColumns, nextSort, sortRows } from './tablesort'
+import { fitColumns, nextSort, sortRows, squeeze } from './tablesort'
 
 const rows = [
   { name: 'vista', sold: 12, price: 400 as number | null },
@@ -64,6 +64,14 @@ describe('table columns', () => {
     expect(fitColumns(cols, 600)).toEqual(['name', 'price', 'stock', 'trend', 'profit'])
     expect(fitColumns(cols, 500)).toEqual(['name', 'price', 'stock', 'profit'])
     expect(fitColumns(cols, 400)).toEqual(['name', 'price', 'stock'])
+  })
+
+  it('narrows the columns that must stay in proportion when even they do not fit, and no further than a third', () => {
+    expect(squeeze(120, 300, 500)).toBe(1)
+    expect(squeeze(120, 300, 420)).toBe(1)
+    expect(squeeze(120, 300, 320)).toBeCloseTo(200 / 300)
+    expect(squeeze(120, 300, 100)).toBeCloseTo(1 / 3)
+    expect(squeeze(120, 0, 50)).toBe(1)
   })
 
   it('never drops a column that has no rank, however narrow', () => {

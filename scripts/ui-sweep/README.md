@@ -52,6 +52,20 @@ device line, 40 staff, executives, factory, venue, stores abroad, listed),
 `bankrupt`, `sandbox` (unlimited money), and `type:<device>` for each of the
 twelve starting lines.
 
+## The structure it walks
+
+The rail has seven destinations and System, each with a row of page tabs
+(`src/store/nav.ts`). The crawler still stops at every screen id (`TABS`), and
+at every page that is a view inside a screen (`VIEWS`: Device lines, Teams,
+Hiring, Policies, Executives, Events, and the System pages), reached with the
+store's own `go({ tab, view })`. `scripts/ui-shots/` drives it in a real
+headless browser (`--script`), which is how to run a whole matrix unattended.
+
+Things it deliberately does not report: text behind an ellipsis in a
+`.truncate` element or a table cell (the tooltip host, `Tips.tsx`, says it in
+full on hover and focus), a row's action that is hidden until the row is
+pointed at, what an open menu lies over, and rows scrolled half out of a list.
+
 ## What an audit looks for
 
 Uncaught errors, unhandled rejections, console errors and warnings (React's

@@ -50,6 +50,17 @@ export interface Fit {
 }
 
 /**
+ * How much the columns that must stay have to give when even they do not fit:
+ * 1 when there is room, less when the fixed columns have to be narrowed in
+ * proportion (never below a third: their text is cut short with an ellipsis
+ * and said in full on hover).
+ */
+export function squeeze(first: number, others: number, width: number): number {
+  if (others <= 0 || first + others <= width) return 1
+  return Math.max(1 / 3, (width - first) / others)
+}
+
+/**
  * The columns there is room for. A table never scrolls sideways: when it is
  * short of width it lets go of its least important columns, one at a time,
  * until what is left fits.

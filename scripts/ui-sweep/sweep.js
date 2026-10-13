@@ -401,7 +401,8 @@ function regionOf(el) {
 const inChrome = (el) => !!el.closest('[data-chrome]')
 function describe(el) {
   const tag = el.tagName.toLowerCase() + (el.type && el.tagName === 'INPUT' ? `[${el.type}]` : '')
-  return `${tag} "${nameOf(el)}"${regionOf(el) ? ` in ${regionOf(el)}` : ''}`
+  const name = el.hasAttribute('aria-pressed') ? nameOf(el).replace(/ (On|Off)( |$)/, ' ') : nameOf(el)
+  return `${tag} "${name}"${regionOf(el) ? ` in ${regionOf(el)}` : ''}`
 }
 function controls() {
   const out = []
@@ -520,12 +521,20 @@ function audit(label, { colours = true } = {}) {
       const x = Math.min(vw - 1, Math.max(0, r.left + r.width / 2))
       const y = Math.min(vh - 1, Math.max(0, r.top + r.height / 2))
       const top = document.elementFromPoint(x, y)
-      if (top && top !== el && !el.contains(top) && !top.contains(el)) {
+      // a control half scrolled out of its list has its middle outside the list: what lies there is not on top of it
+      let scrolledOut = false
+      for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+        const ps = getComputedStyle(p)
+        if (ps.overflowY === 'visible' && ps.overflowX === 'visible') continue
+        const pr = p.getBoundingClientRect()
+        if (x < pr.left || x > pr.right || y < pr.top || y > pr.bottom) scrolledOut = true
+      }
+      if (top && top !== el && !scrolledOut && !el.contains(top) && !top.contains(el)) {
         const other = top.closest(INTERACTIVE)
         const label = el.closest('label')
         // a dialog or a drawer is meant to lie over what is behind it
         const over = other?.closest('[role=dialog], [role=alertdialog]')
-        if (other && other !== el && !other.closest('[role=menu], [role=listbox], [role=tooltip]') && !(label && label.contains(top)) && !el.contains(other) && !(over && !over.contains(el))) note('control-covered', `${d} is under ${describe(other)}`)
+        if (other && other !== el && !other.closest('[role=menu], [role=listbox], [role=tooltip], thead') && !(label && label.contains(top)) && !el.contains(other) && !(over && !over.contains(el))) note('control-covered', `${d} is under ${describe(other)}`)
       }
     }
     if (r.width < 16 && r.height < 16 && !['INPUT'].includes(el.tagName)) note('tiny-target', `${d} is ${Math.round(r.width)}x${Math.round(r.height)}`)
@@ -556,7 +565,7 @@ function audit(label, { colours = true } = {}) {
     if (/\d{7,}/.test(ownText.replace(/[\d,]*\.\d+/g, '')) && !/9{9}/.test(ownText) && !el.closest('pre, textarea') && !/seed/i.test(textOf(el.parentElement ?? el))) note('unformatted-number', `"${ownText.slice(0, 50)}" in ${regionOf(el)}`)
     // cut off: by its own box, or by a parent that hides what runs over
     const cut = el.scrollWidth > el.clientWidth + 1 && cs.overflowX !== 'visible' && !sx
-    if (cut && !hasTip(el) && el.tagName !== 'SELECT' && el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') note('text-cut-no-tooltip', `"${ownText.slice(0, 50)}" in ${regionOf(el)} (${el.clientWidth}px of ${el.scrollWidth}px)`)
+    if (cut && !hasTip(el) && !(getComputedStyle(el).textOverflow === 'ellipsis' && el.matches('.truncate, td, th')) && el.tagName !== 'SELECT' && el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') note('text-cut-no-tooltip', `"${ownText.slice(0, 50)}" in ${regionOf(el)} (${el.clientWidth}px of ${el.scrollWidth}px)`)
     if (el.scrollHeight > el.clientHeight + 3 && cs.overflowY === 'hidden' && cs.display !== 'inline' && !hasTip(el)) note('text-cut-vertical', `"${ownText.slice(0, 50)}" in ${regionOf(el)}`)
     const clip = clipParent(el)
     if (clip && !cut) {

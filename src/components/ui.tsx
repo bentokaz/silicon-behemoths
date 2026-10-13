@@ -781,7 +781,7 @@ export function Empty({ text, icon, children }: { text: string; icon?: IconName;
 export function Page({ children, className = '', keep }: { children: ReactNode; className?: string; keep?: string }) {
   const ref = useKeptScroll(keep)
   return (
-    <div ref={ref} className={`flex h-full min-h-0 flex-col gap-2 overflow-y-auto p-4 ${className}`}>
+    <div ref={ref} className={`flex h-full min-h-0 flex-col gap-2 overflow-y-auto overflow-x-hidden p-4 ${className}`}>
       {children}
     </div>
   )

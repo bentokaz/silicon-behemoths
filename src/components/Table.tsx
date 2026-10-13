@@ -6,7 +6,7 @@
 import { type KeyboardEvent as ReactKeyboardEvent, type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { keepView, keptView, viewKept } from '../store/focus'
 import { Icon } from './icons'
-import { type SortDir, type SortKey, type SortState, fitColumns, nextSort, sortRows } from './tablesort'
+import { type SortDir, type SortKey, type SortState, fitColumns, nextSort, sortRows, squeeze } from './tablesort'
 
 export interface Column<R> {
   id: string
@@ -109,6 +109,9 @@ export function Table<R>({ cols, rows, groups, rowKey, onRow, selected, action, 
     return cols.filter((c) => ids.includes(c.id))
   }, [cols, width, action, actionWidth, firstMin])
 
+  // when even the columns that must stay do not fit, they narrow in proportion: a table never scrolls sideways
+  const tight = width ? squeeze(Math.min(firstMin, 120), shown.slice(1).reduce((sum, c) => sum + widthOf(c), 0) + (action ? actionWidth : 0), width) : 1
+
   const by = sort ? cols.find((c) => c.id === sort.col) : undefined
   const order = (list: readonly R[]) => (by?.sort && sort ? sortRows(list, by.sort, sort.dir) : [...list])
   const sets: TableGroup<R>[] = groups ? groups.map((g) => ({ ...g, rows: order(g.rows) })) : [{ key: '', label: null, rows: order(rows ?? []) }]
@@ -122,13 +125,13 @@ export function Table<R>({ cols, rows, groups, rowKey, onRow, selected, action, 
   }
 
   return (
-    <div ref={box} className={`min-w-0 ${className}`}>
+    <div ref={box} className={`min-w-0 overflow-x-hidden ${className}`}>
       <table aria-label={label} className="w-full table-fixed border-collapse text-xs">
         <colgroup>
           {shown.map((c, i) => (
-            <col key={c.id} style={i === 0 ? undefined : { width: widthOf(c) }} />
+            <col key={c.id} style={i === 0 ? undefined : { width: Math.floor(widthOf(c) * tight) }} />
           ))}
-          {action && <col style={{ width: actionWidth }} />}
+          {action && <col style={{ width: Math.floor(actionWidth * tight) }} />}
         </colgroup>
         <thead>
           <tr>

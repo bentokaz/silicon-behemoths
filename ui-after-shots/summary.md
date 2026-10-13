@@ -1,6 +1,6 @@
 # UI shots: http://localhost:5214
 
-Taken 2026-10-12T23:35:54.855Z. WebGL: ANGLE (Intel, Intel(R) UHD Graphics (0x0000A788) Direct3D11 vs_5_0 ps_5_0, D3D11) (gpu).
+Taken 2026-10-13T07:36:45.891Z. WebGL: ANGLE (Intel, Intel(R) UHD Graphics (0x0000A788) Direct3D11 vs_5_0 ps_5_0, D3D11) (gpu).
 
 Text nodes, numerals and controls are what is actually visible in the window (clipped and scrolled-away content is not counted), frame and news feed included. "% text <11px" is by text node (by character in brackets). Coverage is the share of the screen area where a pointer does not land on the 3D view.
 
@@ -12,8 +12,8 @@ Text nodes, numerals and controls are what is actually visible in the window (cl
 | 02 | menu-saves | fresh | 22 | 13 | 7 | 0% (0%) | 1 |  |  |
 | 03 | menu-settings | fresh | 49 | 10 | 24 | 0% (0%) | 1 |  |  |
 | 04 | newgame | fresh | 70 | 21 | 21 | 0% (0%) | 1 |  |  |
-| 05 | city | fresh | 46 | 15 | 24 | 0% (0%) | 1 | 3.8% |  |
-| 06 | lock-card | fresh | 61 | 20 | 26 | 0% (0%) | 1 | 24.9% |  |
+| 05 | city | fresh | 37 | 15 | 24 | 0% (0%) | 1 | 3.8% |  |
+| 06 | lock-card | fresh | 52 | 20 | 26 | 0% (0%) | 1 | 24.9% |  |
 | 07 | overview | fresh | 51 | 31 | 26 | 0% (0%) | 1 |  |  |
 | 08 | devices | fresh | 32 | 14 | 23 | 0% (0%) | 1 |  |  |
 | 13 | rival-device | fresh | 55 | 43 | 30 | 0% (0%) | 1 |  |  |
@@ -37,14 +37,14 @@ Text nodes, numerals and controls are what is actually visible in the window (cl
 | 53 | feedback | fresh | 57 | 23 | 38 | 0% (0%) | 1 |  |  |
 | 58 | system-company | fresh | 57 | 14 | 36 | 0% (0%) | 1 |  |  |
 | 02 | menu-saves | late | 22 | 15 | 7 | 0% (0%) | 1 |  |  |
-| 05 | city | late | 59 | 50 | 28 | 0% (0%) | 1 | 10.9% |  |
+| 05 | city | late | 50 | 50 | 28 | 0% (0%) | 1 | 10.9% |  |
 | 07 | overview | late | 107 | 132 | 44 | 0% (0%) | 1 |  |  |
 | 08 | devices | late | 147 | 164 | 67 | 0% (0%) | 1 |  |  |
 | 09 | inspector | late | 145 | 168 | 75 | 0% (0%) | 2 |  |  |
 | 10 | inspector-scores | late | 147 | 163 | 74 | 0% (0%) | 2 |  |  |
 | 11 | inspector-specs | late | 147 | 178 | 74 | 0% (0%) | 2 |  |  |
 | 12 | inspector-reviews | late | 148 | 161 | 74 | 0% (0%) | 2 |  |  |
-| 13 | rival-device | late | 146 | 190 | 52 | 0% (0%) | 1 |  |  |
+| 13 | rival-device | late | 145 | 190 | 52 | 0% (0%) | 1 |  |  |
 | 14 | designer | late | 69 | 40 | 44 | 0% (0%) | 1 | 40.2% |  |
 | 15 | designer-layout | late | 62 | 35 | 42 | 0% (0%) | 1 | 39% |  |
 | 16 | designer-internals | late | 71 | 39 | 47 | 0% (0%) | 1 | 40.2% |  |
@@ -71,7 +71,7 @@ Text nodes, numerals and controls are what is actually visible in the window (cl
 | 40 | staff-execs | late | 86 | 94 | 37 | 0% (0%) | 1 |  |  |
 | 41 | person | late | 123 | 100 | 51 | 0% (0%) | 1 |  |  |
 | 42 | campus | late | 50 | 40 | 30 | 0% (0%) | 1 | 7.9% |  |
-| 43 | market | late | 143 | 179 | 46 | 0% (0%) | 1 |  |  |
+| 43 | market | late | 142 | 179 | 46 | 0% (0%) | 1 |  |  |
 | 44 | regions | late | 50 | 51 | 34 | 0% (0%) | 1 | 12.3% |  |
 | 45 | rivals | late | 121 | 164 | 40 | 0% (0%) | 1 |  |  |
 | 46 | finance | late | 81 | 123 | 26 | 0% (0%) | 1 |  |  |
@@ -182,14 +182,14 @@ Text nodes, numerals and controls are what is actually visible in the window (cl
 | 06 | lock-card | fresh | 62 | 20 | 26 | 0% (0%) | 1 | 12.3% |  |
 | 07 | overview | fresh | 51 | 31 | 26 | 0% (0%) | 1 |  |  |
 | 08 | devices | fresh | 32 | 14 | 23 | 0% (0%) | 1 |  |  |
-| 13 | rival-device | fresh | 54 | 38 | 30 | 0% (0%) | 1 |  |  |
+| 13 | rival-device | fresh | 55 | 43 | 30 | 0% (0%) | 1 |  |  |
 | 14 | designer | fresh | 85 | 35 | 56 | 0% (0%) | 1 | 25.7% |  |
 | 15 | designer-layout | fresh | 64 | 24 | 44 | 0% (0%) | 1 | 19.5% |  |
 | 16 | designer-internals | fresh | 87 | 34 | 55 | 0% (0%) | 1 | 24.7% |  |
 | 17 | designer-colours | fresh | 53 | 20 | 39 | 0% (0%) | 1 | 11.1% |  |
 | 18 | designer-score | fresh | 110 | 78 | 56 | 0% (0%) | 1 | 34.1% |  |
 | 19 | designer-market | fresh | 115 | 61 | 57 | 0% (0%) | 1 | 37.2% |  |
-| 21 | launch-plan | fresh | 83 | 68 | 28 | 0% (0%) | 1 | 100% |  |
+| 21 | launch-plan | fresh | 83 | 66 | 28 | 0% (0%) | 1 | 100% |  |
 | 36 | staff | fresh | 33 | 14 | 24 | 0% (0%) | 2 |  |  |
 | 38 | staff-policies | fresh | 51 | 17 | 27 | 0% (0%) | 1 |  |  |
 | 39 | staff-applicants | fresh | 99 | 73 | 39 | 0% (0%) | 1 |  |  |
@@ -204,13 +204,13 @@ Text nodes, numerals and controls are what is actually visible in the window (cl
 | 58 | system-company | fresh | 57 | 14 | 36 | 0% (0%) | 1 |  |  |
 | 02 | menu-saves | late | 22 | 15 | 7 | 0% (0%) | 1 |  |  |
 | 05 | city | late | 62 | 53 | 29 | 0% (0%) | 1 | 6.4% |  |
-| 07 | overview | late | 140 | 178 | 50 | 0% (0%) | 1 |  |  |
-| 08 | devices | late | 161 | 159 | 74 | 0% (0%) | 1 |  |  |
-| 09 | inspector | late | 201 | 214 | 86 | 0% (0%) | 2 |  |  |
-| 10 | inspector-scores | late | 195 | 202 | 84 | 0% (0%) | 2 |  |  |
-| 11 | inspector-specs | late | 214 | 239 | 84 | 0% (0%) | 2 |  |  |
-| 12 | inspector-reviews | late | 206 | 194 | 84 | 0% (0%) | 2 |  |  |
-| 13 | rival-device | late | 215 | 302 | 58 | 0% (0%) | 1 |  |  |
+| 07 | overview | late | 140 | 183 | 50 | 0% (0%) | 1 |  |  |
+| 08 | devices | late | 161 | 171 | 74 | 0% (0%) | 1 |  |  |
+| 09 | inspector | late | 202 | 229 | 86 | 0% (0%) | 2 |  |  |
+| 10 | inspector-scores | late | 196 | 217 | 84 | 0% (0%) | 2 |  |  |
+| 11 | inspector-specs | late | 213 | 252 | 84 | 0% (0%) | 2 |  |  |
+| 12 | inspector-reviews | late | 204 | 206 | 84 | 0% (0%) | 2 |  |  |
+| 13 | rival-device | late | 215 | 305 | 58 | 0% (0%) | 1 |  |  |
 | 14 | designer | late | 84 | 47 | 54 | 0% (0%) | 1 | 25.6% |  |
 | 15 | designer-layout | late | 63 | 36 | 42 | 0% (0%) | 1 | 19.4% |  |
 | 16 | designer-internals | late | 88 | 47 | 53 | 0% (0%) | 1 | 24.6% |  |
@@ -237,13 +237,13 @@ Text nodes, numerals and controls are what is actually visible in the window (cl
 | 40 | staff-execs | late | 104 | 124 | 39 | 0% (0%) | 1 |  |  |
 | 41 | person | late | 193 | 249 | 63 | 0% (0%) | 1 |  |  |
 | 42 | campus | late | 50 | 40 | 30 | 0% (0%) | 1 | 3.1% |  |
-| 43 | market | late | 186 | 259 | 50 | 0% (0%) | 1 |  |  |
+| 43 | market | late | 185 | 259 | 50 | 0% (0%) | 1 |  |  |
 | 44 | regions | late | 50 | 51 | 34 | 0% (0%) | 1 | 5.1% |  |
 | 45 | rivals | late | 175 | 257 | 48 | 0% (0%) | 1 |  |  |
 | 46 | finance | late | 100 | 144 | 29 | 0% (0%) | 1 |  |  |
 | 47 | shares | late | 144 | 188 | 33 | 0% (0%) | 1 |  |  |
 | 48 | growth | late | 92 | 143 | 26 | 0% (0%) | 1 |  |  |
-| 50 | system | late | 49 | 35 | 34 | 0% (0%) | 2 |  |  |
+| 50 | system | late | 55 | 45 | 36 | 0% (0%) | 2 |  |  |
 | 51 | system-settings | late | 63 | 34 | 34 | 0% (0%) | 1 |  |  |
 | 52 | system-keys | late | 130 | 38 | 71 | 0% (0%) | 1 |  |  |
 | 53 | feedback | late | 145 | 175 | 52 | 0% (0%) | 1 |  |  |
