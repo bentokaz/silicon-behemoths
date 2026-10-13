@@ -119,7 +119,8 @@ export function SizeNotice() {
     if (fits) setHidden(false)
   }, [fits])
   const touchOnly = typeof window.matchMedia === 'function' && window.matchMedia('(hover: none) and (pointer: coarse)').matches
-  const small = size.w < MIN_WIDTH || size.h < MIN_HEIGHT
+  // a minimised or hidden window reports no size at all: that is not a small window
+  const small = size.w > 0 && size.h > 0 && (size.w < MIN_WIDTH || size.h < MIN_HEIGHT)
   if (hidden || (!small && !touchOnly)) return null
   return (
     <div role="status" className="flex shrink-0 items-center gap-3 border-b border-warn bg-panel px-3 py-1 text-xs text-fg">
