@@ -879,6 +879,7 @@ export function SiteScene({ site, mode: chosen, mood, tool, company, color, logo
   useEffect(() => {
     setAnchor(null)
     setDrag(null)
+    pressed.current = null
     setOff(false)
   }, [tool?.type, tool && 'room' in tool ? tool.room : '', tool && 'kind' in tool ? tool.kind : ''])
   useEffect(() => {
@@ -886,6 +887,7 @@ export function SiteScene({ site, mode: chosen, mood, tool, company, color, logo
       if (e.key !== 'Escape') return
       setAnchor(null)
       setDrag(null)
+      pressed.current = null
       setOpen(null)
     }
     window.addEventListener('keydown', key)
@@ -1417,29 +1419,23 @@ export function SiteScene({ site, mode: chosen, mood, tool, company, color, logo
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => onRun?.(runInfo), [runKey, onRun])
   const finish = useRef<() => void>(() => {})
+  const pressed = useRef<{ drag: NonNullable<typeof drag>; hover: NonNullable<typeof hover> } | null>(null)
   finish.current = () => {
-    if (!drag) return
+    // a quick click can come up before the view has drawn the press: what it pressed is kept here meanwhile
+    const press = pressed.current
+    if (!press) return
+    pressed.current = null
+    const from = drag ?? press.drag
+    const to = drag ? hover : press.hover
     setDrag(null)
-    if (!hover || !tool) return
-    if (tool.type === 'item') onRow?.(drag.x, drag.y, hover.x, hover.y)
-    else if (tool.type === 'edge') onEdges?.(wallRun(drag, hover))
+    if (!to || !tool) return
+    if (tool.type === 'item') onRow?.(from.x, from.y, to.x, to.y)
+    else if (tool.type === 'edge') onEdges?.(wallRun(from, to))
     else if (tool.type === 'remove') {
-      const ids = sellRun(drag.x, drag.y, hover.x, hover.y).map((i) => i.id)
+      const ids = sellRun(from.x, from.y, to.x, to.y).map((i) => i.id)
       if (ids.length) onSell?.(ids)
     }
   }
-  const dragging = !!drag
-  useEffect(() => {
-    if (!dragging) return
-    // the button may come up anywhere, on the plot or off it
-    const up = (e: PointerEvent) => e.button === 0 && finish.current()
-    window.addEventListener('pointerup', up)
-    window.addEventListener('pointercancel', up)
-    return () => {
-      window.removeEventListener('pointerup', up)
-      window.removeEventListener('pointercancel', up)
-    }
-  }, [dragging])
 
   const previewCount = areaTool && (anchor || filling) && preview ? ('area' in preview && preview.area !== undefined ? preview.area : preview.good.length) : 0
   const areaNote = areaTool && preview && 'note' in preview ? preview.note : undefined
@@ -1815,8 +1811,20 @@ export function SiteScene({ site, mode: chosen, mood, tool, company, color, logo
         onPointerDown={(e) => {
           if (!dragTool || e.button !== 0) return
           const t = locate(e)
-          setHover({ x: t.x, y: t.y, edge: t.edge })
-          setDrag({ x: t.x, y: t.y, fx: t.fx, fy: t.fy, edge: t.edge, bay: t.edge.bay })
+          const at = { x: t.x, y: t.y, edge: t.edge }
+          const from = { x: t.x, y: t.y, fx: t.fx, fy: t.fy, edge: t.edge, bay: t.edge.bay }
+          setHover(at)
+          setDrag(from)
+          pressed.current = { drag: from, hover: at }
+          // the button may come up anywhere, on the plot or off it, and at once
+          const up = (ev: PointerEvent) => {
+            if (ev.type === 'pointerup' && ev.button !== 0) return
+            window.removeEventListener('pointerup', up)
+            window.removeEventListener('pointercancel', up)
+            finish.current()
+          }
+          window.addEventListener('pointerup', up)
+          window.addEventListener('pointercancel', up)
         }}
         onClick={(e) => {
           // tools that paint as they are dragged act when the button comes up, wherever that is

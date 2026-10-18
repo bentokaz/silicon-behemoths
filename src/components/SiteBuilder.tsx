@@ -191,15 +191,16 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
   const month = useMemo(() => (storeId ? storeMonth(g, storeId) : null), [g, storeId, rev])
   const [thick, setThick] = useState(5)
   /** The card beside the palette for the row the pointer rests on, and how far down the view it sits. */
-  const [peek, setPeek] = useState<{ key: string; node: ReactNode; top: number } | null>(null)
+  const [peek, setPeek] = useState<{ key: string; node: ReactNode; top: number; left: number } | null>(null)
   const root = useRef<HTMLDivElement>(null)
   // a row that goes (another tab, another group, the palette shut) takes its card with it
   useEffect(() => setPeek(null), [tab, group, open])
   const peekAt = (key: string, node: () => ReactNode) => (row: HTMLElement | null) => {
     if (!row || !root.current) return setPeek((cur) => (cur?.key === key ? null : cur))
-    const box = root.current.getBoundingClientRect()
-    const top = Math.max(48, Math.min(row.getBoundingClientRect().top - box.top - 4, box.height - 300))
-    setPeek({ key, node: node(), top })
+    // the hover card of the interface, set beside the palette level with the row
+    const side = (row.closest('[data-site-palette]') ?? row).getBoundingClientRect()
+    const top = Math.max(8, Math.min(row.getBoundingClientRect().top - 4, window.innerHeight - 330))
+    setPeek({ key, node: node(), top, left: side.right + 8 })
   }
   const [sweep, setSweep] = useState(360)
   const [mode, setMode] = useState<ViewMode>('cut')
@@ -518,7 +519,7 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
   // ---- where things are, so that nothing floating lies on anything else
   const bar = useRef<HTMLDivElement>(null)
   const barBottom = useBottom(bar, 44)
-  const PALETTE_W = 288
+  const PALETTE_W = 320
   const clear = useMemo<[number, number, number, number]>(() => [open ? PALETTE_W + 16 : 8, barBottom + 6, detail && children ? 316 : 8, 44], [open, barBottom, detail, children])
 
   const tiles = builtTiles(site)
@@ -597,12 +598,12 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
       {/* one row: the tools at the left, the status at the right; the status drops under the tools when there is no room beside them */}
       <div ref={bar} className="pointer-events-none absolute inset-x-2 bottom-12 top-2 z-20 flex flex-wrap content-start items-start justify-between gap-2">
         <div className="pointer-events-auto flex flex-wrap items-center gap-2">
-          <div className="flex bg-panel/95">
+          <div className="sb-float flex">
             <Btn small icon="build" data-coach-target="build" active={open} aria-expanded={open} title={`${open ? 'Close' : 'Open'} the build menu${keysFor('buildMenu').length ? ` (${k('buildMenu')})` : ''}`} onClick={() => setOpen(!open)}>
               Build
             </Btn>
           </div>
-          <div className="flex bg-panel/95">
+          <div className="sb-float flex">
             <IconBtn icon="undo" title={undoable ? `Undo: ${undoable} (Ctrl+Z)` : 'Nothing to undo yet'} disabled={!undoable} onClick={undoStep} />
             <IconBtn icon="redo" title={redoable ? `Redo: ${redoable} (Ctrl+Shift+Z)` : 'Nothing to redo'} disabled={!redoable} className="-ml-px" onClick={redoStep} />
           </div>
@@ -619,12 +620,12 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
               { value: 'night', label: 'Night', icon: 'night', title: 'Hold the light at night. People still come and go by the clock.' },
             ]}
           />
-          <div className="flex bg-panel/95">
+          <div className="sb-float flex">
             <Btn small icon="walk" active={walk} aria-pressed={walk} title={walk ? 'Stop walking and go back to the overview (Esc)' : 'Walk the site at eye height: W A S D to move, the mouse to look round, Shift to run, Esc to stop'} onClick={() => (walk ? setWalk(false) : startWalk())}>
               Walk
             </Btn>
           </div>
-          {tools && <div className="flex flex-wrap items-center gap-1 bg-panel/95">{tools}</div>}
+          {tools && <div className="sb-float sb-toolbar flex-wrap">{tools}</div>}
         </div>
         <div className="pointer-events-none ml-auto flex max-h-[calc(100%-36px)] min-h-0 max-w-full flex-col items-end gap-2">
           <SiteStatus items={figures} open={detail} onOpen={setDetail}>
@@ -637,7 +638,7 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
         <>
           {/* where the eyes are pointed */}
           <div aria-hidden className="pointer-events-none absolute left-1/2 top-1/2 z-20 h-[9px] w-[9px] -translate-x-1/2 -translate-y-1/2 border border-fg/70" />
-          <div data-walk-hint className="absolute bottom-2 left-1/2 z-20 flex -translate-x-1/2 items-center gap-3 border border-line2 bg-panel/95 px-3 py-[6px] text-[11px] text-dim">
+          <div data-walk-hint className="absolute bottom-2 left-1/2 z-20 sb-float flex -translate-x-1/2 items-center gap-3 px-3 py-[6px] text-[11px] text-dim">
             <span className="flex items-center gap-[6px] text-fg">
               <Icon name="walk" size={13} />
               Walking
@@ -659,13 +660,13 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
       )}
 
       {open && !walk && peek && (tab === 'Rooms' || tab === 'Furnish') && (
-        <div data-site-peek role="tooltip" className="pointer-events-none absolute z-10 w-[264px] border border-line2 bg-panel/95" style={{ left: PALETTE_W + 16, top: peek.top }}>
+        <div data-site-peek role="tooltip" className="sb-card sb-rise pointer-events-none" style={{ width: 300, left: peek.left, top: peek.top }}>
           {peek.node}
         </div>
       )}
 
       {open && !walk && (
-        <div data-coach-target="build" data-site-palette className="absolute left-2 z-10 flex flex-col border border-line2 bg-panel/95" style={{ top: 48, width: PALETTE_W, maxHeight: 'calc(100% - 96px)' }}>
+        <div data-coach-target="build" data-site-palette className="sb-float absolute left-2 z-10 flex flex-col" style={{ top: 48, width: PALETTE_W, maxHeight: 'calc(100% - 96px)' }}>
           <Tabs value={tab} options={TABS.map((x) => ({ value: x, label: x }))} onChange={(t) => (setTab(t), setTool(null))} className="[&>button]:flex-1 [&>button]:justify-center [&>button]:px-1" />
           {(tab === 'Rooms' || tab === 'Grounds') && (
             <div className="shrink-0 border-b border-line px-2 py-[6px]">

@@ -29,15 +29,15 @@ export function itemEffects(kind: SiteKind, d: ItemDef): string[] {
 
 function Head({ name, right }: { name: string; right: string }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-line px-3 py-2">
-      <span className="min-w-0 truncate text-xs font-semibold text-fg">{name}</span>
+    <div className="flex items-baseline justify-between gap-3 border-b border-line px-4 py-2.5">
+      <span className="t-title min-w-0 truncate">{name}</span>
       <span className="num shrink-0 text-xs text-accent">{right}</span>
     </div>
   )
 }
 function Line({ k, v }: { k: string; v: string }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 text-[11px] leading-5">
+    <div className="flex items-baseline justify-between gap-3 text-xs leading-5">
       <span className="shrink-0 text-dim">{k}</span>
       <span className="num min-w-0 text-right text-fg">{v}</span>
     </div>
@@ -48,7 +48,7 @@ function Effects({ lines }: { lines: string[] }) {
   return (
     <ul className="mt-1 flex flex-col gap-[3px]">
       {lines.map((l) => (
-        <li key={l} className="flex items-start gap-2 text-[11px] leading-snug text-fg">
+        <li key={l} className="flex items-start gap-2 text-xs leading-snug text-fg">
           <span aria-hidden className="mt-[5px] h-[5px] w-[5px] shrink-0 bg-accent" />
           {l}
         </li>
@@ -59,7 +59,7 @@ function Effects({ lines }: { lines: string[] }) {
 function Why({ text }: { text?: string }) {
   if (!text) return null
   return (
-    <div className="mt-2 flex items-start gap-[6px] border-t border-line pt-2 text-[11px] leading-snug text-warn">
+    <div className="mt-2 flex items-start gap-[6px] border-t border-line pt-2 text-xs leading-snug text-warn">
       <Icon name="lock" size={11} className="mt-[2px] shrink-0" />
       <span>{text}</span>
     </div>
@@ -72,15 +72,15 @@ export function ItemPeek({ kind, def, why }: { kind: SiteKind; def: ItemDef; why
   return (
     <>
       <Head name={def.name} right={money(def.cost)} />
-      <div className="px-3 py-2">
-        <div className="text-[11px] leading-snug text-dim">{def.note}</div>
+      <div className="px-4 py-3">
+        <div className="text-xs leading-snug text-dim">{def.note}</div>
         <Effects lines={itemEffects(kind, def)} />
         <div className="mt-2 border-t border-line pt-1">
           <Line k="Size" v={`${def.w} x ${def.h} m`} />
           <Line k="Running cost" v={def.run ? `${money(def.run)} a day` : 'none'} />
           <Line k="Sold back for" v={money(def.cost / 2)} />
         </div>
-        <div className="mt-1 text-[11px] leading-snug">
+        <div className="mt-1 text-xs leading-snug">
           <span className="text-dim">Goes in: </span>
           <span className="text-fg">{homes.join(', ')}</span>
         </div>
@@ -96,15 +96,15 @@ export function RoomPeek({ kind, id, def, perM2, floors, why }: { kind: SiteKind
   return (
     <>
       <Head name={def.name} right={`${money(perM2)} a m²`} />
-      <div className="px-3 py-2">
-        <div className="text-[11px] leading-snug text-fg">{ROOM_EFFECT[kind]?.[id] ?? def.note}</div>
-        {ROOM_EFFECT[kind]?.[id] && <div className="mt-1 text-[11px] leading-snug text-dim">{def.note}</div>}
+      <div className="px-4 py-3">
+        <div className="text-xs leading-snug text-fg">{ROOM_EFFECT[kind]?.[id] ?? def.note}</div>
+        {ROOM_EFFECT[kind]?.[id] && <div className="mt-1 text-xs leading-snug text-dim">{def.note}</div>}
         <div className="mt-2 border-t border-line pt-1">
           <Line k="Upkeep" v={`${money(TILE_UPKEEP * floors)} a m² a month`} />
           <Line k="Finishes" v={num(def.styles.length)} />
         </div>
         {takes.length > 0 && (
-          <div className="mt-1 text-[11px] leading-snug">
+          <div className="mt-1 text-xs leading-snug">
             <span className="text-dim">Takes: </span>
             <span className="text-fg">{takes.join(', ')}</span>
           </div>
