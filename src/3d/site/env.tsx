@@ -142,8 +142,8 @@ function mall(b: Batch, w: number, h: number, dim: (hex: string) => string, mood
       b.quad('floor3', x, z, Math.min(reach, x + 2), Math.min(across, z + 2), -0.02, dim(mid && band ? band : chequer), (0.97 + hash(x * 13 + z * 7) * 0.05) * (1 + lamplight * pool(x + 1, z + 1)))
     }
   }
-  for (const z of [front + 0.5, across - 0.5]) b.quad('floor3', -reach, z - 0.12, reach, z + 0.12, -0.015, dim('#4a4640'))
-  for (const z of [front + 4, front + 8]) b.quad('floor3', -reach, z - 0.05, reach, z + 0.05, -0.015, dim('#8c857a'))
+  for (const z of [front + 0.5, across - 0.5]) b.quad('floor3', -reach, z - 0.12, reach, z + 0.12, -0.008, dim('#4a4640'))
+  for (const z of [front + 4, front + 8]) b.quad('floor3', -reach, z - 0.05, reach, z + 0.05, -0.008, dim('#8c857a'))
 
   /** A ground-floor shop facing the concourse: a lit glass front under a coloured sign band. `face` is 1 to look south, -1 north. */
   const unit = (x0: number, x1: number, z0: number, z1: number, face: 1 | -1, seed: number) => {
@@ -415,7 +415,7 @@ function build(env: Env, w: number, h: number, mood: Mood): Layout {
     b.quad(key, -out, z0, x0, z1, y, color)
     b.quad(key, x1, z0, out, z1, y, color)
   }
-  frame('floor10', far, 0, -0.08, dimHex(GROUND[env]))
+  frame('floor10', far, 0, -0.12, dimHex(GROUND[env]))
   const indoor = env === 'mall'
 
   if (!indoor) {
@@ -426,11 +426,11 @@ function build(env: Env, w: number, h: number, mood: Mood): Layout {
     b.quad('floor8', -hw - a, -hh, -hw, hh, -0.03, dimHex(PAVE))
     b.quad('floor8', hw, -hh, hw + a, hh, -0.03, dimHex(PAVE))
     const rz = hh + a + 4.5
-    b.quad('floor9', -far, rz - 4.5, far, rz + 4.5, -0.05, dimHex(ROAD))
+    b.quad('floor9', -far, rz - 4.5, far, rz + 4.5, -0.07, dimHex(ROAD))
     b.quad('floor8', -far, rz + 4.5, far, rz + 7, -0.03, dimHex(PAVE))
-    for (let x = -far; x < far; x += 6) b.quad('floor8', x, rz - 0.08, x + 3, rz + 0.08, -0.035, dimHex('#d9d6cc'))
+    for (let x = -far; x < far; x += 6) b.quad('floor8', x, rz - 0.08, x + 3, rz + 0.08, -0.05, dimHex('#d9d6cc'))
     // a drive from the road to the plot
-    b.quad('floor9', -3, hh, 3, rz - 4.5, -0.02, dimHex(ROAD))
+    b.quad('floor9', -3, hh + a, 3, rz - 4.5, -0.045, dimHex(ROAD))
     for (let i = 0; i < 9; i++) {
       const x = -far * 0.5 + i * (far / 9) + hash(i * 3) * 8
       if (Math.abs(x) < 6) continue
@@ -505,7 +505,12 @@ function build(env: Env, w: number, h: number, mood: Mood): Layout {
       trees.push([i * 15 + 7, hh + 2.5 + 10.5, 1.6])
     }
   } else if (env === 'plaza') {
-    b.quad('floor6', -hw - 14, -hh - 14, hw + 14, hh + 2.5, -0.025, dimHex('#c4bfb3'))
+    // the square round the pavement, never under it or under the plot: a pond dug in the plot must show, and two
+    // floors laid one on the other flicker
+    const p = 2.5
+    b.quad('floor6', -hw - 14, -hh - 14, hw + 14, -hh - p, -0.03, dimHex('#c4bfb3'))
+    b.quad('floor6', -hw - 14, -hh - p, -hw - p, hh + p, -0.03, dimHex('#c4bfb3'))
+    b.quad('floor6', hw + p, -hh - p, hw + 14, hh + p, -0.03, dimHex('#c4bfb3'))
     for (let i = -4; i <= 4; i++) {
       for (const [z, base] of [[Math.max(hh + 2.5 + 16 + 12, stand + 10), 8], [-hh - 34, 12]] as const) block(b, i * 24, z, 20, 20, base + Math.floor(hash(i + z) * 14), ['#bfc6cc', '#9fb0bd', '#d9d6cf', '#8fa3b3'][(i + 8) % 4], i * 3 + z, lit)
     }
@@ -532,7 +537,7 @@ export function Environs({ env, w, h, mood }: { env: Env; w: number; h: number; 
       <Trees at={layout.trees} />
       <Baked sig={`${env}${w}${h}${mood}`}>
         {layout.cars.map((c, i) => (
-          <Car key={i} seed={c.seed} p={[c.x, -0.05, c.z]} rotY={c.rot} glow={mood === 'day' ? 0 : 1} />
+          <Car key={i} seed={c.seed} p={[c.x, -0.07, c.z]} rotY={c.rot} glow={mood === 'day' ? 0 : 1} />
         ))}
       </Baked>
     </>

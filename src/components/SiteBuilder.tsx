@@ -11,7 +11,7 @@ import type { Mood } from '../3d/site/env'
 import type { ViewMode } from '../3d/site/structure'
 import { sfx } from '../audio/sfx'
 import { MIN_THICK } from '../sim/curves'
-import { DIFFICULTY, EDGE_COST, clearZone, fillRoom, lookCost, paintArea, placeItems, player, removeItems, removeRoom, roomCost, rotateItem, setEdges, setLook, setRoomStyle, zoneRoom } from '../sim/game'
+import { DIFFICULTY, EDGE_COST, PART_COST, clearZone, fillRoom, lookCost, paintArea, placeItems, player, removeItems, removeRoom, roomCost, rotateItem, setEdges, setLook, setRoomStyle, zoneRoom } from '../sim/game'
 import { factoryLife, officeLife, storeLife, venueLife } from '../sim/life'
 import { type CapId, capOf, has, lockTip } from '../sim/progress'
 import { FACADES, GROUNDS, ITEMS, type ItemDef, type LineStats, MAX_FLOORS, OUT, ROOFS, ROOMS, builtTiles, gridAt, groundsFor, itemAllowed, needsOf, roomNames, roomOf, sealedRooms, upkeep } from '../sim/sites'
@@ -20,11 +20,12 @@ import { useGame, useStore } from '../store/game'
 import { actionFor, keyName, keysFor } from '../store/settings'
 import { canRedo, canUndo, forget, record, redo, undo } from '../store/siteHistory'
 import { HelpKeys, type HintPart, SiteHint, SiteMenu, SiteStatus } from './SiteChrome'
+import { ItemPeek, RoomPeek } from './SitePeek'
 import { storeMonth } from './SiteInsight'
 import { RoomCard, WorldCard } from './WorldCards'
 import { Icon, type IconName } from './icons'
 import { runningResearch } from './researchNow'
-import { Btn, type Figure, IconBtn, Stage3D, Tabs, modalOpen, money, moneyDelta, num } from './ui'
+import { Btn, type Figure, IconBtn, NumInput, Stage3D, Tabs, modalOpen, money, moneyDelta, num } from './ui'
 
 interface Props {
   /** 'office', 'factory', 'venue' or 'store:<id>'. */
@@ -78,10 +79,10 @@ const FACING = ['north', 'east', 'south', 'west']
 type EdgeKind = 'door' | 'glass' | 'open' | 'wall'
 const EDGE_ICONS: Record<EdgeKind, IconName> = { door: 'door', glass: 'glass', open: 'opening', wall: 'wall' }
 const EDGES: { kind: EdgeKind; name: string; note: string }[] = [
-  { kind: 'door', name: 'Door', note: 'A way in. Every room needs one.' },
-  { kind: 'glass', name: 'Glass wall', note: 'Lets light and views through.' },
-  { kind: 'open', name: 'Opening', note: 'Removes the wall so two rooms flow together.' },
-  { kind: 'wall', name: 'Plain wall', note: 'Puts the wall back.' },
+  { kind: 'door', name: 'Door', note: 'A way in. Every room needs one. Inside a room, a partition with a door in it.' },
+  { kind: 'glass', name: 'Glass wall', note: 'Lets light and views through. Inside a room, a glass partition.' },
+  { kind: 'open', name: 'Opening', note: 'Removes the wall so two rooms flow together, or takes a partition down.' },
+  { kind: 'wall', name: 'Plain wall', note: 'Puts the wall back. Inside a room, a partition that divides it.' },
 ]
 const KIND_NAME: Record<Site['kind'], string> = { office: 'campus', factory: 'factory', store: 'store', venue: 'venue' }
 
@@ -122,9 +123,18 @@ function useBottom(ref: React.RefObject<HTMLElement | null>, fallback: number): 
 }
 
 /** A row of the palette: a thing to pick. One that cannot be used is dashed and says why underneath; it is never faded. */
-function PickRow({ on, off, why, title, onClick, children, right }: { on: boolean; /** Cannot be used now. */ off?: boolean; /** The reason, shown under the name and on hover. */ why?: string; title?: string; onClick: () => void; children: ReactNode; right?: ReactNode }) {
+function PickRow({ on, off, why, title, onClick, children, right, onPeek }: { on: boolean; /** Cannot be used now. */ off?: boolean; /** The reason, shown under the name and on hover. */ why?: string; title?: string; onClick: () => void; children: ReactNode; right?: ReactNode; /** Told which row the pointer (or the focus) rests on, for the card beside the palette; null when it leaves. */ onPeek?: (row: HTMLElement | null) => void }) {
   return (
-    <button type="button" aria-pressed={on} aria-disabled={off ? true : undefined} title={why ?? title} onClick={onClick} className={`flex w-full items-start justify-between gap-2 border-b border-l-2 border-b-line px-2 py-[6px] text-left ${on ? 'border-l-accent bg-accent/10' : off ? 'cursor-not-allowed border-l-transparent' : 'border-l-transparent hover:bg-hover'}`}>
+    <button
+      type="button"
+      aria-pressed={on}
+      aria-disabled={off ? true : undefined}
+      title={onPeek ? undefined : (why ?? title)}
+      onClick={onClick}
+      onMouseEnter={onPeek && ((e) => onPeek(e.currentTarget))}
+      onMouseLeave={onPeek && (() => onPeek(null))}
+      onFocus={onPeek && ((e) => onPeek(e.currentTarget))}
+      onBlur={onPeek && (() => onPeek(null))} className={`flex w-full items-start justify-between gap-2 border-b border-l-2 border-b-line px-2 py-[6px] text-left ${on ? 'border-l-accent bg-accent/10' : off ? 'cursor-not-allowed border-l-transparent' : 'border-l-transparent hover:bg-hover'}`}>
       <span className="min-w-0 flex-1">
         <span className={`flex items-center gap-2 text-xs ${on ? 'text-accent' : off ? 'text-dim' : 'text-fg'}`}>{children}</span>
         {why && (
@@ -180,9 +190,30 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const month = useMemo(() => (storeId ? storeMonth(g, storeId) : null), [g, storeId, rev])
   const [thick, setThick] = useState(5)
+  /** The card beside the palette for the row the pointer rests on, and how far down the view it sits. */
+  const [peek, setPeek] = useState<{ key: string; node: ReactNode; top: number } | null>(null)
+  const root = useRef<HTMLDivElement>(null)
+  // a row that goes (another tab, another group, the palette shut) takes its card with it
+  useEffect(() => setPeek(null), [tab, group, open])
+  const peekAt = (key: string, node: () => ReactNode) => (row: HTMLElement | null) => {
+    if (!row || !root.current) return setPeek((cur) => (cur?.key === key ? null : cur))
+    const box = root.current.getBoundingClientRect()
+    const top = Math.max(48, Math.min(row.getBoundingClientRect().top - box.top - 4, box.height - 300))
+    setPeek({ key, node: node(), top })
+  }
   const [sweep, setSweep] = useState(360)
   const [mode, setMode] = useState<ViewMode>('cut')
   const [selected, setSelected] = useState(0)
+  /** Walking the site at eye height: the builder's own panels stand aside meanwhile. */
+  const [walk, setWalk] = useState(false)
+  const endWalk = useCallback(() => setWalk(false), [])
+  const startWalk = () => {
+    setTool(null)
+    setOpen(false)
+    setDetail(false)
+    setSelected(0)
+    setWalk(true)
+  }
   const [pending, setPending] = useState(0)
   const me = player(g)
   /** What can be spent right now: what would cost more is shown as refused before it is clicked. */
@@ -236,13 +267,13 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
   const redoable = canRedo(g, siteRef)
 
   // ---- keys
-  const live = useRef({ undoStep, redoStep, note, run, drawn })
-  live.current = { undoStep, redoStep, note, run, drawn }
+  const live = useRef({ undoStep, redoStep, note, run, drawn, walk })
+  live.current = { undoStep, redoStep, note, run, drawn, walk }
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName
-      // not while typing, and not behind a dialog that is waiting for an answer
-      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || modalOpen() || useStore.getState().game?.gameOver) return
+      // not while typing, not behind a dialog that is waiting for an answer, and not while walking (the walk has the keys)
+      if (live.current.walk || tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || modalOpen() || useStore.getState().game?.gameOver) return
       if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.code === 'KeyZ' || e.code === 'KeyY')) {
         e.preventDefault()
         if (e.code === 'KeyY' || e.shiftKey) live.current.redoStep()
@@ -413,11 +444,11 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
       const notWall = run.blocked - cutShort
       hintTone = run.count ? 'live' : 'warn'
       hint = [`${edgeDef.name}: ${things(run.count, 'stretch', 'stretches')} of wall, ${run.cost ? money(run.cost) : 'free'}${notWall > 0 ? `, ${num(notWall)} not wall` : ''}${cutShort ? `, ${num(cutShort)} too short beside a curve` : ''}${run.kept ? `, ${things(run.kept, 'door stays', 'doors stay')}` : ''}. Let go to build`, ...key('cancel'), 'cancels']
-    } else hint = [`${edgeDef.name}, ${EDGE_COST[edgeDef.kind] ? `${money(EDGE_COST[edgeDef.kind])} a metre` : 'free'}: click a stretch of wall, or drag along it`, ...key('cancel'), 'done']
+    } else hint = [`${edgeDef.name}, ${EDGE_COST[edgeDef.kind] ? `${money(EDGE_COST[edgeDef.kind])} a metre` : 'free'}: click a stretch of wall, or drag along it; inside a room it puts up a partition`, ...key('cancel'), 'done']
   } else if (tool?.type === 'rotate') hint = ['Turn: click a piece of furniture to turn it a quarter turn', ...key('cancel'), 'done']
   else if (tool?.type === 'remove') {
-    if (run) (hintTone = run.count ? 'live' : 'warn'), (hint = run.count ? [`Sell ${things(run.count, 'thing', 'things')} for ${money(run.cost)} back. Let go to sell`, ...key('cancel'), 'cancels'] : ['Nothing on that line to sell'])
-    else hint = ['Sell: click a thing, or drag across several. Half the price comes back', ...key('cancel'), 'done']
+    if (run) (hintTone = run.count ? 'live' : 'warn'), (hint = run.count ? [`Sell ${things(run.count, 'thing', 'things')} for ${money(run.cost)} back. Let go to sell`, ...key('cancel'), 'cancels'] : ['Nothing in that box to sell'])
+    else hint = ['Sell: click a thing, or drag a box over several. Half the price comes back', ...key('cancel'), 'done']
   } else if (sealed.length) {
     hintTone = 'warn'
     hint = [`${sealed.length === 1 ? `The ${rooms[sealed[0].type].name.toLowerCase()} has` : `${num(sealed.length)} rooms have`} no door, so nothing inside counts. Add one under Build, Walls`]
@@ -466,7 +497,7 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
         <>
           <div className="t-title mb-1 mt-3">{edgeDef.name}</div>
           <div className="text-[11px] leading-snug text-dim">
-            {edgeDef.note} Walls stand wherever two rooms meet, or a room meets the outdoors. On a curved wall a drag follows the curve.
+            {edgeDef.note} Walls stand wherever two rooms meet, or a room meets the outdoors. On a curved wall a drag follows the curve. Clicked or dragged inside a room, away from its walls, it puts up a partition ({money(PART_COST[edgeDef.kind])} a metre new; people go round it, or through its doors); Opening takes one down.
             {edgeDef.kind === 'glass' ? ' Glazing a run leaves the doors in it standing; click a door on its own to glaze over it.' : edgeDef.kind === 'door' || edgeDef.kind === 'open' ? ' It needs a full metre of straight wall or a bay of curved wall.' : ''}
           </div>
         </>
@@ -517,7 +548,7 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
   )
 
   return (
-    <div className="relative h-full min-h-0 overflow-hidden">
+    <div ref={root} className="relative h-full min-h-0 overflow-hidden">
       <div className="absolute inset-0 isolate">
         <Stage3D label={`Drawing the ${KIND_NAME[site.kind]}`}>
           <SiteView
@@ -557,6 +588,8 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
             products={products}
             busy={busy}
             show={show}
+            walk={walk}
+            onWalkEnd={endWalk}
           />
         </Stage3D>
       </div>
@@ -586,6 +619,11 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
               { value: 'night', label: 'Night', icon: 'night', title: 'Hold the light at night. People still come and go by the clock.' },
             ]}
           />
+          <div className="flex bg-panel/95">
+            <Btn small icon="walk" active={walk} aria-pressed={walk} title={walk ? 'Stop walking and go back to the overview (Esc)' : 'Walk the site at eye height: W A S D to move, the mouse to look round, Shift to run, Esc to stop'} onClick={() => (walk ? setWalk(false) : startWalk())}>
+              Walk
+            </Btn>
+          </div>
           {tools && <div className="flex flex-wrap items-center gap-1 bg-panel/95">{tools}</div>}
         </div>
         <div className="pointer-events-none ml-auto flex max-h-[calc(100%-36px)] min-h-0 max-w-full flex-col items-end gap-2">
@@ -595,7 +633,38 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
         </div>
       </div>
 
-      {open && (
+      {walk && (
+        <>
+          {/* where the eyes are pointed */}
+          <div aria-hidden className="pointer-events-none absolute left-1/2 top-1/2 z-20 h-[9px] w-[9px] -translate-x-1/2 -translate-y-1/2 border border-fg/70" />
+          <div data-walk-hint className="absolute bottom-2 left-1/2 z-20 flex -translate-x-1/2 items-center gap-3 border border-line2 bg-panel/95 px-3 py-[6px] text-[11px] text-dim">
+            <span className="flex items-center gap-[6px] text-fg">
+              <Icon name="walk" size={13} />
+              Walking
+            </span>
+            <span>
+              <span className="num text-fg">W A S D</span> move
+            </span>
+            <span>
+              <span className="text-fg">Mouse</span> looks round
+            </span>
+            <span>
+              <span className="text-fg">Shift</span> runs
+            </span>
+            <Btn small tone="ghost" onClick={endWalk} title="Go back to the overview">
+              Esc leave
+            </Btn>
+          </div>
+        </>
+      )}
+
+      {open && !walk && peek && (tab === 'Rooms' || tab === 'Furnish') && (
+        <div data-site-peek role="tooltip" className="pointer-events-none absolute z-10 w-[264px] border border-line2 bg-panel/95" style={{ left: PALETTE_W + 16, top: peek.top }}>
+          {peek.node}
+        </div>
+      )}
+
+      {open && !walk && (
         <div data-coach-target="build" data-site-palette className="absolute left-2 z-10 flex flex-col border border-line2 bg-panel/95" style={{ top: 48, width: PALETTE_W, maxHeight: 'calc(100% - 96px)' }}>
           <Tabs value={tab} options={TABS.map((x) => ({ value: x, label: x }))} onChange={(t) => (setTab(t), setTool(null))} className="[&>button]:flex-1 [&>button]:justify-center [&>button]:px-1" />
           {(tab === 'Rooms' || tab === 'Grounds') && (
@@ -634,9 +703,9 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
                     Depth
                   </span>
                   <IconBtn small icon="minus" data-repeat title={thick <= MIN_THICK ? `${MIN_THICK} m is the shallowest a ring can be` : 'Shallower'} disabled={thick <= MIN_THICK} onClick={() => setThick((t) => Math.max(MIN_THICK, t - 1))} />
-                  <input type="range" aria-label="Depth of the building" min={MIN_THICK} max={16} step={1} value={thick} onChange={(e) => setThick(Number(e.target.value))} className="min-w-0 flex-1" title="How deep the building is, from its outer wall to the courtyard" />
+                  <NumInput aria-label="Depth of the building, metres" min={MIN_THICK} max={16} value={thick} onChange={setThick} className="w-14 text-right" title="How deep the building is, from its outer wall to the courtyard" />
                   <IconBtn small icon="plus" data-repeat title={thick >= 16 ? '16 m is the deepest a ring can be' : 'Deeper'} disabled={thick >= 16} onClick={() => setThick((t) => Math.min(16, t + 1))} />
-                  <span className="num w-9 text-right text-[11px] text-fg">{thick} m</span>
+                  <span className="text-[11px] text-dim">m</span>
                 </div>
               )}
             </div>
@@ -665,6 +734,7 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
                     off={shut || poor}
                     why={shut ? `Opens with ${capOf(need!).name}` : poor ? `Not enough cash: ${money(roomCost(site, id, 1))} a m²` : undefined}
                     title={shut ? (lockTip(g, need!) ?? undefined) : r.note}
+                    onPeek={peekAt(`room:${id}`, () => <RoomPeek kind={site.kind} id={id} def={r} perM2={roomCost(site, id, 1)} floors={site.floors} why={shut ? (lockTip(g, need!) ?? `Opens with ${capOf(need!).name}`) : poor ? `Not enough cash: ${money(roomCost(site, id, 1))} a m²` : undefined} />)}
                     onClick={() => (shut ? useStore.getState().showLock(need!) : poor ? refuse(`Not enough cash: a square metre of ${r.name.toLowerCase()} costs ${money(roomCost(site, id, 1))}.`) : pick(on ? null : { type: 'room', room: id, shape }))}
                     right={`${money(roomCost(site, id, 1))} a m²`}
                   >
@@ -687,7 +757,7 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
                   const on = tool?.type === 'item' && tool.kind === kind
                   const why = itemWhy(d)
                   return (
-                    <PickRow key={kind} on={on} off={!!why} why={why} title={`${d.note} Goes in: ${roomNames(site.kind, d)}.`} onClick={() => (why ? refuse(`${d.name}: ${why.charAt(0).toLowerCase()}${why.slice(1)}. It goes in: ${roomNames(site.kind, d)}.`) : pick(on ? null : { type: 'item', kind, rot }))} right={money(d.cost)}>
+                    <PickRow key={kind} on={on} off={!!why} why={why} title={`${d.note} Goes in: ${roomNames(site.kind, d)}.`} onPeek={peekAt(`item:${kind}`, () => <ItemPeek kind={site.kind} def={d} why={why} />)} onClick={() => (why ? refuse(`${d.name}: ${why.charAt(0).toLowerCase()}${why.slice(1)}. It goes in: ${roomNames(site.kind, d)}.`) : pick(on ? null : { type: 'item', kind, rot }))} right={money(d.cost)}>
                       <span className="min-w-0 truncate">{d.name}</span>
                       {(d.w > 1 || d.h > 1) && (
                         <span className="num shrink-0 text-[11px] text-dim">
@@ -752,7 +822,7 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
         </div>
       )}
 
-      <SiteHint parts={hint} tone={hintTone} help={help} />
+      {!walk && <SiteHint parts={hint} tone={hintTone} help={help} />}
     </div>
   )
 }

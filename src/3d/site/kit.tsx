@@ -417,17 +417,80 @@ export function Car({ seed = 0, p = [0, 0, 0], rotY = 0, glow = 0 }: { seed?: nu
   )
 }
 
-/** An outdoor tree with a full crown, about 5 m tall at scale 1. */
-export function Tree({ seed = 0, scale = 1, p = [0, 0, 0] }: { seed?: number; scale?: number; p?: V3 }) {
+/**
+ * An outdoor tree with a full crown, about 5 m tall at scale 1. `fit` is the
+ * room it has, in metres: how far the crown may spread from the trunk and how
+ * tall it may grow. A tree planted against a building grows up narrow beside
+ * its wall, and one indoors stays under the ceiling, rather than through them.
+ */
+export function Tree({ seed = 0, scale = 1, p = [0, 0, 0], fit }: { seed?: number; scale?: number; p?: V3; fit?: Fit }) {
   const k = scale * (0.85 + hash(seed) * 0.3)
   const spin = hash(seed + 5) * 6
   return (
-    <group position={p} rotation={[0, spin, 0]} scale={k}>
+    <group position={p} rotation={[0, spin, 0]} scale={fitScale(k, 1.7, 4.6, fit)}>
       <C p={[0, 1.05, 0]} r={[0.1, 0.17]} h={2.1} c="#5b4636" seg={8} rough={0.95} />
       <S p={[0, 3.25, 0]} r={1.35} c={LEAF[seed % 4]} rough={0.95} flat />
       <S p={[0.75, 2.6, 0.3]} r={0.9} c={LEAF[(seed + 1) % 4]} rough={0.95} flat />
       <S p={[-0.7, 2.75, -0.35]} r={0.95} c={LEAF[(seed + 2) % 4]} rough={0.95} flat />
       <S p={[0.1, 2.5, -0.75]} r={0.8} c={LEAF[(seed + 3) % 4]} rough={0.95} flat />
+    </group>
+  )
+}
+
+/** The room a plant has to grow in, in metres: how far it may spread from its middle, and how tall it may stand. */
+export type Fit = [number, number]
+/** The scale that keeps a plant of this spread and height, at size k, within the room it has. */
+function fitScale(k: number, spread: number, tall: number, fit?: Fit): number | V3 {
+  if (!fit) return k
+  const across = Math.max(0.2, Math.min(1, fit[0] / (spread * k)))
+  const up = Math.max(0.35, Math.min(1, fit[1] / (tall * k)))
+  return across === 1 && up === 1 ? k : [k * across, k * up, k * across]
+}
+
+/** A number from 0 to 999 that belongs to an item for good: it picks the item's look, whatever else is built or sold around it. */
+export function idSeed(id: string): number {
+  let h = 2166136261
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619)
+  return (h >>> 0) % 1000
+}
+
+/** Three kinds of bamboo: green, golden and black, each with its own leaf. */
+const BAMBOO = [
+  { culm: '#7a9a3c', node: '#5d7a2c', leaf: ['#4a8f3f', '#3f7d3a', '#5a9a46'] },
+  { culm: '#cdb44e', node: '#9a8434', leaf: ['#7aa84e', '#6c9a45', '#86b257'] },
+  { culm: '#3a332b', node: '#1f1b17', leaf: ['#4f7d45', '#44703d', '#5a8a4c'] },
+]
+/** A clump of bamboo, 3 to 4.5 m tall: thin jointed canes leaning out a little, with leaves toward the top. */
+export function Bamboo({ seed = 0, fit }: { seed?: number; fit?: Fit }) {
+  const kind = BAMBOO[seed % BAMBOO.length]
+  const canes = 7 + Math.floor(hash(seed + 1) * 5)
+  const tall = 3 + hash(seed + 2) * 1.5
+  return (
+    <group scale={fitScale(1, 0.55, tall, fit)}>
+      <C p={[0, 0.03, 0]} r={[0.3, 0.34]} h={0.06} c="#4a3b2e" seg={10} rough={1} cast={false} />
+      {Array.from({ length: canes }, (_, i) => {
+        const a = (i / canes) * Math.PI * 2 + hash(seed + i) * 0.8
+        const d = 0.06 + hash(seed + i * 3) * 0.18
+        const h = tall * (0.7 + hash(seed + i * 5) * 0.3)
+        const lean = 0.04 + hash(seed + i * 7) * 0.07
+        const x = Math.cos(a) * d
+        const z = Math.sin(a) * d
+        const r = 0.022 + hash(seed + i * 11) * 0.014
+        // the cane leans out from the middle of the clump: a turn about the axis across that direction
+        const rot: V3 = [Math.sin(a) * lean, 0, -Math.cos(a) * lean]
+        return (
+          <group key={i} position={[x, 0, z]} rotation={rot}>
+            <C p={[0, h / 2, 0]} r={[r * 0.8, r]} h={h} c={kind.culm} seg={6} rough={0.55} />
+            {[0.3, 0.52, 0.72].map((u) => (
+              <C key={u} p={[0, h * u, 0]} r={[r * 1.18, r * 1.18]} h={0.025} c={kind.node} seg={6} rough={0.6} cast={false} />
+            ))}
+            {[0.62, 0.78, 0.92].map((u, j) => (
+              <B key={u} p={[0.12 * (j % 2 ? -1 : 1), h * u, 0.05]} s={[0.34, 0.012, 0.07]} c={kind.leaf[(i + j) % 3]} r={0} rough={0.9} rot={[0.3, a + j * 2.1, 0.35 * (j % 2 ? 1 : -1)]} cast={false} />
+            ))}
+            <S p={[0, h * 0.94, 0]} r={0.16 + hash(seed + i * 13) * 0.08} c={kind.leaf[i % 3]} rough={0.95} flat scale={[1, 1.6, 1]} />
+          </group>
+        )
+      })}
     </group>
   )
 }
