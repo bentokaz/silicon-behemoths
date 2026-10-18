@@ -95,7 +95,7 @@ function NeedsYou({ g }: { g: GameState }) {
   const [all, setAll] = useState(false)
   const shown = all ? list : list.slice(0, SHOWN)
   return (
-    <Panel title="Needs you" icon="alert" count={list.length || undefined} className="shrink-0">
+    <Panel title="Needs you" icon="alert" info="Everything that is costing you sales or people right now, worst first, each with where it is and the one thing to do about it. Nothing here means the company can run on its own for a while." count={list.length || undefined} className="shrink-0">
       {list.length === 0 ? (
         <div className="flex h-9 items-center gap-2 px-3 text-xs text-dim">
           <Icon name="check" size={13} className="shrink-0 text-pos" />
@@ -133,10 +133,11 @@ export function Dashboard() {
   const closes = (Math.floor(g.day / DAYS_PER_MONTH) + 1) * DAYS_PER_MONTH
   return (
     <Page keep="overview">
-      <div className="grid shrink-0 grid-cols-2 gap-2">
+      <div className="grid shrink-0 grid-cols-2 gap-3">
         <Headline
           label="Cash"
           icon="cash"
+          info="Money in the bank. Below zero the company runs on its overdraft; stay in debt too long and it goes bankrupt. Click the cash figure at the top for where it comes from."
           tone={debt ? 'neg' : undefined}
           value={
             <span className="flex items-end justify-between gap-3">
@@ -147,9 +148,9 @@ export function Dashboard() {
           sub={free ? 'Money is not counted in this game' : debt ? `In debt for ${g.debtDays} ${g.debtDays === 1 ? 'day' : 'days'}` : g.reports.length ? `${moneyDelta(moved)} since ${monthLabel(f.month)} closed` : g.day > 0 ? `${moneyDelta(moved)} since the start` : 'What you start with'}
         />
         {f.partial ? (
-          <Stat label="Profit, this month so far" icon="trendUp" value={sold ? money(f.profit) : <span className="font-sans">No sales yet</span>} tone={sold ? (f.profit >= 0 ? 'pos' : 'neg') : undefined} sub={`The first month closes on ${fmtDate(closes)}`} />
+          <Stat label="Profit, this month so far" icon="trendUp" info="Income from sales and anything else that came in, less every cost of the month: salaries, production, marketing, research, buildings, overheads and interest." value={sold ? money(f.profit) : <span className="font-sans">No sales yet</span>} tone={sold ? (f.profit >= 0 ? 'pos' : 'neg') : undefined} sub={`The first month closes on ${fmtDate(closes)}`} />
         ) : (
-          <Stat label={`Profit, ${monthLabel(f.month)}`} icon={f.profit >= 0 ? 'trendUp' : 'trendDown'} value={money(f.profit)} tone={f.profit >= 0 ? 'pos' : 'neg'} sub={`Income ${money(f.income)}, costs ${money(f.costs)}`} />
+          <Stat label={`Profit, ${monthLabel(f.month)}`} info="Income from sales and anything else that came in, less every cost of the month: salaries, production, marketing, research, buildings, overheads and interest." icon={f.profit >= 0 ? 'trendUp' : 'trendDown'} value={money(f.profit)} tone={f.profit >= 0 ? 'pos' : 'neg'} sub={`Income ${money(f.income)}, costs ${money(f.costs)}`} />
         )}
       </div>
 

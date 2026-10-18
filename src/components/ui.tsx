@@ -1,4 +1,13 @@
-// Shared dashboard primitives: panels, buttons, sliders, readouts.
+// The design system's components. Tokens (type scale, spacing, surfaces,
+// colours) are in index.css; this file is what screens are built from:
+//   frame     Page (with PageHeader), Section, Panel, Fold, Strip, Tabs, Drawer, Dialog / DIALOG
+//   figures   Headline (one per screen), Stat, Mini, Row, Meter, Spark, Legend
+//   lists     Table (Table.tsx), Tag (an exception), Status (a state in a column), Empty
+//   controls  Btn, IconBtn, ConfirmBtn, ConfirmIconBtn, Slider, Choice, Pick, Filters, TextInput, NameInput, NumInput
+//   details   HoverCard (shows on hover or focus, pins on click), InfoDot (the "i" beside a title or
+//             a figure), Help ("How it works" as a hover card); any plain `title` is drawn as a
+//             styled tooltip by Tips.tsx.
+// 3D views put their floating chrome on `.sb-float` / `.sb-toolbar` (index.css).
 import { type ButtonHTMLAttributes, type InputHTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject, type ThHTMLAttributes, isValidElement, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { keepView, keptView, viewKept } from '../store/focus'
@@ -213,7 +222,7 @@ export function Stage3D({ label, children }: { label: string; children: ReactNod
       {phase < 2 && (
         <div role="status" className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-carbon">
           <Icon name="layers" size={22} className="text-line2" />
-          <span className="text-[11px] text-faint">{label}</span>
+          <span className="text-xs text-faint">{label}</span>
         </div>
       )}
     </>
@@ -224,29 +233,34 @@ export function Stage3D({ label, children }: { label: string; children: ReactNod
 export const reducedMotion = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 /**
- * A panel: a 32px header with a sentence-case title, an optional count and
- * its actions at the right (outline or quiet buttons), over a body. Only the
- * one panel a screen has selected wears the accent bar.
+ * A panel: a section of a screen on the panel surface, with a sentence-case
+ * title, an optional count, an optional one-line description and its actions
+ * at the right (outline or quiet buttons). Only the one panel a screen has
+ * selected wears the accent outline. `info` is the longer explanation, shown
+ * on hover over the "i" beside the title.
  */
-export function Panel({ title, icon, count, right, children, className = '', bodyClass = '', keep, selected }: { title?: ReactNode; icon?: IconName; /** A count shown beside the title. */ count?: ReactNode; right?: ReactNode; children: ReactNode; className?: string; bodyClass?: string; /** A name for the body's scroll position, so it is found where it was left. */ keep?: string; /** The one selected panel of a screen. */ selected?: boolean }) {
+export function Panel({ title, icon, count, right, children, className = '', bodyClass = '', keep, selected, sub, info }: { title?: ReactNode; icon?: IconName; /** A count shown beside the title. */ count?: ReactNode; right?: ReactNode; children: ReactNode; className?: string; bodyClass?: string; /** A name for the body's scroll position, so it is found where it was left. */ keep?: string; /** The one selected panel of a screen. */ selected?: boolean; /** One quiet line under the title: what this section is for. */ sub?: ReactNode; /** What a hover over the "i" beside the title explains. */ info?: ReactNode }) {
   const body = useKeptScroll(keep)
   const tight = useTight(body)
   return (
     <section className={`flex min-h-0 flex-col border bg-panel ${selected ? 'border-accent' : 'border-line'} ${className}`}>
       {title !== undefined && (
-        <header className="flex h-8 shrink-0 items-center justify-between gap-2 border-b border-line pl-3 pr-2">
-          <span className="t-title flex min-w-0 items-center gap-2">
-            {selected && <span className="h-3 w-[3px] shrink-0 bg-accent" />}
-            {icon && <Icon name={icon} size={13} className="shrink-0 text-dim" />}
-            <span className="truncate" title={typeof title === 'string' ? title : undefined}>
-              {title}
+        <header className={`flex shrink-0 items-center justify-between gap-3 pl-4 pr-3 ${sub ? 'min-h-14 py-2' : 'h-11'}`}>
+          <span className="min-w-0">
+            <span className="t-title flex min-w-0 items-center gap-2">
+              {icon && <Icon name={icon} size={15} className={`shrink-0 ${selected ? 'text-accent' : 'text-dim'}`} />}
+              <span className="truncate" title={typeof title === 'string' ? title : undefined}>
+                {title}
+              </span>
+              {count !== undefined && <span className="num shrink-0 bg-raise px-1.5 text-2xs font-normal text-dim">{count}</span>}
+              {info !== undefined && <InfoDot>{info}</InfoDot>}
             </span>
-            {count !== undefined && <span className="num shrink-0 text-[11px] font-normal text-faint">{count}</span>}
+            {sub !== undefined && <span className="mt-0.5 block truncate text-xs text-dim">{sub}</span>}
           </span>
-          {right !== undefined && <span className="flex shrink-0 items-center gap-1">{right}</span>}
+          {right !== undefined && <span className="flex shrink-0 items-center gap-1.5">{right}</span>}
         </header>
       )}
-      <div ref={body} className={`min-h-0 flex-1 ${bodyClass} ${tight ? 'tight' : ''}`}>
+      <div ref={body} className={`min-h-0 flex-1 ${title !== undefined ? 'border-t border-line' : ''} ${bodyClass} ${tight ? 'tight' : ''}`}>
         {children}
       </div>
     </section>
@@ -274,7 +288,7 @@ function hasWords(node: ReactNode): boolean {
 type Tone = 'default' | 'primary' | 'danger' | 'ghost'
 const BTN_TONES: Record<Tone, string> = {
   default: 'border-line2 bg-transparent text-fg enabled:hover:border-fg enabled:hover:bg-hover',
-  primary: 'border-accent bg-accent font-semibold text-carbon enabled:hover:bg-transparent enabled:hover:text-accent',
+  primary: 'border-accent bg-accent font-semibold text-carbon enabled:hover:brightness-110',
   danger: 'border-neg bg-transparent text-neg enabled:hover:bg-neg enabled:hover:text-carbon',
   ghost: 'border-transparent bg-transparent text-dim enabled:hover:bg-hover enabled:hover:text-fg',
 }
@@ -285,7 +299,7 @@ const BTN_OFF = 'disabled:cursor-not-allowed disabled:border-dashed disabled:bor
 // index.css outranks the text-colour classes above, so they cannot tint it.
 const ICON_TONES: Record<Tone, string> = {
   default: 'text-dim group-enabled/btn:group-hover/btn:text-fg group-disabled/btn:text-faint',
-  primary: 'text-carbon group-enabled/btn:group-hover/btn:text-accent group-disabled/btn:text-faint',
+  primary: 'text-carbon group-disabled/btn:text-faint',
   danger: 'text-neg group-enabled/btn:group-hover/btn:text-carbon group-disabled/btn:text-faint',
   ghost: 'text-dim group-enabled/btn:group-hover/btn:text-fg group-disabled/btn:text-faint',
 }
@@ -306,7 +320,7 @@ export interface LockProps {
 const LOCKED = 'cursor-not-allowed border-dashed'
 
 type BtnProps = ButtonHTMLAttributes<HTMLButtonElement> & { tone?: Tone; active?: boolean; /** Tighter side padding, for a button in a row of a table or a toolbar. */ small?: boolean; /** 36px high: the confirm of a form or a dialog. */ large?: boolean; icon?: IconName } & LockProps
-const btnSize = (small?: boolean, large?: boolean) => (large ? 'h-9 px-4 text-xs' : small ? 'h-7 px-2 text-xs' : 'h-7 px-3 text-xs')
+const btnSize = (small?: boolean, large?: boolean) => (large ? 'h-10 px-5 text-sm' : small ? 'h-7 px-2.5 text-xs' : 'h-8 px-3.5 text-xs')
 /**
  * A button. With `icon`, the icon sits left of the label and is a touch dimmer than it until the button is hovered or active.
  * With `locked` it is dashed behind a lock and does nothing of its own; it stays hoverable so the tooltip can say why.
@@ -323,7 +337,7 @@ export function Btn({ tone = 'default', active, small, large, icon, locked, onLo
         onClick={(e) => (e.preventDefault(), e.stopPropagation(), onLocked?.())}
         className={`rounded-none border ${btnSize(small, large)} ${corner ? 'relative' : 'inline-flex items-center justify-center gap-[5px] whitespace-nowrap'} ${LOCKED} ${active ? BTN_ON : 'border-line2 bg-transparent text-faint'} ${className}`}
       >
-        <Icon name="lock" size={corner ? 9 : 11} className={`${corner ? 'absolute right-[3px] top-[3px]' : 'shrink-0'} ${active ? 'text-accent' : 'text-faint'}`} />
+        <Icon name="lock" size={corner ? 9 : 12} className={`${corner ? 'absolute right-[3px] top-[3px]' : 'shrink-0'} ${active ? 'text-accent' : 'text-faint'}`} />
         {children}
       </button>
     )
@@ -336,16 +350,16 @@ export function Btn({ tone = 'default', active, small, large, icon, locked, onLo
       {...rest}
       aria-label={named}
       aria-pressed={rest['aria-pressed'] ?? (active === undefined ? undefined : active)}
-      className={`group/btn inline-flex items-center justify-center gap-[6px] whitespace-nowrap rounded-none border ${btnSize(small, large)} ${BTN_OFF} ${active ? BTN_ON : BTN_TONES[tone]} ${className}`}
+      className={`group/btn inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-none border font-medium ${btnSize(small, large)} ${BTN_OFF} ${active ? BTN_ON : BTN_TONES[tone]} ${className}`}
     >
-      {icon && <Icon name={icon} size={13} className={`shrink-0 ${active ? 'text-accent' : ICON_TONES[tone]}`} />}
+      {icon && <Icon name={icon} size={large ? 15 : 14} className={`shrink-0 ${active ? 'text-accent' : ICON_TONES[tone]}`} />}
       {children}
     </button>
   )
 }
 
 type IconBtnProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'title' | 'children'> & { icon: IconName; title: string; tone?: Tone; active?: boolean; small?: boolean }
-/** A square button that is only an icon. The title is its tooltip and its name for screen readers. 28px; 24px with `small`, inside a row. */
+/** A square button that is only an icon. The title is its tooltip and its name for screen readers. 32px; 28px with `small`, inside a row. */
 export function IconBtn({ icon, title, tone = 'default', active, small = false, className = '', ...rest }: IconBtnProps) {
   return (
     <button
@@ -354,9 +368,9 @@ export function IconBtn({ icon, title, tone = 'default', active, small = false, 
       title={title}
       aria-label={title}
       aria-pressed={rest['aria-pressed'] ?? (active === undefined ? undefined : active)}
-      className={`group/btn inline-flex shrink-0 items-center justify-center rounded-none border align-middle ${small ? 'h-6 w-6' : 'h-7 w-7'} ${BTN_OFF} ${active ? BTN_ON : BTN_TONES[tone]} ${className}`}
+      className={`group/btn inline-flex shrink-0 items-center justify-center rounded-none border align-middle ${small ? 'h-7 w-7' : 'h-8 w-8'} ${BTN_OFF} ${active ? BTN_ON : BTN_TONES[tone]} ${className}`}
     >
-      <Icon name={icon} size={small ? 12 : 14} className={active ? 'text-accent' : ICON_TONES[tone]} />
+      <Icon name={icon} size={small ? 13 : 15} className={active ? 'text-accent' : ICON_TONES[tone]} />
     </button>
   )
 }
@@ -397,8 +411,8 @@ export function ConfirmIconBtn({ title, icon, onClick, tone = 'ghost', className
 /** A small heading inside a panel, with an optional icon. */
 export function Head({ icon, children, right, className = '' }: { icon?: IconName; children: ReactNode; right?: ReactNode; className?: string }) {
   return (
-    <div className={`flex items-center gap-[5px] text-[11px] font-semibold text-dim ${className}`}>
-      {icon && <Icon name={icon} size={11} />}
+    <div className={`flex items-center gap-1.5 text-xs font-semibold text-dim ${className}`}>
+      {icon && <Icon name={icon} size={13} />}
       <span className="min-w-0 flex-1">{children}</span>
       {right}
     </div>
@@ -409,7 +423,7 @@ export function Head({ icon, children, right, className = '' }: { icon?: IconNam
 export function Th({ icon, iconClass = '', r, children, className = '', ...rest }: ThHTMLAttributes<HTMLTableCellElement> & { icon?: IconName; iconClass?: string; r?: boolean }) {
   return (
     <th {...rest} className={`${r ? 'r' : ''} ${className}`}>
-      {icon && <Icon name={icon} size={11} className={`inline-block text-faint ${children !== undefined ? 'mr-[5px]' : ''} ${iconClass}`} style={{ verticalAlign: -2 }} />}
+      {icon && <Icon name={icon} size={12} className={`inline-block text-faint ${children !== undefined ? 'mr-[5px]' : ''} ${iconClass}`} style={{ verticalAlign: -2 }} />}
       {children}
     </th>
   )
@@ -455,48 +469,58 @@ function FitLabel({ icon, label, size, className }: { icon?: IconName; label: st
 const TONE_TEXT = { pos: 'text-pos', neg: 'text-neg', warn: 'text-warn', accent: 'text-accent' } as const
 type FigureTone = keyof typeof TONE_TEXT
 
-/** A tile: an 11px label over a 16px value, with an optional line under it. With `onClick` it is a button that goes to where the figure comes from. */
-export function Stat({ label, icon, value, sub, tone, onClick, title }: { label: string; icon?: IconName; value: ReactNode; sub?: ReactNode; tone?: FigureTone; onClick?: () => void; title?: string }) {
+/**
+ * A tile: a quiet label over a large figure, with an optional line under it.
+ * With `onClick` it is a button that goes to where the figure comes from;
+ * with `info` a hover over it explains the figure.
+ */
+export function Stat({ label, icon, value, sub, tone, onClick, title, info }: { label: string; icon?: IconName; value: ReactNode; sub?: ReactNode; tone?: FigureTone; onClick?: () => void; title?: string; info?: ReactNode }) {
   const body = (
     <>
-      <FitLabel icon={icon} label={label} size={11} className="label gap-[5px]" />
-      <div className={`t-value mt-1 ${tone ? TONE_TEXT[tone] : 'text-fg'}`}>{value}</div>
-      {sub !== undefined && <div className="mt-1 truncate text-[11px] text-dim">{sub}</div>}
+      <span className="flex items-center gap-1.5">
+        <FitLabel icon={icon} label={label} size={13} className="label min-w-0 flex-1 gap-1.5" />
+        {info !== undefined && <InfoDot>{info}</InfoDot>}
+      </span>
+      <div className={`t-value mt-1.5 ${tone ? TONE_TEXT[tone] : 'text-fg'}`}>{value}</div>
+      {sub !== undefined && <div className="mt-1 truncate text-xs text-dim">{sub}</div>}
     </>
   )
   if (onClick)
     return (
-      <button type="button" onClick={onClick} title={title} className="min-w-0 border border-line bg-panel px-3 py-2 text-left hover:border-line2 hover:bg-hover">
+      <button type="button" onClick={onClick} title={title} className="min-w-0 border border-line bg-panel px-4 py-3 text-left hover:border-line2 hover:bg-hover">
         {body}
       </button>
     )
   return (
-    <div className="min-w-0 border border-line bg-panel px-3 py-2" title={title}>
+    <div className="min-w-0 border border-line bg-panel px-4 py-3" title={title}>
       {body}
     </div>
   )
 }
 
-/** The one headline figure of a screen: 20px. A screen has one of these, or none. */
-export function Headline({ label, icon, value, sub, tone }: { label: string; icon?: IconName; value: ReactNode; sub?: ReactNode; tone?: FigureTone }) {
+/** The one headline figure of a screen. A screen has one of these, or none. */
+export function Headline({ label, icon, value, sub, tone, info }: { label: string; icon?: IconName; value: ReactNode; sub?: ReactNode; tone?: FigureTone; info?: ReactNode }) {
   return (
-    <div className="min-w-0 border border-line bg-panel px-3 py-2">
-      <FitLabel icon={icon} label={label} size={11} className="label gap-[5px]" />
-      <div className={`t-headline mt-1 ${tone ? TONE_TEXT[tone] : 'text-fg'}`}>{value}</div>
-      {sub !== undefined && <div className="mt-1 truncate text-[11px] text-dim">{sub}</div>}
+    <div className="min-w-0 border border-line bg-panel px-4 py-3">
+      <span className="flex items-center gap-1.5">
+        <FitLabel icon={icon} label={label} size={13} className="label min-w-0 flex-1 gap-1.5" />
+        {info !== undefined && <InfoDot>{info}</InfoDot>}
+      </span>
+      <div className={`t-headline mt-1.5 ${tone ? TONE_TEXT[tone] : 'text-fg'}`}>{value}</div>
+      {sub !== undefined && <div className="mt-1 truncate text-xs text-dim">{sub}</div>}
     </div>
   )
 }
 
 export function Slider({ label, icon, value, min, max, step = 1, onChange, format, disabled, hint, locked, onLocked }: { label: string; icon?: IconName; value: number; min: number; max: number; step?: number; onChange: (v: number) => void; format?: (v: number) => string; disabled?: boolean; hint?: string } & LockProps) {
   return (
-    <label className={`block py-1 ${locked ? 'cursor-not-allowed' : ''}`} title={locked || hint} onClick={locked ? (e) => (e.preventDefault(), onLocked?.()) : undefined}>
+    <label className={`block py-1.5 ${locked ? 'cursor-not-allowed' : ''}`} title={locked || hint} onClick={locked ? (e) => (e.preventDefault(), onLocked?.()) : undefined}>
       <div className="flex items-baseline justify-between">
-        <span className="text-[11px] text-dim">
-          <Lead icon={locked ? 'lock' : icon} />
+        <span className="text-xs text-dim">
+          <Lead icon={locked ? 'lock' : icon} size={12} />
           {label}
         </span>
-        <span className="num text-[11px] text-fg">{format ? format(value) : value}</span>
+        <span className="num text-xs text-fg">{format ? format(value) : value}</span>
       </div>
       <input type="range" aria-label={label} aria-valuetext={format ? format(value) : undefined} className={`w-full ${locked ? 'pointer-events-none' : ''}`} min={min} max={max} step={step} value={value} disabled={disabled || !!locked} onChange={(e) => onChange(Number(e.target.value))} />
     </label>
@@ -510,13 +534,13 @@ export function Slider({ label, icon, value, min, max, step = 1, onChange, forma
  */
 export function Choice<T extends string | number>({ label, icon, value, options, onChange, lockNote }: { label: string; icon?: IconName; value: T; options: { value: T; label: string; locked?: boolean }[]; onChange: (v: T) => void; lockNote?: string | null }) {
   const row = (
-    <label className="flex items-center justify-between gap-2 py-1" title={lockNote || undefined}>
-      <span className="whitespace-nowrap text-[11px] text-dim">
-        <Lead icon={icon} />
+    <label className="flex items-center justify-between gap-3 py-1" title={lockNote || undefined}>
+      <span className="whitespace-nowrap text-xs text-dim">
+        <Lead icon={icon} size={12} />
         {label}
       </span>
       <select
-        className="h-7 min-w-0 max-w-[62%] flex-1 rounded-none border border-line2 bg-raise px-1 text-xs outline-none focus:border-accent"
+        className="h-8 min-w-0 max-w-[62%] flex-1 rounded-none border border-line2 bg-raise px-2 text-xs outline-none focus:border-accent"
         value={String(value)}
         onChange={(e) => {
           const o = options.find((x) => String(x.value) === e.target.value)
@@ -536,7 +560,7 @@ export function Choice<T extends string | number>({ label, icon, value, options,
   return (
     <div>
       {row}
-      <div className="flex items-start gap-[5px] pb-1 text-[11px] leading-snug text-faint" data-lock-note>
+      <div className="flex items-start gap-[5px] pb-1 text-2xs leading-snug text-faint" data-lock-note>
         <Icon name="lock" size={11} className="mt-[2px] shrink-0" />
         <span>{lockNote}</span>
       </div>
@@ -547,7 +571,7 @@ export function Choice<T extends string | number>({ label, icon, value, options,
 export function Meter({ value, max = 1, tone = 'accent', className = '' }: { value: number; max?: number; tone?: 'accent' | 'pos' | 'neg' | 'warn' | 'dim'; className?: string }) {
   const bg = { accent: 'bg-accent', pos: 'bg-pos', neg: 'bg-neg', warn: 'bg-warn', dim: 'bg-mute' }[tone]
   return (
-    <div className={`h-1 w-full bg-line ${className}`}>
+    <div className={`h-1.5 w-full bg-line ${className}`}>
       <div className={`h-full ${bg}`} style={{ width: `${Math.max(0, Math.min(1, value / max)) * 100}%` }} />
     </div>
   )
@@ -555,12 +579,12 @@ export function Meter({ value, max = 1, tone = 'accent', className = '' }: { val
 
 export function Row({ k, v, tone, icon }: { k: ReactNode; v: ReactNode; tone?: string; icon?: IconName }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-line py-[3px] last:border-0">
-      <span className="text-[11px] text-dim">
-        <Lead icon={icon} />
+    <div className="flex items-baseline justify-between gap-4 border-b border-line py-1.5 last:border-0">
+      <span className="text-xs text-dim">
+        <Lead icon={icon} size={12} />
         {k}
       </span>
-      <span className={`num text-[11px] ${tone ?? 'text-fg'}`}>{v}</span>
+      <span className={`num text-xs ${tone ?? 'text-fg'}`}>{v}</span>
     </div>
   )
 }
@@ -578,7 +602,7 @@ export function TextInput({ value, onChange, className = '', onEnter, onKeyDown,
       value={value}
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={(e) => (onKeyDown?.(e), e.key === 'Enter' && onEnter && (e.preventDefault(), onEnter()))}
-      className={`h-7 rounded-none border border-line2 bg-raise px-2 text-xs outline-none focus:border-accent ${className}`}
+      className={`h-8 rounded-none border border-line2 bg-raise px-2.5 text-xs outline-none focus:border-accent ${className}`}
       style={{ userSelect: 'text' }}
     />
   )
@@ -629,16 +653,16 @@ export function NumInput({ value, onChange, className = '', min = 0, max = 1e9, 
       }}
       onBlur={(e) => (setText(null), rest.onBlur?.(e))}
       onKeyDown={(e) => (onKeyDown?.(e), e.key === 'Enter' && (setText(null), onEnter && (e.preventDefault(), onEnter())))}
-      className={`num h-7 rounded-none border border-line2 bg-raise px-2 text-xs outline-none focus:border-accent ${className}`}
+      className={`num h-8 rounded-none border border-line2 bg-raise px-2.5 text-xs outline-none focus:border-accent ${className}`}
     />
   )
 }
 
 export const chart = {
-  axis: { fill: 'var(--color-dim)', fontSize: 11, fontFamily: 'Cascadia Mono, Consolas, monospace' },
+  axis: { fill: 'var(--color-dim)', fontSize: 12, fontFamily: 'Cascadia Mono, Consolas, monospace' },
   grid: 'var(--color-line)',
   tooltip: {
-    contentStyle: { background: 'var(--color-panel)', border: '1px solid var(--color-line2)', borderRadius: 0, fontSize: 11, fontFamily: 'Cascadia Mono, Consolas, monospace' },
+    contentStyle: { background: 'var(--color-panel)', border: '1px solid var(--color-line2)', borderRadius: 0, fontSize: 12, fontFamily: 'Cascadia Mono, Consolas, monospace' },
     labelStyle: { color: 'var(--color-dim)' },
     itemStyle: { padding: 0 },
   },
@@ -668,7 +692,7 @@ export interface TabOption<T extends string> {
 }
 export function Tabs<T extends string>({ value, options, onChange, onLocked, className = '', right }: { value: T; options: TabOption<T>[]; onChange: (v: T) => void; onLocked?: (v: T) => void; className?: string; /** Kept for older callers: tabs always share the width now. */ fit?: boolean; /** Controls at the right end of the strip. */ right?: ReactNode }) {
   return (
-    <div role="tablist" className={`flex h-9 min-w-0 shrink-0 items-stretch border-b border-line ${className}`}>
+    <div role="tablist" className={`flex h-11 min-w-0 shrink-0 items-stretch border-b border-line ${className}`}>
       {options.map((o) => {
         const on = value === o.value
         const text = typeof o.label === 'string' ? o.label : undefined
@@ -680,11 +704,11 @@ export function Tabs<T extends string>({ value, options, onChange, onLocked, cla
             aria-disabled={o.locked ? true : undefined}
             onClick={() => (o.locked ? onLocked?.(o.value) : onChange(o.value))}
             title={o.locked ?? text}
-            className={`-mb-px flex min-w-0 items-center gap-[6px] whitespace-nowrap border-b-2 px-3 text-xs ${on ? 'border-accent font-semibold text-fg' : o.locked ? 'border-transparent text-faint' : 'border-transparent text-dim hover:text-fg'}`}
+            className={`-mb-px flex min-w-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 text-sm ${on ? 'border-accent font-semibold text-fg' : o.locked ? 'border-transparent text-faint' : 'border-transparent text-dim hover:text-fg'}`}
           >
-            {o.locked ? <Icon name="lock" size={11} className="shrink-0 text-faint" /> : o.icon && <Icon name={o.icon} size={13} className={`shrink-0 ${on ? 'text-accent' : 'text-dim'}`} />}
+            {o.locked ? <Icon name="lock" size={12} className="shrink-0 text-faint" /> : o.icon && <Icon name={o.icon} size={14} className={`shrink-0 ${on ? 'text-accent' : 'text-dim'}`} />}
             <span className="min-w-0 truncate">{o.label}</span>
-            {o.fresh && !o.locked ? <span className="shrink-0 border border-accent px-1 text-[11px] font-normal leading-[14px] text-accent">New</span> : o.badge !== undefined && o.badge !== null && o.badge !== false && <span className={`num shrink-0 text-[11px] font-normal ${o.alert ? 'text-warn' : 'text-faint'}`}>{o.badge}</span>}
+            {o.fresh && !o.locked ? <span className="shrink-0 bg-accent/15 px-1.5 text-2xs font-medium leading-4 text-accent">New</span> : o.badge !== undefined && o.badge !== null && o.badge !== false && <span className={`num shrink-0 px-1.5 text-2xs font-medium leading-4 ${o.alert ? 'bg-warn/15 text-warn' : 'bg-raise text-dim'}`}>{o.badge}</span>}
           </button>
         )
       })}
@@ -701,10 +725,10 @@ export function Fold({ title, icon, right, children, open: initial = true, class
   const setOpen = keep ? setKeptOpen : setOpenState
   return (
     <section className={`shrink-0 border border-line bg-panel ${className}`}>
-      <header className="flex h-8 items-center justify-between gap-2 pl-3 pr-2">
-        <button onClick={() => setOpen(!open)} aria-expanded={open} className="t-title flex min-w-0 flex-1 items-center gap-2 text-left hover:text-accent">
-          <Icon name={open ? 'minus' : 'plus'} size={10} className="shrink-0 text-dim" />
-          {icon && <Icon name={icon} size={13} className="shrink-0 text-dim" />}
+      <header className="flex h-11 items-center justify-between gap-2 pl-4 pr-3">
+        <button onClick={() => setOpen(!open)} aria-expanded={open} className="t-title flex h-full min-w-0 flex-1 items-center gap-2 text-left hover:text-accent">
+          <Icon name={open ? 'chevronDown' : 'chevronRight'} size={13} className="shrink-0 text-dim" />
+          {icon && <Icon name={icon} size={15} className="shrink-0 text-dim" />}
           <span className="truncate">{title}</span>
         </button>
         {right}
@@ -727,12 +751,12 @@ export function Drawer({ open, onClose, title, children, width = 420, footer }: 
   const host = typeof document !== 'undefined' ? document.getElementById('sb-drawer') : null
   const drawer = (
     <aside ref={box} role="dialog" aria-label={typeof title === 'string' ? title : 'Details'} data-layer="drawer" className="pointer-events-auto absolute bottom-0 right-0 top-0 z-[35] flex min-h-0 flex-col border-l border-line2 bg-carbon outline-none" style={{ width, maxWidth: '100%' }}>
-      <header className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-line bg-panel pl-3 pr-1">
-        <span className="t-title min-w-0 truncate">{title}</span>
+      <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-line bg-panel pl-4 pr-2">
+        <span className="t-section min-w-0 truncate">{title}</span>
         <IconBtn icon="close" tone="ghost" title="Close (Esc)" onClick={onClose} />
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
-      {footer && <div className="shrink-0 border-t border-line bg-panel p-2">{footer}</div>}
+      {footer && <div className="shrink-0 border-t border-line bg-panel px-4 py-3">{footer}</div>}
     </aside>
   )
   return host ? createPortal(drawer, host) : drawer
@@ -744,9 +768,9 @@ export const Kpi = Stat
 /** A small supporting figure on one line: label left, value right. Quieter than a tile. */
 export function Mini({ label, icon, value, tone, title }: { label: string; icon?: IconName; value: ReactNode; tone?: string; /** Said on hover when the label is a short form. */ title?: string }) {
   return (
-    <div className="min-w-0 border border-line px-2 py-1" title={title}>
-      <FitLabel icon={icon} label={label} size={11} className="gap-1 text-[11px] text-faint" />
-      <div className={`num text-xs ${tone ?? 'text-fg'}`}>{value}</div>
+    <div className="min-w-0 border border-line px-3 py-2" title={title}>
+      <FitLabel icon={icon} label={label} size={12} className="gap-1.5 text-2xs text-dim" />
+      <div className={`num mt-0.5 text-sm ${tone ?? 'text-fg'}`}>{value}</div>
     </div>
   )
 }
@@ -755,19 +779,42 @@ export function Mini({ label, icon, value, tone, title }: { label: string; icon?
 export function Tag({ children, tone = 'dim', icon }: { children?: ReactNode; tone?: 'dim' | 'accent' | 'pos' | 'neg' | 'warn'; icon?: IconName }) {
   const c = { dim: 'border-line2 text-dim', accent: 'border-accent text-accent', pos: 'border-pos text-pos', neg: 'border-neg text-neg', warn: 'border-warn text-warn' }[tone]
   return (
-    <span className={`inline-block whitespace-nowrap border px-[5px] text-[11px] leading-4 ${c}`}>
+    <span className={`inline-block whitespace-nowrap border px-1.5 text-2xs leading-[18px] ${c}`}>
       {icon && <Icon name={icon} size={10} className={`inline-block ${children !== undefined ? 'mr-[3px]' : ''}`} style={{ verticalAlign: -1 }} />}
       {children}
     </span>
   )
 }
 
-export function Empty({ text, icon, children }: { text: string; icon?: IconName; children?: ReactNode }) {
+/**
+ * Nothing to show yet: what will be here, why it is empty, and (as children)
+ * the one action that fills it. `title` is a short headline above the text.
+ */
+/**
+ * A status in a list: a small square in the status colour and the words. Quieter than a `Tag`, for a
+ * column where many rows have one ("No desk" on forty people should not be forty boxes).
+ */
+export function Status({ children, tone = 'dim' }: { children: ReactNode; tone?: 'dim' | 'accent' | 'pos' | 'neg' | 'warn' }) {
+  const t = { dim: ['bg-mute', 'text-dim'], accent: ['bg-accent', 'text-accent'], pos: ['bg-pos', 'text-pos'], neg: ['bg-neg', 'text-neg'], warn: ['bg-warn', 'text-warn'] }[tone]
   return (
-    <div className="flex h-full min-h-24 flex-col items-center justify-center gap-3 px-6 py-6 text-center">
-      {icon && <Icon name={icon} size={22} className="text-line2" />}
-      <div className="max-w-sm text-xs leading-snug text-dim">{text}</div>
-      {children}
+    <span className={`inline-flex min-w-0 items-center gap-2 whitespace-nowrap text-xs ${t[1]}`}>
+      <span aria-hidden className={`h-1.5 w-1.5 shrink-0 ${t[0]}`} />
+      <span className="min-w-0 truncate">{children}</span>
+    </span>
+  )
+}
+
+export function Empty({ text, icon, children, title }: { text: string; icon?: IconName; children?: ReactNode; title?: ReactNode }) {
+  return (
+    <div className="flex h-full min-h-32 flex-col items-center justify-center gap-3 px-6 py-8 text-center">
+      {icon && (
+        <span className="flex h-11 w-11 items-center justify-center border border-line2 text-dim">
+          <Icon name={icon} size={20} />
+        </span>
+      )}
+      {title !== undefined && <div className="t-title">{title}</div>}
+      <div className="max-w-md text-sm leading-relaxed text-dim">{text}</div>
+      {children && <div className="mt-1 flex flex-wrap items-center justify-center gap-2">{children}</div>}
     </div>
   )
 }
@@ -775,15 +822,51 @@ export function Empty({ text, icon, children }: { text: string; icon?: IconName;
 // ---------------------------------------------------------------- the redesign's shared pieces
 
 /**
- * The frame of an ordinary (non-3D) screen: a 16px gutter, 8px between
- * panels, and one column that scrolls when the window is short.
+ * The frame of an ordinary (non-3D) screen: a 24px gutter, 16px between
+ * sections, and one column that scrolls when the window is short.
+ * With `title` it opens with a page header (see `PageHeader`).
  */
-export function Page({ children, className = '', keep }: { children: ReactNode; className?: string; keep?: string }) {
+export function Page({ children, className = '', keep, title, sub, actions, info, wide }: { children: ReactNode; className?: string; keep?: string; title?: ReactNode; /** One line: the question this page answers. */ sub?: ReactNode; actions?: ReactNode; /** How the page works, shown on hover over the "i". */ info?: ReactNode; /** Use the full width (wide tables, trees). */ wide?: boolean }) {
   const ref = useKeptScroll(keep)
   return (
-    <div ref={ref} className={`flex h-full min-h-0 flex-col gap-2 overflow-y-auto overflow-x-hidden p-4 ${className}`}>
-      {children}
+    <div ref={ref} className="h-full min-h-0 overflow-y-auto overflow-x-hidden">
+      <div className={`flex min-h-full w-full flex-col gap-4 px-6 pb-8 pt-4 ${wide ? '' : 'max-w-[2200px]'} ${className}`}>
+        {title !== undefined && <PageHeader title={title} sub={sub} actions={actions} info={info} />}
+        {children}
+      </div>
     </div>
+  )
+}
+
+/** The head of a page: its title, one line on what it is for, and at most one primary action at the right. */
+export function PageHeader({ title, sub, actions, info, className = '' }: { title: ReactNode; sub?: ReactNode; actions?: ReactNode; info?: ReactNode; className?: string }) {
+  return (
+    <header className={`flex shrink-0 flex-wrap items-end justify-between gap-x-6 gap-y-2 ${className}`}>
+      <div className="min-w-0">
+        <h1 className="t-page flex items-center gap-2">
+          {title}
+          {info !== undefined && <InfoDot label="How this works">{info}</InfoDot>}
+        </h1>
+        {sub !== undefined && <p className="mt-1 max-w-3xl text-sm text-dim">{sub}</p>}
+      </div>
+      {actions !== undefined && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
+    </header>
+  )
+}
+
+/** A titled group inside a page without a box of its own: the title, an optional line, and what follows. */
+export function Section({ title, sub, right, children, className = '' }: { title: ReactNode; sub?: ReactNode; right?: ReactNode; children: ReactNode; className?: string }) {
+  return (
+    <section className={`flex min-w-0 shrink-0 flex-col gap-3 ${className}`}>
+      <header className="flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="t-section">{title}</h2>
+          {sub !== undefined && <p className="mt-0.5 text-xs text-dim">{sub}</p>}
+        </div>
+        {right !== undefined && <div className="flex shrink-0 items-center gap-2">{right}</div>}
+      </header>
+      {children}
+    </section>
   )
 }
 
@@ -805,16 +888,16 @@ export function Strip({ items, right, children, keep, className = '' }: { items:
   const can = children !== undefined && children !== null && children !== false
   return (
     <section className={`shrink-0 border border-line bg-panel ${className}`}>
-      <div className="flex min-h-9 items-center gap-x-4 gap-y-1 px-3 py-1">
-        <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-5 gap-y-1">
+      <div className="flex min-h-12 items-center gap-x-4 gap-y-1 px-4 py-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-7 gap-y-1.5">
           {items.map((f) => {
             const body = (
               <>
-                <span className="text-[11px] text-dim">
-                  <Lead icon={f.icon} />
+                <span className="text-xs text-dim">
+                  <Lead icon={f.icon} size={12} />
                   {f.label}
                 </span>
-                <span className={`num text-[13px] font-semibold ${f.tone ? TONE_TEXT[f.tone] : 'text-fg'}`}>{f.value}</span>
+                <span className={`num text-base font-semibold ${f.tone ? TONE_TEXT[f.tone] : 'text-fg'}`}>{f.value}</span>
               </>
             )
             return f.onClick ? (
@@ -840,7 +923,7 @@ export function Strip({ items, right, children, keep, className = '' }: { items:
 export function Legend({ items, className = '' }: { items: { label: string; tone?: 'accent' | 'pos' | 'neg' | 'warn' | 'dim' | 'fg'; color?: string }[]; className?: string }) {
   const bg = { accent: 'bg-accent', pos: 'bg-pos', neg: 'bg-neg', warn: 'bg-warn', dim: 'bg-mute', fg: 'bg-fg' }
   return (
-    <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-dim ${className}`}>
+    <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 text-2xs text-dim ${className}`}>
       {items.map((i) => (
         <span key={i.label} className="flex items-center gap-[5px] whitespace-nowrap">
           <span aria-hidden className={`h-2 w-2 shrink-0 ${i.color ? '' : bg[i.tone ?? 'accent']}`} style={i.color ? { background: i.color } : undefined} />
@@ -873,10 +956,10 @@ export function Key({ children }: { children: ReactNode }) {
 /** A compact drop-down with its label in front: a filter, a picker of one thing out of many (a device type, a store). */
 export function Pick<T extends string | number>({ label, value, options, onChange, className = '' }: { label: string; value: T; options: { value: T; label: string; disabled?: boolean }[]; onChange: (v: T) => void; className?: string }) {
   return (
-    <label className={`flex min-w-0 items-center gap-2 text-[11px] text-dim ${className}`}>
+    <label className={`flex min-w-0 items-center gap-2 text-xs text-dim ${className}`}>
       <span className="shrink-0">{label}</span>
       <select
-        className="h-7 min-w-0 rounded-none border border-line2 bg-raise px-1 text-xs text-fg outline-none focus:border-accent"
+        className="h-8 min-w-0 rounded-none border border-line2 bg-raise px-2 text-xs text-fg outline-none focus:border-accent"
         value={String(value)}
         onChange={(e) => {
           const o = options.find((x) => String(x.value) === e.target.value)
@@ -898,9 +981,9 @@ export function Filters<T extends string>({ value, options, onChange, label }: {
   return (
     <div role="group" aria-label={label ?? 'Filter'} className="flex min-w-0 items-center gap-1">
       {options.map((o) => (
-        <button key={o.value} type="button" aria-pressed={value === o.value} onClick={() => onChange(o.value)} className={`flex h-7 items-center gap-[6px] whitespace-nowrap border px-2 text-xs ${value === o.value ? 'border-accent bg-accent/10 text-accent' : 'border-line2 text-dim hover:border-fg hover:text-fg'}`}>
+        <button key={o.value} type="button" aria-pressed={value === o.value} onClick={() => onChange(o.value)} className={`flex h-8 items-center gap-2 whitespace-nowrap border px-3 text-xs ${value === o.value ? 'border-accent bg-accent/10 text-accent' : 'border-line2 text-dim hover:border-fg hover:text-fg'}`}>
           {o.label}
-          {o.count !== undefined && <span className={`num text-[11px] ${value === o.value ? '' : o.alert && o.count > 0 ? 'text-warn' : 'text-faint'}`}>{o.count}</span>}
+          {o.count !== undefined && <span className={`num text-2xs ${value === o.value ? '' : o.alert && o.count > 0 ? 'text-warn' : 'text-faint'}`}>{o.count}</span>}
         </button>
       ))}
     </div>
@@ -929,29 +1012,128 @@ export function Spark({ values, width = 72, height = 20, tone = 'dim', title }: 
   )
 }
 
+// ---------------------------------------------------------------- dialogs
+
+/** The box of a dialog over a dimmed screen: give it a width and the outline of its tone (`border-warn`, `border-line2`). */
+export const DIALOG = 'sb-rise max-h-full max-w-full overflow-y-auto border bg-panel shadow-[0_24px_64px_rgb(0_0_0/0.6)] outline-none'
+
 /**
- * A question mark that opens a short explanation: how a screen works, what a
- * figure means. What used to be a permanent "How it works" panel.
+ * A dialog: a dimmed screen, a box with a title (and an icon in the tone's
+ * colour), a body and a row of buttons at the bottom right. The caller owns
+ * the layer (`useLayer(true, close, { modal, box })`) and passes its ref.
  */
-export function Help({ title = 'How this works', children }: { title?: string; children: ReactNode }) {
-  const [open, setOpen] = useState(false)
+export function Dialog({ title, icon, tone = 'line2', meta, children, footer, width = 520, box, alert }: { title: ReactNode; icon?: IconName; tone?: 'line2' | 'warn' | 'neg' | 'accent'; meta?: ReactNode; children: ReactNode; footer?: ReactNode; width?: number; box?: RefObject<HTMLDivElement | null>; alert?: boolean }) {
+  const edge = { line2: 'border-line2', warn: 'border-warn', neg: 'border-neg', accent: 'border-accent' }[tone]
+  const ink = { line2: 'text-dim', warn: 'text-warn', neg: 'text-neg', accent: 'text-accent' }[tone]
+  return (
+    <div className="absolute inset-0 z-40 flex items-center justify-center bg-carbon/75 p-4">
+      <div ref={box} role={alert ? 'alertdialog' : 'dialog'} aria-label={typeof title === 'string' ? title : undefined} className={`${DIALOG} ${edge}`} style={{ width }}>
+        <div className="flex items-center gap-3 border-b border-line px-5 py-3.5">
+          {icon && <Icon name={icon} size={18} className={ink} />}
+          <span className="t-section min-w-0 flex-1">{title}</span>
+          {meta !== undefined && <span className="num shrink-0 text-2xs text-faint">{meta}</span>}
+        </div>
+        <div className="px-5 py-4 text-sm leading-relaxed text-fg">{children}</div>
+        {footer !== undefined && <div className="flex justify-end gap-2 border-t border-line px-5 py-4">{footer}</div>}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------- details on hover
+
+/** How long the pointer rests on something before its card comes up, and how long the card waits for the pointer to reach it. */
+const CARD_IN_MS = 160
+const CARD_OUT_MS = 180
+
+/**
+ * Details that show on hover or keyboard focus, without a click: a card beside
+ * the thing it explains. The pointer can move onto the card (to read a long
+ * one or press a link in it). A click pins it open until a click elsewhere or
+ * Esc, which is also how it works on a touch screen.
+ */
+export function HoverCard({ card, children, title, className = '', width = 380, as = 'span' }: { /** What the card says. */ card: ReactNode; children: ReactNode; /** A heading for the card. */ title?: ReactNode; className?: string; width?: number; as?: 'span' | 'div' }) {
+  const anchor = useRef<HTMLElement>(null)
   const box = useRef<HTMLDivElement>(null)
-  useLayer(open, () => setOpen(false))
+  const [open, setOpen] = useState<false | 'hover' | 'pin'>(false)
+  const [at, setAt] = useState<{ left: number; top: number } | null>(null)
+  const timer = useRef(0)
+  const later = (fn: () => void, ms: number) => (window.clearTimeout(timer.current), (timer.current = window.setTimeout(fn, ms)))
+  const enter = () => (open === 'pin' ? undefined : later(() => setOpen('hover'), CARD_IN_MS))
+  const leave = () => (open === 'pin' ? undefined : later(() => setOpen(false), CARD_OUT_MS))
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+  useLayer(open === 'pin', () => setOpen(false))
   useEffect(() => {
-    if (!open) return
-    const away = (e: PointerEvent) => !box.current?.contains(e.target as Node) && setOpen(false)
+    if (open !== 'pin') return
+    const away = (e: PointerEvent) => !anchor.current?.contains(e.target as Node) && !box.current?.contains(e.target as Node) && setOpen(false)
     window.addEventListener('pointerdown', away, true)
     return () => window.removeEventListener('pointerdown', away, true)
   }, [open])
+  // beside the anchor: under it, or over it when there is no room, and inside the window
+  useLayoutEffect(() => {
+    if (!open) return setAt(null)
+    const a = anchor.current?.getBoundingClientRect()
+    const el = box.current
+    if (!a || !el) return
+    const w = el.offsetWidth
+    const h = el.offsetHeight
+    const left = Math.max(8, Math.min(window.innerWidth - w - 8, a.left + a.width / 2 - w / 2))
+    const below = a.bottom + 8
+    setAt({ left, top: below + h > window.innerHeight - 8 ? Math.max(8, a.top - h - 8) : below })
+  }, [open])
+  const Tag = as
   return (
-    <div ref={box} className="relative inline-flex">
-      <IconBtn icon="help" tone="ghost" title={title} aria-expanded={open} onClick={() => setOpen(!open)} />
-      {open && (
-        <div role="note" className="absolute right-0 top-8 z-30 w-[320px] max-w-[80vw] border border-line2 bg-panel p-3 text-xs leading-relaxed text-dim">
-          <div className="t-title mb-1">{title}</div>
-          {children}
-        </div>
-      )}
-    </div>
+    <Tag
+      ref={anchor as RefObject<HTMLDivElement & HTMLSpanElement>}
+      className={`relative ${as === 'span' ? 'inline-flex' : ''} ${className}`}
+      onMouseEnter={enter}
+      onMouseLeave={leave}
+      onFocus={(e) => e.target.matches(':focus-visible') && setOpen((o) => o || 'hover')}
+      onBlur={() => open === 'hover' && setOpen(false)}
+      onClick={() => setOpen((o) => (o === 'pin' ? false : 'pin'))}
+    >
+      {children}
+      {open &&
+        createPortal(
+          <div
+            ref={box}
+            role="note"
+            className="sb-card sb-rise"
+            style={{ width: `min(${width}px, calc(100vw - 16px))`, ...(at ? { left: at.left, top: at.top } : { left: 0, top: 0, visibility: 'hidden' }) }}
+            onMouseEnter={() => window.clearTimeout(timer.current)}
+            onMouseLeave={leave}
+          >
+            {title !== undefined && <div className="t-title border-b border-line px-4 py-2.5">{title}</div>}
+            <div className="px-4 py-3 text-xs leading-relaxed text-dim [&_b]:font-semibold [&_b]:text-fg [&_p+p]:mt-2">{card}</div>
+          </div>,
+          document.body,
+        )}
+    </Tag>
+  )
+}
+
+/** A small "i" beside a title or a figure: its explanation shows on hover, no click needed. */
+export function InfoDot({ children, label = 'What this means' }: { children: ReactNode; label?: string }) {
+  return (
+    <HoverCard card={children} className="shrink-0 align-middle">
+      <button type="button" aria-label={label} className="inline-flex h-5 w-5 items-center justify-center text-faint hover:text-fg">
+        <Icon name="info" size={14} />
+      </button>
+    </HoverCard>
+  )
+}
+
+/**
+ * How a screen or a part of it works. It used to be a question mark that had
+ * to be clicked; now its card shows on hover (and stays on a click).
+ */
+export function Help({ title = 'How this works', children }: { title?: string; children: ReactNode }) {
+  return (
+    <HoverCard card={children} title={title} className="shrink-0">
+      <button type="button" aria-label={title} className="inline-flex h-8 items-center gap-1.5 px-2 text-xs text-dim hover:bg-hover hover:text-fg">
+        <Icon name="info" size={15} />
+        <span className="hidden xl:inline">How it works</span>
+      </button>
+    </HoverCard>
   )
 }

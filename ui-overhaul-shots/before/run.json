@@ -1,0 +1,279 @@
+{
+ "url": "http://localhost:5231",
+ "date": "2026-10-18T03:31:09.482Z",
+ "browser": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+ "flags": [
+  "--headless=new",
+  "--remote-debugging-port=0",
+  "--window-size=1920,1200",
+  "--no-first-run",
+  "--no-default-browser-check",
+  "--disable-extensions",
+  "--disable-sync",
+  "--disable-default-apps",
+  "--disable-component-update",
+  "--disable-background-networking",
+  "--metrics-recording-only",
+  "--mute-audio",
+  "--hide-scrollbars",
+  "--disable-background-timer-throttling",
+  "--disable-renderer-backgrounding",
+  "--disable-backgrounding-occluded-windows",
+  "--disable-features=CalculateNativeWinOcclusion,Translate",
+  "--force-device-scale-factor=1",
+  "--force-color-profile=srgb",
+  "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1",
+  "--enable-gpu",
+  "--ignore-gpu-blocklist",
+  "--use-gl=angle",
+  "--use-angle=d3d11"
+ ],
+ "glMode": "gpu",
+ "webgl": {
+  "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
+  "renderer": "ANGLE (Intel, Intel(R) UHD Graphics (0x0000A788) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+ },
+ "sizes": [
+  "1920x1080",
+  "1366x768"
+ ],
+ "states": [
+  "fresh",
+  "late"
+ ],
+ "themes": [
+  "ember"
+ ],
+ "seconds": 123,
+ "skipped": [
+  {
+   "screen": "inspector",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "no device of our own yet"
+  },
+  {
+   "screen": "inspector-scores",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "no device of our own yet"
+  },
+  {
+   "screen": "inspector-specs",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "no device of our own yet"
+  },
+  {
+   "screen": "inspector-reviews",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "no device of our own yet"
+  },
+  {
+   "screen": "research",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs research"
+  },
+  {
+   "screen": "research-lines",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs research"
+  },
+  {
+   "screen": "labs",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs labs"
+  },
+  {
+   "screen": "labs-os",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs labs"
+  },
+  {
+   "screen": "stores",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs stores"
+  },
+  {
+   "screen": "marketing",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs marketing"
+  },
+  {
+   "screen": "marketing-events",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs marketing"
+  },
+  {
+   "screen": "owners",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs care"
+  },
+  {
+   "screen": "staff-teams",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs teams"
+  },
+  {
+   "screen": "person",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "nobody hired yet"
+  },
+  {
+   "screen": "market",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs market"
+  },
+  {
+   "screen": "regions",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs world"
+  },
+  {
+   "screen": "rivals",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs rivals"
+  },
+  {
+   "screen": "finance",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs finance"
+  },
+  {
+   "screen": "shares",
+   "state": "fresh",
+   "size": "1920x1080",
+   "why": "locked: needs shares"
+  },
+  {
+   "screen": "inspector",
+   "state": "fresh",
+   "size": "1366x768",
+   "why": "no device of our own yet"
+  },
+  {
+   "screen": "inspector-scores",
+   "state": "fresh",
+   "size": "1366x768",
+   "why": "no device of our own yet"
+  },
+  {
+   "screen": "inspector-specs",
+   "state": "fresh",
+   "size": "1366x768",
+   "why": "no device of our own yet"
+  },
+  {
+   "screen": "inspector-reviews",
+   "state": "fresh",
+   "size": "1366x768",
+   "why": "no device of our own yet"
+  },
+  {
+   "screen": "research",
+   "state": "fresh",
+   "size": "1366x768",
+   "why": "locked: needs research"
+  },
+  {
+   "screen": "research-lines",
+   "state": "fresh",
+   "size": "1366x768",
+   "why": "locked: needs research"
+  },
+  {
+   "screen": "labs",
+   "state": "fresh",
+   "size": "1366x768",
+   "why": "locked: needs labs"
+  },
+  {
+   "screen": "labs-os",
+   "state": "fresh",
+   "size": "1366x768",
+   "why": "locked: needs labs"
+  },
+  {
+   "screen": "stores",
+   "state": "fresh",
+   "size": "1366x768",
+   "why": "locked: needs stores"
+  },
+  {
+   "screen": "marketing",
+   "state": "fresh",
+   "size": "1366x768",
+   "why": "locked: needs marketing"
+  },
+  {
+   "screen": "marketing-events",
+   "state": "fresh",
+   "size": "1366x768",
+   "why": "locked: needs marketing"
+  },
+  {
+   "screen": "owners",
+   "state": "fresh",
+   "size": "1366x768",
+   "why": "locked: needs care"
+  },
+  {
+   "screen": "staff-teams",
+   "state": "fresh",
+   "size": "1366x768",
+   "why": "locked: needs teams"
+  },
+  {
+   "screen": "person",
+   "state": "fresh",
+   "size": "1366x768",
+   "why": "nobody hired yet"
+  },
+  {
+   "screen": "market",
+   "state": "fresh",
+   "size": "1366x768",
+   "why": "locked: needs market"
+  },
+  {
+   "screen": "regions",
+   "state": "fresh",
+   "size": "1366x768",
+   "why": "locked: needs world"
+  },
+  {
+   "screen": "rivals",
+   "state": "fresh",
+   "size": "1366x768",
+   "why": "locked: needs rivals"
+  },
+  {
+   "screen": "finance",
+   "state": "fresh",
+   "size": "1366x768",
+   "why": "locked: needs finance"
+  },
+  {
+   "screen": "shares",
+   "state": "fresh",
+   "size": "1366x768",
+   "why": "locked: needs shares"
+  }
+ ],
+ "pageErrors": []
+}
