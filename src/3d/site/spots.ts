@@ -119,13 +119,32 @@ const forkAt = (use: number, x: number, bothSides: boolean): SpotDef =>
   s(use, x, 1.87, 0, Pose.Stand, x, 2, {
     alts: [{ z: 1.45, az: 1 }, ...(bothSides ? [{ z: -1.87, face: Math.PI, az: -2 }, { z: -1.45, face: Math.PI, az: -1 }] : [])],
   })
-/** Up the two steps at stage left, then across the boards. */
-const STEPS: [number, number, number][] = [
-  [-2.45, 0, 2.05],
-  [-2.45, 0.3, 1.77],
-  [-2.45, 0.6, 1.47],
-  [-2.45, STAGE_H + 0.012, 1.1],
-]
+/** Up the two steps at stage left, then across the boards. Stages of every size share the design: W wide, D deep. */
+const stepsOf = (W: number, D: number): [number, number, number][] => {
+  const x = -W / 2 + 0.55
+  const front = D / 2 - 0.68
+  return [
+    [x, 0, front + 0.73],
+    [x, 0.3, front + 0.45],
+    [x, 0.6, front + 0.15],
+    [x, STAGE_H + 0.012, front - 0.22],
+  ]
+}
+/** Where the presenter stands on a stage, W by D: at the lectern, and out in the middle beside the plinth. */
+export const stageMarks = (W: number, D: number) => ({ lectern: [W / 2 - 1.0, D / 2 - 1.7] as [number, number], centre: [-0.75, D / 2 - 1.25] as [number, number], wings: [-W / 2 + 0.55, D / 2 - 0.9] as [number, number] })
+function stageDefs(W: number, D: number): SpotDef[] {
+  const via = stepsOf(W, D)
+  const m = stageMarks(W, D)
+  const ax = -W / 2 + 0.5
+  const az = D / 2 + 0.5
+  return [
+    // at the lectern, and out in the middle beside the plinth: both face the house
+    s(U.host, m.lectern[0], m.lectern[1], Math.PI, Pose.Present, ax, az, { y: STAGE_H + 0.012, via }),
+    s(U.host, m.centre[0], m.centre[1], Math.PI, Pose.Present, ax, az, { y: STAGE_H + 0.012, via }),
+    // a stagehand checking the front of the stage from the floor
+    s(U.crew, 1.2, D / 2 + 0.45, 0, Pose.Fix, 1.5, az),
+  ]
+}
 
 const DEFS: Record<SiteKind, Record<string, SpotDef[]>> = {
   office: {
@@ -195,14 +214,12 @@ const DEFS: Record<SiteKind, Record<string, SpotDef[]>> = {
     seats: seating(0),
     seats_mid: seating(0.5),
     seats_high: seating(1.0),
-    stage: [
-      // at the lectern, and out in the middle beside the plinth: both face the house
-      s(U.host, 2.0, 0.3, Math.PI, Pose.Present, -2.5, 2.5, { y: STAGE_H + 0.012, via: STEPS }),
-      s(U.host, -0.75, 0.75, Math.PI, Pose.Present, -2.5, 2.5, { y: STAGE_H + 0.012, via: STEPS }),
-      // a stagehand checking the front of the stage from the floor
-      s(U.crew, 1.2, 2.45, 0, Pose.Fix, 1.5, 2.5),
-    ],
+    stage: stageDefs(6, 4),
+    stage_l: stageDefs(10, 5),
+    stage_xl: stageDefs(16, 6),
     screen: [s(U.crew, -1.6, 0.85, 0, Pose.Look, -1.5, 1)],
+    screen_l: [s(U.crew, -3.6, 0.85, 0, Pose.Look, -3.5, 1)],
+    screen_xl: [s(U.crew, -6.6, 0.85, 0, Pose.Look, -6.5, 1)],
     lights: [s(U.crew, 0, 0.82, 0, Pose.Fix, 0, 1)],
     speakers: [s(U.crew, 0, 0.84, 0, Pose.Fix, 0, 1)],
     camera: [

@@ -10,7 +10,7 @@ import { type Pt, bayRun, bayStands, curveTiles, nearestBay } from '../sim/curve
 import { money, moneyDelta, num, pct } from '../components/format'
 import { EDGE_COST, keepsDoors, roomCost, zonePlan } from '../sim/game'
 import type { FactoryLife, OfficeLife, StoreLife, VenueLife } from '../sim/life'
-import { ITEMS, type LineStats, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, areaOf, areaTiles, canPlace, curveFor, cutAt, doorFits, fillError, gridAt, inPlot, isBoundary, itemAt, lineTiles, pocketAt, reachable, roomOf, rowSpots, tilesOf, wallAt } from '../sim/sites'
+import { ITEMS, type LineStats, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, areaOf, areaTiles, canPlace, ceilingOf, curveFor, cutAt, doorFits, fillError, gridAt, inPlot, isBoundary, isStage, itemAt, lineTiles, pocketAt, reachable, roomOf, rowSpots, stageOf, tilesOf, wallAt } from '../sim/sites'
 import { ROLE_INFO, inTraining, jobTitle } from '../sim/staff'
 import type { Employee, Product, Site, SiteItem, SiteKind } from '../sim/types'
 import { QUALITY, type Quality, isHeld, useSettings } from '../store/settings'
@@ -24,6 +24,7 @@ import { BayCursor, CurveOutline } from './site/curved'
 import { Environs, type Mood, isIndoor, moodOf } from './site/env'
 import { FactoryItem } from './site/factory'
 import { FactoryCrowd } from './site/factorycrowd'
+import { FactoryFlow } from './site/factoryflow'
 import { FactoryFloor, shippingDocks } from './site/factorylife'
 import { Jacks } from './site/jacks'
 import { Doors, Dropping, Sparks, SparksView, WallFx, type WallPiece, snapshot, wallChanges, wallHeight } from './site/fx'
@@ -227,6 +228,8 @@ const BOARD_ROOMS = new Set(['lab', 'eng', 'studio', 'media', 'support', 'server
 
 interface ItemCtx {
   glow: number
+  /** Venue: clear height of the hall the item stands in; missing in the open air. */
+  ceiling?: number
   company: string
   logo?: string
   color: string
@@ -262,7 +265,7 @@ function ItemKind({ kind, item, c }: { kind: SiteKind; item: string; c: ItemCtx 
   if (kind === 'office') return <OfficeItem kind={item} c={{ who: c.who, glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, devices: c.devices, on: c.on, live: c.live, progress: c.progress, busy: c.busy }} />
   if (kind === 'factory') return <FactoryItem kind={item} c={{ running: !!c.running, flow: c.flow, glow: c.glow, seed: c.seed, fill: c.fill, away: c.away, live: c.live }} />
   if (kind === 'store') return <StoreItem kind={item} c={{ products: c.products, glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, soldOut: c.soldOut }} />
-  return <VenueItem kind={item} c={{ glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, crowd: c.show?.crowd ?? 0, cheer: c.show?.cheer ?? false, show: !!c.show, screen: c.show?.screen, products: c.products, aisles: c.aisles, live: c.live }} />
+  return <VenueItem kind={item} c={{ glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, crowd: c.show?.crowd ?? 0, cheer: c.show?.cheer ?? false, show: !!c.show, screen: c.show?.screen, products: c.products, aisles: c.aisles, live: c.live, ceiling: c.ceiling }} />
 }
 
 /** One block of furniture, merged into a few meshes. Only looked at again when its signature changes. */
@@ -1136,12 +1139,13 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
       busy: item.kind === 'bench' && office ? researching : undefined,
       products,
       soldOut,
-      running: !!item.id && (line?.linked.has(item.id) ?? false) && running,
+      running: !!item.id && ((line?.live ?? line?.linked)?.has(item.id) ?? false) && running,
       flow,
       show: staged,
       fill: Math.round(busy * 5) / 5,
       away: !!item.id && yard.managed.has(item.id),
       aisles: site.kind === 'venue' && 'x' in item ? seatAisles(site, item as SiteItem) : 0,
+      ceiling: site.kind === 'venue' && 'x' in item && gridAt(site, (item as SiteItem).x, (item as SiteItem).y) > 0 ? ceilingOf(site) : undefined,
       sparing,
     }
   }
@@ -1152,7 +1156,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
         const on = shown.get(item.id)
         return `${item.id}:${item.x},${item.y},${item.rot}:${who ? who.look + who.color : liveSeats.has(item.id) ? 'L' : ''}:${line?.linked.has(item.id) ? 1 : 0}${line?.flow.get(item.id)?.join('') ?? ''}${on ? on.devices.map((p) => p.id).join('') + (on.progress ?? '') : ''}${yard.managed.has(item.id) ? 'A' : ''}${site.kind === 'venue' ? seatAisles(site, item) || '' : ''}`
       })
-      .join('|') + `#${Math.round(glow * 10)}${running ? 'r' : ''}${site.kind === 'factory' ? `${Math.round(busy * 5)}${crowdOn ? 'w' : ''}` : ''}${company}${logo?.length ?? 0}${color}${productKey}${soldKey}${liveKinds ? 'v' : ''}${crowdOn ? 'c' : ''}${researching ? 'R' : ''}${showcaseList[0]?.id ?? ''}${staged ? `s${staged.screen?.uuid ?? ''}` : ''}${sparing ? 'S' : ''}`
+      .join('|') + `#${Math.round(glow * 10)}${running ? 'r' : ''}${site.kind === 'factory' ? `${Math.round(busy * 5)}${crowdOn ? 'w' : ''}` : ''}${company}${logo?.length ?? 0}${color}${productKey}${soldKey}${liveKinds ? 'v' : ''}${crowdOn ? 'c' : ''}${researching ? 'R' : ''}${showcaseList[0]?.id ?? ''}${staged ? `s${staged.screen?.uuid ?? ''}` : ''}${sparing ? 'S' : ''}${site.kind === 'venue' ? `F${site.floors}` : ''}`
 
   const place = (item: SiteItem): [number, number, number] => {
     const def = ITEMS[site.kind][item.kind]
@@ -1562,7 +1566,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
         const def = ITEMS.venue[item.kind]
         const tall = VENUE_TALL[item.kind]
         if (!def || !tall) continue
-        const hint = def.crowd ? `${def.crowd} seats of ${v.stats.seats}` : item.kind === 'stage' ? when : def.show ? `Production +${def.show}` : when
+        const hint = def.crowd ? `${def.crowd} seats of ${v.stats.seats}` : isStage(item.kind) ? when : def.show ? `Production +${def.show}` : when
         const t = itemTarget(site, item, 'venue', def.name, hint, item.kind)
         t.box[4] = tall
         t.anchor[1] = Math.min(tall, 2.6) + 0.1
@@ -1668,7 +1672,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
     }
   }, [hot, tool])
 
-  const venueStage = site.kind === 'venue' ? site.items.find((i) => i.kind === 'stage') : undefined
+  const venueStage = site.kind === 'venue' ? stageOf(site) : undefined
   // a show in a hall: the hall's own lights go down for it, whatever the hour outside. Seen with the roof off, that
   // means less of the daylight too
   const houseDown = !!staged && !!venueStage && gridAt(site, venueStage.x, venueStage.y) > 0 && !dark
@@ -1806,6 +1810,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
         {site.kind === 'venue' && <Audience site={site} state={houseState} filled={crowd ? filledSeat : undefined} />}
         {stage && !crowd && <Presenter site={site} cheer={!!show?.cheer} />}
         <SparksView sparks={sparks} />
+        {site.kind === 'factory' && line && mode !== 'full' && <FactoryFlow site={site} line={line} running={running} />}
         {site.items.map((item, index) =>
           dropping.has(item.id) && ITEMS[site.kind][item.kind] ? (
             <group key={item.id} position={place(item)} rotation-y={(-item.rot * Math.PI) / 2}>

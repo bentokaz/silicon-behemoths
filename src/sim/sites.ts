@@ -137,7 +137,11 @@ export const ITEMS: Record<SiteKind, Record<string, ItemDef>> = {
   },
   venue: {
     stage: d('Stage', 60000, 6, 4, 'Stage', ['hall', OUT], 'The platform everything happens on. A venue needs one.', { show: 2 }),
+    stage_l: d('Large stage', 170000, 10, 5, 'Stage', ['hall', OUT], 'A wide platform with a lighting truss over it, for a theatre-sized house.', { show: 5 }),
+    stage_xl: d('Arena stage', 420000, 16, 6, 'Stage', ['hall', OUT], 'A platform for a stadium crowd, with a full lighting rig flown over it.', { show: 10 }),
     screen: d('Giant screen', 90000, 6, 1, 'Stage', ['hall', OUT], 'A wall of LEDs behind the presenter.', { show: 5 }),
+    screen_l: d('LED wall', 260000, 10, 1, 'Stage', ['hall', OUT], 'A ten-metre wall of LEDs: the back rows see every detail.', { show: 10 }),
+    screen_xl: d('Arena LED wall', 640000, 16, 1, 'Stage', ['hall', OUT], 'Sixteen metres of LEDs, as tall as a house.', { show: 18 }),
     lights: d('Lighting tower', 25000, 1, 1, 'Stage', ['hall', OUT], 'Moving heads on a truss.', { show: 1.5 }),
     speakers: d('Speaker stack', 20000, 1, 1, 'Stage', ['hall', OUT], 'So the back row hears it too.', { show: 1.5 }),
     camera: d('Camera riser', 15000, 2, 2, 'Stage', ['hall', OUT], 'Broadcast cameras for the livestream.', { show: 2 }),
@@ -325,6 +329,7 @@ export const SITE_TIERS: Record<SiteKind, TierDef[]> = {
     { name: 'Courtyard stage', w: 22, h: 18, env: 'park', cost: 400e3, rent: 6000, blurb: 'A small plot for an open-air stage or a studio theatre.' },
     { name: 'Theatre site', w: 34, h: 26, env: 'park', cost: 2.5e6, rent: 25e3, blurb: 'Room for a proper theatre and a foyer.' },
     { name: 'Arena site', w: 50, h: 38, env: 'valley', cost: 9e6, rent: 70e3, blurb: 'Enough land for an amphitheatre that fills a skyline shot.' },
+    { name: 'Stadium grounds', w: 72, h: 54, env: 'valley', cost: 28e6, rent: 190e3, blurb: 'A launch the whole industry watches: thousands of seats under one roof.' },
   ],
 }
 export const tierOf = (site: Pick<Site, 'kind' | 'tier'>) => SITE_TIERS[site.kind][site.tier]
@@ -1100,105 +1105,8 @@ export function sealedRooms(site: Site): Room[] {
 
 // ---------------------------------------------------------------- factory lines
 
-export interface LineStats {
-  /** True when a receiving dock is linked to a shipping dock through every required stage. */
-  running: boolean
-  /** Why the line is not running, in plain words. */
-  problem?: string
-  caps: { smt: number; assembly: number; test: number; pack: number }
-  /** Devices per day, in phone-equivalents. */
-  throughput: number
-  defectRate: number
-  /** Cost per day at full output. */
-  runCost: number
-  /** Ids of the items that are part of the working line. */
-  linked: Set<string>
-  /** For conveyors on the line: direction of travel as a tile step. */
-  flow: Map<string, [number, number]>
-}
-
-/** Works out what a factory floor can produce from what is connected to what. */
-export function lineStats(site: Site): LineStats {
-  const defs = ITEMS.factory
-  const machines = site.items.filter((it) => defs[it.kind]?.stage)
-  const owner = new Map<string, SiteItem>()
-  for (const it of machines) for (const [x, y] of itemTiles(site, it)) owner.set(`${x},${y}`, it)
-  const neighbours = (it: SiteItem) => {
-    const out = new Set<SiteItem>()
-    for (const [x, y] of itemTiles(site, it)) {
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const other = owner.get(`${x + dx},${y + dy}`)
-        if (other && other !== it) out.add(other)
-      }
-    }
-    return out
-  }
-  const empty: LineStats = { running: false, caps: { smt: 0, assembly: 0, test: 0, pack: 0 }, throughput: 0, defectRate: 0, runCost: 0, linked: new Set(), flow: new Map() }
-  const start = machines.find((it) => defs[it.kind].stage === 'in')
-  if (!start) return { ...empty, problem: site.rooms.some((r) => r.type === 'hall') ? 'Place a receiving dock to start a line.' : 'Zone a production hall, then lay a line in it.' }
-
-  // breadth-first from the receiving dock: distance gives the direction of flow
-  const dist = new Map<SiteItem, number>([[start, 0]])
-  const queue = [start]
-  while (queue.length) {
-    const cur = queue.shift()!
-    for (const nb of neighbours(cur)) {
-      if (dist.has(nb)) continue
-      dist.set(nb, dist.get(cur)! + 1)
-      queue.push(nb)
-    }
-  }
-  const caps = { smt: 0, assembly: 0, test: 0, pack: 0 }
-  let runCost = 0
-  let hasOut = false
-  const linked = new Set<string>()
-  for (const it of dist.keys()) {
-    const def = defs[it.kind]
-    linked.add(it.id)
-    if (def.stage === 'out') hasOut = true
-    if (def.stage === 'smt' || def.stage === 'assembly' || def.stage === 'test' || def.stage === 'pack') {
-      caps[def.stage] += def.cap ?? 0
-      runCost += def.run ?? 0
-    }
-  }
-  const flow = new Map<string, [number, number]>()
-  for (const it of dist.keys()) {
-    if (defs[it.kind].stage !== 'belt') continue
-    const here = dist.get(it)!
-    let best: [number, number] = [1, 0]
-    let bestDist = -1
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as [number, number][]) {
-      const other = owner.get(`${it.x + dx},${it.y + dy}`)
-      const od = other ? dist.get(other) : undefined
-      if (od !== undefined && od > here && od > bestDist) {
-        best = [dx, dy]
-        bestDist = od
-      }
-    }
-    if (bestDist < 0) {
-      // end of a branch: keep moving away from where it came from
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as [number, number][]) {
-        const other = owner.get(`${it.x + dx},${it.y + dy}`)
-        if (other && dist.get(other) === here - 1) best = [-dx, -dy]
-      }
-    }
-    flow.set(it.id, best)
-  }
-  const base = { caps, runCost, linked, flow }
-  if (!hasOut) return { ...empty, ...base, problem: 'Link the line to a shipping dock.' }
-  const missing = (['smt', 'assembly', 'pack'] as const).filter((k) => caps[k] === 0)
-  if (missing.length) {
-    const names = { smt: 'a board assembly line', assembly: 'an assembly cell or bench', pack: 'a packaging line' }
-    return { ...empty, ...base, problem: `The line still needs ${missing.map((k) => names[k]).join(' and ')}.` }
-  }
-  const throughput = Math.min(caps.smt, caps.assembly, caps.pack)
-  // untested output ships with 6% faults; full test coverage brings it under 1%,
-  // and a staffed control room trims what is left
-  const coverage = Math.min(1, caps.test / throughput)
-  const watch = reachable(site).filter((i) => i.kind === 'console' || i.kind === 'qa').length
-  const defectRate = (0.06 - 0.052 * coverage) * (1 - Math.min(0.4, watch * 0.1))
-  return { ...base, running: true, throughput, defectRate }
-}
+// the line itself is worked out in factoryline.ts, from which faces of which blocks meet
+export { type LineStats, type LineReport, type Joint, lineStats, planFix, fixLayout } from './factoryline'
 
 /** A ready-made hall and line for players who do not want to lay conveyors themselves. */
 export function starterLine(site: Site): { hall: [number, number, number, number]; items: { kind: string; x: number; y: number; rot: number }[] } | null {
@@ -1282,14 +1190,121 @@ export function venueStats(site: Site): VenueStats {
   const production = Math.min(1, sumOf(site, 'show', items) / (9 + seats / 45))
   const reach = Math.min(1.1, (0.35 + 0.6 * Math.min(1, Math.sqrt(seats / 1200))) * (0.7 + 0.3 * production) + sitePrestige(site) * 0.004)
   const base = { seats, production, reach }
-  if (!items.some((i) => i.kind === 'stage')) return { ...base, ready: false, problem: 'Build a stage.' }
+  if (!items.some((i) => isStage(i.kind))) return { ...base, ready: false, problem: 'Build a stage.' }
   if (seats < 48) return { ...base, ready: false, problem: 'Seat at least 48 people.' }
   return { ...base, ready: true }
 }
 
-/** The stage a show is presented from, with the direction the audience sits in. */
+/** Every size of stage. */
+export const isStage = (kind: string) => kind === 'stage' || kind === 'stage_l' || kind === 'stage_xl'
+/** Every size of screen. */
+export const isScreen = (kind: string) => kind === 'screen' || kind === 'screen_l' || kind === 'screen_xl'
+
+/** The stage a show is presented from: the biggest there is. */
 export function stageOf(site: Site): SiteItem | undefined {
-  return site.items.find((i) => i.kind === 'stage')
+  let best: SiteItem | undefined
+  for (const it of site.items) if (isStage(it.kind) && (!best || ITEMS.venue[it.kind].w > ITEMS.venue[best.kind].w)) best = it
+  return best
+}
+
+/** Metres from a storey's floor to the next one (the 3D view's STOREY), and the clear height of a hall under its roof. */
+export const STOREY_M = 3
+export const ceilingOf = (site: Pick<Site, 'floors'>) => site.floors * STOREY_M - 0.1
+/** How tall each piece of stage rigging stands when it has the room, in metres. */
+export const RIG_TOP: Record<string, number> = { screen: 5.2, screen_l: 7.2, screen_xl: 10.8, lights: 6.6, stage_l: 7.0, stage_xl: 9.6 }
+
+/**
+ * How many storeys a venue's halls need for its rigging to stand at full
+ * height under the roof, or 0 when they have enough. Rigging in a hall that
+ * is too low is cut down to fit.
+ */
+export function rigFloors(site: Site): number {
+  let top = 0
+  for (const it of site.items) if (RIG_TOP[it.kind] && gridAt(site, it.x, it.y)) top = Math.max(top, RIG_TOP[it.kind])
+  const want = Math.ceil((top + 0.4) / STOREY_M)
+  return top && want > site.floors ? want : 0
+}
+
+export type VenuePreset = 'hall' | 'theatre' | 'arena'
+/** Ready-made venues, smallest first: the plot each needs at least, and what it is. */
+export const VENUE_PRESETS: Record<VenuePreset, { name: string; tier: number; floors: number; note: string }> = {
+  hall: { name: 'Small hall', tier: 0, floors: 3, note: 'A black-box hall: stage, giant screen, two light towers and raked seats.' },
+  theatre: { name: 'Theatre', tier: 1, floors: 3, note: 'A large stage under a lighting truss, a ten-metre LED wall, a foyer and a full rake of seats.' },
+  arena: { name: 'Arena', tier: 2, floors: 4, note: 'An arena stage with a flown rig, a sixteen-metre LED wall, broadcast cameras and every seat the plot holds.' },
+}
+
+/**
+ * A whole venue laid out on a plot of the given tier: a hall with the
+ * preset's stage, screen and lights at the north end, seating banks rising
+ * toward the back with aisles between them, and a foyer along the street.
+ * Bigger plots get more seats. Used for the presets and for hired venues.
+ */
+export function venueLayout(preset: VenuePreset, tier: number): Site {
+  const site = newSite('venue', tier)
+  const cx = Math.floor(site.w / 2)
+  let id = 0
+  const put = (k: string, x: number, y: number) => {
+    if (!canPlace(site, k, x, y, 0)) site.items.push({ id: `p${id++}`, kind: k, x, y, rot: 0 })
+  }
+  const big = preset !== 'hall'
+  const foyer = big ? 4 : 0
+  const hallBottom = site.h - 3 - foyer
+  const style = preset === 'arena' ? 2 : preset === 'theatre' ? 1 : 0
+  if (big) {
+    const f = zone(site, 'foyer', areaTiles(2, hallBottom + 1, site.w - 3, site.h - 2), undefined, preset === 'arena' ? 1 : 0).room
+    if (f) autoDoor(site, f.n)
+  }
+  const { room } = zone(site, 'hall', areaTiles(2, 1, site.w - 3, hallBottom), undefined, style)
+  if (room) autoDoor(site, room.n)
+  // wide openings for a big house: between hall and foyer, and from the foyer to the street
+  if (big) {
+    const opening = (x: number, y: number) => {
+      site.walls = site.walls.filter((w) => !(w.x === x && w.y === y && w.side === 'n'))
+      site.walls.push({ id: `pw${id++}`, x, y, side: 'n', kind: 'open' })
+    }
+    for (const x of [cx - Math.floor(site.w / 4), cx, cx + Math.floor(site.w / 4)]) for (let k = -1; k < 3; k++) opening(x + k, hallBottom + 1)
+    for (let k = -1; k < 3; k++) opening(cx + k, site.h - 1)
+  }
+  const stage = preset === 'arena' ? 'stage_xl' : preset === 'theatre' ? 'stage_l' : 'stage'
+  const screen = preset === 'arena' ? 'screen_xl' : preset === 'theatre' ? 'screen_l' : 'screen'
+  const sw = ITEMS.venue[stage].w
+  const sd = ITEMS.venue[stage].h
+  put(screen, cx - sw / 2, 2)
+  put(stage, cx - sw / 2, 3)
+  // towers of lights and stacks of speakers either side of the stage, more of them on a bigger one
+  const towers = preset === 'arena' ? 3 : preset === 'theatre' ? 2 : 1
+  for (let k = 0; k < towers; k++) {
+    put('lights', cx - sw / 2 - 2 - k, 3 + k * 2)
+    put('lights', cx + sw / 2 + 1 + k, 3 + k * 2)
+    put('speakers', cx - sw / 2 - 2 - k, 4 + k * 2)
+    put('speakers', cx + sw / 2 + 1 + k, 4 + k * 2)
+  }
+  // seating: banks of three across, two rows deep, from a little in front of the stage to the back of the hall
+  const y0 = 3 + sd + 2
+  const last = hallBottom - (big ? 3 : 2)
+  const rows = Math.max(1, Math.floor((last - y0 + 1) / 2))
+  const width = site.w - 8
+  const cols = Math.floor(width / 3)
+  const x0 = cx - Math.floor((cols * 3) / 2)
+  const aisle = cols > 6 ? [Math.floor(cols / 2)] : []
+  if (cols > 12) aisle.push(Math.floor(cols / 5), cols - 1 - Math.floor(cols / 5))
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++) {
+      if (aisle.includes(c)) continue
+      put(r < rows / 3 ? 'seats' : r < (rows * 2) / 3 ? 'seats_mid' : 'seats_high', x0 + c * 3, y0 + r * 2)
+    }
+  // cameras: one at the back on the centre aisle, and two more out to the sides of a big house
+  const back = y0 + rows * 2
+  put('camera', cx - 1, Math.min(back, hallBottom - 1))
+  if (big) for (const x of [2, site.w - 4]) put('camera', x, y0 + 2)
+  if (big) {
+    put('reception', cx - 1, site.h - 4)
+    for (const x of [cx - 8, cx + 6]) put('demo', x, site.h - 5)
+    for (const x of [3, site.w - 5]) put('logowall', x, hallBottom + 1)
+  }
+  site.floors = VENUE_PRESETS[preset].floors
+  site.facade = preset === 'arena' ? 4 : 5
+  return site
 }
 
 /**
@@ -1297,6 +1312,7 @@ export function stageOf(site: Site): SiteItem | undefined {
  * 1 a theatre, 2 an arena. Not part of the save; rebuilt whenever it is shown.
  */
 export function hiredVenue(kind: number): Site {
+  if (kind >= 1) return venueLayout(kind >= 2 ? 'arena' : 'theatre', kind >= 2 ? 2 : 1)
   const site = newSite('venue', Math.min(2, Math.max(0, kind)))
   const cx = Math.floor(site.w / 2)
   let id = 0

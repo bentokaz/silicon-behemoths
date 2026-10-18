@@ -1,9 +1,7 @@
 // Factory machinery and yard. One unit is one metre and one floor tile; each
 // model is centred on its footprint with its front toward +Z. Belts run at
 // 0.8 m so everything on the line meets at the same height.
-import { useFrame } from '@react-three/fiber'
-import { useRef } from 'react'
-import type * as THREE from 'three'
+import { ITEMS } from '../../sim/sites'
 import { B, Baked, C, CHARCOAL, DARK, type PersonLook, Person, S, STEEL, Tree, WHITE, hash } from './kit'
 
 export interface FactoryCtx {
@@ -46,19 +44,52 @@ function BeltRun({ len }: { len: number }) {
   )
 }
 
-/** A carton riding a belt from one end of a tile to the other. Live, so never baked. */
-function Parcel({ dir, phase }: { dir: [number, number]; phase: number }) {
-  const ref = useRef<THREE.Mesh>(null)
-  useFrame(({ clock }) => {
-    if (!ref.current) return
-    const t = ((clock.elapsedTime * 0.6 + phase) % 1) - 0.5
-    ref.current.position.set(dir[0] * t, BELT + 0.1, dir[1] * t)
-  })
+/** Arrows painted on a belt, pointing the way it runs (+X). */
+function Chevrons({ len }: { len: number }) {
   return (
-    <mesh ref={ref} position={[0, BELT + 0.1, 0]} castShadow userData={{ live: true }}>
-      <boxGeometry args={[0.26, 0.18, 0.26]} />
-      <meshStandardMaterial color={BOX} roughness={0.8} />
-    </mesh>
+    <>
+      {Array.from({ length: Math.max(1, Math.round(len * 2)) }, (_, i) => {
+        const x = -len / 2 + (i + 0.5) / Math.max(1, Math.round(len * 2)) * len
+        return [1, -1].map((side) => <B key={`${i}${side}`} p={[x - 0.04, BELT + 0.002, side * 0.07]} s={[0.2, 0.004, 0.035]} rot={[0, side * 0.75, 0]} c="#8d9299" r={0} rough={0.8} cast={false} />)
+      })}
+    </>
+  )
+}
+
+/** Input and output colours for the faces of line blocks. */
+export const PORT_IN = '#3fe08a'
+export const PORT_OUT = '#e0b23a'
+
+/**
+ * The opening on a face of a line block where parts go in (green frame, at
+ * local -X) or come out (amber frame, at local +X), at belt height.
+ */
+function Hatch({ x, out, glow }: { x: number; out: boolean; glow: number }) {
+  const side = Math.sign(x)
+  const col = out ? PORT_OUT : PORT_IN
+  return (
+    <group position={[x - side * 0.02, BELT + 0.12, 0]}>
+      <B p={[-side * 0.012, 0, 0]} s={[0.02, 0.4, 0.56]} c="#0b0c0e" r={0} cast={false} />
+      {[-0.22, 0.22].map((y) => (
+        <B key={y} p={[0, y, 0]} s={[0.05, 0.06, 0.66]} c={col} r={0} glow={col} glowPower={0.9 * glow} cast={false} />
+      ))}
+      {[-0.3, 0.3].map((z) => (
+        <B key={z} p={[0, 0, z]} s={[0.05, 0.4, 0.06]} c={col} r={0} glow={col} glowPower={0.9 * glow} cast={false} />
+      ))}
+    </group>
+  )
+}
+
+/** Input and output hatches on a line block's two ends. */
+function Ports({ kind, glow }: { kind: string; glow: number }) {
+  const def = ITEMS.factory[kind]
+  if (!def?.stage || def.stage === 'belt') return null
+  const half = def.w / 2
+  return (
+    <>
+      {def.stage !== 'in' && <Hatch x={-half} out={false} glow={glow} />}
+      {def.stage !== 'out' && <Hatch x={half} out glow={glow} />}
+    </>
   )
 }
 
@@ -149,23 +180,28 @@ export function Lorry({ seed, wheels = true }: { seed: number; wheels?: boolean 
 
 /** The model for one factory item. */
 export function FactoryItem({ kind, c }: { kind: string; c: FactoryCtx }) {
+  return (
+    <>
+      <FactoryModel kind={kind} c={c} />
+      <Ports kind={kind} glow={Math.max(0.6, c.glow)} />
+    </>
+  )
+}
+
+function FactoryModel({ kind, c }: { kind: string; c: FactoryCtx }) {
   switch (kind) {
     case 'dock_in':
       return <Dock c={c} out={false} />
     case 'dock_out':
       return <Dock c={c} out />
-    case 'conveyor': {
-      const f = c.flow ?? [1, 0]
-      const alongZ = Math.abs(f[1]) > Math.abs(f[0])
+    case 'conveyor':
+      // a belt always runs along its own +X: turning it sets the way parts go. What rides on it is drawn by the line (factoryflow.tsx)
       return (
         <>
-          <group rotation={[0, alongZ ? Math.PI / 2 : 0, 0]}>
-            <BeltRun len={1} />
-          </group>
-          {c.running && <Parcel dir={f} phase={hash(c.seed)} />}
+          <BeltRun len={1} />
+          <Chevrons len={1} />
         </>
       )
-    }
     case 'smt':
       return (
         <>

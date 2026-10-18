@@ -28,6 +28,8 @@ export interface VenueCtx {
   aisles?: number
   /** The people here are drawn by the view, walking about. */
   live?: boolean
+  /** Clear height under the roof of the hall this stands in, in metres; missing in the open air. Rigging is cut down to fit. */
+  ceiling?: number
 }
 
 export { STAGE_H }
@@ -78,7 +80,7 @@ function SeatBlock({ h, c }: { h: number; c: VenueCtx }) {
 }
 
 /** A beam of light swinging from a lamp. Live: never baked. */
-function Beam({ p, color, phase, day }: { p: [number, number, number]; color: string; phase: number; day: boolean }) {
+function Beam({ p, color, phase, day, len = 9 }: { p: [number, number, number]; color: string; phase: number; day: boolean; len?: number }) {
   const ref = useRef<THREE.Group>(null)
   // light added to a bright sky does not show: by day the beam is a pale haze in the air instead
   const material = useMemo(
@@ -92,10 +94,117 @@ function Beam({ p, color, phase, day }: { p: [number, number, number]; color: st
   })
   return (
     <group ref={ref} position={p}>
-      <mesh position={[0, -4.5, 0]} material={material} userData={{ live: true }}>
-        <cylinderGeometry args={[0.08, 1.3, 9, 16, 1, true]} />
+      <mesh position={[0, -len / 2, 0]} material={material} userData={{ live: true }}>
+        <cylinderGeometry args={[0.08, 1.3 * (len / 9), len, 16, 1, true]} />
       </mesh>
     </group>
+  )
+}
+
+const BEAMS = ['#ffd9a8', '#a8d0ff', '#ffffff', '#ff9ec9']
+
+/**
+ * A stage W wide and D deep, facing +Z: the platform, two steps up at stage
+ * left, drapes at the back, a lectern and a plinth for the device. The big
+ * ones (`rig` is the height of their truss) carry a lighting truss on two
+ * towers over the front of the stage, with a moving head every metre and a
+ * half; it is cut down to fit under a low roof.
+ */
+function Stage({ W, D, c, rig }: { W: number; D: number; c: VenueCtx; rig?: number }) {
+  const back = -D / 2 + 0.02
+  const front = D / 2 - 0.68
+  const mid = (back + front) / 2
+  const depth = front - back
+  const top = rig ? Math.max(3.4, Math.min(rig, (c.ceiling ?? 99) - 0.35)) : 0
+  const heads = rig ? Math.max(4, Math.round((W - 1) / 1.5)) : 0
+  return (
+    <>
+      <B p={[0, STAGE_H / 2, mid]} s={[W - 0.04, STAGE_H, depth]} c="#17181b" r={0.02} rough={0.5} />
+      <B p={[0, STAGE_H + 0.006, mid]} s={[W - 0.2, 0.012, depth - 0.16]} c="#23252a" r={0} rough={0.25} cast={false} />
+      <B p={[0.5, STAGE_H - 0.1, front + 0.006]} s={[W - 1.1, 0.04, 0.012]} c="#ffffff" r={0} glow="#ffd9a8" glowPower={0.6 + c.glow} cast={false} />
+      {/* two steps up at stage left; the stage itself is the third */}
+      <B p={[-W / 2 + 0.55, 0.15, front + 0.45]} s={[0.9, 0.3, 0.3]} c="#23252a" r={0.008} rough={0.6} />
+      <B p={[-W / 2 + 0.55, 0.3, front + 0.15]} s={[0.9, 0.6, 0.3]} c="#23252a" r={0.008} rough={0.6} />
+      {/* black drapes at the back corners and a skirt along the back: something dark behind whoever is speaking, whatever the light */}
+      {[-W / 2 + 0.28, W / 2 - 0.28].map((x) => (
+        <B key={x} p={[x, STAGE_H + 1.5, back + 0.14]} s={[0.5, 3.0, 0.22]} c="#0e0f11" r={0.01} rough={0.95} />
+      ))}
+      <B p={[0, STAGE_H + 0.35, back + 0.08]} s={[W - 0.1, 0.7, 0.1]} c="#0e0f11" r={0.01} rough={0.95} />
+      {/* lectern */}
+      <B p={[W / 2 - 1.0, STAGE_H + 0.5, front - 0.62]} s={[0.5, 1.0, 0.4]} c={WALNUT} r={0.02} rough={0.35} />
+      <B p={[W / 2 - 1.0, STAGE_H + 1.03, front - 0.64]} s={[0.56, 0.04, 0.46]} c={WALNUT} r={0.01} rot={[-0.2, 0, 0]} cast={false} />
+      {/* a plinth for the device */}
+      <C p={[0, STAGE_H + 0.5, front - 1.12]} r={[0.22, 0.26]} h={1.0} c="#e9e6e0" seg={20} rough={0.35} />
+      <C p={[0, STAGE_H + 1.006, front - 1.12]} r={[0.2, 0.2]} h={0.012} c="#ffffff" glow="#fff1d6" glowPower={0.6 * c.glow} seg={20} cast={false} />
+      {rig ? (
+        <>
+          {/* box-truss towers at the front corners and a bar across between them */}
+          {[-W / 2 + 0.3, W / 2 - 0.3].map((x) => (
+            <group key={x}>
+              {[-0.15, 0.15].map((dx) => [-0.15, 0.15].map((dz) => <B key={`${dx}${dz}`} p={[x + dx, STAGE_H + (top - STAGE_H) / 2, front - 0.3 + dz]} s={[0.04, top - STAGE_H, 0.04]} c="#9aa0a6" r={0.006} metal={0.8} rough={0.35} cast={false} />))}
+              <B p={[x, STAGE_H + 0.03, front - 0.3]} s={[0.5, 0.06, 0.5]} c={DARK} r={0.01} cast={false} />
+            </group>
+          ))}
+          {[-0.15, 0.15].map((dz) => [-0.15, 0.15].map((dy) => <B key={`${dz}${dy}`} p={[0, top + dy, front - 0.3 + dz]} s={[W - 0.3, 0.04, 0.04]} c="#9aa0a6" r={0.006} metal={0.8} rough={0.35} cast={false} />))}
+          {Array.from({ length: heads }, (_, i) => {
+            const x = -W / 2 + 0.9 + (i * (W - 1.8)) / Math.max(1, heads - 1)
+            const color = BEAMS[(i + c.seed) % BEAMS.length]
+            return (
+              <group key={i}>
+                <B p={[x, top - 0.3, front - 0.3]} s={[0.22, 0.26, 0.22]} c="#15171a" r={0.03} cast={false} />
+                <C p={[x, top - 0.45, front - 0.24]} r={[0.08, 0.08]} h={0.03} c="#ffffff" glow={color} glowPower={(c.show ? 3 : 0.5) * (0.5 + c.glow)} seg={10} rot={[0.5, 0, 0]} cast={false} />
+                {c.show && i % 2 === 0 && <Beam p={[x, top - 0.45, front - 0.24]} color={color} phase={c.seed + i * 1.7} day={c.glow < 1} len={top + 1} />}
+              </group>
+            )
+          })}
+        </>
+      ) : null}
+    </>
+  )
+}
+
+/**
+ * A wall of LEDs W wide on two posts: its picture is 16 by 10.5 and sits
+ * clear of the stage floor. Under a roof too low for it the picture shrinks
+ * to fit, keeping its shape.
+ */
+function Screen({ W, c }: { W: number; c: VenueCtx }) {
+  const aspect = 5.24 / 3.44
+  let pw = W - 0.76
+  let ph = pw / aspect
+  let bottom = W >= 10 ? 1.7 : 1.58
+  if (c.ceiling) {
+    const room = c.ceiling - 0.45 - bottom
+    if (ph > room) {
+      bottom = Math.max(1.0, Math.min(bottom, c.ceiling * 0.3))
+      ph = Math.max(0.9, c.ceiling - 0.45 - bottom)
+      pw = ph * aspect
+    }
+  }
+  const cy = bottom + ph / 2
+  const top = bottom + ph + 0.18
+  return (
+    <>
+      {[-W / 2 + 0.2, W / 2 - 0.2].map((x) => (
+        <group key={x}>
+          <B p={[x, 0.05, 0]} s={[0.4, 0.1, 0.9]} c={DARK} r={0.01} />
+          <B p={[x, top / 2, 0]} s={[0.16, top, 0.16]} c={STEEL} r={0.01} metal={0.7} rough={0.4} />
+        </group>
+      ))}
+      <B p={[0, top + 0.02, 0]} s={[W - 0.1, 0.16, 0.16]} c={STEEL} r={0.01} metal={0.7} rough={0.4} />
+      <B p={[0, cy, 0]} s={[pw + 0.16, ph + 0.16, 0.14]} c="#0c0d0f" r={0.01} rough={0.5} />
+      {c.screen ? (
+        <mesh position={[0, cy, 0.076]}>
+          <planeGeometry args={[pw, ph]} />
+          <meshBasicMaterial map={c.screen} toneMapped={false} />
+        </mesh>
+      ) : (
+        <>
+          <B p={[0, cy, 0.074]} s={[pw, ph, 0.008]} c="#0c1622" r={0} glow="#2b4f86" glowPower={0.5 + 0.5 * c.glow} rough={0.15} cast={false} />
+          <Sign p={[0, cy, 0.084]} size={[pw * 0.69, ph * 0.52]} name={c.company} logo={c.logo} glow={0.8 + 0.5 * c.glow} />
+        </>
+      )}
+    </>
   )
 }
 
@@ -103,54 +212,20 @@ function Beam({ p, color, phase, day }: { p: [number, number, number]; color: st
 export function VenueItem({ kind, c }: { kind: string; c: VenueCtx }) {
   switch (kind) {
     case 'stage':
-      return (
-        <>
-          <B p={[0, STAGE_H / 2, -0.33]} s={[5.96, STAGE_H, 3.3]} c="#17181b" r={0.02} rough={0.5} />
-          <B p={[0, STAGE_H + 0.006, -0.33]} s={[5.8, 0.012, 3.14]} c="#23252a" r={0} rough={0.25} cast={false} />
-          <B p={[0.5, STAGE_H - 0.1, 1.326]} s={[4.9, 0.04, 0.012]} c="#ffffff" r={0} glow="#ffd9a8" glowPower={0.6 + c.glow} cast={false} />
-          {/* two steps up at stage left; the stage itself is the third */}
-          <B p={[-2.45, 0.15, 1.77]} s={[0.9, 0.3, 0.3]} c="#23252a" r={0.008} rough={0.6} />
-          <B p={[-2.45, 0.3, 1.47]} s={[0.9, 0.6, 0.3]} c="#23252a" r={0.008} rough={0.6} />
-          {/* black drapes at the back corners and a skirt along the back: something dark behind whoever is speaking, whatever the light */}
-          {[-2.72, 2.72].map((x) => (
-            <B key={x} p={[x, STAGE_H + 1.5, -1.84]} s={[0.5, 3.0, 0.22]} c="#0e0f11" r={0.01} rough={0.95} />
-          ))}
-          <B p={[0, STAGE_H + 0.35, -1.9]} s={[5.9, 0.7, 0.1]} c="#0e0f11" r={0.01} rough={0.95} />
-          {/* lectern */}
-          <B p={[2.0, STAGE_H + 0.5, 0.7]} s={[0.5, 1.0, 0.4]} c={WALNUT} r={0.02} rough={0.35} />
-          <B p={[2.0, STAGE_H + 1.03, 0.68]} s={[0.56, 0.04, 0.46]} c={WALNUT} r={0.01} rot={[-0.2, 0, 0]} cast={false} />
-          {/* a plinth for the device */}
-          <C p={[0, STAGE_H + 0.5, 0.2]} r={[0.22, 0.26]} h={1.0} c="#e9e6e0" seg={20} rough={0.35} />
-          <C p={[0, STAGE_H + 1.006, 0.2]} r={[0.2, 0.2]} h={0.012} c="#ffffff" glow="#fff1d6" glowPower={0.6 * c.glow} seg={20} cast={false} />
-        </>
-      )
+      return <Stage W={6} D={4} c={c} />
+    case 'stage_l':
+      return <Stage W={10} D={5} c={c} rig={7.0} />
+    case 'stage_xl':
+      return <Stage W={16} D={6} c={c} rig={9.6} />
     case 'screen':
-      return (
-        <>
-          {[-2.8, 2.8].map((x) => (
-            <group key={x}>
-              <B p={[x, 0.05, 0]} s={[0.4, 0.1, 0.9]} c={DARK} r={0.01} />
-              <B p={[x, 2.75, 0]} s={[0.16, 5.3, 0.16]} c={STEEL} r={0.01} metal={0.7} rough={0.4} />
-            </group>
-          ))}
-          <B p={[0, 5.36, 0]} s={[5.9, 0.16, 0.16]} c={STEEL} r={0.01} metal={0.7} rough={0.4} />
-          <B p={[0, 3.3, 0]} s={[5.4, 3.6, 0.14]} c="#0c0d0f" r={0.01} rough={0.5} />
-          {c.screen ? (
-            <mesh position={[0, 3.3, 0.076]}>
-              <planeGeometry args={[5.24, 3.44]} />
-              <meshBasicMaterial map={c.screen} toneMapped={false} />
-            </mesh>
-          ) : (
-            <>
-              <B p={[0, 3.3, 0.074]} s={[5.24, 3.44, 0.008]} c="#0c1622" r={0} glow="#2b4f86" glowPower={0.5 + 0.5 * c.glow} rough={0.15} cast={false} />
-              <Sign p={[0, 3.3, 0.084]} size={[3.6, 1.8]} name={c.company} logo={c.logo} glow={0.8 + 0.5 * c.glow} />
-            </>
-          )}
-        </>
-      )
+      return <Screen W={6} c={c} />
+    case 'screen_l':
+      return <Screen W={10} c={c} />
+    case 'screen_xl':
+      return <Screen W={16} c={c} />
     case 'lights':
       return (
-        <>
+        <group scale={[1, c.ceiling ? Math.min(1, (c.ceiling - 0.25) / 6.6) : 1, 1]}>
           <B p={[0, 0.05, 0]} s={[0.9, 0.1, 0.9]} c={DARK} r={0.01} />
           {[-0.2, 0.2].map((x) => [-0.2, 0.2].map((z) => <B key={`${x}${z}`} p={[x, 3.3, z]} s={[0.05, 6.4, 0.05]} c={STEEL} r={0.008} metal={0.7} rough={0.4} />))}
           {Array.from({ length: 8 }, (_, i) => (
@@ -164,7 +239,7 @@ export function VenueItem({ kind, c }: { kind: string; c: VenueCtx }) {
               {c.show && <Beam p={[x, 6.24, 0.53]} color={['#ffd9a8', '#a8d0ff'][(i + c.seed) % 2]} phase={c.seed + i * 2.1} day={c.glow < 1} />}
             </group>
           ))}
-        </>
+        </group>
       )
     case 'speakers':
       return (

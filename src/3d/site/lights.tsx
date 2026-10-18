@@ -11,7 +11,7 @@
 import { useThree } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
-import { ITEMS } from '../../sim/sites'
+import { ITEMS, stageOf } from '../../sim/sites'
 import type { Site, SiteItem } from '../../sim/types'
 import { type Crowd, Mode } from './crowd'
 import type { Mood } from './env'
@@ -381,9 +381,9 @@ const HOUSE: Record<Mood, { up: number; down: number }> = { day: { up: 0, down: 
  * left to the lamp posts. `down` says the hall's own lights are down for a show indoors by day: then the stage and
  * the seats are lit as they would be at dusk.
  */
-export function StageLights({ site, mood, show, down = false }: { site: Site; mood: Mood; show: boolean; down?: boolean }) {
+export function StageLights({ site, mood, show, down = false, follow, flash = 0 }: { site: Site; mood: Mood; show: boolean; down?: boolean; /** A keynote: where the presenter stands, for a follow spot. */ follow?: () => [number, number] | null; /** 0-1: a burst of light for a reveal. */ flash?: number }) {
   const plan = useMemo(() => {
-    const stage = site.items.find((i) => i.kind === 'stage')
+    const stage = stageOf(site)
     const seats = site.items.filter((i) => i.kind.startsWith('seats'))
     let house: [number, number] | null = null
     if (seats.length) {
@@ -398,8 +398,11 @@ export function StageLights({ site, mood, show, down = false }: { site: Site; mo
     }
     if (!stage) return { stage: null, house }
     const fr = frameOf(site, stage)
-    // two lamps out in front of the stage and above it, one to each side, both on its middle
-    return { stage: { at: [frameX(fr, 0, 0.2), frameZ(fr, 0, 0.2)], lamps: [-1, 1].map((k) => [frameX(fr, k * 4.2, 7.5), frameZ(fr, k * 4.2, 7.5)]) }, house }
+    const W = ITEMS.venue[stage.kind]?.w ?? 6
+    const D = ITEMS.venue[stage.kind]?.h ?? 4
+    // two lamps out in front of the stage and above it, one to each side, both on its middle: further out and higher for a bigger stage
+    const out = 7.5 + Math.max(0, D - 4) * 1.5
+    return { stage: { at: [frameX(fr, 0, 0.2), frameZ(fr, 0, 0.2)], lamps: [-1, 1].map((k) => [frameX(fr, k * Math.max(4.2, W * 0.45), out), frameZ(fr, k * Math.max(4.2, W * 0.45), out)]), high: 8.5 + Math.max(0, W - 6) * 0.35, reach: 26 + Math.max(0, W - 6) * 2, scale: Math.max(1, (W / 6) ** 1.2) }, house }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [site, site.rev])
   const spots = useMemo(
@@ -414,11 +417,12 @@ export function StageLights({ site, mood, show, down = false }: { site: Site; mo
   useEffect(() => () => spots.forEach((s) => s.dispose()), [spots])
   const as: Mood = down && mood === 'day' ? 'dusk' : mood
   // with nothing on, the stage is lit only once the daylight goes; for a show it is lit whatever the hour
-  const wash = show ? STAGE_WASH[as] : as === 'day' ? 0 : STAGE_WASH[as] * 0.45
+  const wash = (show ? STAGE_WASH[as] : as === 'day' ? 0 : STAGE_WASH[as] * 0.45) * (plan.stage?.scale ?? 1) * (1 + flash * 2.5)
   spots.forEach((s, k) => {
     s.intensity = plan.stage ? wash : 0
     if (!plan.stage) return
-    s.position.set(plan.stage.lamps[k][0], 8.5, plan.stage.lamps[k][1])
+    s.distance = plan.stage.reach
+    s.position.set(plan.stage.lamps[k][0], plan.stage.high, plan.stage.lamps[k][1])
     s.target.position.set(plan.stage.at[0], 1.6, plan.stage.at[1])
     s.target.updateMatrixWorld()
   })
@@ -431,7 +435,33 @@ export function StageLights({ site, mood, show, down = false }: { site: Site; mo
           <primitive object={s.target} />
         </group>
       ))}
-      {plan.house && house > 0 && <pointLight position={[plan.house[0], 7.5, plan.house[1]]} color="#ffe6c8" intensity={house} distance={34} decay={1.5} />}
+      {plan.house && house > 0 && <pointLight position={[plan.house[0], 7.5, plan.house[1]]} color="#ffe6c8" intensity={house * (plan.stage?.scale ?? 1)} distance={34 * Math.sqrt(plan.stage?.scale ?? 1)} decay={1.5} />}
+      {follow && plan.stage && <FollowSpot at={follow} lamp={[(plan.stage.lamps[0][0] + plan.stage.lamps[1][0]) / 2, plan.stage.high + 2, (plan.stage.lamps[0][1] + plan.stage.lamps[1][1]) / 2]} />}
+    </>
+  )
+}
+
+/** A narrow white spot from the front of house that follows the presenter across the stage. */
+function FollowSpot({ at, lamp }: { at: () => [number, number] | null; lamp: [number, number, number] }) {
+  const spot = useMemo(() => {
+    const s = new THREE.SpotLight('#fffaf0', 0, 60, 0.11, 0.45, 1.2)
+    s.castShadow = false
+    return s
+  }, [])
+  useEffect(() => () => spot.dispose(), [spot])
+  useTick(() => {
+    const p = at()
+    spot.intensity = p ? 900 : 0
+    spot.position.set(lamp[0], lamp[1], lamp[2])
+    if (p) {
+      spot.target.position.set(p[0], 1.2, p[1])
+      spot.target.updateMatrixWorld()
+    }
+  }, 1)
+  return (
+    <>
+      <primitive object={spot} />
+      <primitive object={spot.target} />
     </>
   )
 }

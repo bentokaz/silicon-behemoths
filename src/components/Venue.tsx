@@ -2,11 +2,11 @@
 // it (the next show, seats, whether a keynote can be held); how far a show
 // carries, the rehearsal and the move to a bigger site sit behind that line.
 // Shows themselves are booked under Marketing, Events.
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { sfx } from '../audio/sfx'
-import { autoVenue, buildVenue } from '../sim/game'
+import { applyVenuePreset, autoVenue, buildVenue, lookCost, raiseVenueRoof, venuePresetQuote } from '../sim/game'
 import { EVENTS, OWN_VENUE } from '../sim/growth'
-import { SITE_TIERS, tierOf, upkeep, venueStats } from '../sim/sites'
+import { SITE_TIERS, VENUE_PRESETS, type VenuePreset, rigFloors, tierOf, upkeep, venueStats } from '../sim/sites'
 import { useGame, useStore } from '../store/game'
 import { SiteBuilder } from './SiteBuilder'
 import { aSite, nextEvent, starterStageCost, venueStatus } from './SitesFigures'
@@ -17,6 +17,13 @@ export function VenueScreen() {
   const g = useGame()
   const { act, say, go } = useStore.getState()
   const [rehearse, setRehearse] = useState(false)
+  // laying out three whole venues to price them is not free: done again only when the plot or the cash moves
+  const cashKey = Math.round(g.cash / 1e5)
+  const quotes = useMemo(
+    () => Object.fromEntries((Object.keys(VENUE_PRESETS) as VenuePreset[]).map((k) => [k, venuePresetQuote(g, k)])) as Record<VenuePreset, ReturnType<typeof venuePresetQuote>>,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [g.venue, g.venue?.rev, g.venue?.tier, cashKey],
+  )
   const next = SITE_TIERS.venue[g.venue ? g.venue.tier + 1 : 0]
   const buy = () => {
     const err = act((s) => buildVenue(s))
@@ -51,6 +58,18 @@ export function VenueScreen() {
   const toEvents = () => go({ tab: 'marketing', view: 'events' })
   const empty = !g.venue.items.length
   const starter = starterStageCost()
+  const roof = rigFloors(g.venue)
+  const roofCost = roof ? lookCost(g.venue, { floors: roof }) : 0
+  const raise = () => {
+    const err = act((s) => raiseVenueRoof(s))
+    if (err) say(err, 'bad')
+    else sfx.confirm()
+  }
+  const preset = (k: VenuePreset) => {
+    const err = act((s) => applyVenuePreset(s, k))
+    if (err) say(err, 'bad')
+    else sfx.zone()
+  }
 
   return (
     <SiteBuilder
@@ -88,11 +107,31 @@ export function VenueScreen() {
         }
       >
         {!st.ready && <Note tone="warn">{st.problem} Until then a keynote cannot be booked here.</Note>}
+        {roof > 0 && (
+          <>
+            <Note tone="warn">The roof is too low for the rig: screens and lights are cut down to fit under it.</Note>
+            <ConfirmBtn small tone="default" icon="raise" className="mt-1 w-full" confirm={`Pay ${money(roofCost)}?`} title={`Raises the building to ${roof} storeys, so the rig stands at full height`} onClick={raise}>
+              Raise the roof for {money(roofCost)}
+            </ConfirmBtn>
+          </>
+        )}
         <Fact k="Next event" v={event ? `${event.name}, ${event.date}` : 'Nothing booked'} title={event?.where} />
         <Fact k="Shows held here" v={held} num />
         <Btn small icon={rehearse ? 'stop' : 'mic'} className="mt-1 w-full" active={rehearse} disabled={!st.ready && !rehearse} title={st.ready || rehearse ? 'Fills the seats and puts a presenter on stage, to see the venue as it will be on the night. Nothing is charged.' : `There is nothing to rehearse yet. ${st.problem ?? ''}`} onClick={() => setRehearse(!rehearse)}>
           {rehearse ? 'End the rehearsal' : 'Rehearse with a full house'}
         </Btn>
+      </Sec>
+      <Sec title="Ready-made venues">
+        <div className="mb-1 text-[11px] text-dim">Clears the plot (its fittings sell for half) and builds a whole venue: hall, stage, screen, lights and seats.</div>
+        {(Object.keys(VENUE_PRESETS) as VenuePreset[]).map((k) => {
+          const def = VENUE_PRESETS[k]
+          const q = quotes[k]
+          return (
+            <ConfirmBtn key={k} small tone="default" icon="venue" className="mt-1 w-full" disabled={!!q.error || q.same} confirm={q.cost > 0 ? `Pay ${money(q.cost)}?` : 'Rebuild it?'} title={q.error ?? def.note} onClick={() => preset(k)}>
+              {def.name}{q.error ? '' : q.same ? ': built' : `, ${money(Math.max(0, q.cost))}`}
+            </ConfirmBtn>
+          )
+        })}
       </Sec>
       <Sec title="How far a show carries">
         <BarRow label="Production" share={st.production} tone={st.production > 0.4 ? 'accent' : 'warn'} title="Screens, lights, sound and cameras for the size of the crowd. More seats need more of them." />

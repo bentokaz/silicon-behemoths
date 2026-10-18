@@ -385,7 +385,7 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
     } else if (itemTool.cost > budget) {
       hintTone = 'warn'
       hint = [`${itemTool.name}: not enough cash, it costs ${money(itemTool.cost)}`, ...key('cancel'), 'puts it away']
-    } else hint = [`${itemTool.name}, ${money(itemTool.cost)}: click to place one, drag for a row`, ...key('rotate'), `turns it (facing ${FACING[rot]})`, ...key('cancel'), 'done']
+    } else hint = [`${itemTool.name}, ${money(itemTool.cost)}: click to place one, drag for a row`, ...key('rotate'), `turns it (${'stage' in itemTool && itemTool.stage ? `output faces ${['east', 'south', 'west', 'north'][rot]}` : `facing ${FACING[rot]}`})`, ...key('cancel'), 'done']
   } else if (tool?.type === 'room' && roomTool) {
     const cost = money(roomCost(site, tool.room, pending))
     if (note?.error) {
