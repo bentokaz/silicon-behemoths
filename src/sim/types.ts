@@ -233,6 +233,40 @@ export interface Product {
   monthUnits: number
   history: number[]
   segUnits: Record<string, number>
+  /** Player's devices: ordering more by itself (needs a Head of Operations, see sim/reorder.ts). Missing means off. */
+  reorder?: ReorderRule
+}
+
+/** A business asking for a batch of devices (see sim/contracts.ts). */
+export interface ContractJob {
+  id: string
+  client: string
+  type: DeviceType
+  units: number
+  /** Paid for each unit, all at once when the last is delivered. */
+  perUnit: number
+  /** The least review average the device must have. */
+  minReview: number
+  /** Days from accepting to the delivery date. */
+  days: number
+  offered: number
+  /** An offer not answered by this day lapses. */
+  expires: number
+  /** Set on accepting: the device that fills it and the day it is due. */
+  productId?: string
+  due?: number
+  delivered: number
+  state: 'offer' | 'active' | 'done' | 'failed'
+}
+
+/** When a device orders another production run by itself, and how much. */
+export interface ReorderRule {
+  on: boolean
+  /** Order when units in stock and on order fall to this. */
+  at: number
+  /** 'fixed': order `qty` units. 'cover': order enough for `qty` days at the recent pace. */
+  rule: 'fixed' | 'cover'
+  qty: number
 }
 
 /** A dollar amount as text. Written out the same way on every machine, so that the news of a saved game reads the same wherever it is loaded. */
@@ -563,9 +597,32 @@ export interface CustomChip {
   licenceIncome: number
 }
 
+/**
+ * How the company's own operating system looks: the player designs it in Labs.
+ * Painted onto device screens by paintOsLook (src/3d/osLook.ts).
+ */
+export interface OsLook {
+  /** Wallpaper pattern drawn over the base colour. */
+  wallpaper: 'solid' | 'stripes' | 'dots' | 'waves' | 'grid' | 'rings'
+  /** Wallpaper base and pattern colours, '#rrggbb'. */
+  bg: string
+  bg2: string
+  accent: string
+  /** Dark or light panels, text and docks. */
+  theme: 'dark' | 'light'
+  icons: 'circle' | 'squircle' | 'square' | 'hexagon' | 'drop'
+  font: 'sans' | 'mono' | 'serif' | 'rounded'
+  layout: 'grid' | 'list' | 'tiles'
+  clock: 'digital' | 'big' | 'analog' | 'stacked' | 'minimal'
+}
+
 export interface OsState {
-  /** False while the company licenses the stock operating system. */
+  /** False while the company's devices run a licensed (or the free) operating system. */
   own: boolean
+  /** The licensed system devices run while `own` is false: an id from OS_LICENCES. Missing in saves from before licences, which ran Androyd. */
+  licence?: string
+  /** The look of the company's own system. Missing until the player designs one: DEFAULT_OS_LOOK. */
+  look?: OsLook
   name: string
   version: number
   quality: number
@@ -600,6 +657,8 @@ export interface GameConfig {
    * day. Missing means open, which is what saves from before this option are.
    */
   progression?: 'guided' | 'open'
+  /** Calendar year the game starts in (see data/eras.ts). Missing means today, which is when every save from before eras began. */
+  startYear?: number
 }
 
 /** Something that has happened to the company and may need a decision. */
@@ -707,6 +766,8 @@ export interface GameState {
   shareHistory: { month: number; units: Record<string, number> }[]
   monthShare: Record<string, number>
   news: NewsItem[]
+  /** Contract work offered, under way and lately finished. Missing in older saves. */
+  contracts?: ContractJob[]
   /** Troubles the feed has already been told about, by name, with the day: each is announced once and not again until it has passed. */
   told?: Record<string, number>
 }

@@ -215,6 +215,48 @@ export const ROOMS: Record<SiteKind, Record<string, RoomDef>> = {
 }
 
 /**
+ * What each kind of room does for the company, in one line, for the builders
+ * to show beside the room's name. A room on its own does little: it is where
+ * the fixtures that do the work may stand, and these say which and what for.
+ */
+export const ROOM_EFFECTS: Record<SiteKind, Record<string, string>> = {
+  office: {
+    work: 'Desks for any employee: nobody works without a seat.',
+    lobby: 'Reception, logo walls and showcases here add prestige, which helps hiring and how visitors see you.',
+    exec: 'Executive desks and the boardroom: prestige, and meeting places for team leads.',
+    lab: 'Lab benches here each make one researcher 25% faster.',
+    eng: 'Test rigs here each make one hardware engineer 25% faster: better devices and quicker development.',
+    soft: 'Desks and booths for software engineers, who build your own chips and operating system.',
+    studio: 'Design tables here each make one designer 25% better: devices ship with more polish.',
+    media: 'Media sets here each make one marketer 25% better: campaigns reach further.',
+    support: 'Support consoles here seat agents and make each 25% better: fewer unanswered owners, happier customers.',
+    server: 'Server racks here each make one software engineer 25% faster.',
+    meeting: 'Meeting tables: teams with a lead need places to meet, or they work less well.',
+    lounge: 'Coffee, sofas and games: comfort keeps morale up, and happy staff do more and ask for less.',
+    gym: 'Treadmills and weights: comfort that keeps morale up.',
+    atrium: 'An indoor garden: comfort for everyone and prestige for visitors.',
+  },
+  factory: {
+    hall: 'The production line: docks, conveyors and machines. Its slowest stage sets how many devices it builds a day.',
+    store: 'Warehouse racks and pallets: where parts and finished stock wait. No effect on output.',
+    control: 'Control desks and inspection benches here each cut the fault rate a little: fewer repairs and recalls.',
+    crew: 'Lockers and a canteen for the shift: comfort for the crew.',
+  },
+  store: {
+    sales: 'Where the store trades: display tables and demo pods set how many visitors it can serve, a checkout lets it sell, accessory walls add income per sale.',
+    service: 'Support bars make owners happier; repair benches cut the cost of warranty repairs.',
+    forum: 'A screen and seats for classes and launches: their comfort raises appeal, so more visitors stay and buy.',
+    stock: 'Stock shelving: each rack lets the store serve 5% more visitors, up to 20%.',
+  },
+  venue: {
+    hall: 'The stage, screens and seating: seats set how far a show carries, production how well it lands.',
+    foyer: 'Where guests arrive and try the device afterwards: hands-on tables add to the show.',
+  },
+}
+/** What a kind of room does, in one line, or '' for one the data does not know. */
+export const roomEffect = (kind: SiteKind, type: string): string => (Object.hasOwn(ROOM_EFFECTS[kind] ?? {}, type) ? ROOM_EFFECTS[kind][type] : '')
+
+/**
  * The capability a room or a piece of furniture waits on, if any. Furniture
  * that only goes in rooms which are themselves waiting takes their capability.
  */
@@ -305,11 +347,11 @@ export interface TierDef {
 }
 export const SITE_TIERS: Record<SiteKind, TierDef[]> = {
   office: [
-    { name: 'Garage lot', w: 14, h: 10, env: 'suburb', cost: 0, rent: 2500, blurb: 'A house lot on a quiet street. Where it starts.' },
-    { name: 'Workshop yard', w: 22, h: 14, env: 'estate', cost: 150e3, rent: 8000, blurb: 'A plot on a trading estate with room for a real office.' },
-    { name: 'Business park plot', w: 32, h: 22, env: 'park', cost: 800e3, rent: 22e3, blurb: 'Landscaped land among other growing companies.' },
-    { name: 'Headquarters site', w: 48, h: 32, env: 'park', cost: 4e6, rent: 60e3, blurb: 'A full block for a building with your name on it.' },
-    { name: 'Campus', w: 72, h: 56, env: 'valley', cost: 22e6, rent: 160e3, blurb: 'Open land in the valley. Build whatever you can imagine.' },
+    { name: 'Garage lot', w: 18, h: 13, env: 'suburb', cost: 0, rent: 2500, blurb: 'A house lot on a quiet street. Where it starts.' },
+    { name: 'Workshop yard', w: 26, h: 18, env: 'estate', cost: 150e3, rent: 8000, blurb: 'A plot on a trading estate with room for a real office.' },
+    { name: 'Business park plot', w: 38, h: 28, env: 'park', cost: 800e3, rent: 22e3, blurb: 'Landscaped land among other growing companies.' },
+    { name: 'Headquarters site', w: 56, h: 40, env: 'park', cost: 4e6, rent: 60e3, blurb: 'A full block for a building with your name on it.' },
+    { name: 'Campus', w: 80, h: 64, env: 'valley', cost: 22e6, rent: 160e3, blurb: 'Open land in the valley. Build whatever you can imagine.' },
   ],
   factory: [
     { name: 'Workshop plot', w: 22, h: 14, env: 'industrial', cost: 450e3, rent: 12e3, blurb: 'Room for one short production line.' },
@@ -317,9 +359,9 @@ export const SITE_TIERS: Record<SiteKind, TierDef[]> = {
     { name: 'Gigafactory site', w: 52, h: 30, env: 'industrial', cost: 18e6, rent: 160e3, blurb: 'Volume manufacturing on your own terms.' },
   ],
   store: [
-    { name: 'Mall unit', w: 10, h: 8, env: 'mall', cost: 120e3, rent: 22e3, traffic: 500, blurb: 'A small shop with steady passing trade.' },
-    { name: 'High street plot', w: 14, h: 12, env: 'street', cost: 450e3, rent: 70e3, traffic: 1500, blurb: 'A proper storefront on a busy street.' },
-    { name: 'Flagship plaza', w: 22, h: 18, env: 'plaza', cost: 2.5e6, rent: 260e3, traffic: 4500, blurb: 'A square of your own for a landmark store.' },
+    { name: 'Mall unit', w: 10, h: 8, env: 'mall', cost: 120e3, rent: 14e3, traffic: 700, blurb: 'A small shop with steady passing trade.' },
+    { name: 'High street plot', w: 14, h: 12, env: 'street', cost: 450e3, rent: 45e3, traffic: 1800, blurb: 'A proper storefront on a busy street.' },
+    { name: 'Flagship plaza', w: 22, h: 18, env: 'plaza', cost: 2.5e6, rent: 160e3, traffic: 5000, blurb: 'A square of your own for a landmark store.' },
   ],
   venue: [
     { name: 'Courtyard stage', w: 22, h: 18, env: 'park', cost: 400e3, rent: 6000, blurb: 'A small plot for an open-air stage or a studio theatre.' },
@@ -362,6 +404,9 @@ export function groundAt(site: Pick<Site, 'kind' | 'tier' | 'floor'>, x: number,
 export const itemAllowed = (site: Pick<Site, 'kind' | 'tier'>, kind: string) => !(kind === 'otree' && tierOf(site)?.env === 'mall')
 /** Monthly cost of keeping one built tile lit, cleaned and insured. */
 export const TILE_UPKEEP = 18
+/** Monthly wage of each person a store's staffed fixtures need, and of the store's manager. */
+export const STORE_WAGE = 3500
+export const STORE_MANAGER = 4000
 export const builtTiles = (site: Site) => site.grid.reduce((a, n) => a + (n ? 1 : 0), 0)
 export const upkeep = (site: Site) => tierOf(site).rent + builtTiles(site) * TILE_UPKEEP * site.floors
 
@@ -1254,7 +1299,8 @@ export function storeStats(site: Site): StoreStats {
   const crowding = Math.max(0, used / tiles - 0.4) * 2.5
   const look = (FACADES[site.facade]?.cost ? 0.05 : 0) + (site.rooms.length > 1 ? 0.05 : 0)
   const appeal = Math.max(0.1, Math.min(1, 0.45 + 0.45 * decor + look - crowding))
-  const wages = (counters + supports + repairs) * 4000 + 6000
+  // a manager, and someone at each checkout, support bar and repair bench
+  const wages = (counters + supports + repairs) * STORE_WAGE + STORE_MANAGER
   const stock = count('stockrack')
   const base = { capacity: capacity * (1 + Math.min(0.2, stock * 0.05)), appeal, hasSupport: supports > 0, repairs, shelves: count('shelf'), wages }
   if (!site.rooms.some((r) => r.type === 'sales')) return { ...base, open: false, problem: 'Zone a sales floor to start building the store.' }

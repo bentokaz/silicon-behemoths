@@ -84,18 +84,12 @@ export function factoryStatus(g: GameState): Figure[] {
 /** A store as the picker and every sentence name it: "Fifth Avenue, North America". */
 export const storeLabel = (s: Pick<Store, 'name' | 'region'>) => `${s.name}, ${regionInfo(s.region).name}`
 
-/**
- * The least share of a site's passers-by that come in: what the simulation
- * gives a store in a region where nobody knows the company (the daily store
- * step in `src/sim/game.ts`: passers-by x (0.35 + 0.65 x the root of
- * awareness), capped by what the store can serve, then x (0.6 + 0.4 x appeal)).
- */
-export const PULL_MIN = 0.35
-/** The share of people at the door that the least appealing store still lets in. */
-export const DOOR_MIN = 0.6
+/** The store formula's constants (see footfall in src/sim/retail.ts), for the words on the Stores page. */
+export { CONVERSION, DOOR_MIN, PULL_MIN } from '../sim/retail'
+import { CONVERSION, DOOR_MIN, PULL_MIN } from '../sim/retail'
 
 /** How passers-by become visitors, for the whole game: the words behind the "?" on the Stores page. */
-export const VISITORS_HELP = `Passers-by a day is the foot traffic of the site. Visitors a day is how many of them come in: ${pct(PULL_MIN, 0)} of them where the region does not know your name, rising to all of them where everyone does, and never more than the store's display tables and demo pods can serve. Low appeal then turns up to ${pct(1 - DOOR_MIN, 0)} of those away at the door. A few in every hundred visitors buy, more in a store with high appeal.`
+export const VISITORS_HELP = `Passers-by a day is the foot traffic of the site. Visitors a day is how many of them come in: ${pct(PULL_MIN, 0)} of them where the region does not know your name, rising to all of them where everyone does, and never more than the store's display tables and demo pods can serve. Low appeal then turns up to ${pct(1 - DOOR_MIN, 0)} of those away at the door. Up to ${pct(CONVERSION, 0)} of visitors buy a device: fewer in a store with low appeal, or when the devices on the shelves are old or a poor fit.`
 
 /** The same for one store: which of the three is holding its visitors down. */
 export function visitorsNote(passers: number, capacity: number, open: boolean): string {
@@ -113,7 +107,7 @@ export const profitLabel = (partial: boolean) => (partial ? 'Projected profit th
 /** The same in a sentence, for a tooltip or a note. */
 export const monthNote = (partial: boolean) => (partial ? 'This month, projected to its end from what the store has sold so far and what it sells in a day now.' : 'The last full month.')
 /** What a store's profit counts and what it leaves out. */
-export const PROFIT_NOTE = 'Revenue less the rent and upkeep of the plot and the wages of the people its fixtures need. What the devices cost to build is counted against each device, under Devices.'
+export const PROFIT_NOTE = 'Revenue less what the devices sold here cost to build, the rent and upkeep of the plot, and the wages of the people its fixtures need: what the store adds to the company profit.'
 
 /** Green above nothing, red below it. */
 export const signTone = (v: number): 'pos' | 'neg' | undefined => (v < 0 ? 'neg' : v > 0 ? 'pos' : undefined)

@@ -2,6 +2,7 @@
 // may build, things that happen to it, and how rivals respond to what it does.
 import { DAYS_PER_YEAR, MAX_LEVEL, TRACK_INFO } from '../data/catalog'
 import { SEGMENTS, type SegmentInfo, TYPES, segmentInfo } from '../data/devices'
+import { TYPE_YEAR, eraInfo, typeOpen } from '../data/eras'
 import { clamp, int, pick, rand, range } from './rng'
 import { type Company, DEVICE_TYPES, type DeviceType, type GameState, type Incident, type Levels, SUPPLY_CATS, TRACKS } from './types'
 
@@ -95,16 +96,25 @@ export function unlockCost(s: GameState, type: DeviceType): number {
 /** Why a device type cannot be opened up yet, or null. */
 export function unlockBlocked(s: GameState, type: DeviceType): string | null {
   if (hasType(s, type)) return 'You already make these'
+  if (!typeOpen(type, s.day)) return `Nobody sells ${TYPES[type].plural.toLowerCase()} yet: the first ones are expected in ${TYPE_YEAR[type]}.`
   const u = unlockOf(type)
   for (const t of TRACKS) {
-    const need = u.needs[t]
+    const need = eraNeed(u.needs[t])
     if (need !== undefined && s.levels[t] < need) return `Needs ${TRACK_INFO[t].name.toLowerCase()} research at level ${need} (you are at level ${s.levels[t]}). Research it first.`
   }
   return null
 }
+/**
+ * A research level asked for, in the era of the game in hand: the levels in the
+ * unlock data are today's, and a company that starts earlier starts lower.
+ */
+export const eraNeed = (need: number | undefined) => (need === undefined ? undefined : Math.max(0, need - (3 - eraInfo().techLevel)))
+
 /** The kinds a new company can choose to start with. */
 // a new company can begin with anything but the two kinds that need years of research behind them
 export const START_TYPES = DEVICE_TYPES.filter((t) => t !== 'foldable' && t !== 'headset')
+/** The same for a company starting in a given year: only what is on sale then. */
+export const startTypesIn = (year: number): DeviceType[] => START_TYPES.filter((t) => TYPE_YEAR[t] <= year)
 
 // ---------------------------------------------------------------- incidents
 
@@ -445,6 +455,8 @@ export const economyNow = (s: GameState) => (s.economy && s.day <= s.economy.unt
 
 /** The day the leading edge of the market reaches the last level of the tech tree (see marketLevel): twelve and a half years in. */
 export const PEAK_DAY = (MAX_LEVEL - 3) * 2.5 * DAYS_PER_YEAR
+/** The same for the era of the game in hand: a game that starts with older technology takes longer to get there. */
+export const peakDay = () => (MAX_LEVEL - eraInfo().level) * 2.5 * DAYS_PER_YEAR
 /**
  * Prices people expect drift up over the years, as the devices themselves get
  * dearer to make. Once technology has gone as far as it goes, devices stop
@@ -452,7 +464,7 @@ export const PEAK_DAY = (MAX_LEVEL - 3) * 2.5 * DAYS_PER_YEAR
  * for ever, with costs standing still, they made every company's margin grow
  * without end (a phone that costs 300 to build selling for 9,000 by year 100).
  */
-export const priceIndex = (day: number) => Math.pow(1.035, Math.min(day, PEAK_DAY) / DAYS_PER_YEAR)
+export const priceIndex = (day: number) => Math.pow(1.035, Math.min(day, peakDay()) / DAYS_PER_YEAR)
 
 // ---------------------------------------------------------------- rivals that react
 

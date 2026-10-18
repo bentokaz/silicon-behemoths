@@ -5,7 +5,8 @@ import { sfx } from '../audio/sfx'
 import { TRACK_INFO } from '../data/catalog'
 import { TYPES, segmentsOf } from '../data/devices'
 import { DIFFICULTY, defaultConfig, fmtDate } from '../sim/game'
-import { START_TYPES } from '../sim/world'
+import { ERAS, eraInfo } from '../data/eras'
+import { startTypesIn } from '../sim/world'
 import { type Difficulty, type GameConfig, TRACKS } from '../sim/types'
 import { useStore } from '../store/game'
 import { type SaveMeta, listSaves, slotName } from '../store/saves'
@@ -145,7 +146,12 @@ const GROWTH = { guided: 'Start small', open: 'Everything open' } as const
 
 export function NewGame() {
   const { begin, setScreen } = useStore.getState()
-  const [cfg, setCfg] = useState<GameConfig>(() => ({ ...defaultConfig(), startType: 'phone', progression: 'guided', seed: Math.floor(Math.random() * 99999) + 1 }))
+  const [cfg, setCfg] = useState<GameConfig>(() => {
+    const era = ERAS.find((e) => e.recommended) ?? eraInfo()
+    return { ...defaultConfig(), startType: 'phone', progression: 'guided', startYear: era.year, techLevel: era.techLevel, seed: Math.floor(Math.random() * 99999) + 1 }
+  })
+  const year = cfg.startYear ?? eraInfo().year
+  const startTypes = startTypesIn(year)
   const up = (patch: Partial<GameConfig>) => setCfg((c) => ({ ...c, ...patch }))
   const d = DIFFICULTY[cfg.difficulty]
   const name = cfg.companyName.trim()
@@ -159,7 +165,7 @@ export function NewGame() {
   // Esc goes back to the menu; a dialog on top of the form (the feedback form) takes Esc first
   useLayer(true, back)
   const makes = cfg.startType === 'all' ? 'Every kind of device' : TYPES[cfg.startType ?? 'phone'].plural
-  const summary: ReactNode[] = [makes, GROWTH[growth], DIFFICULTY[cfg.difficulty].label, cfg.unlimitedMoney ? 'Unlimited money' : <><span className="num text-fg">{money(cfg.startCash)}</span> to start</>]
+  const summary: ReactNode[] = [`From ${year}`, makes, GROWTH[growth], DIFFICULTY[cfg.difficulty].label, cfg.unlimitedMoney ? 'Unlimited money' : <><span className="num text-fg">{money(cfg.startCash)}</span> to start</>]
   return (
     <div className="flex h-full flex-col bg-carbon">
       <div className="grid min-h-0 flex-1 grid-cols-[420px_minmax(0,1fr)]">
@@ -189,9 +195,17 @@ export function NewGame() {
               </Panel>
             </div>
 
+            <Panel title="When the company starts" icon="calendar" bodyClass="grid grid-cols-4 gap-2 p-3">
+              {ERAS.map((e) => (
+                <Option key={e.year} big on={year === e.year} onClick={() => up({ startYear: e.year, techLevel: e.techLevel, startType: cfg.startType === 'all' || startTypesIn(e.year).includes(cfg.startType ?? 'phone') ? cfg.startType : 'phone' })} name={`${e.year}`} tag={e.recommended ? 'Recommended' : e.name}>
+                  {e.blurb}
+                </Option>
+              ))}
+            </Panel>
+
             <Panel title="What your company makes" icon="devices" bodyClass="p-3" right={<span className="pr-1 text-[11px] text-faint">Other lines open under Research as you grow</span>}>
               <div className="grid grid-cols-4 gap-1">
-                {START_TYPES.map((type) => (
+                {startTypes.map((type) => (
                   <Option key={type} on={cfg.startType === type} onClick={() => up({ startType: type })} icon={typeIcon(type)} name={TYPES[type].plural} className="!py-[5px]">
                     <span className="num">{segmentsOf(type).length}</span> markets{['console', 'handheld', 'speaker'].includes(type) ? ', slow start' : ''}
                   </Option>

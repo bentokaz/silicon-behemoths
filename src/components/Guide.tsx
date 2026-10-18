@@ -3,7 +3,8 @@
 // decisions that incidents ask for, and the summary at the end of each year.
 import { useEffect, useRef } from 'react'
 import { sfx } from '../audio/sfx'
-import { DAYS_PER_YEAR, START_YEAR } from '../data/catalog'
+import { DAYS_PER_YEAR } from '../data/catalog'
+import { startYear } from '../data/eras'
 import { decide, player, trailingUnits } from '../sim/game'
 import { type CapId, type Where, guided, has } from '../sim/progress'
 import { REGIONS } from '../sim/regions'
@@ -169,7 +170,7 @@ export function YearEnd() {
   const total = all.reduce((a, t) => a + t.units, 0) || 1
   const rank = [...all].sort((a, b) => b.units - a.units).findIndex((t) => t.company.isPlayer) + 1
   const best = [...g.products.filter((p) => p.companyId === 'player')].sort((a, b) => b.history.slice(-12).reduce((x, y) => x + y, 0) - a.history.slice(-12).reduce((x, y) => x + y, 0))[0]
-  const start = (year - START_YEAR) * DAYS_PER_YEAR
+  const start = (year - startYear()) * DAYS_PER_YEAR
   const goals = Object.values(g.goals).filter((d) => d >= start && d < start + DAYS_PER_YEAR).length
   const cells: [string, string, string | undefined, IconName][] = [
     ['Income', money(revenue, 1), before.length === 12 && lastRevenue > 0 ? `${revenue >= lastRevenue ? '+' : ''}${pct(revenue / lastRevenue - 1, 0)} on last year` : undefined, 'coins'],

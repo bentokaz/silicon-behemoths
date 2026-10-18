@@ -89,20 +89,49 @@ interface Session {
   refresh: string
   expires: number
   email: string
+  /** The account's id, which every save row is filed under. Older sessions lack it: it is read from the token. */
+  uid?: string
 }
 const CFG = 'sb-cloud'
 const SES = 'sb-cloud-session'
 const env = import.meta.env as Record<string, string | undefined>
 
-export function cloudConfig(): CloudConfig | null {
-  if (env.VITE_SUPABASE_URL && env.VITE_SUPABASE_KEY) return { url: env.VITE_SUPABASE_URL, key: env.VITE_SUPABASE_KEY }
+/**
+ * What the browser would not keep. Inside the itch.io page the game runs in a
+ * frame from another site, and some browsers give such a frame no storage, or
+ * storage that is thrown away: whatever could not be written is kept here for
+ * as long as the page is open, so signing in still works for this visit.
+ */
+const memory: { config?: CloudConfig | null; session?: Session | null } = {}
+let remembered = true
+/** False when the browser would not keep the sign-in: the player will need to sign in again on their next visit. */
+export const cloudRemembers = () => remembered
+
+function readStored(key: string): unknown {
   try {
-    const c = JSON.parse(localStorage.getItem(CFG) ?? 'null') as CloudConfig | null
-    // an address stored by an older version that no browser would talk to is as good as none
-    return c?.url && c.key && !cloudAddressProblem(c.url, c.key) ? c : null
+    return JSON.parse(localStorage.getItem(key) ?? 'null')
   } catch {
     return null
   }
+}
+/** Writes to the browser's storage; false (and kept in memory instead by the caller) when it will not take it. */
+function store(key: string, value: unknown): boolean {
+  try {
+    if (value === null) localStorage.removeItem(key)
+    else localStorage.setItem(key, JSON.stringify(value))
+    // a frame whose storage is a no-op takes the write and keeps nothing
+    if (value !== null && localStorage.getItem(key) === null) throw new Error('not kept')
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function cloudConfig(): CloudConfig | null {
+  if (env.VITE_SUPABASE_URL && env.VITE_SUPABASE_KEY) return { url: env.VITE_SUPABASE_URL, key: env.VITE_SUPABASE_KEY }
+  const c = (readStored(CFG) as CloudConfig | null) ?? memory.config ?? null
+  // an address stored by an older version that no browser would talk to is as good as none
+  return c && typeof c === 'object' && c.url && c.key && !cloudAddressProblem(c.url, c.key) ? c : null
 }
 /** True when the project address comes with the game rather than from the player. */
 export const cloudBuiltIn = () => !!(env.VITE_SUPABASE_URL && env.VITE_SUPABASE_KEY)
@@ -128,33 +157,63 @@ export function cloudAddressProblem(url: string, key: string): string | null {
 export function setCloudConfig(url: string, key: string): string | null {
   const problem = cloudAddressProblem(url, key)
   if (problem) return problem
-  try {
-    localStorage.setItem(CFG, JSON.stringify({ url: url.trim().replace(/\/+$/, ''), key: key.trim() }))
-  } catch {
-    return 'The browser will not let the game remember the project (private browsing or blocked site data)'
-  }
+  const cfg = { url: url.trim().replace(/\/+$/, ''), key: key.trim() }
+  // kept for this visit even where the browser will not keep it for the next
+  const kept = store(CFG, cfg)
+  memory.config = kept ? undefined : cfg
+  remembered = kept
   return null
 }
+/** Forget the project typed in, to enter another. */
+export function forgetCloudConfig() {
+  memory.config = null
+  store(CFG, null)
+}
+const isSession = (s: unknown): s is Session => !!s && typeof s === 'object' && typeof (s as Session).access === 'string' && typeof (s as Session).expires === 'number'
 const session = (): Session | null => {
-  try {
-    const s = JSON.parse(localStorage.getItem(SES) ?? 'null') as Session | null
-    return s && typeof s === 'object' && typeof s.access === 'string' && typeof s.expires === 'number' ? s : null
-  } catch {
-    return null
-  }
+  const s = readStored(SES)
+  if (isSession(s)) return s
+  return memory.session && isSession(memory.session) ? memory.session : null
+}
+function keepSession(s: Session | null) {
+  const kept = store(SES, s)
+  memory.session = kept ? undefined : s
+  if (s) remembered = kept
 }
 export const cloudUser = () => session()?.email ?? null
 export const signOut = () => {
+  memory.session = null
+  store(SES, null)
+}
+
+/** The account id a token was issued for: its "sub" claim. */
+function subject(jwt: string): string | undefined {
   try {
-    localStorage.removeItem(SES)
+    const part = jwt.split('.')[1]
+    if (!part) return undefined
+    const json = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(part.length / 4) * 4, '='))) as { sub?: unknown }
+    return typeof json.sub === 'string' ? json.sub : undefined
   } catch {
-    /* nothing was stored */
+    return undefined
   }
 }
+const userId = (s: Session) => s.uid || subject(s.access)
 
 /** Thrown when the server could not be reached or did not answer as itself: nothing is known about the account either way. */
 class Unreachable extends Error {}
 export const OFFLINE = 'The online save server could not be reached. Check your connection and try again.'
+
+/** The server's own words for what went wrong, from the body of its answer: Supabase's auth and data servers each phrase it their own way. */
+async function serverWords(res: Response): Promise<string | undefined> {
+  try {
+    const d = (await res.json()) as Record<string, unknown> | null
+    if (!d || typeof d !== 'object') return undefined
+    const parts = [d.error_description, d.msg, d.message, d.error, d.details, d.hint].filter((v): v is string => typeof v === 'string' && !!v.trim())
+    return parts.length ? [...new Set(parts)].join('. ').replace(/\.\./g, '.') : undefined
+  } catch {
+    return undefined
+  }
+}
 
 async function auth(path: string, body: object): Promise<Session> {
   const cfg = cloudConfig()
@@ -165,7 +224,7 @@ async function auth(path: string, body: object): Promise<Session> {
   } catch {
     throw new Unreachable(OFFLINE)
   }
-  let data: { access_token?: string; refresh_token?: string; expires_in?: number; user?: { email?: string }; msg?: string; error_description?: string; message?: string }
+  let data: { access_token?: string; refresh_token?: string; expires_in?: number; user?: { email?: string; id?: string }; msg?: string; error_description?: string; message?: string; error?: string }
   try {
     data = ((await res.json()) ?? {}) as typeof data
   } catch {
@@ -173,17 +232,18 @@ async function auth(path: string, body: object): Promise<Session> {
     throw new Unreachable(res.status >= 500 ? `The online save server is having trouble (error ${res.status}). Try again in a little while.` : `The project address did not answer like a save server (error ${res.status}). Check the address.`)
   }
   if (res.status >= 500) throw new Unreachable(`The online save server is having trouble (error ${res.status}). Try again in a little while.`)
-  if (!res.ok || !data.access_token) throw new Error(data.error_description ?? data.msg ?? data.message ?? (res.ok ? 'Check your email to confirm the account, then sign in' : 'Sign-in failed'))
-  const s: Session = { access: data.access_token, refresh: data.refresh_token ?? '', expires: Date.now() + (Number.isFinite(data.expires_in) ? data.expires_in! : 3600) * 1000, email: data.user?.email ?? '' }
-  try {
-    localStorage.setItem(SES, JSON.stringify(s))
-  } catch {
-    /* signed in for now; it will not be remembered */
+  if (!res.ok || !data.access_token) {
+    const said = data.error_description ?? data.msg ?? data.message ?? data.error
+    throw new Error(said ? String(said) : res.ok ? 'Check your email to confirm the account, then sign in' : `Sign-in failed (error ${res.status})`)
   }
+  const s: Session = { access: data.access_token, refresh: data.refresh_token ?? '', expires: Date.now() + (Number.isFinite(data.expires_in) ? data.expires_in! : 3600) * 1000, email: data.user?.email ?? '', uid: data.user?.id ?? subject(data.access_token) }
+  keepSession(s)
   return s
 }
-export const signIn = (email: string, password: string) => auth('token?grant_type=password', { email, password })
-export const signUp = (email: string, password: string) => auth('signup', { email, password })
+/** Email addresses are compared without case and stray spaces: a phone keyboard adds both. */
+const tidyEmail = (email: string) => String(email ?? '').trim().toLowerCase()
+export const signIn = (email: string, password: string) => auth('token?grant_type=password', { email: tidyEmail(email), password })
+export const signUp = (email: string, password: string) => auth('signup', { email: tidyEmail(email), password })
 
 async function token(): Promise<string | null> {
   const s = session()
@@ -204,27 +264,43 @@ async function rest(path: string, init: RequestInit = {}): Promise<Response | nu
   return fetch(`${cfg.url}/rest/v1/${path}`, { ...init, headers: { apikey: cfg.key, Authorization: `Bearer ${t}`, 'Content-Type': 'application/json', ...(init.headers ?? {}) } })
 }
 
-/** How the last copy sent to the online account went: when, and what the server said if it refused. */
+/** How the last exchange with the online account went: when, and what the server said if it refused. */
 export interface SyncStatus {
   at: number
   ok: boolean
   error?: string
 }
 let lastSync: SyncStatus | null = null
-/** The outcome of the most recent online save in this session, or null if none has been tried. */
+/** The outcome of the most recent online save or listing in this session, or null if none has been tried. */
 export const cloudStatus = (): SyncStatus | null => lastSync
 
+/** A refusal from the data server, in words the player can act on, with the server's own message after them. */
+async function refusal(res: Response, doing: string): Promise<string> {
+  const said = await serverWords(res)
+  const why = res.status === 413 ? 'This save is too large for the online account' : res.status === 401 || res.status === 403 ? `The online account refused to ${doing}. Sign in again` : `The online account could not ${doing} (error ${res.status})`
+  return said ? `${why}: ${said}` : why
+}
+
 async function cloudWrite(slot: string, file: { meta: object; state: unknown }) {
+  const s = session()
+  const uid = s ? userId(s) : undefined
+  // the account is named in the row: a table whose user_id has no default would otherwise refuse it
+  const row = { ...(uid ? { user_id: uid } : {}), slot, meta: file.meta, state: file.state }
   let res: Response | null
   try {
-    res = await rest('saves?on_conflict=user_id,slot', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates' }, body: JSON.stringify({ slot, meta: file.meta, state: file.state }) })
+    res = await rest('saves?on_conflict=user_id,slot', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(row) })
+    // a table without the (user_id, slot) key cannot be upserted into: replace the row by hand instead
+    if (res && res.status === 400 && ((await res.clone?.().json().catch(() => null)) as { code?: string } | null)?.code === '42P10') {
+      await rest(`saves?slot=eq.${encodeURIComponent(slot)}`, { method: 'DELETE' })
+      res = await rest('saves', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(row) })
+    }
   } catch {
     lastSync = { at: Date.now(), ok: false, error: OFFLINE }
     throw new Error(OFFLINE)
   }
   // not signed in: there is nothing to report
   if (!res) return
-  lastSync = res.ok ? { at: Date.now(), ok: true } : { at: Date.now(), ok: false, error: res.status === 413 ? 'This save is too large for the online account' : res.status === 401 || res.status === 403 ? 'The online account refused the save. Sign in again.' : `The online account could not store the save (error ${res.status})` }
+  lastSync = res.ok ? { at: Date.now(), ok: true } : { at: Date.now(), ok: false, error: await refusal(res, 'store the save') }
   if (!res.ok) throw new Error(lastSync.error)
 }
 const goodRow = (r: unknown): r is { slot: string; meta: RemoteSave['meta'] } => {
@@ -232,9 +308,19 @@ const goodRow = (r: unknown): r is { slot: string; meta: RemoteSave['meta'] } =>
   return !!row && typeof row.slot === 'string' && !!row.meta && typeof row.meta === 'object' && typeof row.meta.savedAt === 'number'
 }
 async function cloudList(): Promise<RemoteSave[]> {
-  const res = await rest('saves?select=slot,meta')
-  if (!res?.ok) return []
-  const rows = (await res.json()) as unknown
+  let res: Response | null
+  try {
+    res = await rest('saves?select=slot,meta')
+  } catch {
+    lastSync = { at: Date.now(), ok: false, error: OFFLINE }
+    return []
+  }
+  if (!res) return []
+  if (!res.ok) {
+    lastSync = { at: Date.now(), ok: false, error: await refusal(res, 'list your saves') }
+    return []
+  }
+  const rows = (await res.json().catch(() => null)) as unknown
   if (!Array.isArray(rows)) return []
   return rows.filter(goodRow).map((r) => ({
     slot: r.slot,
@@ -249,6 +335,23 @@ async function cloudList(): Promise<RemoteSave[]> {
 }
 async function cloudDelete(slot: string) {
   await rest(`saves?slot=eq.${encodeURIComponent(slot)}`, { method: 'DELETE' })
+}
+
+/**
+ * Asks the account for its saves once, to see that online saving works end to
+ * end. Null when it does (or nobody is signed in), else what the server said:
+ * a missing table, a refused rule, an expired session.
+ */
+export async function checkCloud(): Promise<string | null> {
+  let res: Response | null
+  try {
+    res = await rest('saves?select=slot&limit=1')
+  } catch {
+    return OFFLINE
+  }
+  if (!res) return session() ? 'The session has ended. Sign in again.' : null
+  if (res.ok) return null
+  return refusal(res, 'read your saves')
 }
 
 // ---------------------------------------------------------------- used by the save module
@@ -281,7 +384,8 @@ export async function sendFeedback(row: FeedbackRow): Promise<boolean> {
   try {
     const res = await fetch(`${cfg.url}/rest/v1/feedback`, {
       method: 'POST',
-      headers: { apikey: cfg.key, Authorization: `Bearer ${cfg.key}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      // an anon key is a token and may be sent as one; the newer publishable keys are not, and the server refuses them there
+      headers: { apikey: cfg.key, ...(cfg.key.split('.').length === 3 ? { Authorization: `Bearer ${cfg.key}` } : {}), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
       body: JSON.stringify(row),
     })
     return res.ok

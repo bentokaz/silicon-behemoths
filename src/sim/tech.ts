@@ -1,9 +1,10 @@
 // In-house technology: custom chips and the company's own operating system.
 import { DAYS_PER_YEAR, marketLevel, refScore, researchCost } from '../data/catalog'
+import { yearAt } from '../data/eras'
 import { clamp, range } from './rng'
 import { OWN_SILICON, chipFor } from './scoring'
 import { staffEffects } from './staff'
-import { type CustomChip, DEVICE_TYPES, type GameState, type OsState } from './types'
+import { type CustomChip, DEVICE_TYPES, type DeviceType, type GameState, type OsLook, type OsState } from './types'
 
 // ---------------------------------------------------------------- chips
 
@@ -89,7 +90,93 @@ export const OS_FEATURES: OsFeature[] = [
 export const OS_FEATURES_PER_VERSION = 2
 export const STOCK_OS = 'Androyd'
 
-export const newOs = (): OsState => ({ own: false, name: STOCK_OS, version: 0, quality: 0, features: [], servicesIncome: 0 })
+/**
+ * Operating systems a company can license instead of building its own. Each is
+ * on offer from its first year to its last; `quality` is how far it sits above
+ * or below what buyers expect of a system at the time, `royalty` what the
+ * vendor takes for every device sold with it. The free one is always there.
+ */
+export interface OsLicence {
+  id: string
+  name: string
+  vendor: string
+  from: number
+  until?: number
+  quality: number
+  royalty: number
+  note: string
+  look: OsLook
+}
+export const DEFAULT_OS_LOOK: OsLook = { wallpaper: 'rings', bg: '#14202c', bg2: '#ff6b1a', accent: '#ff6b1a', theme: 'dark', icons: 'squircle', font: 'sans', layout: 'grid', clock: 'big' }
+const look = (o: Partial<OsLook>): OsLook => ({ ...DEFAULT_OS_LOOK, ...o })
+export const FREE_OS = 'opencore'
+/** Kinds of device that run the company's operating system, and so pay a licence royalty. Consoles, earbuds and speakers run firmware of their own. */
+export const OS_TYPES: DeviceType[] = ['phone', 'tablet', 'watch', 'foldable', 'laptop', 'desktop', 'headset', 'handheld', 'tv']
+export const OS_LICENCES: OsLicence[] = [
+  { id: FREE_OS, name: 'OpenCore', vendor: 'an open-source project', from: 0, quality: -10, royalty: 0, note: 'Free and open, but rough: few apps and a clumsy interface.', look: look({ wallpaper: 'solid', bg: '#2a2d31', accent: '#8fb3d9', icons: 'square', font: 'mono', layout: 'list', clock: 'digital' }) },
+  { id: 'symbion', name: 'Symbion', vendor: 'a handset consortium', from: 1998, until: 2013, quality: -3, royalty: 5, note: 'The established phone system of its day. Solid, and ageing.', look: look({ wallpaper: 'stripes', bg: '#1d3b5c', bg2: '#2b5a85', accent: '#7fd0ff', theme: 'light', icons: 'square', layout: 'list', clock: 'digital' }) },
+  { id: 'windscape', name: 'Windscape Mobile', vendor: 'a desktop software giant', from: 2002, until: 2015, quality: -1, royalty: 9, note: 'Office tools and email everywhere; dear, and clumsy to touch.', look: look({ wallpaper: 'grid', bg: '#0f2a4a', bg2: '#1c4c80', accent: '#3fa0ff', icons: 'square', layout: 'tiles', clock: 'stacked' }) },
+  { id: 'androyd', name: STOCK_OS, vendor: 'a search giant', from: 2008, quality: 0, royalty: 3, note: 'The everyday standard: exactly as good as buyers expect.', look: look({ wallpaper: 'waves', bg: '#1b2a24', bg2: '#3ddc84', accent: '#3ddc84', icons: 'circle', clock: 'big' }) },
+  { id: 'androyd-plus', name: `${STOCK_OS} with Services`, vendor: 'a search giant', from: 2011, quality: 3, royalty: 9, note: 'The standard system with the full app store and services: a little better, and dearer.', look: look({ wallpaper: 'waves', bg: '#16222e', bg2: '#4f8fd6', accent: '#4f8fd6', icons: 'circle', clock: 'big' }) },
+  { id: 'nebula', name: 'Nebula OS', vendor: 'an independent studio', from: 2018, quality: 6, royalty: 18, note: 'The most polished system you can buy in. Its makers know it.', look: look({ wallpaper: 'dots', bg: '#191526', bg2: '#9c6ade', accent: '#c59cff', icons: 'drop', font: 'rounded', clock: 'analog' }) },
+]
+/** The licence a company runs: saves from before licences ran Androyd. */
+export const licenceInfo = (id: string | undefined): OsLicence => OS_LICENCES.find((l) => l.id === (id ?? 'androyd')) ?? OS_LICENCES[0]
+/** Whether a licence can be signed on a game day: from its first year to the end of its last. */
+export const licenceOpen = (l: OsLicence, day: number) => yearAt(day) >= l.from && (l.until === undefined || yearAt(day) < l.until + 1)
+/** Points a licensed system loses for every year it is still used after its makers stopped: two a year. */
+const ageing = (l: OsLicence, day: number) => (l.until === undefined ? 0 : Math.max(0, yearAt(day) - (l.until + 1)) * 2)
+/** One-off cost of moving every device over to a licensed system. */
+export const licenceSwitchCost = (l: OsLicence) => (l.royalty ? 250e3 + 25e3 * l.royalty : 0)
+/** What the company pays its OS vendor for each device it sells: nothing on its own system. */
+export const osRoyalty = (s: GameState) => (s.os.own ? 0 : licenceInfo(s.os.licence).royalty)
+/** The quality of the system the company's devices run today, on the same scale as industryOs. */
+export function osQuality(s: GameState): number {
+  if (s.os.own) return s.os.quality
+  const l = licenceInfo(s.os.licence)
+  return industryOs(s.day) + l.quality - ageing(l, s.day)
+}
+/** The name of the system the company's devices run. */
+export const osName = (s: GameState) => (s.os.own ? `${s.os.name} ${s.os.version}` : licenceInfo(s.os.licence).name)
+/** How the company's devices look when switched on: its own design, or the licensed system's. For paintOsLook (src/3d/osLook.ts). */
+export const osLookOf = (s: GameState): OsLook => (s.os.own ? cleanLook(s.os.look) : licenceInfo(s.os.licence).look)
+
+/** Why a licence cannot be signed, or null. */
+export function licenceBlocked(s: GameState, id: string): string | null {
+  const l = OS_LICENCES.find((x) => x.id === id)
+  if (!l) return 'There is no such operating system'
+  if (s.os.own) return `Your devices run ${s.os.name}: they do not go back to a licensed system`
+  if (licenceInfo(s.os.licence).id === id) return `Your devices already run ${l.name}`
+  if (!licenceOpen(l, s.day)) return yearAt(s.day) < l.from ? `${l.name} is not on offer until ${l.from}` : `${l.name} has been discontinued`
+  return null
+}
+
+export const newOs = (): OsState => ({ own: false, licence: FREE_OS, name: STOCK_OS, version: 0, quality: 0, features: [], servicesIncome: 0 })
+
+const HEX = /^#[0-9a-f]{6}$/i
+export const OS_LOOK_CHOICES = {
+  wallpaper: ['solid', 'stripes', 'dots', 'waves', 'grid', 'rings'],
+  theme: ['dark', 'light'],
+  icons: ['circle', 'squircle', 'square', 'hexagon', 'drop'],
+  font: ['sans', 'mono', 'serif', 'rounded'],
+  layout: ['grid', 'list', 'tiles'],
+  clock: ['digital', 'big', 'analog', 'stacked', 'minimal'],
+} as const satisfies { [K in Exclude<keyof OsLook, 'bg' | 'bg2' | 'accent'>]: readonly OsLook[K][] }
+/** A look with every part checked: colours must be '#rrggbb' and choices on the list; anything else keeps what `base` has. */
+export function cleanLook(patch: unknown, base: OsLook = DEFAULT_OS_LOOK): OsLook {
+  const out = { ...base }
+  if (!patch || typeof patch !== 'object') return out
+  const p = patch as Record<string, unknown>
+  for (const k of ['bg', 'bg2', 'accent'] as const) {
+    const v = p[k]
+    if (typeof v === 'string' && HEX.test(v)) out[k] = v.toLowerCase()
+  }
+  for (const [k, list] of Object.entries(OS_LOOK_CHOICES)) {
+    const v = p[k]
+    if (typeof v === 'string' && (list as readonly string[]).includes(v)) (out as Record<string, unknown>)[k] = v
+  }
+  return out
+}
 
 /** What buyers expect of an operating system today. The stock OS always meets it exactly. */
 export const industryOs = (day: number) => 55 + 2.2 * (day / DAYS_PER_YEAR)
@@ -121,8 +208,7 @@ export function osShipQuality(s: GameState, features: string[]): number {
 
 /** Appeal bonus (or penalty) the company's devices get from their software. */
 export function softwareBonus(s: GameState): number {
-  if (!s.os.own) return 0
-  return clamp(((s.os.quality - industryOs(s.day)) / 100) * 0.5, -0.08, 0.1)
+  return clamp(((osQuality(s) - industryOs(s.day)) / 100) * 0.5, -0.08, 0.1)
 }
 
 /** Monthly services income from an app store. */

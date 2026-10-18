@@ -4,7 +4,8 @@
 // `aim('store', id)`.
 import { useEffect, useState } from 'react'
 import { sfx } from '../audio/sfx'
-import { RETAIL_CUT, canAfford, closeStore, copyLayout, layoutQuote, layoutValue, newLayoutQuote, openStore } from '../sim/game'
+import { RETAIL_CUT, canAfford, closeStore, copyLayout, layoutQuote, layoutValue, newLayoutQuote, openStores } from '../sim/game'
+import { storeAdvice } from '../sim/retail'
 import { type StoreMonth, storeMonth, storesMonth } from '../sim/insight'
 import { homeRegion, openRegions, regionInfo } from '../sim/regions'
 import { SITE_TIERS, type StoreStats, storeStats, tierOf } from '../sim/sites'
@@ -161,23 +162,30 @@ export function StoresScreen() {
     if (aimed) setOpenId(aimed)
   }, [setOpenId])
   const [region, setRegion] = useKept<string>('stores:region', () => homeRegion(g))
+  /** How many stores to open in each chosen region at once. */
+  const [count, setCount] = useKept<number>('stores:count', 1)
   /** Store whose layout the next one opened is fitted out with; empty for the standard fit-out. */
   const [layout, setLayout] = useKept<string>('stores:layout', '')
   const [picking, setPicking] = useState(false)
   const show = (id: string) => (setPicking(false), setOpenId(id))
 
   const regions = openRegions(g)
+  const every = region === '*' && regions.length > 1
   const where = regions.some((r) => r.id === region) ? region : homeRegion(g)
+  const targets = every ? regions.map((r) => r.id) : [where]
+  const many = targets.length * count
+  const placeName = every ? 'every open region' : regionInfo(where).name
   const store = g.stores.find((s) => s.id === openId)
   const model = g.stores.find((s) => s.id === layout)
   const onSale = g.products.filter((p) => p.companyId === 'player' && p.status === 'sale')
 
   const open = (o: Offer) => {
-    const err = act((s) => openStore(s, o.tier, where, model?.id))
+    const err = act((s) => openStores(s, o.tier, targets, count, model?.id))
     if (err) return say(err, 'bad')
     sfx.confirm()
     setLayout('')
-    show(useStore.getState().game!.stores.at(-1)!.id)
+    if (many === 1) show(useStore.getState().game!.stores.at(-1)!.id)
+    else say(`${many} new stores opened: ${o.name.toLowerCase()}s in ${placeName}.`, 'ok')
   }
 
   const picker = g.stores.length > 0 && (
@@ -190,6 +198,7 @@ export function StoresScreen() {
     const st = storeStats(store.site)
     const m = storeMonth(g, store.id)
     const tier = tierOf(store.site)
+    const advice = storeAdvice(g, store)
     return (
       <div className="flex h-full min-h-0 flex-col">
         {picker}
@@ -206,9 +215,19 @@ export function StoresScreen() {
             <Sec title={m.partial ? 'This month, projected' : 'Last month'}>
               <Fact k="Units sold" v={num(m.units)} num />
               <Fact k="Revenue" v={money(m.revenue)} num />
+              <Fact k="Devices sold, cost to build" v={money(-m.cogs)} num />
               <Fact k="Rent, upkeep and wages" v={money(-m.costs)} num />
               <Fact k="Profit" v={money(m.profit)} num tone={signTone(m.profit)} title={PROFIT_NOTE} />
             </Sec>
+            {advice.length > 0 && (
+              <Sec title={m.profit < 0 ? 'Why it loses money' : 'What would help'}>
+                {advice.map((a) => (
+                  <div key={a.id} className="mb-1">
+                    <Note tone={m.profit < 0 ? 'warn' : undefined}>{a.text}</Note>
+                  </div>
+                ))}
+              </Sec>
+            )}
             <Sec title="Visitors">
               <Fact k="Passers-by a day" v={int(tier.traffic ?? 0)} num />
               <Fact k="Can serve a day" v={int(st.capacity)} num title="What the display tables and demo pods can serve, with a little more for each stock rack" />
@@ -262,18 +281,18 @@ export function StoresScreen() {
 
   const offers: Offer[] = SITE_TIERS.store.map((t, tier) => {
     const fit = model ? newLayoutQuote(g, model.id, tier) : null
-    const price = t.cost + (fit && !fit.error ? fit.cost : 0)
+    const price = (t.cost + (fit && !fit.error ? fit.cost : 0)) * many
     const blocked = fit?.error ? `No room: the layout of ${model!.name} needs ${fit.needs[0]} x ${fit.needs[1]} m` : !canAfford(g, price) ? `Not enough cash: ${money(price)} is needed` : undefined
     return { tier, name: t.name, blurb: t.blurb, plot: `${t.w} x ${t.h} m`, passers: t.traffic ?? 0, rent: t.rent, price, blocked }
   })
   const offerCols: Column<Offer>[] = [
     { id: 'site', head: 'Site', cell: (o) => <span className="text-fg">{o.name}</span> },
     // (with one region open there is nothing to tell apart)
-    ...(regions.length > 1 ? [{ id: 'region', head: 'Region', min: 150, drop: 2, cell: () => <span className="text-dim">{regionInfo(where).name}</span> } satisfies Column<Offer>] : []),
+    ...(regions.length > 1 ? [{ id: 'region', head: 'Region', min: 150, drop: 2, cell: () => <span className="text-dim">{every ? 'Every open region' : regionInfo(where).name}</span> } satisfies Column<Offer>] : []),
     { id: 'plot', head: 'Plot', num: true, drop: 3, cell: (o) => <span className="text-dim">{o.plot}</span> },
     { id: 'passers', head: 'Passers-by a day', title: 'The foot traffic of the site. How many come in depends on the region and the store: see the question mark.', num: true, min: 128, cell: (o) => int(o.passers) },
     { id: 'rent', head: 'Rent a month', num: true, min: 104, drop: 1, cell: (o) => <span className="text-dim">{money(o.rent)}</span> },
-    { id: 'price', head: 'Price', title: model ? `The plot, and the fit-out as a copy of ${model.name}` : 'The plot with a standard fit-out: a sales floor, a display table and a checkout', num: true, cell: (o) => money(o.price) },
+    { id: 'price', head: many > 1 ? `Price for ${many}` : 'Price', title: model ? `The plot, and the fit-out as a copy of ${model.name}` : 'The plot with a standard fit-out: a sales floor, a display table and a checkout', num: true, cell: (o) => money(o.price) },
   ]
 
   return (
@@ -299,7 +318,8 @@ export function StoresScreen() {
           icon="pin"
           right={
             <>
-              {regions.length > 1 && <Pick label="Region" value={where} options={regions.map((r) => ({ value: r.id, label: r.name }))} onChange={setRegion} />}
+              {regions.length > 1 && <Pick label="Region" value={every ? '*' : where} options={[...regions.map((r) => ({ value: r.id, label: r.name })), { value: '*', label: 'Every open region' }]} onChange={setRegion} />}
+              <Pick label="How many" value={String(count)} options={[1, 2, 3, 5, 10].map((n) => ({ value: String(n), label: every ? `${n} in each` : String(n) }))} onChange={(v) => setCount(Number(v))} />
               {g.stores.length > 0 && <Pick label="Fit-out" value={model ? model.id : ''} options={[{ value: '', label: 'Standard' }, ...g.stores.map((s) => ({ value: s.id, label: `Copy of ${s.name}` }))]} onChange={setLayout} />}
               <Help title="Passers-by and visitors">{VISITORS_HELP}</Help>
             </>
@@ -319,8 +339,8 @@ export function StoresScreen() {
             actionAlways={() => true}
             actionWidth={128}
             action={(o) => (
-              <ConfirmBtn small tone="default" icon="plus" className="w-full" confirm={`Pay ${money(o.price)}?`} disabled={!!o.blocked} title={o.blocked ?? `Open a ${o.name.toLowerCase()} in ${regionInfo(where).name} for ${money(o.price)}`} onClick={() => open(o)}>
-                Open
+              <ConfirmBtn small tone="default" icon="plus" className="w-full" confirm={`Pay ${money(o.price)}?`} disabled={!!o.blocked} title={o.blocked ?? (many > 1 ? `Open ${many} ${o.name.toLowerCase()}s in ${placeName} for ${money(o.price)}` : `Open a ${o.name.toLowerCase()} in ${placeName} for ${money(o.price)}`)} onClick={() => open(o)}>
+                {many > 1 ? `Open ${many}` : 'Open'}
               </ConfirmBtn>
             )}
           />

@@ -16,6 +16,7 @@ import { evaluate } from '../sim/scoring'
 import type { ProductionOrder, StorageTier } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { defaultRun, priceWords, runNote } from './DesignerRun'
+import { PrototypeTest } from './WorkParts'
 import { MAX_PRICE, MAX_RUN } from './format'
 import { Btn, Choice, Fold, Help, IconBtn, NumInput, Panel, Row, Slider, TextInput, int, money, num, pct, price, useLayer } from './ui'
 
@@ -235,6 +236,8 @@ export function LaunchPlan({ plan, patch, back }: { plan: LaunchState; patch: (p
               </div>
             )}
           </Panel>
+
+          <PrototypeTest design={draft} price={slowPrice} />
 
           <Fold title="More options" keep="designer:plan:more" open={!!meta.variant || plan.tiers.length > 0} className="col-span-2" bodyClass="grid grid-cols-2 gap-x-6 p-3">
             <div>

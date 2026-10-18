@@ -3,10 +3,12 @@
 import { sfx } from '../audio/sfx'
 import { TRACK_INFO } from '../data/catalog'
 import { TYPES, segmentsOf } from '../data/devices'
+import { TYPE_YEAR, typeOpen } from '../data/eras'
 import { canAfford, unlockType } from '../sim/game'
 import { DEVICE_TYPES, type DeviceType, type GameState, TRACKS } from '../sim/types'
-import { hasType, unlockCost, unlockOf } from '../sim/world'
+import { eraNeed, hasType, unlockCost, unlockOf } from '../sim/world'
 import { useGame, useStore, useView } from '../store/game'
+import { OsLicences } from './OsDesigner'
 import { Research } from './ResearchTree'
 import { Icon, typeIcon } from './icons'
 import { Btn, type Column, ConfirmBtn, Help, Lead, Page, Panel, Table, type TableGroup, int, money, num } from './ui'
@@ -33,7 +35,7 @@ function lineOf(g: GameState, type: DeviceType): Line {
     type,
     name: TYPES[type].plural,
     have,
-    missing: have ? [] : TRACKS.filter((t) => g.levels[t] < (u.needs[t] ?? 0)).map((t) => `${TRACK_INFO[t].name} level ${u.needs[t]}`),
+    missing: have ? [] : [...(typeOpen(type, g.day) ? [] : [`On sale from ${TYPE_YEAR[type]}`]), ...TRACKS.filter((t) => g.levels[t] < (eraNeed(u.needs[t]) ?? 0)).map((t) => `${TRACK_INFO[t].name} level ${eraNeed(u.needs[t])}`)],
     cost: unlockCost(g, type),
     related: have ? [] : u.from.filter((t) => hasType(g, t)).map((t) => TYPES[t].plural.toLowerCase()),
     markets: segs.length,
@@ -149,6 +151,12 @@ function DeviceLines() {
 }
 
 export function ResearchScreen() {
-  const [view] = useView<'tech' | 'lines'>('research', 'tech')
+  const [view] = useView<'tech' | 'lines' | 'os'>('research', 'tech')
+  if (view === 'os')
+    return (
+      <div className="flex h-full min-h-0 flex-col gap-2 p-4">
+        <OsLicences />
+      </div>
+    )
   return view === 'tech' ? <Research /> : <DeviceLines />
 }

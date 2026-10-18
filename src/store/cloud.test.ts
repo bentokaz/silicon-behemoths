@@ -9,7 +9,7 @@ vi.mock('idb-keyval', () => ({
   set: async (k: string, v: unknown) => void h.idb.set(k, v),
 }))
 
-import { OFFLINE, chooseFolder, cloudAddressProblem, cloudBuiltIn, cloudConfig, cloudStatus, cloudUser, deleteRemote, folderState, forgetFolder, listRemote, pushRemote, sendFeedback, setCloudConfig, signIn, signOut, signUp } from './cloud'
+import { OFFLINE, checkCloud, chooseFolder, cloudAddressProblem, cloudBuiltIn, cloudConfig, cloudRemembers, cloudStatus, cloudUser, deleteRemote, folderState, forgetFolder, listRemote, pushRemote, sendFeedback, setCloudConfig, signIn, signOut, signUp } from './cloud'
 
 const URL_ = 'https://project.example.test'
 const KEY = 'anon-key'
@@ -131,7 +131,7 @@ describe('the online account', () => {
     expect(cloudStatus()).toMatchObject({ ok: false, error: OFFLINE })
     fetchMock.mockResolvedValueOnce(reply(413, { message: 'too large' }))
     await expect(pushRemote('main', file)).resolves.toBeUndefined()
-    expect(cloudStatus()).toMatchObject({ ok: false, error: 'This save is too large for the online account' })
+    expect(cloudStatus()).toMatchObject({ ok: false, error: 'This save is too large for the online account: too large' })
     fetchMock.mockResolvedValueOnce(reply(401, {}))
     await pushRemote('main', file)
     expect(cloudStatus()!.error).toMatch(/Sign in again/)
@@ -198,6 +198,73 @@ describe('the online account', () => {
   })
 })
 
+describe('the reported trouble: signing in that seemed to do nothing', () => {
+  beforeEach(() => void setCloudConfig(URL_, KEY))
+  const file = { meta: { slot: 'main', savedAt: 5 }, state: { day: 1 } }
+  // a token as the server issues them: header.payload.signature, the payload naming the account
+  const jwt = (sub: string) => `x.${btoa(JSON.stringify({ sub })).replace(/=+$/, '')}.y`
+  const throwing = () => {
+    throw new Error('SecurityError')
+  }
+
+  it('stays signed in for the visit where the browser keeps nothing (a frame inside the itch.io page)', async () => {
+    // storage that takes every write and keeps none, as some browsers give a frame from another site
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => {}, removeItem: () => {} })
+    expect(setCloudConfig(URL_, KEY)).toBeNull()
+    expect(cloudConfig()).toEqual({ url: URL_, key: KEY })
+    fetchMock.mockResolvedValueOnce(reply(200, { access_token: jwt('u-1'), refresh_token: 'r', expires_in: 3600, user: { email: 'player@example.test', id: 'u-1' } }))
+    await signIn(' Player@Example.test ', 'secret1')
+    expect(calls()[0].body.email).toBe('player@example.test')
+    expect(cloudUser()).toBe('player@example.test')
+    expect(cloudRemembers()).toBe(false)
+    fetchMock.mockResolvedValueOnce(reply(201, null))
+    await pushRemote('main', file)
+    expect(calls()[1].body).toMatchObject({ user_id: 'u-1', slot: 'main' })
+    // storage that throws at every touch
+    vi.stubGlobal('localStorage', { getItem: throwing, setItem: throwing, removeItem: throwing })
+    expect(cloudUser()).toBe('player@example.test')
+    signOut()
+    expect(cloudUser()).toBeNull()
+  })
+
+  it('files a save under the account, read from the token when an older session did not keep it', async () => {
+    store.setItem('sb-cloud-session', JSON.stringify({ access: jwt('u-9'), refresh: 'r', expires: Date.now() + 3600e3, email: 'p@example.test' }))
+    fetchMock.mockResolvedValueOnce(reply(201, null))
+    await pushRemote('main', file)
+    expect(calls()[0].body).toMatchObject({ user_id: 'u-9', slot: 'main', meta: file.meta })
+  })
+
+  it('shows what the server said when it refuses a save or a listing', async () => {
+    session()
+    fetchMock.mockResolvedValueOnce(reply(400, { code: '23502', message: 'null value in column "user_id" violates not-null constraint', details: null, hint: null }))
+    await pushRemote('main', file)
+    expect(cloudStatus()!.error).toBe('The online account could not store the save (error 400): null value in column "user_id" violates not-null constraint')
+    fetchMock.mockResolvedValueOnce(reply(404, { code: '42P01', message: 'relation "public.saves" does not exist' }))
+    expect(await listRemote()).toEqual([])
+    expect(cloudStatus()!.error).toMatch(/relation "public.saves" does not exist/)
+    fetchMock.mockResolvedValueOnce(reply(403, { message: 'permission denied for table saves' }))
+    expect(await checkCloud()).toMatch(/Sign in again: permission denied for table saves/)
+    fetchMock.mockResolvedValueOnce(reply(200, []))
+    expect(await checkCloud()).toBeNull()
+  })
+
+  it('replaces the row by hand where the table has no (user_id, slot) key to upsert on', async () => {
+    session()
+    const conflict = { ...reply(400, { code: '42P10' }), clone: () => reply(400, { code: '42P10', message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification' }) } as unknown as Response
+    fetchMock.mockResolvedValueOnce(conflict).mockResolvedValueOnce(reply(204, null)).mockResolvedValueOnce(reply(201, null))
+    await pushRemote('main', file)
+    expect(calls().map((c) => `${c.method} ${c.url.slice(URL_.length)}`)).toEqual(['POST /rest/v1/saves?on_conflict=user_id,slot', 'DELETE /rest/v1/saves?slot=eq.main', 'POST /rest/v1/saves'])
+    expect(cloudStatus()).toMatchObject({ ok: true })
+  })
+
+  it('gives a sign-up refusal in the server words, and an unexplained one with its number', async () => {
+    fetchMock.mockResolvedValueOnce(reply(422, { code: 422, error_code: 'user_already_exists', msg: 'User already registered' }))
+    expect(await failing(signUp('a@b.c', 'secret1'))).toBe('User already registered')
+    fetchMock.mockResolvedValueOnce(reply(429, {}))
+    expect(await failing(signIn('a@b.c', 'secret1'))).toBe('Sign-in failed (error 429)')
+  })
+})
+
 describe('feedback', () => {
   const row = { kind: 'bug', message: 'It broke', contact: null, context: {} }
   it('reports whether it was sent, and never throws', async () => {
@@ -206,6 +273,8 @@ describe('feedback', () => {
     fetchMock.mockResolvedValueOnce(reply(201, null))
     expect(await sendFeedback(row)).toBe(true)
     expect(calls()[0]).toMatchObject({ url: `${URL_}/rest/v1/feedback`, method: 'POST', body: row })
+    // a publishable key is not a token: it goes in the apikey header only
+    expect(calls()[0].headers.Authorization).toBeUndefined()
     fetchMock.mockResolvedValueOnce(reply(500, null))
     expect(await sendFeedback(row)).toBe(false)
     fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'))

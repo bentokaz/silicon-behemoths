@@ -1,13 +1,15 @@
 // Game content as data: research tracks, parts, materials, customer segments.
 import type { Lens, Levels, SupplyCat, Track } from '../sim/types'
+import { TODAY, eraInfo } from './eras'
 
 export const MAX_LEVEL = 8
 export const DAYS_PER_MONTH = 30
 export const DAYS_PER_YEAR = 360
-export const START_YEAR = 2026
+/** The present-day start year. The game in hand may begin earlier: ask startYear() (see eras.ts). */
+export const START_YEAR = TODAY
 
 /** Tech level of the leading edge of the market on a given day. */
-export const marketLevel = (day: number) => Math.min(MAX_LEVEL, 3 + day / DAYS_PER_YEAR / 2.5)
+export const marketLevel = (day: number) => Math.min(MAX_LEVEL, eraInfo().level + day / DAYS_PER_YEAR / 2.5)
 /** Score a top device at a given tech level is expected to reach. */
 export const refScore = (level: number) => 50 + 15 * level
 /** Money needed to reach `level` on a research track. */

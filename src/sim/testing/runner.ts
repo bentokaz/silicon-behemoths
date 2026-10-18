@@ -79,7 +79,7 @@ export function hashOf(text: string): string {
   return (h >>> 0).toString(16)
 }
 
-export function runGame(spec: RunSpec, trace?: (line: string) => void): RunResult {
+export function runGame(spec: RunSpec, trace?: (line: string) => void, end?: (s: import('../types').GameState) => void): RunResult {
   const started = performance.now()
   const persona = ALL_PERSONAS[spec.persona]()
   const p = new Play(spec.cfg, labelOf(spec), spec.cfg.seed + spec.id * 31)
@@ -123,6 +123,7 @@ export function runGame(spec: RunSpec, trace?: (line: string) => void): RunResul
   }
   p.check()
   const s = p.s
+  end?.(s)
   const json = JSON.stringify(s)
   const month = s.shareHistory[s.shareHistory.length - 1]
   const total = month ? Object.values(month.units).reduce((a, b) => a + b, 0) : 0

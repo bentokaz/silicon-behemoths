@@ -2,7 +2,8 @@
 // The simulation mutates GameState in place; `rev` is bumped to re-render.
 import { create } from 'zustand'
 import { sfx } from '../audio/sfx'
-import { DAYS_PER_MONTH, START_YEAR } from '../data/catalog'
+import { DAYS_PER_MONTH } from '../data/catalog'
+import { setEra, startYear } from '../data/eras'
 import { TYPES } from '../data/devices'
 import { clampPart, isCoverCam, newPart, nextPartId } from '../sim/geometry'
 import { migrate, newGame, player, starterDesign, tick } from '../sim/game'
@@ -374,6 +375,8 @@ export const useStore = create<Store>((set, get) => {
       set({ game, screen: 'game', tab: 'city', speed: 0, rev: 0, checkpoint: null, showing: null, ...reset })
     },
     resume(state) {
+      // the calendar and the market follow the year this company started in
+      setEra(state.config.startYear)
       rolling = copyOf(state)
       forgetViews()
       // one home: a loaded game opens on the city, as a new one does
@@ -445,7 +448,7 @@ export const useStore = create<Store>((set, get) => {
       // something new needs a decision: stop once, when it arrives. It may then wait (a month, after which it settles
       // itself), and time can go on while it does: stopping on every tick would leave the player unable to let it wait
       const decision = g.incidents.some((i) => !i.done && i.day > startDay)
-      set({ rev: get().rev + 1, speed: g.gameOver || keynote || halt || turned || decision ? 0 : get().speed, checkpoint, showing: keynote ? keynote.id : get().showing, yearEnd: turned ? START_YEAR + year : get().yearEnd })
+      set({ rev: get().rev + 1, speed: g.gameOver || keynote || halt || turned || decision ? 0 : get().speed, checkpoint, showing: keynote ? keynote.id : get().showing, yearEnd: turned ? startYear() + year : get().yearEnd })
     },
 
     act(fn) {

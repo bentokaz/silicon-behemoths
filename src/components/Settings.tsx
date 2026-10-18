@@ -2,7 +2,7 @@
 // menu; and where saves are kept besides this browser.
 import { useEffect, useState } from 'react'
 import { getVolume, setAmbienceLevel, setVolume, sfx } from '../audio/sfx'
-import { chooseFolder, cloudBuiltIn, cloudConfig, cloudUser, folderState, forgetFolder, setCloudConfig, signIn, signOut, signUp, unlockFolder } from '../store/cloud'
+import { checkCloud, chooseFolder, cloudBuiltIn, cloudConfig, cloudRemembers, cloudStatus, cloudUser, folderState, forgetCloudConfig, forgetFolder, setCloudConfig, signIn, signOut, signUp, unlockFolder } from '../store/cloud'
 import { ACTIONS, type Action, DEFAULT_SETTINGS, QUALITY, type Quality, keyName, keysFor, useSettings } from '../store/settings'
 import { ThemePicker } from './System'
 import { Icon, type IconName } from './icons'
@@ -91,10 +91,18 @@ export function SavesBeyond() {
   const run = (job: () => Promise<unknown>, done: string) =>
     void job()
       .then(() => (setNote({ text: done }), sfx.confirm(), refresh(), setUser(cloudUser()), setCfg(cloudConfig())))
-      .catch((e: Error) => (e.name === 'AbortError' ? null : (setNote({ text: e.message, bad: true }), sfx.error())))
+      .catch((e: Error) => (setUser(cloudUser()), e.name === 'AbortError' ? null : (setNote({ text: e.message || 'Something went wrong, and the browser did not say what.', bad: true }), sfx.error())))
   const noProject = !url.trim() || !key.trim()
-  const noLogin = !email || password.length < 6
-  const loginWhy = noLogin ? 'Enter your email and a password of at least six characters first' : undefined
+  const noLogin = !email.trim() || password.length < 6
+  const loginWhy = !email.trim() ? 'Enter your email first' : password.length < 6 ? 'The password needs at least six characters' : undefined
+  // after signing in or creating an account, one request to the account says whether saving there really works
+  const account = (job: () => Promise<unknown>, done: string) =>
+    run(async () => {
+      await job()
+      const problem = await checkCloud()
+      if (problem) throw new Error(`${done} But online saves do not work yet: ${problem}`)
+    }, `${done}${cloudRemembers() ? '' : ' This browser will not keep you signed in inside this page: sign in again on your next visit.'}`)
+  const status = cloudStatus()
   return (
     <div>
       <div className="grid grid-cols-2 gap-x-6 p-3">
@@ -153,6 +161,9 @@ export function SavesBeyond() {
               <div className="text-xs leading-snug text-dim">
                 Signed in as <span className="text-fg">{user}</span>. Every save is copied to your account, and newer saves there are fetched when you open the list of saved games.
               </div>
+              {status && (
+                <div className={`mt-1 text-xs leading-snug ${status.ok ? 'text-dim' : 'text-neg'}`}>{status.ok ? `Last copied online at ${new Date(status.at).toLocaleTimeString()}.` : `The last online save failed: ${status.error}`}</div>
+              )}
               <Btn icon="quit" className="mt-2" onClick={() => (signOut(), setUser(null), setNote({ text: 'Signed out.' }))}>
                 Sign out
               </Btn>
@@ -162,15 +173,16 @@ export function SavesBeyond() {
               <div className="text-xs leading-snug text-dim">Sign in to keep saves online and load them on any device.</div>
               <TextInput value={email} onChange={setEmail} placeholder="Email" aria-label="Email" maxLength={254} inputMode="email" autoComplete="email" className="mt-2 w-full" />
               <input type="password" aria-label="Password" maxLength={128} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password (six characters or more)" className="mt-1 h-7 w-full rounded-none border border-line2 bg-raise px-2 text-xs text-fg outline-none focus:border-accent" />
+              {loginWhy && (email || password) && <div className="mt-1 text-[11px] text-warn">{loginWhy}</div>}
               <div className="mt-2 flex flex-wrap gap-2">
-                <Btn icon="key" disabled={noLogin} title={loginWhy} onClick={() => run(() => signIn(email, password), 'Signed in.')}>
+                <Btn icon="key" disabled={noLogin} title={loginWhy} onClick={() => account(() => signIn(email, password), 'Signed in.')}>
                   Sign in
                 </Btn>
-                <Btn icon="hire" disabled={noLogin} title={loginWhy} onClick={() => run(() => signUp(email, password), 'Account created.')}>
+                <Btn icon="hire" disabled={noLogin} title={loginWhy} onClick={() => account(() => signUp(email, password), 'Account created and signed in.')}>
                   Create account
                 </Btn>
                 {!cloudBuiltIn() && (
-                  <Btn tone="ghost" icon="edit" title="Forget this project and enter another" onClick={() => (localStorage.removeItem('sb-cloud'), setCfg(null))}>
+                  <Btn tone="ghost" icon="edit" title="Forget this project and enter another" onClick={() => (forgetCloudConfig(), setCfg(null))}>
                     Change project
                   </Btn>
                 )}

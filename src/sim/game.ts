@@ -1,12 +1,13 @@
 // Game state, the daily tick, and every action the player can take.
 // All functions mutate the GameState passed in and use only its seeded RNG.
-import { DAYS_PER_MONTH, DAYS_PER_YEAR, MAX_LEVEL, START_YEAR, SUPPLY_LABELS, TRACK_INFO, TRUNK_REQS, featureCost, featureInfo, featuresAtLevels, marketLevel, researchCost } from '../data/catalog'
+import { DAYS_PER_MONTH, DAYS_PER_YEAR, MAX_LEVEL, SUPPLY_LABELS, TRACK_INFO, TRUNK_REQS, featureCost, featureInfo, featuresAtLevels, marketLevel, researchCost } from '../data/catalog'
 import { RIVALS, type RivalSeed, SEGMENTS, TIERS, TYPES, segmentInfo, segmentsOf } from '../data/devices'
+import { TYPE_YEAR, segmentOpen, setEra, startYear, typeOpen, typesArriving } from '../data/eras'
 import { BUZZ_DECAY, CHANNELS, EVENTS, EVENT_LEAD, FAN_CYCLE, OWN_VENUE, campaignDay, hasStage, dailyTickets, eventBlocked, nextFair, productSatisfaction, resolveEvent } from './growth'
 import { INCIDENTS } from './world'
 import { RECALL_DEADLINE, TRADE_CREDIT, TRADE_PULL, REFURB_RETURN, UPDATE_YEARS, WARRANTY_YEARS, canRefurb, careBonus, careSatisfaction, checkRecalls, closeCareMonth, newCare, recallCost, stepCare, warrantyLoad } from './care'
 import { type Goal, checkGoals } from './goals'
-import { OUTSIDE_OPTION, bestSegment, launchHype, lifecycle, makeFeedback, makeReviews, priceFactor, pull, segmentDemand, tierAverages, utility } from './market'
+import { OUTSIDE_OPTION, bestSegment, hypeLift, launchHype, lifecycle, makeFeedback, makeReviews, priceFactor, pull, segmentDemand, tierAverages, utility } from './market'
 import { DEFAULT_HOME, REGIONS, addAwareness, entryBlocked, homeRegion, newRegion, newRegions, regionIncome, regionInfo, regionOverheads, regionTaste, rivalReach, worldAwareness } from './regions'
 import { buyBack, buyStake, goPublic, holdingIncome, issueShares, monthlyStock, moveSentiment, newStock, raiseRound, sellStake, stakeIn, stakePrice, stepStock, takeoverPrice, valuation } from './stock'
 import { CONTRACT, LOCK_DAYS, LOCK_FEE, buildCost, costNow, factoryLine, marketPrice, newSupply, stepProduction, stepSupply } from './ops'
@@ -16,14 +17,17 @@ import { clamp, int, pick, rand, range } from './rng'
 import { clampPart, coverScreen, isCoverCam, isFlip } from './geometry'
 import { evaluate, selfieMinDia } from './scoring'
 import { designProblem } from './validate'
+import { cleanRule, defaultReorder, reorderLocked, reordersDue } from './reorder'
+import { ACCESSORY, footfall, storeBuyers } from './retail'
+import { contractBlocked, offerContracts, stepContracts } from './contracts'
 import { bayStands, curveAt, curveTiles, onCurve } from './curves'
 import { FACADES, FLOOR_COST, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, SHORT_WALL, UNKNOWN_ITEM, areaOf, areaTiles, autoDoor, builtTiles, canPlace, courtyardFor, curveFor, defaultGround, doorFits, fillError, gridAt, groundsFor, hasGround, inPlot, isBoundary, itemAllowed, itemAt, itemTiles, mergeRooms, newSite, openRooms, pocketAt, roomOf, rowSpots, shapeCuts, starterLine, storeStats, tidy, tierOf, touching, upkeep, venueStats, wallAt, zone } from './sites'
 import { capOfChannel, locked, refreshExecs, siteLocked, stepProgress } from './progress'
 import { EXECS, HEADHUNT_COST, HOURS, TEAM_SPAN, dropFromTeams, execFx, inTraining, monthlySalaries, monthlyStaff, newPolicy, perksCost, refreshCandidates, staffEffects, stepStaff, trainingCost } from './staff'
-import { CHIP_BUDGET, OS_FEATURES, chipAdoption, chipBlocked, chipProjectCost, chipProjectDays, finishChip, newOs, osBlocked, osProjectCost, osProjectDays, osShipQuality, servicesPerMonth, softwareBonus } from './tech'
-import { stockOf, type ChannelId, type Company, type Corner, type CostKey, type DeviceDesign, type DeviceType, type Difficulty, type EventType, type GameConfig, type GameState, type Levels, type MonthReport, type NewsItem, type Product, type ProductionOrder, type SegmentId, type Site, type SiteKind, type StaffPolicy, type StorageTier, SUPPLY_CATS, type SupplyCat, TRACKS, type Track, dollars, hasStock, millions, monthCosts, thousands, wasReleased } from './types'
+import { CHIP_BUDGET, OS_FEATURES, OS_TYPES, chipAdoption, cleanLook, licenceBlocked, licenceInfo, licenceSwitchCost, osRoyalty, chipBlocked, chipProjectCost, chipProjectDays, finishChip, newOs, osBlocked, osProjectCost, osProjectDays, osShipQuality, servicesPerMonth, softwareBonus } from './tech'
+import { stockOf, type ChannelId, type Company, type Corner, type CostKey, type DeviceDesign, type DeviceType, type Difficulty, type EventType, type GameConfig, type GameState, type Levels, type MonthReport, type NewsItem, type OsLook, type Product, type ProductionOrder, type ReorderRule, type SegmentId, type Site, type SiteKind, type StaffPolicy, type StorageTier, SUPPLY_CATS, type SupplyCat, TRACKS, type Track, dollars, hasStock, millions, monthCosts, thousands, wasReleased } from './types'
 
-export const SAVE_VERSION = 6
+export const SAVE_VERSION = 7
 export const RETAIL_CUT = 0.15
 
 // ---------------------------------------------------------------- what an action will take
@@ -76,13 +80,13 @@ export const defaultConfig = (): GameConfig => ({
 
 export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 export function dateOf(day: number) {
-  return { year: START_YEAR + Math.floor(day / DAYS_PER_YEAR), month: Math.floor(day / DAYS_PER_MONTH) % 12, dom: (((day % DAYS_PER_MONTH) + DAYS_PER_MONTH) % DAYS_PER_MONTH) + 1 }
+  return { year: startYear() + Math.floor(day / DAYS_PER_YEAR), month: Math.floor(day / DAYS_PER_MONTH) % 12, dom: (((day % DAYS_PER_MONTH) + DAYS_PER_MONTH) % DAYS_PER_MONTH) + 1 }
 }
 export function fmtDate(day: number): string {
   const d = dateOf(day)
   return `${String(d.dom).padStart(2, '0')} ${MONTHS[(d.month + 12) % 12]} ${d.year}`
 }
-export const monthLabel = (monthIndex: number) => `${MONTHS[((monthIndex % 12) + 12) % 12]} ${String(START_YEAR + Math.floor(monthIndex / 12)).slice(2)}`
+export const monthLabel = (monthIndex: number) => `${MONTHS[((monthIndex % 12) + 12) % 12]} ${String(startYear() + Math.floor(monthIndex / 12)).slice(2)}`
 
 export const player = (s: GameState) => s.companies[0]
 export const companyOf = (s: GameState, id: string) => s.companies.find((c) => c.id === id)!
@@ -228,11 +232,13 @@ function starterOffice(): Site {
     { id: 'o7', kind: 'hedge', x: 0, y: 9, rot: 0 },
     { id: 'o8', kind: 'hedge', x: 1, y: 9, rot: 0 },
   ]
-  for (let y = 7; y < 10; y++) for (let x = 5; x <= 7; x++) site.floor[`${x},${y}`] = 'asphalt'
+  // the drive runs from the door to the street on the south edge
+  for (let y = 7; y < site.h; y++) for (let x = 5; x <= 7; x++) site.floor[`${x},${y}`] = 'asphalt'
   return site
 }
 
 export function newGame(cfg: GameConfig): GameState {
+  setEra(cfg.startYear)
   const s: GameState = {
     version: SAVE_VERSION,
     config: { ...cfg },
@@ -294,6 +300,8 @@ export function newGame(cfg: GameConfig): GameState {
     c.origin = c.name
     s.companies.push(c)
     for (const seg of c.segments) {
+      // nothing is launched into a market that does not exist yet: the rival waits for it (see stepRivals)
+      if (!segmentOpen(seg, segmentInfo(seg).type, 0)) continue
       rivalLaunch(s, c, seg, int(s, 20, 330))
       c.nextLaunch[seg] = int(s, 30, 330)
     }
@@ -369,6 +377,7 @@ export function startProduct(s: GameState, o: LaunchOrder): string | null {
   if (problem) return `That is not a device design the game can build: ${problem}. Start again from a fresh design.`
   const type = o.design.type
   if (!hasType(s, type)) return `Your company does not make ${TYPES[type].plural.toLowerCase()} yet. Open that line under Research.`
+  if (!typeOpen(type, s.day)) return `Nobody sells ${TYPES[type].plural.toLowerCase()} yet: the first ones are expected in ${TYPE_YEAR[type]}.`
   const ev = evaluate(o.design, s.levels, marketLevel(s.day), s.features, s.chips)
   const blocking = ev.report.issues.find((i) => i.level === 'error')
   if (blocking) return blocking.text
@@ -431,6 +440,53 @@ export function orderProduction(s: GameState, productId: string, quantity: numbe
   if (mode === 'factory' && !factoryLine(s)?.running) return 'Your factory has no working line. Use a contract manufacturer or finish the line.'
   s.orders.push({ id: `q${s.nextId++}`, productId, quantity: Math.floor(quantity), done: 0, mode, placedDay: s.day })
   return null
+}
+
+/** Switch a device's automatic reordering on or off, or change its rule. Returns why not, or null. */
+export function setReorder(s: GameState, productId: string, patch: Partial<ReorderRule>): string | null {
+  const p = s.products.find((x) => x.id === productId)
+  if (!p || p.companyId !== 'player') return 'There is no such device of yours'
+  if (p.status === 'ended') return `${p.name} has been discontinued`
+  if (patch?.on) {
+    const lock = reorderLocked(s)
+    if (lock) return lock
+  }
+  p.reorder = cleanRule(patch, p.reorder ?? { ...defaultReorder(s, p), on: false })
+  return null
+}
+
+/** Devices set to reorder by themselves place their runs: from the factory when its line runs, else a contract maker, and only what can be paid for. */
+function stepReorders(s: GameState) {
+  for (const { p, units } of reordersDue(s)) {
+    const mode = factoryLine(s)?.running ? 'factory' : 'contract'
+    const bill = units * buildCost(s, p, mode)
+    if (!canAfford(s, bill)) {
+      const told = (s.told ??= {})
+      const key = `reorder:${p.id}`
+      if (told[key] === undefined || s.day - told[key] > DAYS_PER_MONTH) news(s, 'alert', `${p.name} is due a new production run, but there is not enough cash for ${thousands(units)} units.`, p.id)
+      told[key] = s.day
+      continue
+    }
+    if (orderProduction(s, p.id, units, mode) === null) news(s, 'finance', `Reordered ${thousands(units)} units of ${p.name} automatically.`, p.id)
+  }
+}
+
+/** Take on a contract, to be filled from one of the company's devices. */
+export function acceptContract(s: GameState, contractId: string, productId: string): string | null {
+  const c = s.contracts?.find((x) => x.id === contractId)
+  const p = s.products.find((x) => x.id === productId)
+  const blocked = contractBlocked(s, c, p)
+  if (blocked) return blocked
+  c!.state = 'active'
+  c!.productId = p!.id
+  c!.due = s.day + c!.days
+  news(s, 'finance', `Contract accepted: ${thousands(c!.units)} units of ${p!.name} for ${c!.client} by ${fmtDate(c!.due)}.`, p!.id)
+  return null
+}
+
+/** Turn down a contract offer. */
+export function declineContract(s: GameState, contractId: string) {
+  if (s.contracts) s.contracts = s.contracts.filter((c) => !(c.id === contractId && c.state === 'offer'))
 }
 
 export function cancelOrder(s: GameState, orderId: string) {
@@ -1233,6 +1289,16 @@ function transplant(old: Site, site: Site, dx: number, dy: number) {
   site.floors = old.floors
 }
 
+/** A plot widened to the size its kind and tier has now, with everything on it moved to the middle; the plot itself if it is already that big. */
+function growPlot(old: Site): Site {
+  const t = tierOf(old)
+  if (!t || (old.w >= t.w && old.h >= t.h)) return old
+  const site = newSite(old.kind, old.tier)
+  transplant(old, site, Math.floor((site.w - old.w) / 2), Math.floor((site.h - old.h) / 2))
+  site.rev = old.rev + 1
+  return site
+}
+
 /** Move everything on a plot to the next size up, centred. Nothing is lost. */
 function movePlot(old: Site): Site {
   const site = newSite(old.kind, old.tier + 1)
@@ -1484,6 +1550,42 @@ export function openStore(s: GameState, tier: number, region?: string, layoutFro
   return null
 }
 
+/** Most stores one step may open. */
+export const MAX_OPEN_AT_ONCE = 30
+
+/**
+ * Open several stores in one step: `count` in each of `regions`, all of one
+ * kind of site, each fitted out like `layoutFrom` if given (else the standard
+ * fit-out). All or nothing: if any one could not open, none does.
+ */
+export function openStores(s: GameState, tier: number, regions: string[], count: number, layoutFrom?: string): string | null {
+  const where = [...new Set(Array.isArray(regions) ? regions : [])]
+  if (!where.length) return 'Choose at least one region'
+  if (!whole(count) || count < 1) return 'Open at least one store'
+  const total = where.length * count
+  if (total > MAX_OPEN_AT_ONCE) return `At most ${MAX_OPEN_AT_ONCE} stores can be opened at once`
+  const def = whole(tier) ? SITE_TIERS.store[tier] : undefined
+  if (!def) return 'There is no such kind of store location'
+  const lock = locked(s, 'stores')
+  if (lock) return lock
+  for (const r of where) {
+    if (!isRegion(r)) return 'There is no such region'
+    if (!s.regions[r]?.open) return `You do not sell in ${regionInfo(r).name} yet. Enter the region first, under Regions.`
+  }
+  const model = layoutFrom ? storeOf(s, layoutFrom) : undefined
+  if (layoutFrom && !model) return 'There is no such store to copy'
+  const plan = model ? layoutPlan(s, model.site, newSite('store', tier), false) : null
+  if (plan && (plan.error || !plan.site)) return plan.error ?? 'That layout cannot be copied'
+  const each = def.cost + (plan ? plan.cost : 0)
+  if (!canAfford(s, each * total)) return `Not enough cash: ${total} ${def.name.toLowerCase()}s come to ${dollars(each * total)}`
+  for (const r of where)
+    for (let i = 0; i < count; i++) {
+      const err = openStore(s, tier, r, layoutFrom)
+      if (err) return err
+    }
+  return null
+}
+
 /** Close a store for good. Its fittings are sold for half their price, as furniture always is; the plot and the building are given up. */
 export function closeStore(s: GameState, storeId: string) {
   const store = storeOf(s, storeId)
@@ -1616,6 +1718,25 @@ export function setLicenceFee(s: GameState, chipId: string, fee: number) {
 export const MAX_LICENCE_FEE = 1000
 
 /** Start the first version of an in-house OS, or the next one. */
+/** Move every device over to a licensed operating system (see OS_LICENCES). */
+export function setOsLicence(s: GameState, id: string): string | null {
+  const blocked = licenceBlocked(s, id)
+  if (blocked) return blocked
+  const l = licenceInfo(id)
+  const cost = licenceSwitchCost(l)
+  if (!canAfford(s, cost)) return `Not enough cash: moving over to ${l.name} costs ${dollars(cost)}`
+  if (cost) spend(s, cost, 'development')
+  s.os.licence = l.id
+  news(s, 'research', `Your devices now run ${l.name}${l.royalty ? `, at ${dollars(l.royalty)} a device` : ''}.`)
+  return null
+}
+
+/** Change how the company's own operating system looks. Anything not understood is left as it was. */
+export function setOsLook(s: GameState, look: Partial<OsLook>): string | null {
+  s.os.look = cleanLook(look, cleanLook(s.os.look))
+  return null
+}
+
 export function startOs(s: GameState, name: string, features: string[]): string | null {
   // only features that exist, each once: a list with the same one twice asks for one
   const wanted = [...new Set(Array.isArray(features) ? features : [])].filter((f) => OS_FEATURES.some((x) => x.id === f))
@@ -1642,6 +1763,11 @@ function stepRivals(s: GameState) {
     if (c.isPlayer || !c.alive) continue
     for (const seg of c.segments) {
       if (s.day >= (c.nextLaunch[seg] ?? 0)) {
+        // a market that does not exist yet: look again in a while, so that when it opens the rivals arrive over some months, not on one day
+        if (!segmentOpen(seg, segmentInfo(seg).type, s.day)) {
+          c.nextLaunch[seg] = s.day + int(s, 20, 160)
+          continue
+        }
         rivalLaunch(s, c, seg)
         c.counter += c.segments.indexOf(seg) === 0 ? 1 : 0
       }
@@ -1730,7 +1856,8 @@ function sell(s: GameState, p: Product, c: Company, units: number, segment: stri
     s.cur.units += units
     // bigger storage options cost a little more to build; faulty units are repaired under warranty
     const repairs = units * p.defectRate * p.unitCost * warrantyLoad(s)
-    spend(s, units * avg.extraCost + repairs, 'production')
+    // and the operating system's maker takes its royalty on everything that runs it
+    spend(s, units * (avg.extraCost + (OS_TYPES.includes(p.type) ? osRoyalty(s) : 0)) + repairs, 'production')
     s.care.month.repairs += units * p.defectRate
     s.care.month.repairCost += repairs
     // console makers earn a licence fee on the games each machine will sell
@@ -1774,11 +1901,11 @@ function stepSales(s: GameState) {
       const st = s.regions[r.id]
       const weights = pool.map((p, i) => {
         if (base[i] <= 0) return 0
-        if (!makers[i].isPlayer) return base[i] * Math.min(1, makers[i].awareness + hype[i]) * rivalReach(makers[i], r.id)
+        if (!makers[i].isPlayer) return base[i] * Math.min(1, makers[i].awareness + hype[i]) * hypeLift(hype[i]) * rivalReach(makers[i], r.id)
         if (!st.open) return 0
         // a local price above or below list changes how the device compares here
         const local = st.priceAdj === 1 ? 1 : Math.pow(priceFactor(p.price * st.priceAdj, seg) / priceFactor(p.price, seg), 3.5)
-        return base[i] * Math.min(1, st.awareness + hype[i]) * local
+        return base[i] * Math.min(1, st.awareness + hype[i]) * hypeLift(hype[i]) * local
       })
       const total = weights.reduce((a, w) => a + w, OUTSIDE_OPTION)
       const buyers = demand * r.share * regionTaste(r, seg)
@@ -1847,7 +1974,7 @@ function stepSales(s: GameState) {
     if (stats.hasSupport) storeSupport++
     st.lastVisitors = 0
     if (!stats.open) continue
-    const visitors = Math.min(stats.capacity, (def.traffic ?? 0) * (0.35 + 0.65 * Math.sqrt(local.awareness))) * (0.6 + 0.4 * stats.appeal)
+    const visitors = footfall(stats, def.traffic ?? 0, local.awareness).visitors
     st.lastVisitors = Math.round(visitors)
     addAwareness(s, (visitors / 3e6) * gain, st.region)
     const stocked = mine.filter((p) => p.stock > 0)
@@ -1855,7 +1982,7 @@ function stepSales(s: GameState) {
     const w = stocked.map(draw)
     const total = w.reduce((a, b) => a + b, 0)
     if (total <= 0) continue
-    const buyers = visitors * 0.035 * stats.appeal * Math.min(1.2, total / stocked.length)
+    const buyers = storeBuyers(visitors, stats.appeal, total / stocked.length)
     stocked.forEach((p, i) => {
       const units = Math.floor((buyers * w[i]) / total + rand(s))
       const sold = sell(s, p, me, units, p.segment ?? 'store', true, regionIncome(s, st.region))
@@ -1865,7 +1992,7 @@ function stepSales(s: GameState) {
       st.unitsTotal += sold
       st.monthUnits += sold
       // accessories ride along with each device sold
-      earn(s, sold * 6 * Math.min(stats.shelves, 3))
+      earn(s, sold * ACCESSORY * Math.min(stats.shelves, 3))
     })
   }
 
@@ -2092,17 +2219,25 @@ function closeMonth(s: GameState) {
 
 function stepDay(s: GameState) {
   s.day++
+  if (s.day % DAYS_PER_YEAR === 0) for (const t of typesArriving(dateOf(s.day).year)) news(s, 'unlock', `The first ${TYPES[t].plural.toLowerCase()} go on sale this year: a new market opens. Open the line under Research to make them.`)
   stepRivals(s)
   stepProjects(s)
   stepEvents(s)
+  stepReorders(s)
   stepOperations(s)
   stepCampaigns(s)
+  const work = stepContracts(s)
+  if (work.income) earn(s, work.income)
+  for (const n of work.news) news(s, n.alert ? 'alert' : 'finance', n.text, n.productId)
   stepSales(s)
   stepResearch(s)
   const crunch = ownProducts(s).filter((p) => p.status === 'dev').length + s.chips.filter((c) => c.status === 'dev').length >= 3
   for (const n of stepStaff(s, crunch)) news(s, n.alert ? 'alert' : 'staff', n.text)
   stepFinance(s)
-  if (s.day % DAYS_PER_MONTH === 0) closeMonth(s)
+  if (s.day % DAYS_PER_MONTH === 0) {
+    closeMonth(s)
+    offerContracts(s)
+  }
   if (s.day % 5 === 0) for (const g of checkGoals(s)) reward(s, g)
   stepProgress(s)
 }
@@ -2116,6 +2251,7 @@ function reward(s: GameState, g: Goal) {
 
 /** Advance the simulation. Deterministic for a given state. */
 export function tick(s: GameState, days: number): GameState {
+  setEra(s.config.startYear)
   for (let i = 0; i < days && !s.gameOver; i++) stepDay(s)
   return s
 }
@@ -2394,6 +2530,7 @@ export function addCoverCamera(d: DeviceDesign): boolean {
 /** Bring a save from an older version up to date. */
 export function migrate(input: GameState): GameState {
   const s = input as GameState & Record<string, unknown>
+  setEra(s.config?.startYear)
   // this one is checked on every load: saves of the current version were made both before and after the part existed
   for (const p of s.products ?? []) addCoverCamera(p.design)
   // where a rival is based follows from the name it was founded under; older saves only have the name it bears now
@@ -2527,6 +2664,14 @@ export function migrate(input: GameState): GameState {
       for (const t of p.tiers ?? []) t.price = p.price + Math.max(1, Math.round((t.price - was) * k))
     }
     news(s, 'finance', `Prices across the market have settled: now that technology has matured, devices no longer get dearer every year. Every list price, yours and your rivals', was brought down by ${Math.round((1 - k) * 100)}% together, so each device is as attractive as it was.`)
+  }
+  // ---- version 7: plots grew. Every plot smaller than its kind now is widened to the new size, with what
+  // stands on it moved to the middle, as an upgrade to the next size does: nothing is lost or rebuilt
+  if (from < 7) {
+    if (s.office) s.office = growPlot(s.office)
+    if (s.factory) s.factory = growPlot(s.factory)
+    if (s.venue) s.venue = growPlot(s.venue)
+    for (const st of s.stores ?? []) st.site = growPlot(st.site)
   }
   s.unlocks = s.unlocks ?? {}
   s.execSeats = s.execSeats ?? {}

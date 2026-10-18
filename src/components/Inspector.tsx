@@ -21,6 +21,7 @@ import { type DeviceDesign, type DeviceType, type GameState, type Product, type 
 import { freeFamily, useGame, useStore } from '../store/game'
 import { lastMonth, score, statusNote } from './DeviceLogic'
 import { PriceNote, applyPrice, quoteWords, reorder, showCompany } from './DeviceParts'
+import { ReorderRuleEditor } from './ReorderControl'
 import { Orders } from './Orders'
 import { Icon, type IconName, supplyIcon } from './icons'
 import { MAX_PRICE, MAX_RUN } from './format'
@@ -264,6 +265,7 @@ function Supply({ g, p }: { g: GameState; p: Product }) {
           Order {qty > 0 ? num(qty) : 'units'}
         </Btn>
       </div>
+      <ReorderRuleEditor g={g} p={p} />
       <div className="mt-2 text-[11px] leading-snug text-dim">{qty > 0 ? quoteWords(g, p, qty) : guess ? `Nothing is selling yet to go by. A design like this should sell ${num(guess.low)} to ${num(guess.high)} in its first three months.` : 'Stock and orders cover the next months at the recent pace. Type a number to order anyway.'}</div>
       {pending && (
         <div className="mt-2 border border-line">

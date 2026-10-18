@@ -16,6 +16,8 @@ import { families, inDays, lastMonth, makesText, marketView, onOrder, orderFamil
 import { InlinePrice, PriceNote, quoteWords, reorder, reorderMany, useDrawerInset } from './DeviceParts'
 import { Thumb } from './Inspector'
 import { Orders } from './Orders'
+import { ReorderToggle } from './ReorderControl'
+import { Contracts } from './WorkParts'
 import type { SortState } from './tablesort'
 import { Btn, type Column, ConfirmBtn, Empty, Filters, Fold, IconBtn, Legend, NameInput, Page, Panel, Pick, Spark, Swatch, Table, type TableGroup, Tag, chart, money, moneyDelta, num, pct, price } from './ui'
 
@@ -145,6 +147,16 @@ function useOwnTable(g: GameState, rows: readonly Product[], compact: boolean) {
           </span>
         )
       },
+    },
+    {
+      id: 'auto',
+      head: 'Auto reorder',
+      title: 'Orders another production run by itself when stock runs low. Needs a Head of Operations.',
+      min: 112,
+      drop: compact ? 2 : 3,
+      className: 'text-right',
+      sort: (p) => (p.status === 'ended' ? null : p.reorder?.on ? p.reorder.at : -1),
+      cell: (p) => <ReorderToggle g={g} p={p} />,
     },
     {
       id: 'trend',
@@ -340,6 +352,7 @@ export function Products() {
           <Orders />
         </Fold>
       )}
+      <Contracts />
     </DevicePage>
   )
 }

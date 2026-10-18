@@ -2,6 +2,7 @@
 // review scores outlets give it, and what owners say about it.
 import { marketLevel, refScore } from '../data/catalog'
 import { OUTLETS, type SegmentInfo, TYPES, segmentsOf, subLabel } from '../data/devices'
+import { adoption, segmentOpen } from '../data/eras'
 import { type RngHolder, clamp, pick, range } from './rng'
 import { priceIndex } from './world'
 import { type Company, type Feedback, type Product, type Review, SUBS, type SubScores } from './types'
@@ -42,7 +43,10 @@ export function appeal(p: Probe, maker: Maker, seg: SegmentInfo, day: number): n
 }
 
 export function bestSegment(p: Probe, maker: Maker, day: number): { seg: SegmentInfo; u: number } {
-  const segs = segmentsOf(p.type)
+  // segments that do not exist yet in the game's era are not aimed at, while any of the type's do
+  const all = segmentsOf(p.type)
+  const open = all.filter((seg) => segmentOpen(seg.id, seg.type, day))
+  const segs = open.length ? open : all
   let best = { seg: segs[0], u: -1 }
   for (const seg of segs) {
     const u = utility(p, maker, seg, day)
@@ -54,6 +58,15 @@ export function bestSegment(p: Probe, maker: Maker, day: number): { seg: Segment
 export function lifecycle(age: number): number {
   return (1 + 0.6 * Math.exp(-age / 45)) * Math.exp(-Math.max(0, age - 120) / 420)
 }
+
+/**
+ * How much more buyers who know a device want it while its launch is fresh.
+ * Hype makes people aware of a device (see the min(1, awareness + hype) in the
+ * sales model), and on top of that it makes those who already know it more
+ * likely to pick it: without this, a launch budget did nothing at all for a
+ * company everybody had heard of.
+ */
+export const hypeLift = (hype: number) => 1 + 2 * hype
 
 /** Launch excitement from the launch budget and any launch event, fading over three months. */
 export function launchHype(p: Product, day: number): number {
@@ -76,7 +89,8 @@ const SEASON = [0.9, 0.85, 0.9, 0.95, 0.95, 1, 0.95, 1, 1.05, 1.05, 1.2, 1.3]
 
 export function segmentDemand(seg: SegmentInfo, day: number): number {
   const growth = Math.pow(1.02, day / 360)
-  return (seg.size * growth * SEASON[Math.floor(day / 30) % 12]) / 360
+  // a kind of device that is new in the game's era has only some of its buyers yet, and none before it exists
+  return (seg.size * growth * adoption(seg.id, seg.type, day) * SEASON[Math.floor(day / 30) % 12]) / 360
 }
 
 /** Share of buyers choosing each storage option, base model first. */
@@ -102,7 +116,8 @@ export function makeReviews(r: RngHolder, p: Product, maker: Maker, day: number,
     let nw = 0
     for (const k of SUBS) nw += o.weights[k] * n[k]
     const blend = (1 - o.value) * Math.min(1.2, nw / seg.expect) + o.value * Math.min(1.25, u)
-    const score = clamp(10 * (0.16 + 0.62 * blend) + range(r, -0.3, 0.3), 1, 10)
+    // reviewers live with the software for a week: a clumsy system costs marks, a polished one earns them
+    const score = clamp(10 * (0.16 + 0.62 * blend) + 6 * maker.software + range(r, -0.3, 0.3), 1, 10)
     const pros: string[] = []
     const cons: string[] = []
     const ranked = [...SUBS].sort((a, b) => n[b] * o.weights[b] - n[a] * o.weights[a])
@@ -111,6 +126,8 @@ export function makeReviews(r: RngHolder, p: Product, maker: Maker, day: number,
       if (rel > 1.12 && pros.length < 2) pros.push(`${subLabel(p.type, k)} is ahead of the ${seg.name.toLowerCase()} class`)
       else if (rel < 0.8 && cons.length < 2) cons.push(`${subLabel(p.type, k)} falls short for the price`)
     }
+    if (maker.software >= 0.03 && pros.length < 3) pros.push('Software is polished and a pleasure to use')
+    if (maker.software <= -0.025 && cons.length < 3) cons.push('Software feels clumsy and dated')
     if (pf > 1.15) pros.push('Aggressively priced')
     if (pf < 0.85) cons.push('Overpriced for what it offers')
     if (issues.length && cons.length < 3) cons.push(issues[Math.floor(range(r, 0, issues.length))])

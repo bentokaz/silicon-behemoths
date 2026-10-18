@@ -5,7 +5,8 @@ import { chipInfo, refScore } from '../data/catalog'
 import { canAfford, setLicenceFee, startChip, startOs } from '../sim/game'
 import { chipFor } from '../sim/scoring'
 import { staffEffects } from '../sim/staff'
-import { CHIP_BUDGET, OS_FEATURES, OS_FEATURES_PER_VERSION, STOCK_OS, chipAdoption, chipProjectCost, chipProjectDays, industryOs, osProjectCost, osProjectDays, osShipQuality, servicesPerMonth, softwareBonus } from '../sim/tech'
+import { CHIP_BUDGET, OS_FEATURES, OS_FEATURES_PER_VERSION, chipAdoption, chipProjectCost, chipProjectDays, industryOs, osName, osProjectCost, osProjectDays, osQuality, osRoyalty, osShipQuality, servicesPerMonth, softwareBonus } from '../sim/tech'
+import { OsLicences, OsLookDesigner } from './OsDesigner'
 import type { CustomChip, GameState } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { Icon, type IconName } from './icons'
@@ -181,6 +182,8 @@ function Software() {
   const bonus = softwareBonus(g)
   const ship = osShipQuality(g, all)
   const services = servicesPerMonth(g)
+  const quality = osQuality(g)
+  const royalty = osRoyalty(g)
   const toggle = (id: string) => setPicked(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id])
   const tooMany = fresh.length > OS_FEATURES_PER_VERSION
   const why = tooMany ? `A version can add ${OS_FEATURES_PER_VERSION} new features at most: untick some` : first && !name.trim() ? 'Give the system a name' : !canAfford(g, cost) ? `Not enough cash: the project costs ${money(cost)}` : undefined
@@ -188,14 +191,17 @@ function Software() {
     <>
       <Strip
         items={[
-          { label: 'Your devices run', icon: 'os', value: <span className="font-sans">{os.own ? `${os.name} ${os.version}` : `${STOCK_OS}, the stock system`}</span> },
-          ...(os.own ? [{ label: 'Quality', value: int(os.quality), tone: os.quality >= industry ? ('pos' as const) : ('neg' as const), title: 'Against what buyers expect of a system today' }] : []),
+          { label: 'Your devices run', icon: 'os', value: <span className="font-sans">{osName(g)}</span> },
+          { label: 'Quality', value: int(quality), tone: quality >= industry ? ('pos' as const) : ('neg' as const), title: 'Against what buyers expect of a system today' },
+          ...(royalty ? [{ label: 'Royalty a device', value: money(royalty), title: 'Paid to the maker of the licensed system for every device sold that runs it' }] : []),
           { label: 'Buyers expect', value: int(industry), title: 'It rises by about two points a year' },
-          ...(os.own ? [{ label: 'Device appeal', value: `${bonus >= 0 ? '+' : ''}${pct(bonus)}`, tone: bonus > 0 ? ('pos' as const) : bonus < 0 ? ('neg' as const) : undefined, title: 'Applies to everything you sell' }] : []),
+          { label: 'Device appeal', value: `${bonus >= 0 ? '+' : ''}${pct(bonus)}`, tone: bonus > 0 ? ('pos' as const) : bonus < 0 ? ('neg' as const) : undefined, title: 'Applies to everything you sell' },
           ...(os.features.includes('store') ? [{ label: 'Services, a month', value: money(services), title: `From ${int(g.owners)} owners` }] : []),
         ]}
       />
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,6fr)_minmax(0,5fr)] gap-2">
+        <div className="flex min-h-0 flex-col gap-2">
+        {!os.own && <OsLicences />}
         <Panel title={`Features for version ${os.version + 1}: pick up to ${OS_FEATURES_PER_VERSION}`} icon="feed" bodyClass="overflow-y-auto">
           {OS_FEATURES.map((f) => {
             const have = os.features.includes(f.id)
@@ -226,6 +232,7 @@ function Software() {
             )
           })}
         </Panel>
+        </div>
         <Panel
           title={os.project ? `${os.name} ${os.version + 1} in development` : first ? 'Build your own operating system' : `Version ${os.version + 1}`}
           icon={os.project ? 'hourglass' : 'os'}
@@ -233,7 +240,7 @@ function Software() {
           right={
             <Help title="How your own system works">
               <p>
-                Until you build one your devices run {STOCK_OS}, which is free and exactly as good as buyers expect. Your own system can be better than that, which lifts every device you sell, and with an app store it earns money from everyone who owns one.
+                Until you build one your devices run a licensed system: the free one is weak, and the better ones charge a royalty on every device. Your own system costs no royalty and can be better than any of them, which lifts every device you sell, and with an app store it earns money from everyone who owns one.
               </p>
               <p className="mt-2">It can also be worse, if the software team is weak or you let it age: what buyers expect rises by about two points a year. A new version brings it back up to date even with no new features.</p>
             </Help>
@@ -299,13 +306,13 @@ function Software() {
 
 export function LabsScreen() {
   const g = useGame()
-  const [view, setView] = useKept<'chips' | 'os'>('labs:view', 'chips')
+  const [view, setView] = useKept<'chips' | 'os' | 'look'>('labs:view', 'chips')
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-4">
       <div className="shrink-0">
-        <Filters label="Lab" value={view} onChange={setView} options={[{ value: 'chips', label: 'Chips', count: g.chips.length || undefined }, { value: 'os', label: 'Operating system' }]} />
+        <Filters label="Lab" value={view} onChange={setView} options={[{ value: 'chips', label: 'Chips', count: g.chips.length || undefined }, { value: 'os', label: 'Operating system' }, { value: 'look', label: 'System design' }]} />
       </div>
-      {view === 'chips' ? <Chips /> : <Software />}
+      {view === 'chips' ? <Chips /> : view === 'os' ? <Software /> : <OsLookDesigner />}
     </div>
   )
 }

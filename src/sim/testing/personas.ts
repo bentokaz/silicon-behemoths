@@ -1,6 +1,6 @@
 // Player personas for the soak harness. Each plays through the real actions;
 // between them they try to do everything a player can, sensibly and not.
-import { OS_FEATURES } from '../tech'
+import { OS_FEATURES, OS_LICENCES, licenceInfo, licenceOpen, licenceSwitchCost } from '../tech'
 import * as G from '../game'
 import { has } from '../progress'
 import { REGIONS } from '../regions'
@@ -124,6 +124,11 @@ export function sensible(): Persona {
       }
       if (has(s, 'carePolicy') && m % 24 === 5) p.act('setCare', (g) => G.setCare(g, { warrantyYears: 2, updateYears: 3, plan: true, planPrice: 8, tradeIn: true, refurb: !!g.factory }))
 
+      // ---- the best operating system it can license without the royalty eating the margin
+      if (!s.os.own && m % 6 === 0) {
+        const best = OS_LICENCES.filter((l) => licenceOpen(l, s.day) && l.royalty <= 10 && s.cash > licenceSwitchCost(l) * 4).sort((a, b) => b.quality - a.quality)[0]
+        if (best && best.quality > licenceInfo(s.os.licence).quality) p.act('setOsLicence', (g) => G.setOsLicence(g, best.id), best.id)
+      }
       // ---- labs and money
       if (has(s, 'labs') && s.cash > 25e6) {
         if (!s.chips.some((c) => c.status === 'dev') && s.chips.length < 6 && m % 18 === 7) p.act('startChip', (g) => G.startChip(g, `B${g.chips.length + 1}`, 0.8, 0.6, 0.6))

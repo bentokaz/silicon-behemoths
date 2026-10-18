@@ -69,6 +69,7 @@ export const NAV: Destination[] = [
     pages: [
       { id: 'research.tech', label: 'Technology', tab: 'research', view: 'tech' },
       { id: 'research.lines', label: 'Device lines', tab: 'research', view: 'lines' },
+      { id: 'research.os', label: 'Operating system', tab: 'research', view: 'os' },
       { id: 'research.labs', label: 'Labs', tab: 'labs' },
     ],
   },

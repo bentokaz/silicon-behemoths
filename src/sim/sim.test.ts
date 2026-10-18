@@ -51,7 +51,7 @@ import { pendingUnits, supplyPrice } from './ops'
 import { type LayoutOptions, VARIANTS, deriveVariant, fitInside, fitSpeaker, layoutParts, speakerSockets, syncSockets } from './rivals'
 import { budWeight, evaluate, foldedThickness, maxBattery, minThickness, thermal } from './scoring'
 import { bayStands, curveAt, curveTiles, geomOf, polyArea } from './curves'
-import { areaTiles, builtTiles, canPlace, curveFor, faceId, gridAt, hiredVenue, isBoundary, lineStats, newSite, openRooms, roomTiles, sealedRooms, storeStats, venueStats } from './sites'
+import { SITE_TIERS, areaTiles, builtTiles, canPlace, curveFor, faceId, gridAt, hiredVenue, isBoundary, lineStats, newSite, openRooms, roomTiles, sealedRooms, storeStats, venueStats } from './sites'
 import { GOALS } from './goals'
 import { REGIONS } from './regions'
 import { staffEffects, unmanaged } from './staff'
@@ -311,14 +311,14 @@ describe('people and places', () => {
     const count = s.office.items.length
     const built = builtTiles(s.office)
     expect(upgradeOffice(s)).toBeNull()
-    expect(s.office.w).toBe(22)
+    expect(s.office.w).toBe(SITE_TIERS.office[1].w)
     expect(s.office.items.length).toBe(count)
     expect(builtTiles(s.office)).toBe(built)
     expect(sealedRooms(s.office)).toEqual([])
     // everything still stands where a fresh placement would be allowed
     for (const it of s.office.items) expect(canPlace({ ...s.office, items: [] }, it.kind, it.x, it.y, it.rot), it.kind).toBeNull()
     for (let i = 0; i < 3; i++) expect(upgradeOffice(s)).toBeNull()
-    expect(s.office.w).toBe(72)
+    expect(s.office.w).toBe(SITE_TIERS.office[4].w)
     expect(builtTiles(s.office)).toBe(built)
     expect(upgradeOffice(s)).toMatch(/largest/)
   })
@@ -690,7 +690,7 @@ describe('a bigger world', () => {
     expect(setCurveEdge(s, 'office', 3, 'o1', 'door')).toMatch(/no wall/)
     // it survives a save and a move to a bigger plot, door and all
     expect(JSON.parse(JSON.stringify(site()))).toEqual(site())
-    const before = { tiles: roomTiles(site(), atrium.n), edge: curveTiles(site()).size, w: site().w }
+    const before = { tiles: roomTiles(site(), atrium.n), edge: curveTiles(site()).size, w: site().w, h: site().h }
     expect(upgradeOffice(s)).toBeNull()
     const dx = (site().w - before.w) / 2
     expect(site().curves![0].cx).toBe(5.5 + dx)
@@ -698,10 +698,10 @@ describe('a bigger world', () => {
     expect(curveTiles(site()).size).toBe(before.edge)
     expect(site().curves![0].walls).toEqual({ o3: 'glass', o4: 'open' })
     expect(sealedRooms(site()).some((r) => r.type === 'atrium')).toBe(false)
-    expect(placeItem(s, 'office', 'gbench', 5 + dx, 6 + (site().h - 22) / 2, 0)).toBeNull()
+    expect(placeItem(s, 'office', 'gbench', 5 + dx, 6 + Math.floor((site().h - before.h) / 2), 0)).toBeNull()
     // a room of another kind built against it shares the curved wall: nothing is squared off, and the
     // sliver of each tile beyond the curve is the new room's floor (see build.test.ts for more of this)
-    const y0 = 1 + (site().h - 22) / 2
+    const y0 = 1 + Math.floor((site().h - before.h) / 2)
     expect(zoneRoom(s, 'office', 'lounge', 10 + dx, y0 + 3, 13 + dx, y0 + 6)).toBeNull()
     const lounge = site().rooms.find((r) => r.type === 'lounge')!
     expect(site().curves![0].square).toBeUndefined()
@@ -928,7 +928,7 @@ describe('desktops, consoles, earbuds and TVs', () => {
       expect(p.reviewAvg, `${type} review`).toBeGreaterThan(4.5)
       expect(p.reviewAvg, `${type} review`).toBeLessThan(9.6)
       expect(p.unitsSold, `${type} units`).toBeGreaterThan(1000)
-      expect(p.price * 0.85, `${type} margin`).toBeGreaterThan(p.unitCost)
+      expect(p.price * 0.85, `${type} margin`).toBeGreaterThan(ev.unitCost)
       const all = s.products.filter((x) => x.type === type).reduce((a, x) => a + x.unitsSold, 0)
       expect(p.unitsSold / all, `${type} share`).toBeLessThan(0.4)
     }
@@ -1147,7 +1147,7 @@ describe('foldables, headsets, speakers and handhelds', () => {
       expect(p.reviewAvg, `${type} review`).toBeGreaterThan(4.5)
       expect(p.reviewAvg, `${type} review`).toBeLessThan(9.6)
       expect(p.unitsSold, `${type} units`).toBeGreaterThan(1000)
-      expect(p.price * 0.85, `${type} margin`).toBeGreaterThan(p.unitCost)
+      expect(p.price * 0.85, `${type} margin`).toBeGreaterThan(ev.unitCost)
       expect(p.feedback.length, `${type} feedback`).toBeGreaterThan(0)
       for (const f of p.feedback) expect(f.text.length, `${type} feedback`).toBeGreaterThan(5)
       const all = s.products.filter((x) => x.type === type).reduce((a, x) => a + x.unitsSold, 0)

@@ -17,7 +17,7 @@ import { TRADE_PULL, careBonus, careSatisfaction } from './care'
 import { DIFFICULTY, RETAIL_CUT, devPlan, fmtDate, player } from './game'
 import { CHANNELS, EVENTS, FAN_CYCLE, OWN_VENUE, dailyTickets, productSatisfaction } from './growth'
 import { researchLines } from './life'
-import { OUTSIDE_OPTION, bestSegment, launchHype, lifecycle, normalised, priceFactor, pull, segmentDemand, tierAverages, utility } from './market'
+import { OUTSIDE_OPTION, bestSegment, hypeLift, launchHype, lifecycle, normalised, priceFactor, pull, segmentDemand, tierAverages, utility } from './market'
 import { CONTRACT, FACTORY_SAVING, buildCost, costNow, factoryLine, marketPrice, orderLeft, pendingUnits } from './ops'
 import { has, vacantSeats } from './progress'
 import { REGIONS, homeRegion, regionIncome, regionTaste, rivalReach } from './regions'
@@ -27,6 +27,7 @@ import { type LineStats, sealedRooms, storeStats, tierOf, upkeep, venueStats } f
 import { EXECS, execFx, staffEffects, unmanaged } from './staff'
 import { founderStake } from './stock'
 import { softwareBonus } from './tech'
+import { footfall, storeBuyers, storeTrade } from './retail'
 import { priceIndex, typeDemand } from './world'
 import { type Company, type DeviceDesign, type GameState, type Product, type ProductionOrder, SUBS, SUPPLY_CATS, type Store, hasStock } from './types'
 
@@ -114,6 +115,9 @@ function soldOutDay(g: GameState, p: Product): number | undefined {
 /** What a store took and cost. `month` is the last full month if there is one, else the month so far. */
 export interface StoreMonth {
   revenue: number
+  /** What the devices it sold cost to build. */
+  cogs: number
+  /** Running costs: rent, upkeep and wages. */
   costs: number
   profit: number
   units: number
@@ -121,32 +125,7 @@ export interface StoreMonth {
   partial: boolean
 }
 
-const noMonth = (): StoreMonth => ({ revenue: 0, costs: 0, profit: 0, units: 0, visitors: 0, partial: true })
-
-/** What a store is expected to do in one day at today's footfall, stock and prices, from the simulation's own store formula. */
-function storeDay(g: GameState, st: Store): { units: number; revenue: number; perUnit: number; visitors: number; costs: number } {
-  const stats = storeStats(st.site)
-  const costs = ((upkeep(st.site) + stats.wages) * execFx(g).outposts) / DAYS_PER_MONTH
-  if (!stats.open) return { units: 0, revenue: 0, perUnit: 0, visitors: 0, costs }
-  const me = player(g)
-  const local = g.regions[st.region] ?? g.regions[homeRegion(g)]
-  const visitors = Math.min(stats.capacity, (tierOf(st.site).traffic ?? 0) * (0.35 + 0.65 * Math.sqrt(local.awareness))) * (0.6 + 0.4 * stats.appeal)
-  const stocked = own(g).filter((p) => p.status === 'sale' && p.stock > 0)
-  const w = stocked.map((p) => clamp(bestSegment(p, me, g.day).u, 0, 1.3) * lifecycle(g.day - p.launchDay))
-  const total = w.reduce((a, b) => a + b, 0)
-  if (!stocked.length || total <= 0) return { units: 0, revenue: 0, perUnit: 0, visitors, costs }
-  const buyers = visitors * 0.035 * stats.appeal * Math.min(1.2, total / stocked.length)
-  const keep = regionIncome(g, st.region)
-  const extras = 6 * Math.min(stats.shelves, 3)
-  let units = 0
-  let revenue = 0
-  stocked.forEach((p, i) => {
-    const sold = Math.min(p.stock, (buyers * w[i]) / total)
-    units += sold
-    revenue += sold * (tierAverages(p).price * keep + extras)
-  })
-  return { units, revenue, perUnit: units > 0 ? revenue / units : 0, visitors, costs }
-}
+const noMonth = (): StoreMonth => ({ revenue: 0, cogs: 0, costs: 0, profit: 0, units: 0, visitors: 0, partial: true })
 
 /**
  * One store's month. The simulation keeps no books per store: it records only
@@ -156,38 +135,42 @@ function storeDay(g: GameState, st: Store): { units: number; revenue: number; pe
  * PROJECTED TO ITS END. Label them "this month, projected".
  *
  * - `units`: what the store has sold this month so far (recorded, exact) plus
- *   the days left at today's expected daily sales.
+ *   the days left at today's expected daily sales (storeTrade, sim/retail.ts).
  * - `revenue`: an estimate. Units times what the store keeps per unit at
  *   today's mix of stocked devices: the average price paid across storage
  *   options, times the share kept after local pricing and duties, plus the
  *   accessories sold with each device. No retailer's cut: the store is yours.
+ * - `cogs`: units times what those devices cost to build today.
  * - `costs`: exact for the present layout. Rent and upkeep of the plot plus
  *   the wages its fixtures need, with the Head of Sales' effect, for a whole
- *   month. What the devices cost to build is NOT counted here (it is counted
- *   against the device, see `productProfit`).
+ *   month.
  * - `visitors`: yesterday's footfall times thirty (an estimate).
- * - `profit`: revenue minus costs.
+ * - `profit`: revenue minus cogs minus costs: what the store adds to the
+ *   company's profit.
  *
  * An unknown store id gives zeros.
  */
 export function storeMonth(g: GameState, storeId: string): StoreMonth {
   const st = g.stores.find((x) => x.id === storeId)
   if (!st) return noMonth()
-  const day = storeDay(g, st)
+  const t = storeTrade(g, st)
   const left = DAYS_PER_MONTH - daysIn(g)
-  const units = st.monthUnits + day.units * left
+  const units = st.monthUnits + t.buyers * left
   // before anything is in stock there is no mix to price the recorded units with: they are priced at the last known average
-  const perUnit = day.perUnit || fallbackPerUnit(g, st)
+  const fall = t.perUnit ? null : fallbackPerUnit(g, st)
+  const perUnit = t.perUnit || (fall?.price ?? 0)
+  const costPerUnit = t.perUnit ? t.costPerUnit : (fall?.cost ?? 0)
   const revenue = units * perUnit
-  const costs = day.costs * DAYS_PER_MONTH
-  return { revenue, costs, profit: revenue - costs, units: Math.round(units), visitors: Math.round((day.visitors || st.lastVisitors) * DAYS_PER_MONTH), partial: true }
+  const cogs = units * costPerUnit
+  const costs = t.costs.total
+  return { revenue, cogs, costs, profit: revenue - cogs - costs, units: Math.round(units), visitors: Math.round((t.flow.visitors || st.lastVisitors) * DAYS_PER_MONTH), partial: true }
 }
 
-/** What a store keeps per unit when nothing is in stock to price it by: the average over every device on sale. */
-function fallbackPerUnit(g: GameState, st: Store): number {
+/** What a store keeps and pays per unit when nothing is in stock to price it by: the average over every device on sale. */
+function fallbackPerUnit(g: GameState, st: Store): { price: number; cost: number } {
   const sale = own(g).filter((p) => p.status === 'sale')
-  if (!sale.length) return 0
-  return (sale.reduce((a, p) => a + tierAverages(p).price, 0) / sale.length) * regionIncome(g, st.region)
+  if (!sale.length) return { price: 0, cost: 0 }
+  return { price: (sale.reduce((a, p) => a + tierAverages(p).price, 0) / sale.length) * regionIncome(g, st.region), cost: sale.reduce((a, p) => a + p.unitCost, 0) / sale.length }
 }
 
 /** The same for every store, summed. With no stores, zeros. */
@@ -196,6 +179,7 @@ export function storesMonth(g: GameState): StoreMonth {
   for (const st of g.stores) {
     const m = storeMonth(g, st.id)
     out.revenue += m.revenue
+    out.cogs += m.cogs
     out.costs += m.costs
     out.profit += m.profit
     out.units += m.units
@@ -588,7 +572,7 @@ function forecast(g: GameState, p: Product, maker: Pick<Company, 'brand' | 'soft
         if (b <= 0) continue
         const h = launchHype(x, at)
         if (c.isPlayer) siblings.push({ x, b, h })
-        else rivals.push({ c, w: b * Math.min(1, c.awareness + h) })
+        else rivals.push({ c, w: b * Math.min(1, c.awareness + h) * hypeLift(h) })
       }
       for (const r of REGIONS) {
         let others = OUTSIDE_OPTION
@@ -598,8 +582,8 @@ function forecast(g: GameState, p: Product, maker: Pick<Company, 'brand' | 'soft
         let w = 0
         if (st?.open) {
           const local = (x: Product) => (st.priceAdj === 1 ? 1 : Math.pow(priceFactor(x.price * st.priceAdj, seg) / priceFactor(x.price, seg), 3.5))
-          for (const s of siblings) ours += s.b * Math.min(1, aw[r.id] + s.h) * local(s.x)
-          w = base * Math.min(1, aw[r.id] + hype) * local(p)
+          for (const s of siblings) ours += s.b * Math.min(1, aw[r.id] + s.h) * hypeLift(s.h) * local(s.x)
+          w = base * Math.min(1, aw[r.id] + hype) * hypeLift(hype) * local(p)
         }
         if (w + ours <= 0) continue
         const buyers = demand * r.share * regionTaste(r, seg)
@@ -628,8 +612,8 @@ function forecast(g: GameState, p: Product, maker: Pick<Company, 'brand' | 'soft
       for (const { st, stats } of stores) {
         if (!stats.open) continue
         const known = aw[st.region] ?? aw[home] ?? 0
-        const visitors = Math.min(stats.capacity, (tierOf(st.site).traffic ?? 0) * (0.35 + 0.65 * Math.sqrt(known))) * (0.6 + 0.4 * stats.appeal)
-        const buyers = visitors * 0.035 * stats.appeal * Math.min(1.2, allDraw / choices)
+        const visitors = footfall(stats, tierOf(st.site).traffic ?? 0, known).visitors
+        const buyers = storeBuyers(visitors, stats.appeal, allDraw / choices)
         mine += (buyers * dMine) / allDraw
         sold[st.region] = (sold[st.region] ?? 0) + buyers
       }
