@@ -77,10 +77,10 @@ export function Finance() {
   const short = shortages(g).length
   return (
     <Page keep="finance">
-      <div className="grid shrink-0 grid-cols-4 gap-2">
+      <div className="grid shrink-0 grid-cols-4 gap-3">
         <Stat label={`Income, ${of}`} icon="coins" value={money(f.income)} sub={change(f.income, f.before?.income)} />
         <Stat label={`Costs, ${of}`} icon="receipt" value={money(f.costs)} sub={change(f.costs, f.before?.costs)} />
-        <Stat label={`Profit, ${of}`} icon={f.profit >= 0 ? 'trendUp' : 'trendDown'} value={money(f.profit)} tone={f.profit >= 0 ? 'pos' : 'neg'} sub={change(f.profit, f.before?.profit)} />
+        <Stat info="Income from sales and anything else that came in, less every cost of the month: salaries, production, marketing, research, buildings, overheads and interest." label={`Profit, ${of}`} icon={f.profit >= 0 ? 'trendUp' : 'trendDown'} value={money(f.profit)} tone={f.profit >= 0 ? 'pos' : 'neg'} sub={change(f.profit, f.before?.profit)} />
         <Stat label={f.partial ? 'Cash today' : `Cash, end of ${monthLabel(f.month)}`} icon="cash" value={g.config.unlimitedMoney ? 'Unlimited' : money(f.cash)} tone={f.cash < 0 && !g.config.unlimitedMoney ? 'neg' : undefined} sub={g.config.unlimitedMoney ? 'money is not counted in this game' : change(f.cash, f.before?.cash)} />
       </div>
 

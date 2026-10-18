@@ -15,7 +15,7 @@ import { type Need, daysToQuit, defaultFilter, factsOf, needCounts, needOf, stat
 import { CARD_W, Level, Name, PeoplePage, ROLE_OPTIONS, comfortWord, moraleText, moraleTone } from './StaffParts'
 import { StaffPolicies } from './StaffPolicies'
 import { StaffTeams } from './StaffTeams'
-import { Btn, Choice, type Column, ConfirmBtn, Drawer, Empty, type Figure, Filters, Head, Meter, Pick, Strip, Table, Tabs, Tag, money, pct, price, useKept } from './ui'
+import { Btn, Choice, type Column, ConfirmBtn, Drawer, Empty, type Figure, Filters, Head, Meter, Pick, Status, Strip, Table, Tabs, Tag, money, pct, price, useKept } from './ui'
 
 type View = 'team' | 'teams' | 'policy' | 'hire' | 'execs'
 
@@ -253,8 +253,8 @@ function People({ view }: { view: 'team' | 'policy' | 'execs' }) {
       // someone who is simply working has no status to show
       cell: (e) => {
         const n = needOf(e, facts)
-        if (n) return <Tag tone={NEED_TAG[n].tone}>{NEED_TAG[n].text(e)}</Tag>
-        return inTraining(e, g.day) ? <Tag tone="accent">On a course</Tag> : null
+        if (n) return <Status tone={NEED_TAG[n].tone}>{NEED_TAG[n].text(e)}</Status>
+        return inTraining(e, g.day) ? <Status tone="accent">On a course</Status> : null
       },
       sort: (e) => statusRank(e, facts, g.day),
       first: 'asc',

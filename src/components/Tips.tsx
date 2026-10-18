@@ -13,7 +13,7 @@ interface Tip {
   box: DOMRect
 }
 
-const HOVER_MS = 450
+const HOVER_MS = 300
 
 export function Tips() {
   const [tip, setTip] = useState<Tip | null>(null)
@@ -107,7 +107,7 @@ export function Tips() {
 
   if (!tip) return null
   return (
-    <div ref={ref} role="tooltip" className="pointer-events-none fixed z-[200] max-w-[320px] border border-line2 bg-raise px-2 py-1 text-xs leading-snug text-fg" style={at ? { left: at.left, top: at.top } : { left: 0, top: 0, visibility: 'hidden' }}>
+    <div ref={ref} role="tooltip" className="pointer-events-none fixed z-[200] max-w-[360px] whitespace-pre-line border border-line2 bg-raise px-2.5 py-1.5 text-xs leading-snug text-fg shadow-[0_8px_24px_rgb(0_0_0/0.45)]" style={at ? { left: at.left, top: at.top } : { left: 0, top: 0, visibility: 'hidden' }}>
       {tip.text}
     </div>
   )

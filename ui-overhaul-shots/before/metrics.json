@@ -1,0 +1,10064 @@
+[
+ {
+  "file": "01-menu-fresh-1366x768.jpg",
+  "n": 1,
+  "screen": "menu",
+  "state": "fresh",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 13,
+  "numerals": 6,
+  "controls": 6,
+  "chars": 570,
+  "widgets": 6,
+  "numeralsAll": 7,
+  "sizes": {
+   "11": {
+    "nodes": 2,
+    "chars": 196
+   },
+   "12": {
+    "nodes": 7,
+    "chars": 317
+   },
+   "13": {
+    "nodes": 1,
+    "chars": 40
+   },
+   "48": {
+    "nodes": 3,
+    "chars": 17
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": null,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New company"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "screen": {
+    "textNodes": 13,
+    "numerals": 6,
+    "controls": 6
+   }
+  },
+  "where": {
+   "screen": "menu",
+   "tab": "system",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": null,
+   "products": null,
+   "day": null
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "02-menu-saves-fresh-1366x768.jpg",
+  "n": 2,
+  "screen": "menu-saves",
+  "state": "fresh",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 22,
+  "numerals": 13,
+  "controls": 7,
+  "chars": 633,
+  "widgets": 7,
+  "numeralsAll": 14,
+  "sizes": {
+   "11": {
+    "nodes": 7,
+    "chars": 230
+   },
+   "12": {
+    "nodes": 11,
+    "chars": 346
+   },
+   "13": {
+    "nodes": 1,
+    "chars": 40
+   },
+   "48": {
+    "nodes": 3,
+    "chars": 17
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": null,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "Continue: Sweep Works, 01 Jan 2026"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "screen": {
+    "textNodes": 22,
+    "numerals": 13,
+    "controls": 7
+   }
+  },
+  "where": {
+   "screen": "menu",
+   "tab": "city",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": null,
+   "products": null,
+   "day": null
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "03-menu-settings-fresh-1366x768.jpg",
+  "n": 3,
+  "screen": "menu-settings",
+  "state": "fresh",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 49,
+  "numerals": 10,
+  "controls": 24,
+  "chars": 824,
+  "widgets": 24,
+  "numeralsAll": 11,
+  "sizes": {
+   "11": {
+    "nodes": 22,
+    "chars": 588
+   },
+   "12": {
+    "nodes": 21,
+    "chars": 193
+   },
+   "13": {
+    "nodes": 3,
+    "chars": 26
+   },
+   "48": {
+    "nodes": 3,
+    "chars": 17
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": null,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New company"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "screen": {
+    "textNodes": 49,
+    "numerals": 10,
+    "controls": 24
+   }
+  },
+  "where": {
+   "screen": "menu",
+   "tab": "city",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": null,
+   "products": null,
+   "day": null
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "04-newgame-fresh-1366x768.jpg",
+  "n": 4,
+  "screen": "newgame",
+  "state": "fresh",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 70,
+  "numerals": 21,
+  "controls": 21,
+  "chars": 970,
+  "widgets": 21,
+  "numeralsAll": 22,
+  "sizes": {
+   "11": {
+    "nodes": 35,
+    "chars": 444
+   },
+   "12": {
+    "nodes": 24,
+    "chars": 428
+   },
+   "13": {
+    "nodes": 8,
+    "chars": 81
+   },
+   "48": {
+    "nodes": 3,
+    "chars": 17
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": null,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "Found company"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "screen": {
+    "textNodes": 70,
+    "numerals": 21,
+    "controls": 21
+   }
+  },
+  "where": {
+   "screen": "new",
+   "tab": "city",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": null,
+   "products": null,
+   "day": null
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "05-city-fresh-1366x768.jpg",
+  "n": 5,
+  "screen": "city",
+  "state": "fresh",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": true,
+  "textNodes": 37,
+  "numerals": 15,
+  "controls": 24,
+  "chars": 363,
+  "widgets": 24,
+  "numeralsAll": 16,
+  "sizes": {
+   "11": {
+    "nodes": 14,
+    "chars": 53
+   },
+   "12": {
+    "nodes": 11,
+    "chars": 220
+   },
+   "13": {
+    "nodes": 12,
+    "chars": 90
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": 2.3,
+  "canvasShare": 100,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 9,
+    "numerals": 1,
+    "controls": 4
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "city",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": {
+   "colours": 386,
+   "spread": 46.7,
+   "mean": 106.6,
+   "blank": false,
+   "stable": true,
+   "settledMs": 1135
+  },
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "06-lock-card-fresh-1366x768.jpg",
+  "n": 6,
+  "screen": "lock-card",
+  "state": "fresh",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": true,
+  "textNodes": 53,
+  "numerals": 20,
+  "controls": 26,
+  "chars": 640,
+  "widgets": 26,
+  "numeralsAll": 21,
+  "sizes": {
+   "11": {
+    "nodes": 24,
+    "chars": 142
+   },
+   "12": {
+    "nodes": 16,
+    "chars": 402
+   },
+   "13": {
+    "nodes": 13,
+    "chars": 96
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": 16,
+  "canvasShare": 100,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 9,
+    "numerals": 1,
+    "controls": 4
+   },
+   "dialog": {
+    "textNodes": 16,
+    "numerals": 5,
+    "controls": 2
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "city",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": "shares",
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": {
+   "colours": 487,
+   "spread": 51.4,
+   "mean": 95.9,
+   "blank": false,
+   "stable": true,
+   "settledMs": 1129
+  },
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "07-overview-fresh-1366x768.jpg",
+  "n": 7,
+  "screen": "overview",
+  "state": "fresh",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 51,
+  "numerals": 31,
+  "controls": 26,
+  "chars": 585,
+  "widgets": 26,
+  "numeralsAll": 32,
+  "sizes": {
+   "11": {
+    "nodes": 23,
+    "chars": 158
+   },
+   "12": {
+    "nodes": 11,
+    "chars": 301
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 113
+   },
+   "16": {
+    "nodes": 1,
+    "chars": 10
+   },
+   "20": {
+    "nodes": 1,
+    "chars": 3
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 18,
+    "numerals": 9,
+    "controls": 4
+   },
+   "feed": {
+    "textNodes": 5,
+    "numerals": 8,
+    "controls": 2
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "dashboard",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "08-devices-fresh-1366x768.jpg",
+  "n": 8,
+  "screen": "devices",
+  "state": "fresh",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 32,
+  "numerals": 14,
+  "controls": 23,
+  "chars": 379,
+  "widgets": 23,
+  "numeralsAll": 15,
+  "sizes": {
+   "11": {
+    "nodes": 12,
+    "chars": 43
+   },
+   "12": {
+    "nodes": 8,
+    "chars": 246
+   },
+   "13": {
+    "nodes": 12,
+    "chars": 90
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 4,
+    "numerals": 0,
+    "controls": 3
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "products",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "13-rival-device-fresh-1366x768.jpg",
+  "n": 13,
+  "screen": "rival-device",
+  "state": "fresh",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 55,
+  "numerals": 43,
+  "controls": 30,
+  "chars": 688,
+  "widgets": 30,
+  "numeralsAll": 44,
+  "sizes": {
+   "11": {
+    "nodes": 19,
+    "chars": 93
+   },
+   "12": {
+    "nodes": 23,
+    "chars": 494
+   },
+   "13": {
+    "nodes": 13,
+    "chars": 101
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 4,
+    "numerals": 0,
+    "controls": 3
+   },
+   "dialog": {
+    "textNodes": 23,
+    "numerals": 29,
+    "controls": 7
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "products",
+   "designing": false,
+   "inspect": "p1",
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "36-staff-fresh-1366x768.jpg",
+  "n": 36,
+  "screen": "staff",
+  "state": "fresh",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 33,
+  "numerals": 14,
+  "controls": 24,
+  "chars": 361,
+  "widgets": 24,
+  "numeralsAll": 15,
+  "sizes": {
+   "11": {
+    "nodes": 12,
+    "chars": 43
+   },
+   "12": {
+    "nodes": 9,
+    "chars": 228
+   },
+   "13": {
+    "nodes": 12,
+    "chars": 90
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "Go to Hiring"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 5,
+    "numerals": 0,
+    "controls": 4
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "staff",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "38-staff-policies-fresh-1366x768.jpg",
+  "n": 38,
+  "screen": "staff-policies",
+  "state": "fresh",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 51,
+  "numerals": 17,
+  "controls": 27,
+  "chars": 589,
+  "widgets": 27,
+  "numeralsAll": 18,
+  "sizes": {
+   "11": {
+    "nodes": 23,
+    "chars": 135
+   },
+   "12": {
+    "nodes": 15,
+    "chars": 350
+   },
+   "13": {
+    "nodes": 13,
+    "chars": 104
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 23,
+    "numerals": 3,
+    "controls": 7
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "staff",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "39-staff-applicants-fresh-1366x768.jpg",
+  "n": 39,
+  "screen": "staff-applicants",
+  "state": "fresh",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 99,
+  "numerals": 73,
+  "controls": 39,
+  "chars": 774,
+  "widgets": 39,
+  "numeralsAll": 74,
+  "sizes": {
+   "11": {
+    "nodes": 32,
+    "chars": 187
+   },
+   "12": {
+    "nodes": 54,
+    "chars": 487
+   },
+   "13": {
+    "nodes": 13,
+    "chars": 100
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 71,
+    "numerals": 59,
+    "controls": 19
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "staff",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "40-staff-execs-fresh-1366x768.jpg",
+  "n": 40,
+  "screen": "staff-execs",
+  "state": "fresh",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 44,
+  "numerals": 14,
+  "controls": 27,
+  "chars": 593,
+  "widgets": 27,
+  "numeralsAll": 15,
+  "sizes": {
+   "11": {
+    "nodes": 17,
+    "chars": 107
+   },
+   "12": {
+    "nodes": 14,
+    "chars": 386
+   },
+   "13": {
+    "nodes": 13,
+    "chars": 100
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 16,
+    "numerals": 0,
+    "controls": 7
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "staff",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "48-growth-fresh-1366x768.jpg",
+  "n": 48,
+  "screen": "growth",
+  "state": "fresh",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 102,
+  "numerals": 43,
+  "controls": 29,
+  "chars": 1266,
+  "widgets": 29,
+  "numeralsAll": 51,
+  "sizes": {
+   "11": {
+    "nodes": 53,
+    "chars": 273
+   },
+   "12": {
+    "nodes": 32,
+    "chars": 845
+   },
+   "13": {
+    "nodes": 17,
+    "chars": 148
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 69,
+    "numerals": 21,
+    "controls": 7
+   },
+   "feed": {
+    "textNodes": 5,
+    "numerals": 8,
+    "controls": 2
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "goals",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "49-company-growth-fresh-1366x768.jpg",
+  "n": 49,
+  "screen": "company-growth",
+  "state": "fresh",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 101,
+  "numerals": 37,
+  "controls": 32,
+  "chars": 1142,
+  "widgets": 32,
+  "numeralsAll": 51,
+  "sizes": {
+   "11": {
+    "nodes": 56,
+    "chars": 254
+   },
+   "12": {
+    "nodes": 27,
+    "chars": 728
+   },
+   "13": {
+    "nodes": 18,
+    "chars": 160
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 68,
+    "numerals": 15,
+    "controls": 10
+   },
+   "feed": {
+    "textNodes": 5,
+    "numerals": 8,
+    "controls": 2
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "goals",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "50-system-fresh-1366x768.jpg",
+  "n": 50,
+  "screen": "system",
+  "state": "fresh",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 40,
+  "numerals": 14,
+  "controls": 29,
+  "chars": 558,
+  "widgets": 29,
+  "numeralsAll": 15,
+  "sizes": {
+   "11": {
+    "nodes": 13,
+    "chars": 141
+   },
+   "12": {
+    "nodes": 12,
+    "chars": 283
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 134
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "Save"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 12,
+    "numerals": 0,
+    "controls": 9
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "system",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "51-system-settings-fresh-1366x768.jpg",
+  "n": 51,
+  "screen": "system-settings",
+  "state": "fresh",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 64,
+  "numerals": 22,
+  "controls": 36,
+  "chars": 970,
+  "widgets": 36,
+  "numeralsAll": 23,
+  "sizes": {
+   "11": {
+    "nodes": 32,
+    "chars": 585
+   },
+   "12": {
+    "nodes": 17,
+    "chars": 269
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 116
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 36,
+    "numerals": 8,
+    "controls": 16
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "system",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "52-system-keys-fresh-1366x768.jpg",
+  "n": 52,
+  "screen": "system-keys",
+  "state": "fresh",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 131,
+  "numerals": 26,
+  "controls": 73,
+  "chars": 1405,
+  "widgets": 73,
+  "numeralsAll": 27,
+  "sizes": {
+   "11": {
+    "nodes": 15,
+    "chars": 356
+   },
+   "12": {
+    "nodes": 100,
+    "chars": 935
+   },
+   "13": {
+    "nodes": 16,
+    "chars": 114
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 103,
+    "numerals": 12,
+    "controls": 53
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "system",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "53-feedback-fresh-1366x768.jpg",
+  "n": 53,
+  "screen": "feedback",
+  "state": "fresh",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 62,
+  "numerals": 31,
+  "controls": 38,
+  "chars": 811,
+  "widgets": 38,
+  "numeralsAll": 32,
+  "sizes": {
+   "11": {
+    "nodes": 28,
+    "chars": 356
+   },
+   "12": {
+    "nodes": 16,
+    "chars": 316
+   },
+   "13": {
+    "nodes": 16,
+    "chars": 126
+   },
+   "16": {
+    "nodes": 1,
+    "chars": 10
+   },
+   "20": {
+    "nodes": 1,
+    "chars": 3
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 16,
+    "numerals": 9,
+    "controls": 3
+   },
+   "feed": {
+    "textNodes": 5,
+    "numerals": 8,
+    "controls": 2
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   },
+   "dialog": {
+    "textNodes": 13,
+    "numerals": 0,
+    "controls": 13
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "dashboard",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "58-system-company-fresh-1366x768.jpg",
+  "n": 58,
+  "screen": "system-company",
+  "state": "fresh",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 57,
+  "numerals": 14,
+  "controls": 36,
+  "chars": 803,
+  "widgets": 36,
+  "numeralsAll": 15,
+  "sizes": {
+   "11": {
+    "nodes": 16,
+    "chars": 144
+   },
+   "12": {
+    "nodes": 22,
+    "chars": 499
+   },
+   "13": {
+    "nodes": 19,
+    "chars": 160
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 29,
+    "numerals": 0,
+    "controls": 16
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "system",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "02-menu-saves-late-1366x768.jpg",
+  "n": 2,
+  "screen": "menu-saves",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 22,
+  "numerals": 15,
+  "controls": 7,
+  "chars": 636,
+  "widgets": 7,
+  "numeralsAll": 16,
+  "sizes": {
+   "11": {
+    "nodes": 7,
+    "chars": 233
+   },
+   "12": {
+    "nodes": 11,
+    "chars": 346
+   },
+   "13": {
+    "nodes": 1,
+    "chars": 40
+   },
+   "48": {
+    "nodes": 3,
+    "chars": 17
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": null,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "Continue: Sweep Works, 01 Sep 2027"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "screen": {
+    "textNodes": 22,
+    "numerals": 15,
+    "controls": 7
+   }
+  },
+  "where": {
+   "screen": "menu",
+   "tab": "city",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": null,
+   "products": null,
+   "day": null
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "05-city-late-1366x768.jpg",
+  "n": 5,
+  "screen": "city",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": true,
+  "textNodes": 53,
+  "numerals": 53,
+  "controls": 29,
+  "chars": 493,
+  "widgets": 29,
+  "numeralsAll": 54,
+  "sizes": {
+   "11": {
+    "nodes": 22,
+    "chars": 107
+   },
+   "12": {
+    "nodes": 19,
+    "chars": 293
+   },
+   "13": {
+    "nodes": 12,
+    "chars": 93
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": 8,
+  "canvasShare": 100,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 26,
+    "numerals": 27,
+    "controls": 11
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "city",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": {
+   "colours": 536,
+   "spread": 51.5,
+   "mean": 107.2,
+   "blank": false,
+   "stable": true,
+   "settledMs": 1177
+  },
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "07-overview-late-1366x768.jpg",
+  "n": 7,
+  "screen": "overview",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 134,
+  "numerals": 164,
+  "controls": 50,
+  "chars": 1539,
+  "widgets": 44,
+  "numeralsAll": 249,
+  "sizes": {
+   "11": {
+    "nodes": 58,
+    "chars": 488
+   },
+   "12": {
+    "nodes": 59,
+    "chars": 922
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 116
+   },
+   "16": {
+    "nodes": 1,
+    "chars": 7
+   },
+   "20": {
+    "nodes": 1,
+    "chars": 6
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 75,
+    "numerals": 62,
+    "controls": 29
+   },
+   "feed": {
+    "textNodes": 32,
+    "numerals": 76,
+    "controls": 3
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "dashboard",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "08-devices-late-1366x768.jpg",
+  "n": 8,
+  "screen": "devices",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 161,
+  "numerals": 171,
+  "controls": 74,
+  "chars": 1111,
+  "widgets": 60,
+  "numeralsAll": 172,
+  "sizes": {
+   "11": {
+    "nodes": 43,
+    "chars": 456
+   },
+   "12": {
+    "nodes": 104,
+    "chars": 544
+   },
+   "13": {
+    "nodes": 14,
+    "chars": 111
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 134,
+    "numerals": 145,
+    "controls": 56
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "products",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "09-inspector-late-1366x768.jpg",
+  "n": 9,
+  "screen": "inspector",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 187,
+  "numerals": 205,
+  "controls": 84,
+  "chars": 1556,
+  "widgets": 69,
+  "numeralsAll": 206,
+  "sizes": {
+   "11": {
+    "nodes": 69,
+    "chars": 742
+   },
+   "12": {
+    "nodes": 102,
+    "chars": 692
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 121
+   },
+   "16": {
+    "nodes": 1,
+    "chars": 1
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "Order 40K"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 120,
+    "numerals": 121,
+    "controls": 55
+   },
+   "dialog": {
+    "textNodes": 40,
+    "numerals": 58,
+    "controls": 11
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "products",
+   "designing": false,
+   "inspect": "p224",
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "10-inspector-scores-late-1366x768.jpg",
+  "n": 10,
+  "screen": "inspector-scores",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 182,
+  "numerals": 193,
+  "controls": 83,
+  "chars": 1550,
+  "widgets": 69,
+  "numeralsAll": 194,
+  "sizes": {
+   "11": {
+    "nodes": 54,
+    "chars": 689
+   },
+   "12": {
+    "nodes": 112,
+    "chars": 739
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 121
+   },
+   "16": {
+    "nodes": 1,
+    "chars": 1
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "Order 40K"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 120,
+    "numerals": 121,
+    "controls": 55
+   },
+   "dialog": {
+    "textNodes": 35,
+    "numerals": 46,
+    "controls": 10
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "products",
+   "designing": false,
+   "inspect": "p224",
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "11-inspector-specs-late-1366x768.jpg",
+  "n": 11,
+  "screen": "inspector-specs",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 188,
+  "numerals": 217,
+  "controls": 83,
+  "chars": 1687,
+  "widgets": 69,
+  "numeralsAll": 232,
+  "sizes": {
+   "11": {
+    "nodes": 70,
+    "chars": 873
+   },
+   "12": {
+    "nodes": 102,
+    "chars": 692
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 121
+   },
+   "16": {
+    "nodes": 1,
+    "chars": 1
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "Order 40K"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 120,
+    "numerals": 121,
+    "controls": 55
+   },
+   "dialog": {
+    "textNodes": 41,
+    "numerals": 70,
+    "controls": 10
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "products",
+   "designing": false,
+   "inspect": "p224",
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "12-inspector-reviews-late-1366x768.jpg",
+  "n": 12,
+  "screen": "inspector-reviews",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 184,
+  "numerals": 182,
+  "controls": 83,
+  "chars": 1682,
+  "widgets": 69,
+  "numeralsAll": 284,
+  "sizes": {
+   "11": {
+    "nodes": 55,
+    "chars": 681
+   },
+   "12": {
+    "nodes": 109,
+    "chars": 867
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 121
+   },
+   "16": {
+    "nodes": 5,
+    "chars": 13
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "Order 40K"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 120,
+    "numerals": 121,
+    "controls": 55
+   },
+   "dialog": {
+    "textNodes": 37,
+    "numerals": 35,
+    "controls": 10
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "products",
+   "designing": false,
+   "inspect": "p224",
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "13-rival-device-late-1366x768.jpg",
+  "n": 13,
+  "screen": "rival-device",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 187,
+  "numerals": 258,
+  "controls": 54,
+  "chars": 1226,
+  "widgets": 43,
+  "numeralsAll": 637,
+  "sizes": {
+   "11": {
+    "nodes": 92,
+    "chars": 425
+   },
+   "12": {
+    "nodes": 80,
+    "chars": 634
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 167
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 130,
+    "numerals": 186,
+    "controls": 28
+   },
+   "dialog": {
+    "textNodes": 30,
+    "numerals": 46,
+    "controls": 8
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "market",
+   "designing": false,
+   "inspect": "p2",
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "22-research-late-1366x768.jpg",
+  "n": 22,
+  "screen": "research",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 117,
+  "numerals": 162,
+  "controls": 61,
+  "chars": 1372,
+  "widgets": 61,
+  "numeralsAll": 163,
+  "sizes": {
+   "11": {
+    "nodes": 51,
+    "chars": 489
+   },
+   "12": {
+    "nodes": 50,
+    "chars": 754
+   },
+   "13": {
+    "nodes": 16,
+    "chars": 129
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [
+   {
+    "path": "div.grid.h-full.min-h-0 > section.flex.min-h-0.flex-col > div.min-h-0.flex-1.flex > div.min-h-0.flex-1.overflow-auto",
+    "scrollWidth": 960,
+    "clientWidth": 832
+   }
+  ],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "Start research"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 90,
+    "numerals": 136,
+    "controls": 43
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "research",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "23-research-lines-late-1366x768.jpg",
+  "n": 23,
+  "screen": "research-lines",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 83,
+  "numerals": 80,
+  "controls": 26,
+  "chars": 433,
+  "widgets": 26,
+  "numeralsAll": 81,
+  "sizes": {
+   "11": {
+    "nodes": 17,
+    "chars": 80
+   },
+   "12": {
+    "nodes": 53,
+    "chars": 241
+   },
+   "13": {
+    "nodes": 13,
+    "chars": 112
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 56,
+    "numerals": 54,
+    "controls": 8
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "research",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "24-labs-late-1366x768.jpg",
+  "n": 24,
+  "screen": "labs",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 59,
+  "numerals": 46,
+  "controls": 29,
+  "chars": 688,
+  "widgets": 29,
+  "numeralsAll": 47,
+  "sizes": {
+   "11": {
+    "nodes": 32,
+    "chars": 244
+   },
+   "12": {
+    "nodes": 13,
+    "chars": 316
+   },
+   "13": {
+    "nodes": 14,
+    "chars": 128
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 32,
+    "numerals": 20,
+    "controls": 11
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "labs",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "25-labs-os-late-1366x768.jpg",
+  "n": 25,
+  "screen": "labs-os",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 81,
+  "numerals": 50,
+  "controls": 33,
+  "chars": 871,
+  "widgets": 33,
+  "numeralsAll": 51,
+  "sizes": {
+   "11": {
+    "nodes": 47,
+    "chars": 508
+   },
+   "12": {
+    "nodes": 16,
+    "chars": 216
+   },
+   "13": {
+    "nodes": 18,
+    "chars": 147
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "Start version 2"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 54,
+    "numerals": 24,
+    "controls": 15
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "labs",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "29-stores-late-1366x768.jpg",
+  "n": 29,
+  "screen": "stores",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 100,
+  "numerals": 97,
+  "controls": 38,
+  "chars": 683,
+  "widgets": 34,
+  "numeralsAll": 99,
+  "sizes": {
+   "11": {
+    "nodes": 33,
+    "chars": 221
+   },
+   "12": {
+    "nodes": 50,
+    "chars": 340
+   },
+   "13": {
+    "nodes": 17,
+    "chars": 122
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 73,
+    "numerals": 71,
+    "controls": 20
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "stores",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "32-marketing-late-1366x768.jpg",
+  "n": 32,
+  "screen": "marketing",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 48,
+  "numerals": 36,
+  "controls": 31,
+  "chars": 390,
+  "widgets": 31,
+  "numeralsAll": 37,
+  "sizes": {
+   "11": {
+    "nodes": 22,
+    "chars": 148
+   },
+   "12": {
+    "nodes": 10,
+    "chars": 124
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 115
+   },
+   "20": {
+    "nodes": 1,
+    "chars": 3
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "New campaign"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 21,
+    "numerals": 10,
+    "controls": 13
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "marketing",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "34-marketing-events-late-1366x768.jpg",
+  "n": 34,
+  "screen": "marketing-events",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 71,
+  "numerals": 55,
+  "controls": 32,
+  "chars": 606,
+  "widgets": 31,
+  "numeralsAll": 56,
+  "sizes": {
+   "11": {
+    "nodes": 23,
+    "chars": 105
+   },
+   "12": {
+    "nodes": 34,
+    "chars": 391
+   },
+   "13": {
+    "nodes": 14,
+    "chars": 110
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 44,
+    "numerals": 29,
+    "controls": 14
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "marketing",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "35-owners-late-1366x768.jpg",
+  "n": 35,
+  "screen": "owners",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 135,
+  "numerals": 142,
+  "controls": 56,
+  "chars": 1127,
+  "widgets": 44,
+  "numeralsAll": 149,
+  "sizes": {
+   "11": {
+    "nodes": 34,
+    "chars": 478
+   },
+   "12": {
+    "nodes": 79,
+    "chars": 480
+   },
+   "13": {
+    "nodes": 21,
+    "chars": 166
+   },
+   "20": {
+    "nodes": 1,
+    "chars": 3
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 108,
+    "numerals": 116,
+    "controls": 38
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "care",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "36-staff-late-1366x768.jpg",
+  "n": 36,
+  "screen": "staff",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 158,
+  "numerals": 181,
+  "controls": 54,
+  "chars": 1017,
+  "widgets": 38,
+  "numeralsAll": 403,
+  "sizes": {
+   "11": {
+    "nodes": 45,
+    "chars": 235
+   },
+   "12": {
+    "nodes": 97,
+    "chars": 679
+   },
+   "13": {
+    "nodes": 16,
+    "chars": 103
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 131,
+    "numerals": 155,
+    "controls": 36
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "staff",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "37-staff-teams-late-1366x768.jpg",
+  "n": 37,
+  "screen": "staff-teams",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 114,
+  "numerals": 46,
+  "controls": 84,
+  "chars": 786,
+  "widgets": 49,
+  "numeralsAll": 190,
+  "sizes": {
+   "11": {
+    "nodes": 56,
+    "chars": 251
+   },
+   "12": {
+    "nodes": 42,
+    "chars": 437
+   },
+   "13": {
+    "nodes": 16,
+    "chars": 98
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "Organise by role"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 87,
+    "numerals": 20,
+    "controls": 66
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "staff",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "38-staff-policies-late-1366x768.jpg",
+  "n": 38,
+  "screen": "staff-policies",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 89,
+  "numerals": 68,
+  "controls": 35,
+  "chars": 780,
+  "widgets": 35,
+  "numeralsAll": 69,
+  "sizes": {
+   "11": {
+    "nodes": 52,
+    "chars": 484
+   },
+   "12": {
+    "nodes": 21,
+    "chars": 193
+   },
+   "13": {
+    "nodes": 16,
+    "chars": 103
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 62,
+    "numerals": 42,
+    "controls": 17
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "staff",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "39-staff-applicants-late-1366x768.jpg",
+  "n": 39,
+  "screen": "staff-applicants",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 102,
+  "numerals": 89,
+  "controls": 38,
+  "chars": 692,
+  "widgets": 38,
+  "numeralsAll": 90,
+  "sizes": {
+   "11": {
+    "nodes": 36,
+    "chars": 193
+   },
+   "12": {
+    "nodes": 53,
+    "chars": 396
+   },
+   "13": {
+    "nodes": 13,
+    "chars": 103
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 75,
+    "numerals": 63,
+    "controls": 20
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "staff",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "40-staff-execs-late-1366x768.jpg",
+  "n": 40,
+  "screen": "staff-execs",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 100,
+  "numerals": 117,
+  "controls": 38,
+  "chars": 1000,
+  "widgets": 38,
+  "numeralsAll": 125,
+  "sizes": {
+   "11": {
+    "nodes": 27,
+    "chars": 446
+   },
+   "12": {
+    "nodes": 50,
+    "chars": 341
+   },
+   "13": {
+    "nodes": 23,
+    "chars": 213
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 73,
+    "numerals": 91,
+    "controls": 20
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "staff",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "41-person-late-1366x768.jpg",
+  "n": 41,
+  "screen": "person",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 173,
+  "numerals": 215,
+  "controls": 59,
+  "chars": 1168,
+  "widgets": 43,
+  "numeralsAll": 439,
+  "sizes": {
+   "11": {
+    "nodes": 60,
+    "chars": 470
+   },
+   "12": {
+    "nodes": 96,
+    "chars": 588
+   },
+   "13": {
+    "nodes": 17,
+    "chars": 110
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 114,
+    "numerals": 155,
+    "controls": 35
+   },
+   "dialog": {
+    "textNodes": 32,
+    "numerals": 34,
+    "controls": 6
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "staff",
+   "designing": false,
+   "inspect": null,
+   "person": "e136",
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "43-market-late-1366x768.jpg",
+  "n": 43,
+  "screen": "market",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 157,
+  "numerals": 212,
+  "controls": 46,
+  "chars": 935,
+  "widgets": 36,
+  "numeralsAll": 591,
+  "sizes": {
+   "11": {
+    "nodes": 77,
+    "chars": 335
+   },
+   "12": {
+    "nodes": 66,
+    "chars": 443
+   },
+   "13": {
+    "nodes": 14,
+    "chars": 157
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 130,
+    "numerals": 186,
+    "controls": 28
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "market",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "44-regions-late-1366x768.jpg",
+  "n": 44,
+  "screen": "regions",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": true,
+  "textNodes": 50,
+  "numerals": 51,
+  "controls": 34,
+  "chars": 459,
+  "widgets": 34,
+  "numeralsAll": 52,
+  "sizes": {
+   "11": {
+    "nodes": 26,
+    "chars": 136
+   },
+   "12": {
+    "nodes": 12,
+    "chars": 230
+   },
+   "13": {
+    "nodes": 12,
+    "chars": 93
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": 5,
+  "canvasShare": 100,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 23,
+    "numerals": 25,
+    "controls": 16
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "world",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": {
+   "colours": 454,
+   "spread": 39.7,
+   "mean": 94,
+   "blank": false,
+   "stable": true,
+   "settledMs": 1282
+  },
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "45-rivals-late-1366x768.jpg",
+  "n": 45,
+  "screen": "rivals",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 151,
+  "numerals": 217,
+  "controls": 44,
+  "chars": 939,
+  "widgets": 26,
+  "numeralsAll": 308,
+  "sizes": {
+   "11": {
+    "nodes": 43,
+    "chars": 134
+   },
+   "12": {
+    "nodes": 95,
+    "chars": 703
+   },
+   "13": {
+    "nodes": 13,
+    "chars": 102
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 124,
+    "numerals": 191,
+    "controls": 26
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "rivals",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "46-finance-late-1366x768.jpg",
+  "n": 46,
+  "screen": "finance",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 95,
+  "numerals": 136,
+  "controls": 29,
+  "chars": 720,
+  "widgets": 28,
+  "numeralsAll": 143,
+  "sizes": {
+   "11": {
+    "nodes": 49,
+    "chars": 354
+   },
+   "12": {
+    "nodes": 26,
+    "chars": 180
+   },
+   "13": {
+    "nodes": 16,
+    "chars": 162
+   },
+   "16": {
+    "nodes": 4,
+    "chars": 24
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 68,
+    "numerals": 110,
+    "controls": 11
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "finance",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "47-shares-late-1366x768.jpg",
+  "n": 47,
+  "screen": "shares",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 126,
+  "numerals": 162,
+  "controls": 32,
+  "chars": 1134,
+  "widgets": 32,
+  "numeralsAll": 251,
+  "sizes": {
+   "11": {
+    "nodes": 42,
+    "chars": 315
+   },
+   "12": {
+    "nodes": 64,
+    "chars": 652
+   },
+   "13": {
+    "nodes": 20,
+    "chars": 167
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 99,
+    "numerals": 136,
+    "controls": 14
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "shares",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "48-growth-late-1366x768.jpg",
+  "n": 48,
+  "screen": "growth",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 86,
+  "numerals": 124,
+  "controls": 26,
+  "chars": 1068,
+  "widgets": 26,
+  "numeralsAll": 209,
+  "sizes": {
+   "11": {
+    "nodes": 48,
+    "chars": 258
+   },
+   "12": {
+    "nodes": 23,
+    "chars": 681
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 129
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 27,
+    "numerals": 22,
+    "controls": 5
+   },
+   "feed": {
+    "textNodes": 32,
+    "numerals": 76,
+    "controls": 3
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "goals",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "50-system-late-1366x768.jpg",
+  "n": 50,
+  "screen": "system",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 55,
+  "numerals": 45,
+  "controls": 36,
+  "chars": 509,
+  "widgets": 36,
+  "numeralsAll": 46,
+  "sizes": {
+   "11": {
+    "nodes": 19,
+    "chars": 179
+   },
+   "12": {
+    "nodes": 21,
+    "chars": 193
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 137
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "Save"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 28,
+    "numerals": 19,
+    "controls": 18
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "system",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "51-system-settings-late-1366x768.jpg",
+  "n": 51,
+  "screen": "system-settings",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 63,
+  "numerals": 34,
+  "controls": 34,
+  "chars": 889,
+  "widgets": 34,
+  "numeralsAll": 35,
+  "sizes": {
+   "11": {
+    "nodes": 33,
+    "chars": 595
+   },
+   "12": {
+    "nodes": 15,
+    "chars": 175
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 119
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 36,
+    "numerals": 8,
+    "controls": 16
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "system",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "52-system-keys-late-1366x768.jpg",
+  "n": 52,
+  "screen": "system-keys",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 130,
+  "numerals": 38,
+  "controls": 71,
+  "chars": 1324,
+  "widgets": 71,
+  "numeralsAll": 39,
+  "sizes": {
+   "11": {
+    "nodes": 16,
+    "chars": 366
+   },
+   "12": {
+    "nodes": 98,
+    "chars": 841
+   },
+   "13": {
+    "nodes": 16,
+    "chars": 117
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 103,
+    "numerals": 12,
+    "controls": 53
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "system",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "53-feedback-late-1366x768.jpg",
+  "n": 53,
+  "screen": "feedback",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 138,
+  "numerals": 155,
+  "controls": 52,
+  "chars": 1770,
+  "widgets": 51,
+  "numeralsAll": 249,
+  "sizes": {
+   "11": {
+    "nodes": 60,
+    "chars": 664
+   },
+   "12": {
+    "nodes": 60,
+    "chars": 964
+   },
+   "13": {
+    "nodes": 16,
+    "chars": 129
+   },
+   "16": {
+    "nodes": 1,
+    "chars": 7
+   },
+   "20": {
+    "nodes": 1,
+    "chars": 6
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 66,
+    "numerals": 53,
+    "controls": 18
+   },
+   "feed": {
+    "textNodes": 32,
+    "numerals": 76,
+    "controls": 3
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   },
+   "dialog": {
+    "textNodes": 13,
+    "numerals": 0,
+    "controls": 13
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "dashboard",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "54-decision-late-1366x768.jpg",
+  "n": 54,
+  "screen": "decision",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 140,
+  "numerals": 170,
+  "controls": 52,
+  "chars": 1866,
+  "widgets": 47,
+  "numeralsAll": 242,
+  "sizes": {
+   "11": {
+    "nodes": 60,
+    "chars": 606
+   },
+   "12": {
+    "nodes": 62,
+    "chars": 1113
+   },
+   "13": {
+    "nodes": 16,
+    "chars": 135
+   },
+   "16": {
+    "nodes": 1,
+    "chars": 6
+   },
+   "20": {
+    "nodes": 1,
+    "chars": 6
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 72,
+    "numerals": 64,
+    "controls": 25
+   },
+   "feed": {
+    "textNodes": 32,
+    "numerals": 77,
+    "controls": 7
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 6,
+    "controls": 0
+   },
+   "dialog": {
+    "textNodes": 9,
+    "numerals": 5,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "dashboard",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 750
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "55-year-end-late-1366x768.jpg",
+  "n": 55,
+  "screen": "year-end",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 160,
+  "numerals": 211,
+  "controls": 47,
+  "chars": 1784,
+  "widgets": 44,
+  "numeralsAll": 291,
+  "sizes": {
+   "11": {
+    "nodes": 69,
+    "chars": 638
+   },
+   "12": {
+    "nodes": 66,
+    "chars": 979
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 116
+   },
+   "16": {
+    "nodes": 7,
+    "chars": 33
+   },
+   "20": {
+    "nodes": 3,
+    "chars": 18
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "On to 2028"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 9,
+    "numerals": 12,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 69,
+    "numerals": 64,
+    "controls": 20
+   },
+   "feed": {
+    "textNodes": 32,
+    "numerals": 77,
+    "controls": 7
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 6,
+    "controls": 0
+   },
+   "dialog": {
+    "textNodes": 31,
+    "numerals": 43,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "dashboard",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": 2027,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 750
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "57-gameover-late-1366x768.jpg",
+  "n": 57,
+  "screen": "gameover",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 56,
+  "numerals": 55,
+  "controls": 26,
+  "chars": 568,
+  "widgets": 26,
+  "numeralsAll": 56,
+  "sizes": {
+   "11": {
+    "nodes": 17,
+    "chars": 80
+   },
+   "12": {
+    "nodes": 26,
+    "chars": 366
+   },
+   "13": {
+    "nodes": 12,
+    "chars": 94
+   },
+   "20": {
+    "nodes": 1,
+    "chars": 28
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": 100,
+  "canvasShare": 100,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "Go back to 21 May 2026, before the debt"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 8,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 13,
+    "numerals": 8,
+    "controls": 5
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 6,
+    "controls": 0
+   },
+   "dialog": {
+    "textNodes": 16,
+    "numerals": 24,
+    "controls": 3
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "city",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 40,
+   "products": 1,
+   "day": 327
+  },
+  "canvas": {
+   "colours": 197,
+   "spread": 22.8,
+   "mean": 28.4,
+   "blank": false,
+   "stable": true,
+   "settledMs": 1200
+  },
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "58-system-company-late-1366x768.jpg",
+  "n": 58,
+  "screen": "system-company",
+  "state": "late",
+  "size": "1366x768",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 54,
+  "numerals": 26,
+  "controls": 33,
+  "chars": 616,
+  "widgets": 33,
+  "numeralsAll": 27,
+  "sizes": {
+   "11": {
+    "nodes": 17,
+    "chars": 154
+   },
+   "12": {
+    "nodes": 18,
+    "chars": 295
+   },
+   "13": {
+    "nodes": 19,
+    "chars": 167
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 27,
+    "numerals": 0,
+    "controls": 15
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "system",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "01-menu-fresh-1920x1080.jpg",
+  "n": 1,
+  "screen": "menu",
+  "state": "fresh",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 13,
+  "numerals": 6,
+  "controls": 6,
+  "chars": 570,
+  "widgets": 6,
+  "numeralsAll": 6,
+  "sizes": {
+   "11": {
+    "nodes": 2,
+    "chars": 196
+   },
+   "12": {
+    "nodes": 7,
+    "chars": 317
+   },
+   "13": {
+    "nodes": 1,
+    "chars": 40
+   },
+   "48": {
+    "nodes": 3,
+    "chars": 17
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": null,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New company"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "screen": {
+    "textNodes": 13,
+    "numerals": 6,
+    "controls": 6
+   }
+  },
+  "where": {
+   "screen": "menu",
+   "tab": "city",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": null,
+   "products": null,
+   "day": null
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "02-menu-saves-fresh-1920x1080.jpg",
+  "n": 2,
+  "screen": "menu-saves",
+  "state": "fresh",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 22,
+  "numerals": 13,
+  "controls": 7,
+  "chars": 633,
+  "widgets": 7,
+  "numeralsAll": 13,
+  "sizes": {
+   "11": {
+    "nodes": 7,
+    "chars": 230
+   },
+   "12": {
+    "nodes": 11,
+    "chars": 346
+   },
+   "13": {
+    "nodes": 1,
+    "chars": 40
+   },
+   "48": {
+    "nodes": 3,
+    "chars": 17
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": null,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "Continue: Sweep Works, 01 Jan 2026"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "screen": {
+    "textNodes": 22,
+    "numerals": 13,
+    "controls": 7
+   }
+  },
+  "where": {
+   "screen": "menu",
+   "tab": "city",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": null,
+   "products": null,
+   "day": null
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "03-menu-settings-fresh-1920x1080.jpg",
+  "n": 3,
+  "screen": "menu-settings",
+  "state": "fresh",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 49,
+  "numerals": 10,
+  "controls": 24,
+  "chars": 824,
+  "widgets": 24,
+  "numeralsAll": 10,
+  "sizes": {
+   "11": {
+    "nodes": 22,
+    "chars": 588
+   },
+   "12": {
+    "nodes": 21,
+    "chars": 193
+   },
+   "13": {
+    "nodes": 3,
+    "chars": 26
+   },
+   "48": {
+    "nodes": 3,
+    "chars": 17
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": null,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New company"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "screen": {
+    "textNodes": 49,
+    "numerals": 10,
+    "controls": 24
+   }
+  },
+  "where": {
+   "screen": "menu",
+   "tab": "city",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": null,
+   "products": null,
+   "day": null
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "04-newgame-fresh-1920x1080.jpg",
+  "n": 4,
+  "screen": "newgame",
+  "state": "fresh",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 70,
+  "numerals": 21,
+  "controls": 21,
+  "chars": 970,
+  "widgets": 21,
+  "numeralsAll": 21,
+  "sizes": {
+   "11": {
+    "nodes": 35,
+    "chars": 444
+   },
+   "12": {
+    "nodes": 24,
+    "chars": 428
+   },
+   "13": {
+    "nodes": 8,
+    "chars": 81
+   },
+   "48": {
+    "nodes": 3,
+    "chars": 17
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": null,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "Found company"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "screen": {
+    "textNodes": 70,
+    "numerals": 21,
+    "controls": 21
+   }
+  },
+  "where": {
+   "screen": "new",
+   "tab": "city",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": null,
+   "products": null,
+   "day": null
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "05-city-fresh-1920x1080.jpg",
+  "n": 5,
+  "screen": "city",
+  "state": "fresh",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": true,
+  "textNodes": 46,
+  "numerals": 15,
+  "controls": 24,
+  "chars": 428,
+  "widgets": 24,
+  "numeralsAll": 15,
+  "sizes": {
+   "11": {
+    "nodes": 18,
+    "chars": 77
+   },
+   "12": {
+    "nodes": 16,
+    "chars": 261
+   },
+   "13": {
+    "nodes": 12,
+    "chars": 90
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": 1.3,
+  "canvasShare": 100,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 18,
+    "numerals": 1,
+    "controls": 4
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "city",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": {
+   "colours": 396,
+   "spread": 46.8,
+   "mean": 106.6,
+   "blank": false,
+   "stable": true,
+   "settledMs": 1014
+  },
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "06-lock-card-fresh-1920x1080.jpg",
+  "n": 6,
+  "screen": "lock-card",
+  "state": "fresh",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": true,
+  "textNodes": 62,
+  "numerals": 20,
+  "controls": 26,
+  "chars": 705,
+  "widgets": 26,
+  "numeralsAll": 20,
+  "sizes": {
+   "11": {
+    "nodes": 28,
+    "chars": 166
+   },
+   "12": {
+    "nodes": 21,
+    "chars": 443
+   },
+   "13": {
+    "nodes": 13,
+    "chars": 96
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": 7.9,
+  "canvasShare": 100,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 18,
+    "numerals": 1,
+    "controls": 4
+   },
+   "dialog": {
+    "textNodes": 16,
+    "numerals": 5,
+    "controls": 2
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "city",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": "shares",
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": {
+   "colours": 488,
+   "spread": 50.2,
+   "mean": 103.6,
+   "blank": false,
+   "stable": true,
+   "settledMs": 1214
+  },
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "07-overview-fresh-1920x1080.jpg",
+  "n": 7,
+  "screen": "overview",
+  "state": "fresh",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 51,
+  "numerals": 31,
+  "controls": 26,
+  "chars": 585,
+  "widgets": 26,
+  "numeralsAll": 31,
+  "sizes": {
+   "11": {
+    "nodes": 23,
+    "chars": 158
+   },
+   "12": {
+    "nodes": 11,
+    "chars": 301
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 113
+   },
+   "16": {
+    "nodes": 1,
+    "chars": 10
+   },
+   "20": {
+    "nodes": 1,
+    "chars": 3
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 18,
+    "numerals": 9,
+    "controls": 4
+   },
+   "feed": {
+    "textNodes": 5,
+    "numerals": 8,
+    "controls": 2
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "dashboard",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "08-devices-fresh-1920x1080.jpg",
+  "n": 8,
+  "screen": "devices",
+  "state": "fresh",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 32,
+  "numerals": 14,
+  "controls": 23,
+  "chars": 379,
+  "widgets": 23,
+  "numeralsAll": 14,
+  "sizes": {
+   "11": {
+    "nodes": 12,
+    "chars": 43
+   },
+   "12": {
+    "nodes": 8,
+    "chars": 246
+   },
+   "13": {
+    "nodes": 12,
+    "chars": 90
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 4,
+    "numerals": 0,
+    "controls": 3
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "products",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "13-rival-device-fresh-1920x1080.jpg",
+  "n": 13,
+  "screen": "rival-device",
+  "state": "fresh",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 55,
+  "numerals": 43,
+  "controls": 30,
+  "chars": 688,
+  "widgets": 30,
+  "numeralsAll": 43,
+  "sizes": {
+   "11": {
+    "nodes": 19,
+    "chars": 93
+   },
+   "12": {
+    "nodes": 23,
+    "chars": 494
+   },
+   "13": {
+    "nodes": 13,
+    "chars": 101
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 4,
+    "numerals": 0,
+    "controls": 3
+   },
+   "dialog": {
+    "textNodes": 23,
+    "numerals": 29,
+    "controls": 7
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "products",
+   "designing": false,
+   "inspect": "p1",
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "36-staff-fresh-1920x1080.jpg",
+  "n": 36,
+  "screen": "staff",
+  "state": "fresh",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 33,
+  "numerals": 14,
+  "controls": 24,
+  "chars": 361,
+  "widgets": 24,
+  "numeralsAll": 14,
+  "sizes": {
+   "11": {
+    "nodes": 12,
+    "chars": 43
+   },
+   "12": {
+    "nodes": 9,
+    "chars": 228
+   },
+   "13": {
+    "nodes": 12,
+    "chars": 90
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "Go to Hiring"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 5,
+    "numerals": 0,
+    "controls": 4
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "staff",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "38-staff-policies-fresh-1920x1080.jpg",
+  "n": 38,
+  "screen": "staff-policies",
+  "state": "fresh",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 51,
+  "numerals": 17,
+  "controls": 27,
+  "chars": 589,
+  "widgets": 27,
+  "numeralsAll": 17,
+  "sizes": {
+   "11": {
+    "nodes": 23,
+    "chars": 135
+   },
+   "12": {
+    "nodes": 15,
+    "chars": 350
+   },
+   "13": {
+    "nodes": 13,
+    "chars": 104
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 23,
+    "numerals": 3,
+    "controls": 7
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "staff",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "39-staff-applicants-fresh-1920x1080.jpg",
+  "n": 39,
+  "screen": "staff-applicants",
+  "state": "fresh",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 99,
+  "numerals": 73,
+  "controls": 39,
+  "chars": 774,
+  "widgets": 39,
+  "numeralsAll": 73,
+  "sizes": {
+   "11": {
+    "nodes": 32,
+    "chars": 187
+   },
+   "12": {
+    "nodes": 54,
+    "chars": 487
+   },
+   "13": {
+    "nodes": 13,
+    "chars": 100
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 71,
+    "numerals": 59,
+    "controls": 19
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "staff",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "40-staff-execs-fresh-1920x1080.jpg",
+  "n": 40,
+  "screen": "staff-execs",
+  "state": "fresh",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 44,
+  "numerals": 14,
+  "controls": 27,
+  "chars": 593,
+  "widgets": 27,
+  "numeralsAll": 14,
+  "sizes": {
+   "11": {
+    "nodes": 17,
+    "chars": 107
+   },
+   "12": {
+    "nodes": 14,
+    "chars": 386
+   },
+   "13": {
+    "nodes": 13,
+    "chars": 100
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 16,
+    "numerals": 0,
+    "controls": 7
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "staff",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "48-growth-fresh-1920x1080.jpg",
+  "n": 48,
+  "screen": "growth",
+  "state": "fresh",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 120,
+  "numerals": 50,
+  "controls": 33,
+  "chars": 1351,
+  "widgets": 33,
+  "numeralsAll": 50,
+  "sizes": {
+   "11": {
+    "nodes": 67,
+    "chars": 307
+   },
+   "12": {
+    "nodes": 33,
+    "chars": 853
+   },
+   "13": {
+    "nodes": 20,
+    "chars": 191
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 87,
+    "numerals": 28,
+    "controls": 11
+   },
+   "feed": {
+    "textNodes": 5,
+    "numerals": 8,
+    "controls": 2
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "goals",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "49-company-growth-fresh-1920x1080.jpg",
+  "n": 49,
+  "screen": "company-growth",
+  "state": "fresh",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 120,
+  "numerals": 50,
+  "controls": 33,
+  "chars": 1351,
+  "widgets": 33,
+  "numeralsAll": 50,
+  "sizes": {
+   "11": {
+    "nodes": 67,
+    "chars": 307
+   },
+   "12": {
+    "nodes": 33,
+    "chars": 853
+   },
+   "13": {
+    "nodes": 20,
+    "chars": 191
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 87,
+    "numerals": 28,
+    "controls": 11
+   },
+   "feed": {
+    "textNodes": 5,
+    "numerals": 8,
+    "controls": 2
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "goals",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "50-system-fresh-1920x1080.jpg",
+  "n": 50,
+  "screen": "system",
+  "state": "fresh",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 40,
+  "numerals": 14,
+  "controls": 29,
+  "chars": 558,
+  "widgets": 29,
+  "numeralsAll": 14,
+  "sizes": {
+   "11": {
+    "nodes": 13,
+    "chars": 141
+   },
+   "12": {
+    "nodes": 12,
+    "chars": 283
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 134
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "Save"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 12,
+    "numerals": 0,
+    "controls": 9
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "system",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "51-system-settings-fresh-1920x1080.jpg",
+  "n": 51,
+  "screen": "system-settings",
+  "state": "fresh",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 64,
+  "numerals": 22,
+  "controls": 36,
+  "chars": 970,
+  "widgets": 36,
+  "numeralsAll": 22,
+  "sizes": {
+   "11": {
+    "nodes": 32,
+    "chars": 585
+   },
+   "12": {
+    "nodes": 17,
+    "chars": 269
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 116
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 36,
+    "numerals": 8,
+    "controls": 16
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "system",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "52-system-keys-fresh-1920x1080.jpg",
+  "n": 52,
+  "screen": "system-keys",
+  "state": "fresh",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 131,
+  "numerals": 26,
+  "controls": 73,
+  "chars": 1405,
+  "widgets": 73,
+  "numeralsAll": 26,
+  "sizes": {
+   "11": {
+    "nodes": 15,
+    "chars": 356
+   },
+   "12": {
+    "nodes": 100,
+    "chars": 935
+   },
+   "13": {
+    "nodes": 16,
+    "chars": 114
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 103,
+    "numerals": 12,
+    "controls": 53
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "system",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "53-feedback-fresh-1920x1080.jpg",
+  "n": 53,
+  "screen": "feedback",
+  "state": "fresh",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 62,
+  "numerals": 31,
+  "controls": 38,
+  "chars": 811,
+  "widgets": 38,
+  "numeralsAll": 31,
+  "sizes": {
+   "11": {
+    "nodes": 28,
+    "chars": 356
+   },
+   "12": {
+    "nodes": 16,
+    "chars": 316
+   },
+   "13": {
+    "nodes": 16,
+    "chars": 126
+   },
+   "16": {
+    "nodes": 1,
+    "chars": 10
+   },
+   "20": {
+    "nodes": 1,
+    "chars": 3
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 16,
+    "numerals": 9,
+    "controls": 3
+   },
+   "feed": {
+    "textNodes": 5,
+    "numerals": 8,
+    "controls": 2
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   },
+   "dialog": {
+    "textNodes": 13,
+    "numerals": 0,
+    "controls": 13
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "dashboard",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "58-system-company-fresh-1920x1080.jpg",
+  "n": 58,
+  "screen": "system-company",
+  "state": "fresh",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 57,
+  "numerals": 14,
+  "controls": 36,
+  "chars": 803,
+  "widgets": 36,
+  "numeralsAll": 14,
+  "sizes": {
+   "11": {
+    "nodes": 16,
+    "chars": 144
+   },
+   "12": {
+    "nodes": 22,
+    "chars": 499
+   },
+   "13": {
+    "nodes": 19,
+    "chars": 160
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 7,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 14,
+    "numerals": 4,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 29,
+    "numerals": 0,
+    "controls": 16
+   },
+   "strip": {
+    "textNodes": 6,
+    "numerals": 3,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "system",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 0,
+   "products": 0,
+   "day": 0
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "02-menu-saves-late-1920x1080.jpg",
+  "n": 2,
+  "screen": "menu-saves",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 22,
+  "numerals": 15,
+  "controls": 7,
+  "chars": 636,
+  "widgets": 7,
+  "numeralsAll": 15,
+  "sizes": {
+   "11": {
+    "nodes": 7,
+    "chars": 233
+   },
+   "12": {
+    "nodes": 11,
+    "chars": 346
+   },
+   "13": {
+    "nodes": 1,
+    "chars": 40
+   },
+   "48": {
+    "nodes": 3,
+    "chars": 17
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": null,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "Continue: Sweep Works, 01 Sep 2027"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "screen": {
+    "textNodes": 22,
+    "numerals": 15,
+    "controls": 7
+   }
+  },
+  "where": {
+   "screen": "menu",
+   "tab": "city",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": null,
+   "products": null,
+   "day": null
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "05-city-late-1920x1080.jpg",
+  "n": 5,
+  "screen": "city",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": true,
+  "textNodes": 62,
+  "numerals": 53,
+  "controls": 29,
+  "chars": 558,
+  "widgets": 29,
+  "numeralsAll": 53,
+  "sizes": {
+   "11": {
+    "nodes": 26,
+    "chars": 131
+   },
+   "12": {
+    "nodes": 24,
+    "chars": 334
+   },
+   "13": {
+    "nodes": 12,
+    "chars": 93
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": 3.3,
+  "canvasShare": 100,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 35,
+    "numerals": 27,
+    "controls": 11
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "city",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": {
+   "colours": 516,
+   "spread": 51.2,
+   "mean": 109.8,
+   "blank": false,
+   "stable": true,
+   "settledMs": 1256
+  },
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "07-overview-late-1920x1080.jpg",
+  "n": 7,
+  "screen": "overview",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 149,
+  "numerals": 214,
+  "controls": 50,
+  "chars": 1858,
+  "widgets": 44,
+  "numeralsAll": 248,
+  "sizes": {
+   "11": {
+    "nodes": 68,
+    "chars": 558
+   },
+   "12": {
+    "nodes": 64,
+    "chars": 1171
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 116
+   },
+   "16": {
+    "nodes": 1,
+    "chars": 7
+   },
+   "20": {
+    "nodes": 1,
+    "chars": 6
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 75,
+    "numerals": 62,
+    "controls": 29
+   },
+   "feed": {
+    "textNodes": 47,
+    "numerals": 126,
+    "controls": 3
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "dashboard",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "08-devices-late-1920x1080.jpg",
+  "n": 8,
+  "screen": "devices",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 161,
+  "numerals": 171,
+  "controls": 74,
+  "chars": 1111,
+  "widgets": 60,
+  "numeralsAll": 171,
+  "sizes": {
+   "11": {
+    "nodes": 43,
+    "chars": 456
+   },
+   "12": {
+    "nodes": 104,
+    "chars": 544
+   },
+   "13": {
+    "nodes": 14,
+    "chars": 111
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 134,
+    "numerals": 145,
+    "controls": 56
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "products",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "09-inspector-late-1920x1080.jpg",
+  "n": 9,
+  "screen": "inspector",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 202,
+  "numerals": 229,
+  "controls": 86,
+  "chars": 1611,
+  "widgets": 71,
+  "numeralsAll": 230,
+  "sizes": {
+   "11": {
+    "nodes": 70,
+    "chars": 748
+   },
+   "12": {
+    "nodes": 116,
+    "chars": 741
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 121
+   },
+   "16": {
+    "nodes": 1,
+    "chars": 1
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "Order 40K"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 134,
+    "numerals": 145,
+    "controls": 56
+   },
+   "dialog": {
+    "textNodes": 41,
+    "numerals": 58,
+    "controls": 12
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "products",
+   "designing": false,
+   "inspect": "p224",
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "10-inspector-scores-late-1920x1080.jpg",
+  "n": 10,
+  "screen": "inspector-scores",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 196,
+  "numerals": 217,
+  "controls": 84,
+  "chars": 1594,
+  "widgets": 70,
+  "numeralsAll": 218,
+  "sizes": {
+   "11": {
+    "nodes": 55,
+    "chars": 695
+   },
+   "12": {
+    "nodes": 125,
+    "chars": 777
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 121
+   },
+   "16": {
+    "nodes": 1,
+    "chars": 1
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "Order 40K"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 134,
+    "numerals": 145,
+    "controls": 56
+   },
+   "dialog": {
+    "textNodes": 35,
+    "numerals": 46,
+    "controls": 10
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "products",
+   "designing": false,
+   "inspect": "p224",
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "11-inspector-specs-late-1920x1080.jpg",
+  "n": 11,
+  "screen": "inspector-specs",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 217,
+  "numerals": 255,
+  "controls": 84,
+  "chars": 1870,
+  "widgets": 70,
+  "numeralsAll": 256,
+  "sizes": {
+   "11": {
+    "nodes": 85,
+    "chars": 994
+   },
+   "12": {
+    "nodes": 116,
+    "chars": 754
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 121
+   },
+   "16": {
+    "nodes": 1,
+    "chars": 1
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "Order 40K"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 134,
+    "numerals": 145,
+    "controls": 56
+   },
+   "dialog": {
+    "textNodes": 56,
+    "numerals": 84,
+    "controls": 10
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "products",
+   "designing": false,
+   "inspect": "p224",
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "12-inspector-reviews-late-1920x1080.jpg",
+  "n": 12,
+  "screen": "inspector-reviews",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 225,
+  "numerals": 251,
+  "controls": 84,
+  "chars": 2135,
+  "widgets": 70,
+  "numeralsAll": 308,
+  "sizes": {
+   "11": {
+    "nodes": 64,
+    "chars": 765
+   },
+   "12": {
+    "nodes": 141,
+    "chars": 1236
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 121
+   },
+   "16": {
+    "nodes": 5,
+    "chars": 13
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "Order 40K"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 134,
+    "numerals": 145,
+    "controls": 56
+   },
+   "dialog": {
+    "textNodes": 64,
+    "numerals": 80,
+    "controls": 10
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "products",
+   "designing": false,
+   "inspect": "p224",
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "13-rival-device-late-1920x1080.jpg",
+  "n": 13,
+  "screen": "rival-device",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 257,
+  "numerals": 376,
+  "controls": 64,
+  "chars": 1607,
+  "widgets": 43,
+  "numeralsAll": 638,
+  "sizes": {
+   "11": {
+    "nodes": 102,
+    "chars": 444
+   },
+   "12": {
+    "nodes": 140,
+    "chars": 996
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 167
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 200,
+    "numerals": 304,
+    "controls": 38
+   },
+   "dialog": {
+    "textNodes": 30,
+    "numerals": 46,
+    "controls": 8
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "market",
+   "designing": false,
+   "inspect": "p2",
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "22-research-late-1920x1080.jpg",
+  "n": 22,
+  "screen": "research",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 117,
+  "numerals": 162,
+  "controls": 61,
+  "chars": 1372,
+  "widgets": 61,
+  "numeralsAll": 164,
+  "sizes": {
+   "11": {
+    "nodes": 51,
+    "chars": 489
+   },
+   "12": {
+    "nodes": 50,
+    "chars": 754
+   },
+   "13": {
+    "nodes": 16,
+    "chars": 129
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "Start research"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 90,
+    "numerals": 136,
+    "controls": 43
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "research",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "23-research-lines-late-1920x1080.jpg",
+  "n": 23,
+  "screen": "research-lines",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 83,
+  "numerals": 80,
+  "controls": 26,
+  "chars": 433,
+  "widgets": 26,
+  "numeralsAll": 82,
+  "sizes": {
+   "11": {
+    "nodes": 17,
+    "chars": 80
+   },
+   "12": {
+    "nodes": 53,
+    "chars": 241
+   },
+   "13": {
+    "nodes": 13,
+    "chars": 112
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 56,
+    "numerals": 54,
+    "controls": 8
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "research",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "24-labs-late-1920x1080.jpg",
+  "n": 24,
+  "screen": "labs",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 59,
+  "numerals": 46,
+  "controls": 29,
+  "chars": 688,
+  "widgets": 29,
+  "numeralsAll": 48,
+  "sizes": {
+   "11": {
+    "nodes": 32,
+    "chars": 244
+   },
+   "12": {
+    "nodes": 13,
+    "chars": 316
+   },
+   "13": {
+    "nodes": 14,
+    "chars": 128
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 32,
+    "numerals": 20,
+    "controls": 11
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "labs",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "25-labs-os-late-1920x1080.jpg",
+  "n": 25,
+  "screen": "labs-os",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 81,
+  "numerals": 50,
+  "controls": 33,
+  "chars": 871,
+  "widgets": 33,
+  "numeralsAll": 52,
+  "sizes": {
+   "11": {
+    "nodes": 47,
+    "chars": 508
+   },
+   "12": {
+    "nodes": 16,
+    "chars": 216
+   },
+   "13": {
+    "nodes": 18,
+    "chars": 147
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "Start version 2"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 54,
+    "numerals": 24,
+    "controls": 15
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "labs",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "29-stores-late-1920x1080.jpg",
+  "n": 29,
+  "screen": "stores",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 100,
+  "numerals": 97,
+  "controls": 38,
+  "chars": 683,
+  "widgets": 34,
+  "numeralsAll": 100,
+  "sizes": {
+   "11": {
+    "nodes": 33,
+    "chars": 221
+   },
+   "12": {
+    "nodes": 50,
+    "chars": 340
+   },
+   "13": {
+    "nodes": 17,
+    "chars": 122
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 73,
+    "numerals": 71,
+    "controls": 20
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "stores",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "32-marketing-late-1920x1080.jpg",
+  "n": 32,
+  "screen": "marketing",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 48,
+  "numerals": 36,
+  "controls": 31,
+  "chars": 390,
+  "widgets": 31,
+  "numeralsAll": 38,
+  "sizes": {
+   "11": {
+    "nodes": 22,
+    "chars": 148
+   },
+   "12": {
+    "nodes": 10,
+    "chars": 124
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 115
+   },
+   "20": {
+    "nodes": 1,
+    "chars": 3
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "New campaign"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 21,
+    "numerals": 10,
+    "controls": 13
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "marketing",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "34-marketing-events-late-1920x1080.jpg",
+  "n": 34,
+  "screen": "marketing-events",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 71,
+  "numerals": 55,
+  "controls": 32,
+  "chars": 606,
+  "widgets": 31,
+  "numeralsAll": 57,
+  "sizes": {
+   "11": {
+    "nodes": 23,
+    "chars": 105
+   },
+   "12": {
+    "nodes": 34,
+    "chars": 391
+   },
+   "13": {
+    "nodes": 14,
+    "chars": 110
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 44,
+    "numerals": 29,
+    "controls": 14
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "marketing",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "35-owners-late-1920x1080.jpg",
+  "n": 35,
+  "screen": "owners",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 153,
+  "numerals": 148,
+  "controls": 62,
+  "chars": 1351,
+  "widgets": 50,
+  "numeralsAll": 150,
+  "sizes": {
+   "11": {
+    "nodes": 40,
+    "chars": 542
+   },
+   "12": {
+    "nodes": 91,
+    "chars": 640
+   },
+   "13": {
+    "nodes": 21,
+    "chars": 166
+   },
+   "20": {
+    "nodes": 1,
+    "chars": 3
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 126,
+    "numerals": 122,
+    "controls": 44
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "care",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "36-staff-late-1920x1080.jpg",
+  "n": 36,
+  "screen": "staff",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 218,
+  "numerals": 264,
+  "controls": 64,
+  "chars": 1399,
+  "widgets": 38,
+  "numeralsAll": 404,
+  "sizes": {
+   "11": {
+    "nodes": 55,
+    "chars": 295
+   },
+   "12": {
+    "nodes": 147,
+    "chars": 1001
+   },
+   "13": {
+    "nodes": 16,
+    "chars": 103
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 191,
+    "numerals": 238,
+    "controls": 46
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "staff",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "37-staff-teams-late-1920x1080.jpg",
+  "n": 37,
+  "screen": "staff-teams",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 132,
+  "numerals": 49,
+  "controls": 98,
+  "chars": 908,
+  "widgets": 54,
+  "numeralsAll": 191,
+  "sizes": {
+   "11": {
+    "nodes": 63,
+    "chars": 275
+   },
+   "12": {
+    "nodes": 52,
+    "chars": 529
+   },
+   "13": {
+    "nodes": 17,
+    "chars": 104
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "Organise by role"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 105,
+    "numerals": 23,
+    "controls": 80
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "staff",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "38-staff-policies-late-1920x1080.jpg",
+  "n": 38,
+  "screen": "staff-policies",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 89,
+  "numerals": 68,
+  "controls": 35,
+  "chars": 780,
+  "widgets": 35,
+  "numeralsAll": 70,
+  "sizes": {
+   "11": {
+    "nodes": 52,
+    "chars": 484
+   },
+   "12": {
+    "nodes": 21,
+    "chars": 193
+   },
+   "13": {
+    "nodes": 16,
+    "chars": 103
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 62,
+    "numerals": 42,
+    "controls": 17
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "staff",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "39-staff-applicants-late-1920x1080.jpg",
+  "n": 39,
+  "screen": "staff-applicants",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 102,
+  "numerals": 89,
+  "controls": 38,
+  "chars": 692,
+  "widgets": 38,
+  "numeralsAll": 91,
+  "sizes": {
+   "11": {
+    "nodes": 36,
+    "chars": 193
+   },
+   "12": {
+    "nodes": 53,
+    "chars": 396
+   },
+   "13": {
+    "nodes": 13,
+    "chars": 103
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 75,
+    "numerals": 63,
+    "controls": 20
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "staff",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "40-staff-execs-late-1920x1080.jpg",
+  "n": 40,
+  "screen": "staff-execs",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 104,
+  "numerals": 124,
+  "controls": 39,
+  "chars": 1024,
+  "widgets": 39,
+  "numeralsAll": 126,
+  "sizes": {
+   "11": {
+    "nodes": 27,
+    "chars": 446
+   },
+   "12": {
+    "nodes": 54,
+    "chars": 365
+   },
+   "13": {
+    "nodes": 23,
+    "chars": 213
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 77,
+    "numerals": 98,
+    "controls": 21
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "staff",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "41-person-late-1920x1080.jpg",
+  "n": 41,
+  "screen": "person",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 250,
+  "numerals": 298,
+  "controls": 70,
+  "chars": 1752,
+  "widgets": 44,
+  "numeralsAll": 440,
+  "sizes": {
+   "11": {
+    "nodes": 71,
+    "chars": 534
+   },
+   "12": {
+    "nodes": 162,
+    "chars": 1108
+   },
+   "13": {
+    "nodes": 17,
+    "chars": 110
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 191,
+    "numerals": 238,
+    "controls": 46
+   },
+   "dialog": {
+    "textNodes": 32,
+    "numerals": 34,
+    "controls": 6
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "staff",
+   "designing": false,
+   "inspect": null,
+   "person": "e136",
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "43-market-late-1920x1080.jpg",
+  "n": 43,
+  "screen": "market",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 237,
+  "numerals": 350,
+  "controls": 56,
+  "chars": 1366,
+  "widgets": 36,
+  "numeralsAll": 612,
+  "sizes": {
+   "11": {
+    "nodes": 97,
+    "chars": 404
+   },
+   "12": {
+    "nodes": 126,
+    "chars": 805
+   },
+   "13": {
+    "nodes": 14,
+    "chars": 157
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 210,
+    "numerals": 324,
+    "controls": 38
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "market",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "44-regions-late-1920x1080.jpg",
+  "n": 44,
+  "screen": "regions",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": true,
+  "textNodes": 50,
+  "numerals": 51,
+  "controls": 34,
+  "chars": 459,
+  "widgets": 34,
+  "numeralsAll": 53,
+  "sizes": {
+   "11": {
+    "nodes": 26,
+    "chars": 136
+   },
+   "12": {
+    "nodes": 12,
+    "chars": 230
+   },
+   "13": {
+    "nodes": 12,
+    "chars": 93
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": 3.2,
+  "canvasShare": 100,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 23,
+    "numerals": 25,
+    "controls": 16
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "world",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": {
+   "colours": 372,
+   "spread": 39.2,
+   "mean": 95.1,
+   "blank": false,
+   "stable": true,
+   "settledMs": 1213
+  },
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "45-rivals-late-1920x1080.jpg",
+  "n": 45,
+  "screen": "rivals",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 205,
+  "numerals": 307,
+  "controls": 53,
+  "chars": 1236,
+  "widgets": 26,
+  "numeralsAll": 309,
+  "sizes": {
+   "11": {
+    "nodes": 52,
+    "chars": 152
+   },
+   "12": {
+    "nodes": 140,
+    "chars": 982
+   },
+   "13": {
+    "nodes": 13,
+    "chars": 102
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 178,
+    "numerals": 281,
+    "controls": 35
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "rivals",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "46-finance-late-1920x1080.jpg",
+  "n": 46,
+  "screen": "finance",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 109,
+  "numerals": 162,
+  "controls": 29,
+  "chars": 796,
+  "widgets": 28,
+  "numeralsAll": 163,
+  "sizes": {
+   "11": {
+    "nodes": 59,
+    "chars": 404
+   },
+   "12": {
+    "nodes": 30,
+    "chars": 206
+   },
+   "13": {
+    "nodes": 16,
+    "chars": 162
+   },
+   "16": {
+    "nodes": 4,
+    "chars": 24
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 82,
+    "numerals": 136,
+    "controls": 11
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "finance",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "47-shares-late-1920x1080.jpg",
+  "n": 47,
+  "screen": "shares",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 162,
+  "numerals": 224,
+  "controls": 33,
+  "chars": 1510,
+  "widgets": 33,
+  "numeralsAll": 251,
+  "sizes": {
+   "11": {
+    "nodes": 47,
+    "chars": 369
+   },
+   "12": {
+    "nodes": 95,
+    "chars": 974
+   },
+   "13": {
+    "nodes": 20,
+    "chars": 167
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 135,
+    "numerals": 198,
+    "controls": 15
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "shares",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "48-growth-late-1920x1080.jpg",
+  "n": 48,
+  "screen": "growth",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 101,
+  "numerals": 174,
+  "controls": 26,
+  "chars": 1387,
+  "widgets": 26,
+  "numeralsAll": 209,
+  "sizes": {
+   "11": {
+    "nodes": 58,
+    "chars": 328
+   },
+   "12": {
+    "nodes": 28,
+    "chars": 930
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 129
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 27,
+    "numerals": 22,
+    "controls": 5
+   },
+   "feed": {
+    "textNodes": 47,
+    "numerals": 126,
+    "controls": 3
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "goals",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "50-system-late-1920x1080.jpg",
+  "n": 50,
+  "screen": "system",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 55,
+  "numerals": 45,
+  "controls": 36,
+  "chars": 509,
+  "widgets": 36,
+  "numeralsAll": 46,
+  "sizes": {
+   "11": {
+    "nodes": 19,
+    "chars": 179
+   },
+   "12": {
+    "nodes": 21,
+    "chars": 193
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 137
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "Save"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 28,
+    "numerals": 19,
+    "controls": 18
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "system",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "51-system-settings-late-1920x1080.jpg",
+  "n": 51,
+  "screen": "system-settings",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 63,
+  "numerals": 34,
+  "controls": 34,
+  "chars": 889,
+  "widgets": 34,
+  "numeralsAll": 35,
+  "sizes": {
+   "11": {
+    "nodes": 33,
+    "chars": 595
+   },
+   "12": {
+    "nodes": 15,
+    "chars": 175
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 119
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 36,
+    "numerals": 8,
+    "controls": 16
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "system",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "52-system-keys-late-1920x1080.jpg",
+  "n": 52,
+  "screen": "system-keys",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 130,
+  "numerals": 38,
+  "controls": 71,
+  "chars": 1324,
+  "widgets": 71,
+  "numeralsAll": 39,
+  "sizes": {
+   "11": {
+    "nodes": 16,
+    "chars": 366
+   },
+   "12": {
+    "nodes": 98,
+    "chars": 841
+   },
+   "13": {
+    "nodes": 16,
+    "chars": 117
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 103,
+    "numerals": 12,
+    "controls": 53
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "system",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "53-feedback-late-1920x1080.jpg",
+  "n": 53,
+  "screen": "feedback",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 162,
+  "numerals": 214,
+  "controls": 55,
+  "chars": 2172,
+  "widgets": 55,
+  "numeralsAll": 249,
+  "sizes": {
+   "11": {
+    "nodes": 73,
+    "chars": 756
+   },
+   "12": {
+    "nodes": 71,
+    "chars": 1274
+   },
+   "13": {
+    "nodes": 16,
+    "chars": 129
+   },
+   "16": {
+    "nodes": 1,
+    "chars": 7
+   },
+   "20": {
+    "nodes": 1,
+    "chars": 6
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 75,
+    "numerals": 62,
+    "controls": 21
+   },
+   "feed": {
+    "textNodes": 47,
+    "numerals": 126,
+    "controls": 3
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   },
+   "dialog": {
+    "textNodes": 13,
+    "numerals": 0,
+    "controls": 13
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "dashboard",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "54-decision-late-1920x1080.jpg",
+  "n": 54,
+  "screen": "decision",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 158,
+  "numerals": 211,
+  "controls": 51,
+  "chars": 2182,
+  "widgets": 51,
+  "numeralsAll": 242,
+  "sizes": {
+   "11": {
+    "nodes": 72,
+    "chars": 691
+   },
+   "12": {
+    "nodes": 68,
+    "chars": 1344
+   },
+   "13": {
+    "nodes": 16,
+    "chars": 135
+   },
+   "16": {
+    "nodes": 1,
+    "chars": 6
+   },
+   "20": {
+    "nodes": 1,
+    "chars": 6
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 75,
+    "numerals": 67,
+    "controls": 24
+   },
+   "feed": {
+    "textNodes": 47,
+    "numerals": 115,
+    "controls": 7
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 6,
+    "controls": 0
+   },
+   "dialog": {
+    "textNodes": 9,
+    "numerals": 5,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "dashboard",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 750
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "55-year-end-late-1920x1080.jpg",
+  "n": 55,
+  "screen": "year-end",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 181,
+  "numerals": 254,
+  "controls": 50,
+  "chars": 2100,
+  "widgets": 50,
+  "numeralsAll": 291,
+  "sizes": {
+   "11": {
+    "nodes": 82,
+    "chars": 732
+   },
+   "12": {
+    "nodes": 74,
+    "chars": 1201
+   },
+   "13": {
+    "nodes": 15,
+    "chars": 116
+   },
+   "16": {
+    "nodes": 7,
+    "chars": 33
+   },
+   "20": {
+    "nodes": 3,
+    "chars": 18
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "On to 2028"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 9,
+    "numerals": 12,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 75,
+    "numerals": 69,
+    "controls": 23
+   },
+   "feed": {
+    "textNodes": 47,
+    "numerals": 115,
+    "controls": 7
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 6,
+    "controls": 0
+   },
+   "dialog": {
+    "textNodes": 31,
+    "numerals": 43,
+    "controls": 2
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "dashboard",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": 2027,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 750
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "57-gameover-late-1920x1080.jpg",
+  "n": 57,
+  "screen": "gameover",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 56,
+  "numerals": 55,
+  "controls": 26,
+  "chars": 568,
+  "widgets": 26,
+  "numeralsAll": 56,
+  "sizes": {
+   "11": {
+    "nodes": 17,
+    "chars": 80
+   },
+   "12": {
+    "nodes": 26,
+    "chars": 366
+   },
+   "13": {
+    "nodes": 12,
+    "chars": 94
+   },
+   "20": {
+    "nodes": 1,
+    "chars": 28
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": 100,
+  "canvasShare": 100,
+  "primaries": 2,
+  "primaryNames": [
+   "New device",
+   "Go back to 21 May 2026, before the debt"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 8,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 13,
+    "numerals": 8,
+    "controls": 5
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 6,
+    "controls": 0
+   },
+   "dialog": {
+    "textNodes": 16,
+    "numerals": 24,
+    "controls": 3
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "city",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 40,
+   "products": 1,
+   "day": 327
+  },
+  "canvas": {
+   "colours": 147,
+   "spread": 18.4,
+   "mean": 27,
+   "blank": false,
+   "stable": true,
+   "settledMs": 1210
+  },
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ },
+ {
+  "file": "58-system-company-late-1920x1080.jpg",
+  "n": 58,
+  "screen": "system-company",
+  "state": "late",
+  "size": "1920x1080",
+  "theme": "ember",
+  "gl": false,
+  "textNodes": 54,
+  "numerals": 26,
+  "controls": 33,
+  "chars": 616,
+  "widgets": 33,
+  "numeralsAll": 27,
+  "sizes": {
+   "11": {
+    "nodes": 17,
+    "chars": 154
+   },
+   "12": {
+    "nodes": 18,
+    "chars": 295
+   },
+   "13": {
+    "nodes": 19,
+    "chars": 167
+   }
+  },
+  "under11": [],
+  "pctUnder11": {
+   "nodes": 0,
+   "chars": 0
+  },
+  "lowContrast": [],
+  "overflow": [],
+  "docOverflow": false,
+  "railScrolls": false,
+  "coverage": null,
+  "canvasShare": null,
+  "primaries": 1,
+  "primaryNames": [
+   "New device"
+  ],
+  "overlaps": [],
+  "overlapCount": 0,
+  "regions": {
+   "top": {
+    "textNodes": 8,
+    "numerals": 9,
+    "controls": 8
+   },
+   "nav": {
+    "textNodes": 17,
+    "numerals": 9,
+    "controls": 10
+   },
+   "screen": {
+    "textNodes": 27,
+    "numerals": 0,
+    "controls": 15
+   },
+   "strip": {
+    "textNodes": 2,
+    "numerals": 8,
+    "controls": 0
+   }
+  },
+  "where": {
+   "screen": "game",
+   "tab": "system",
+   "designing": false,
+   "inspect": null,
+   "person": null,
+   "lockCard": null,
+   "yearEnd": null,
+   "showing": null,
+   "staff": 44,
+   "products": 13,
+   "day": 600
+  },
+  "canvas": null,
+  "gl3d": null,
+  "crash": false,
+  "stillLoading": false
+ }
+]

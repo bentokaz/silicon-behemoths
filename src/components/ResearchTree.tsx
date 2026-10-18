@@ -15,15 +15,17 @@ import { Btn, Help, IconBtn, Lead, Legend, Meter, Panel, Row, int, money, pct, u
 
 // ---------------------------------------------------------------- the geometry of the tree
 
-const LABEL_W = 136
-const COL_W = 164
-const NODE_W = 144
-const NODE_H = 44
-const FEAT_W = 128
-const FEAT_H = 30
-const FEAT_IN = 28
-const HEAD_H = 24
-const PAD = 12
+// (measured at a 12px text size; the type scale is larger and grows in big windows, so the tree grows with it)
+const K = typeof window === 'undefined' ? 1 : Math.max(1, (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--text-xs')) || 12) / 12)
+const LABEL_W = Math.round(148 * K)
+const COL_W = Math.round(168 * K)
+const NODE_W = Math.round(150 * K)
+const NODE_H = Math.round(48 * K)
+const FEAT_W = Math.round(132 * K)
+const FEAT_H = Math.round(32 * K)
+const FEAT_IN = Math.round(28 * K)
+const HEAD_H = Math.round(28 * K)
+const PAD = Math.round(12 * K)
 const BAND = 6 + NODE_H + 6
 const BAND_FEAT = BAND + FEAT_H + 6
 
@@ -276,11 +278,11 @@ export function Research() {
       <span className="relative flex h-full flex-col justify-center">{body}</span>
     </button>
   )
-  const NAME = 'line-clamp-2 text-xs leading-[13px]'
-  const STATUS = 'whitespace-nowrap text-[11px] leading-[14px]'
+  const NAME = 'line-clamp-2 text-xs leading-[1.15]'
+  const STATUS = 'whitespace-nowrap text-2xs leading-[1.2]'
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_320px] gap-2 p-4">
+    <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_340px] gap-4 px-6 pb-6 pt-4">
       <Panel
         title="Technology tree"
         icon="research"
@@ -308,7 +310,7 @@ export function Research() {
                   <div key={t} className="absolute left-0 flex w-full items-start gap-1 border-t border-line pl-3 pr-1 first:border-t-0" style={{ top: row(t), height: (tops[TRACKS.indexOf(t) + 1] ?? height) - row(t), paddingTop: 9 }}>
                     <Icon name={trackIcon(t)} size={14} className="mt-[1px] shrink-0 text-dim" />
                     <div className="min-w-0 flex-1">
-                      <div className="text-xs font-semibold leading-[15px] text-fg">{TRACK_INFO[t].name}</div>
+                      <div className="text-xs font-semibold leading-tight text-fg">{TRACK_INFO[t].name}</div>
                       <div className="text-[11px] text-dim">{`Level ${g.levels[t]} of ${MAX_LEVEL}`}</div>
                     </div>
                     {opened.includes(t) && foldable(t) && <IconBtn small icon="minus" tone="ghost" title={`Fold the owned levels of ${TRACK_INFO[t].name} away`} onClick={() => fold(t, false)} />}
@@ -375,7 +377,7 @@ export function Research() {
                   const id = `f:${f.id}`
                   const on = sel.kind === 'feature' && sel.id === f.id
                   const share = st === 'running' ? (g.progress[id] ?? 0) / featureCost(f) : undefined
-                  return box(id, st, on, colX(featCol.get(f.id)!) + FEAT_IN, featY(f.track), FEAT_W, FEAT_H, `${f.name}: ${f.note}`, () => setPicked({ kind: 'feature', id: f.id }), <span className="line-clamp-2 text-[11px] leading-[13px]">{f.name}</span>, share)
+                  return box(id, st, on, colX(featCol.get(f.id)!) + FEAT_IN, featY(f.track), FEAT_W, FEAT_H, `${f.name}: ${f.note}`, () => setPicked({ kind: 'feature', id: f.id }), <span className="line-clamp-2 text-2xs leading-[1.15]">{f.name}</span>, share)
                 })}
               </div>
             </div>
@@ -420,7 +422,7 @@ export function Research() {
                 }}
               />
             </div>
-            <div className={`mt-1 min-h-[30px] text-[11px] leading-[15px] ${timeLine.warn ? 'text-warn' : 'text-dim'}`}>{timeLine.text}</div>
+            <div className={`mt-1 min-h-[30px] text-xs leading-snug ${timeLine.warn ? 'text-warn' : 'text-dim'}`}>{timeLine.text}</div>
             {mark && (
               <div className="flex items-center gap-[6px] text-[11px] text-dim">
                 <span aria-hidden className="h-[6px] w-3 shrink-0 bg-mute" />
@@ -428,7 +430,7 @@ export function Research() {
               </div>
             )}
             {runway < 12 && (
-              <div className="mt-1 text-[11px] leading-[15px] text-warn">
+              <div className="mt-1 text-xs leading-snug text-warn">
                 <Lead icon="alert" />
                 {runway < 1 ? 'That is more than all your cash in one month.' : `That is all your cash in ${span(Math.floor(runway) * 30)}, before any income.`}
               </div>
@@ -451,7 +453,7 @@ export function Research() {
           {running.map((p) => (
             <div key={p.id} className="flex items-center gap-2 border-b border-line py-[6px] pl-3 pr-1 last:border-0">
               <button type="button" className="min-w-0 flex-1 text-left" title="Show it in the tree" onClick={() => setPicked(p.id.startsWith('f:') ? { kind: 'feature', id: p.id.slice(2) } : { kind: 'trunk', track: p.id as Track, level: Math.min(MAX_LEVEL, g.levels[p.id as Track] + 1) })}>
-                <div className="text-xs leading-[15px] text-fg">{p.name}</div>
+                <div className="text-xs leading-snug text-fg">{p.name}</div>
                 <div className="mt-[2px] flex items-center gap-2">
                   <Meter value={p.progress} />
                   <span className="shrink-0 whitespace-nowrap text-[11px] text-dim">{`${pct(p.progress, 0)}${p.daysLeft !== null ? `, ${span(p.daysLeft)} left` : ''}`}</span>
