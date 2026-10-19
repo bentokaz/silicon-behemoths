@@ -16,7 +16,7 @@ import { REGIONS, entryBlocked, regionIncome, regionOverheads, rivalReach, world
 import { execFx, meetingFactor, monthlySalaries, perksCost, staffEffects, teamBonus, unmanaged } from '../staff'
 import { founderStake, holdingIncome, ipoBlocked, issueBlocked, marketCap, netWorth, raiseBlocked, rivalValue, roundQuote, stakePrice, takeoverPrice, trailing, valuation } from '../stock'
 import { chipAdoption, chipProjectCost, chipProjectDays, industryOs, osProjectDays, osShipQuality, servicesPerMonth, softwareBonus } from '../tech'
-import { FACADES, GROUNDS, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, cutAt, doorFits, gridAt, inPlot, isBoundary, itemTiles, lineStats, storeStats, typeAt, venueStats } from '../sites'
+import { FACADES, GROUNDS, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, canPartition, cutAt, doorFits, gridAt, inPlot, isBoundary, itemTiles, lineStats, storeStats, typeAt, venueStats } from '../sites'
 import { INCIDENTS, economyNow, typeDemand, unlockBlocked, unlockCost } from '../world'
 import { COST_KEYS, DEVICE_TYPES, EXEC_IDS, type GameState, type MonthReport, ROLES, type Site, SUPPLY_CATS, TRACKS, monthCosts, wasReleased } from '../types'
 
@@ -117,6 +117,12 @@ export function checkSite(site: Site, label: string): string[] {
   unique(site.walls.map((w) => `${w.x},${w.y},${w.side}`), `${label} wall place`, out)
   unique(site.walls.map((w) => w.id), `${label} wall`, out)
   for (const w of site.walls) {
+    // a partition stands inside one room: plain, glass or a door
+    if (w.part) {
+      if (!['glass', 'door', 'wall'].includes(w.kind)) bad('wall-kind', `partition ${w.id} is ${w.kind}`)
+      if (!canPartition(site, w.x, w.y, w.side)) bad('orphan-wall', `partition ${w.kind} ${w.id} at ${w.x},${w.y},${w.side} is not inside one room`)
+      continue
+    }
     if (!['glass', 'door', 'open'].includes(w.kind)) bad('wall-kind', `${w.id} is ${w.kind}`)
     if (!isBoundary(site, w.x, w.y, w.side)) bad('orphan-wall', `${w.kind} ${w.id} at ${w.x},${w.y},${w.side} is on no wall`)
     else if (w.kind !== 'glass' && !doorFits(site, w.x, w.y, w.side)) bad('short-door', `${w.kind} ${w.id} at ${w.x},${w.y},${w.side} has no whole metre of wall`)

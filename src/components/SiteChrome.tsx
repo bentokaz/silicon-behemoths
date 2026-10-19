@@ -38,14 +38,14 @@ export function SiteMenu<T extends string>({ label, value, options, onChange, ti
   useClickAway(open, box, close)
   const now = options.find((o) => o.value === value) ?? options[0]
   return (
-    <div ref={box} className="relative bg-panel/95">
+    <div ref={box} className="sb-float relative">
       <Btn small icon={now.icon} aria-haspopup="menu" aria-expanded={open} title={title ?? `${label}: ${now.label}`} onClick={() => setOpen(!open)}>
         {label}
         <span className="text-dim">{now.label}</span>
         <Icon name="chevronDown" size={10} className="text-dim" />
       </Btn>
       {open && (
-        <div role="menu" aria-label={label} className="absolute left-0 top-8 z-30 min-w-[176px] border border-line2 bg-panel py-1">
+        <div role="menu" aria-label={label} className="absolute left-0 top-8 sb-float z-30 min-w-[176px] py-1">
           {options.map((o) => {
             const on = o.value === value
             return (
@@ -74,7 +74,7 @@ export function SiteStatus({ items, children, open, onOpen }: { items: Figure[];
   const tone = { pos: 'text-pos', neg: 'text-neg', warn: 'text-warn', accent: 'text-accent' } as const
   return (
     <>
-      <div data-site-status className="pointer-events-auto flex h-7 max-w-full shrink-0 items-center border border-line2 bg-panel/95">
+      <div data-site-status className="pointer-events-auto flex h-7 max-w-full shrink-0 items-center sb-float">
         <div role={can ? 'button' : undefined} tabIndex={can ? 0 : undefined} aria-expanded={can ? open : undefined} title={can ? (open ? 'Show less' : 'Show the detail') : undefined} onClick={can ? () => onOpen(!open) : undefined} onKeyDown={can ? (e) => (e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget && (e.preventDefault(), onOpen(!open)) : undefined} className={`flex h-full min-w-0 items-center gap-x-4 overflow-hidden pl-3 ${can ? 'cursor-pointer pr-2 hover:bg-hover' : 'pr-3'}`}>
           {items.map((f) => {
             const body = (
@@ -121,10 +121,10 @@ export function SiteHint({ parts, tone = 'dim', help }: { parts: HintPart[]; ton
   useClickAway(open, box, close)
   return (
     <div data-bottom-bar className="pointer-events-none absolute inset-x-2 bottom-2 flex items-center gap-1">
-      <div ref={box} className="pointer-events-auto relative shrink-0 bg-panel/95">
+      <div ref={box} className="pointer-events-auto sb-float relative shrink-0">
         <IconBtn icon="help" title="Keys and how the view works" aria-expanded={open} active={open ? true : undefined} onClick={() => setOpen(!open)} />
         {open && (
-          <div role="note" className="absolute bottom-8 left-0 z-30 max-h-[min(380px,calc(100vh-250px))] w-[400px] max-w-[80vw] overflow-y-auto border border-line2 bg-panel p-3 text-xs leading-relaxed text-dim">
+          <div role="note" className="absolute bottom-8 left-0 z-30 max-h-[min(380px,calc(100vh-250px))] w-[400px] max-w-[80vw] overflow-y-auto sb-float p-3 text-xs leading-relaxed text-dim">
             {help}
           </div>
         )}

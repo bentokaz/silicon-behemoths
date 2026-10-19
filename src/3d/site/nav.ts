@@ -36,6 +36,8 @@ export interface Nav {
   find(from: number, to: number, out: Int16Array): number
   /** Nearest tile to this one that someone can stand on, or -1. */
   nearest(tile: number): number
+  /** Whether the north or west edge of a tile can be walked through, the plot's own outer edges included. Says nothing of the tiles either side. */
+  pass(x: number, y: number, side: 'n' | 'w'): boolean
   /** Centre of a tile in world coordinates. */
   cx(tile: number): number
   cz(tile: number): number
@@ -101,8 +103,13 @@ export function buildNav(site: Site): Nav {
   })
   const gaps = new Set<string>()
   const doors: Nav['doors'] = []
+  /** Partitions inside a room that nobody walks through: plain and glass ones. */
+  const parts = new Set<string>()
   for (const wl of site.walls) {
-    if (wl.kind === 'glass') continue
+    if (wl.kind === 'glass' || wl.kind === 'wall') {
+      if (wl.part) parts.add(`${wl.x},${wl.y},${wl.side}`)
+      continue
+    }
     gaps.add(`${wl.x},${wl.y},${wl.side}`)
     if (wl.kind === 'door') doors.push({ x: wl.x, y: wl.y, side: wl.side, cx: wl.x - w / 2 + (wl.side === 'n' ? 0.5 : 0), cz: wl.y - h / 2 + (wl.side === 'w' ? 0.5 : 0) })
   }
@@ -122,6 +129,7 @@ export function buildNav(site: Site): Nav {
   const open = (x: number, y: number, side: 'n' | 'w') => {
     const a = side === 'n' ? faceId(site, x, y, 'n') : faceId(site, x, y, 'w')
     const b = side === 'n' ? faceId(site, x, y - 1, 's') : faceId(site, x - 1, y, 'e')
+    if (parts.has(`${x},${y},${side}`)) return false
     if (a === b || gaps.has(`${x},${y},${side}`)) return true
     // a door in a curved wall leads to the tiles in front of it and behind it, never out sideways along the wall
     const bx = side === 'n' ? x : x - 1
@@ -317,6 +325,7 @@ export function buildNav(site: Site): Nav {
     step: move,
     find,
     nearest,
+    pass: open,
     cx: (tile) => (tile % w) - w / 2 + 0.5,
     cz: (tile) => ((tile / w) | 0) - h / 2 + 0.5,
     tileAt: (x, z) => {
