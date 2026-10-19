@@ -87,6 +87,7 @@ export const ITEMS: Record<SiteKind, Record<string, ItemDef>> = {
     gbench: d('Garden bench', 600, 2, 1, 'Grounds', ['atrium', OUT], 'A slatted bench for some air.', { comfort: 0.6 }),
     fountain: d('Fountain', 22000, 3, 3, 'Grounds', ['atrium', OUT], 'A round pool with a jet. Adds prestige and calm.', { comfort: 2.5, prestige: 4 }),
     otree: d('Tree', 900, 1, 1, 'Grounds', [OUT, 'atrium'], 'A full-grown tree.', { comfort: 0.4, prestige: 0.2 }),
+    bamboo: d('Bamboo', 700, 1, 1, 'Grounds', [OUT, 'atrium', 'lobby', 'lounge'], 'A clump of canes, green, golden or black: a screen of living green.', { comfort: 0.5, prestige: 0.2 }),
     hedge: d('Hedge', 200, 1, 1, 'Grounds', [OUT, 'atrium'], 'Clipped green edging.', { comfort: 0.1 }),
     lamp: d('Lamp post', 500, 1, 1, 'Grounds', [OUT], 'Lights the grounds after dark.', { prestige: 0.1 }),
     parking: d('Parking bay', 1500, 3, 5, 'Grounds', [OUT], 'Marked space for one car.', { comfort: 0.3 }),
@@ -114,6 +115,7 @@ export const ITEMS: Record<SiteKind, Record<string, ItemDef>> = {
     tank: d('Storage tank', 9000, 2, 2, 'Yard', [OUT], 'A steel tank on legs.'),
     truck: d('Truck bay', 4000, 3, 8, 'Yard', [OUT], 'A marked bay with a lorry waiting.'),
     otree: d('Tree', 900, 1, 1, 'Yard', [OUT], 'Softens the yard.'),
+    bamboo: d('Bamboo', 700, 1, 1, 'Yard', [OUT], 'A clump of canes that screens the yard.'),
     lamp: d('Lamp post', 500, 1, 1, 'Yard', [OUT], 'Lights the yard.'),
   },
   store: {
@@ -132,6 +134,7 @@ export const ITEMS: Record<SiteKind, Record<string, ItemDef>> = {
     logowall: d('Logo wall', 3500, 2, 1, 'Decor', ['sales', 'forum'], 'Your logo, lit.', { comfort: 1.5 }),
     rug: d('Rug', 800, 2, 2, 'Decor', ['sales', 'service', 'forum'], 'Softens the floor.', { comfort: 0.5, flat: true }),
     otree: d('Street tree', 900, 1, 1, 'Outside', [OUT], 'Shade by the door.', { comfort: 0.5 }),
+    bamboo: d('Bamboo', 700, 1, 1, 'Decor', ['sales', 'service', 'forum', OUT], 'A clump of canes, green, golden or black.', { comfort: 0.6 }),
     planter: d('Planter', 1400, 2, 1, 'Outside', [OUT], 'Greenery at the entrance.', { comfort: 0.6 }),
     sign: d('Totem sign', 5000, 1, 1, 'Outside', [OUT], 'Your logo on a lit column.', { comfort: 1 }),
   },
@@ -150,6 +153,7 @@ export const ITEMS: Record<SiteKind, Record<string, ItemDef>> = {
     sofa: d('Sofa', 2000, 2, 1, 'Front of house', ['foyer'], 'Somewhere to wait for doors.'),
     plant: d('Plant', 250, 1, 1, 'Front of house', ['foyer', 'hall'], 'Softens the space.'),
     otree: d('Tree', 900, 1, 1, 'Grounds', [OUT], 'A full-grown tree.'),
+    bamboo: d('Bamboo', 700, 1, 1, 'Grounds', [OUT, 'foyer'], 'A clump of canes, green, golden or black.'),
     planter: d('Planter', 1400, 2, 1, 'Grounds', [OUT], 'A long bed of grasses.'),
     lamp: d('Lamp post', 500, 1, 1, 'Grounds', [OUT], 'Lights the way in.'),
     flag: d('Flagpole', 1200, 1, 1, 'Grounds', [OUT], 'Your colours, flying.'),
@@ -215,46 +219,44 @@ export const ROOMS: Record<SiteKind, Record<string, RoomDef>> = {
 }
 
 /**
- * What each kind of room does for the company, in one line, for the builders
- * to show beside the room's name. A room on its own does little: it is where
- * the fixtures that do the work may stand, and these say which and what for.
+ * What each kind of room does for the company, in one line, as the
+ * simulation has it: the builder shows it beside the room's name. A room is
+ * where its furniture may stand; what counts is mostly that furniture.
  */
-export const ROOM_EFFECTS: Record<SiteKind, Record<string, string>> = {
+export const ROOM_EFFECT: Record<SiteKind, Record<string, string>> = {
   office: {
-    work: 'Desks for any employee: nobody works without a seat.',
-    lobby: 'Reception, logo walls and showcases here add prestige, which helps hiring and how visitors see you.',
-    exec: 'Executive desks and the boardroom: prestige, and meeting places for team leads.',
-    lab: 'Lab benches here each make one researcher 25% faster.',
-    eng: 'Test rigs here each make one hardware engineer 25% faster: better devices and quicker development.',
-    soft: 'Desks and booths for software engineers, who build your own chips and operating system.',
-    studio: 'Design tables here each make one designer 25% better: devices ship with more polish.',
-    media: 'Media sets here each make one marketer 25% better: campaigns reach further.',
-    support: 'Support consoles here seat agents and make each 25% better: fewer unanswered owners, happier customers.',
-    server: 'Server racks here each make one software engineer 25% faster.',
-    meeting: 'Meeting tables: teams with a lead need places to meet, or they work less well.',
-    lounge: 'Coffee, sofas and games: comfort keeps morale up, and happy staff do more and ask for less.',
-    gym: 'Treadmills and weights: comfort that keeps morale up.',
-    atrium: 'An indoor garden: comfort for everyone and prestige for visitors.',
+    work: 'Desks for any role. Only staff with a desk work; the rest wander the grounds.',
+    lobby: 'Reception, logo wall and showcases add prestige, which draws more and better applicants.',
+    exec: 'Executive desks seat your executives. Prestige from the furniture draws better applicants.',
+    lab: 'Lab benches: each makes one researcher 25% faster, so research finishes sooner.',
+    eng: 'Test rigs: each makes one hardware engineer 25% faster, so devices develop sooner.',
+    soft: 'Desks, booths and screens for software engineers; server racks in a server room boost them.',
+    studio: 'Design tables: each makes one designer 25% more effective, for more polish at release.',
+    media: 'Media sets: each makes one marketer 25% better, so campaigns reach further.',
+    support: 'Support consoles seat agents and make each 25% better: more owners helped a day.',
+    server: 'Server racks: each makes one software engineer 25% faster.',
+    meeting: 'Meeting tables: a team needs one place for every two members, or its lead is half as effective.',
+    lounge: 'Coffee, sofas and games add comfort, which keeps staff morale up.',
+    gym: 'Treadmills, weights and mats add comfort, which keeps staff morale up.',
+    atrium: 'An indoor garden: trees, water and benches add comfort and prestige.',
   },
   factory: {
-    hall: 'The production line: docks, conveyors and machines. Its slowest stage sets how many devices it builds a day.',
-    store: 'Warehouse racks and pallets: where parts and finished stock wait. No effect on output.',
-    control: 'Control desks and inspection benches here each cut the fault rate a little: fewer repairs and recalls.',
-    crew: 'Lockers and a canteen for the shift: comfort for the crew.',
+    hall: 'The production line: a receiving dock, machines linked side by side or by conveyor, and a shipping dock.',
+    store: 'Racks and pallets for parts. For the look of the place: the line runs without one.',
+    control: 'Each control desk or inspection bench cuts the fault rate by a tenth, up to 40%.',
+    crew: 'Lockers and a canteen for the shift. For the look of the place: the line runs without one.',
   },
   store: {
-    sales: 'Where the store trades: display tables and demo pods set how many visitors it can serve, a checkout lets it sell, accessory walls add income per sale.',
+    sales: 'Where devices are sold: it needs a door, a checkout, and display tables or demo pods to serve shoppers; accessory walls add income per sale.',
     service: 'Support bars make owners happier; repair benches cut the cost of warranty repairs.',
-    forum: 'A screen and seats for classes and launches: their comfort raises appeal, so more visitors stay and buy.',
-    stock: 'Stock shelving: each rack lets the store serve 5% more visitors, up to 20%.',
+    forum: 'A screen and seats: their comfort adds to the store\'s appeal, which draws more shoppers in.',
+    stock: 'Stock shelving: each rack lets the store serve 5% more shoppers, up to 20%.',
   },
   venue: {
-    hall: 'The stage, screens and seating: seats set how far a show carries, production how well it lands.',
-    foyer: 'Where guests arrive and try the device afterwards: hands-on tables add to the show.',
+    hall: 'An indoor hall for the stage and seating. A show can be staged in the open too; a hall dims for it.',
+    foyer: 'Where guests arrive: a welcome desk, hands-on tables and a logo wall add to the production.',
   },
 }
-/** What a kind of room does, in one line, or '' for one the data does not know. */
-export const roomEffect = (kind: SiteKind, type: string): string => (Object.hasOwn(ROOM_EFFECTS[kind] ?? {}, type) ? ROOM_EFFECTS[kind][type] : '')
 
 /**
  * The capability a room or a piece of furniture waits on, if any. Furniture
@@ -558,6 +560,26 @@ export function isBoundary(site: Site, x: number, y: number, side: 'n' | 'w', cu
   return edgeRuns(site, x, y, side, curved).some((r) => r.u1 - r.u0 >= CLIP)
 }
 export const wallAt = (site: Site, x: number, y: number, side: 'n' | 'w') => site.walls.find((w) => w.x === x && w.y === y && w.side === side)
+
+/**
+ * True where a partition can be put up: a grid edge between two whole tiles
+ * of the same room, with no slant or curve on either. Nothing else stands
+ * there, since walls only follow the outline of rooms.
+ */
+export function canPartition(site: Site, x: number, y: number, side: 'n' | 'w'): boolean {
+  const [[ax, ay], [bx, by]] = edgeSides(x, y, side)
+  if (!inPlot(site, ax, ay) || !inPlot(site, bx, by)) return false
+  const n = gridAt(site, ax, ay)
+  if (!n || gridAt(site, bx, by) !== n) return false
+  return !cutAt(site, ax, ay) && !cutAt(site, bx, by) && !onCurve(site, ax, ay) && !onCurve(site, bx, by)
+}
+/** The partition on an edge inside a room, if one stands there. */
+export const partAt = (site: Site, x: number, y: number, side: 'n' | 'w') => site.walls.find((w) => w.part && w.x === x && w.y === y && w.side === side)
+/** True where a partition stands that people cannot walk through: a plain or glass one. */
+export const partBlocks = (site: Site, x: number, y: number, side: 'n' | 'w') => {
+  const p = partAt(site, x, y, side)
+  return !!p && p.kind !== 'door' && p.kind !== 'open'
+}
 
 /**
  * What has been worked out about a plot, kept until the plot next changes.
@@ -911,7 +933,8 @@ export function tidy(site: Site) {
   }
   // a door or an opening goes with its wall, and also when a curved wall built beside it cuts its metre short
   const curved = site.curves?.length ? curveTiles(site) : NO_CURVES
-  site.walls = site.walls.filter((w) => isBoundary(site, w.x, w.y, w.side, curved) && (w.kind === 'glass' || doorFits(site, w.x, w.y, w.side, curved)))
+  // a partition stays only while both its sides are still whole floor of one room
+  site.walls = site.walls.filter((w) => (w.part ? canPartition(site, w.x, w.y, w.side) : isBoundary(site, w.x, w.y, w.side, curved) && (w.kind === 'glass' || doorFits(site, w.x, w.y, w.side, curved))))
   // the plot may have changed: nothing remembered about it holds any longer
   site.rev++
 }

@@ -21,13 +21,15 @@ import { cleanRule, defaultReorder, reorderLocked, reordersDue } from './reorder
 import { ACCESSORY, footfall, storeBuyers } from './retail'
 import { contractBlocked, offerContracts, stepContracts } from './contracts'
 import { bayStands, curveAt, curveTiles, onCurve } from './curves'
-import { FACADES, FLOOR_COST, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, SHORT_WALL, UNKNOWN_ITEM, areaOf, areaTiles, autoDoor, builtTiles, canPlace, courtyardFor, curveFor, defaultGround, doorFits, fillError, gridAt, groundsFor, hasGround, inPlot, isBoundary, itemAllowed, itemAt, itemTiles, mergeRooms, newSite, openRooms, pocketAt, roomOf, rowSpots, shapeCuts, starterLine, storeStats, tidy, tierOf, touching, upkeep, venueStats, wallAt, zone } from './sites'
+import { FACADES, FLOOR_COST, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, SHORT_WALL, UNKNOWN_ITEM, areaOf, areaTiles, autoDoor, builtTiles, canPartition, canPlace, courtyardFor, curveFor, defaultGround, doorFits, fillError, gridAt, groundsFor, hasGround, inPlot, isBoundary, itemAllowed, itemAt, itemTiles, mergeRooms, newSite, openRooms, pocketAt, roomOf, rowSpots, shapeCuts, starterLine, storeStats, tidy, tierOf, touching, upkeep, partAt, venueStats, wallAt, zone } from './sites'
 import { capOfChannel, locked, refreshExecs, siteLocked, stepProgress } from './progress'
 import { EXECS, HEADHUNT_COST, HOURS, TEAM_SPAN, dropFromTeams, execFx, inTraining, monthlySalaries, monthlyStaff, newPolicy, perksCost, refreshCandidates, staffEffects, stepStaff, trainingCost } from './staff'
 import { CHIP_BUDGET, OS_FEATURES, OS_TYPES, chipAdoption, cleanLook, licenceBlocked, licenceInfo, licenceSwitchCost, osRoyalty, chipBlocked, chipProjectCost, chipProjectDays, finishChip, newOs, osBlocked, osProjectCost, osProjectDays, osShipQuality, servicesPerMonth, softwareBonus } from './tech'
 import { stockOf, type ChannelId, type Company, type Corner, type CostKey, type DeviceDesign, type DeviceType, type Difficulty, type EventType, type GameConfig, type GameState, type Levels, type MonthReport, type NewsItem, type OsLook, type Product, type ProductionOrder, type ReorderRule, type SegmentId, type Site, type SiteKind, type StaffPolicy, type StorageTier, SUPPLY_CATS, type SupplyCat, TRACKS, type Track, dollars, hasStock, millions, monthCosts, thousands, wasReleased } from './types'
 
-export const SAVE_VERSION = 7
+// 7: site walls may be partitions inside a room (SiteWall.part, kind 'wall'); older saves have none and load as they are
+// 8: plots of the office grew (old ones are widened, see growPlot); products may reorder by themselves, OSes are licensed, contracts
+export const SAVE_VERSION = 8
 export const RETAIL_CUT = 0.15
 
 // ---------------------------------------------------------------- what an action will take
@@ -961,8 +963,24 @@ export function setRoomStyle(s: GameState, ref: string, room: number, style: num
 }
 
 export const EDGE_COST = { wall: 0, open: 0, glass: 120, door: 300 }
+/** Putting up a partition inside a room, per metre: the wall itself, and what is fitted in it. Taking one down is free. */
+export const PART_COST = { wall: 150, open: 0, glass: 270, door: 450 }
+/** What a stretch of wall cost to fit: a partition is paid for whole, a wall between rooms only for what replaces it. */
+export const wallCost = (w: { kind: keyof typeof EDGE_COST; part?: true }) => (w.part ? PART_COST : EDGE_COST)[w.kind] ?? 0
+/** True for a run of straight edges that puts up partitions: none of it is wall between rooms (see setEdges). */
+export const partitionRun = (site: Site, edges: { x: number; y: number; side: 'n' | 'w' }[]) => edges.length > 0 && edges.every((e) => !e || !isEdge(site, e.x, e.y, e.side) || !isBoundary(site, e.x, e.y, e.side))
+
+/**
+ * What changing one straight edge to a kind of wall costs: on an edge
+ * between rooms, the kind's own price; inside a room, a new partition is
+ * paid for whole, and changing one that stands costs only what is fitted.
+ */
+export function edgePrice(site: Site, x: number, y: number, side: 'n' | 'w', kind: keyof typeof EDGE_COST): number {
+  if (!canPartition(site, x, y, side)) return EDGE_COST[kind]
+  return partAt(site, x, y, side) ? EDGE_COST[kind] : PART_COST[kind]
+}
 const WALL_KINDS = 'A stretch of wall can be plain wall, glass, a door or an opening'
-const NO_WALL = 'There is no wall there: walls stand where a room meets another room or open ground'
+const NO_WALL = 'There is no wall there: walls stand where a room meets another room or open ground, and a partition can only go between two whole metres of floor in one room'
 /** True for something that names the north or west edge of a tile on or beside the plot. */
 const isEdge = (site: Site, x: unknown, y: unknown, side: unknown) => whole(x) && whole(y) && (side === 'n' || side === 'w') && x >= 0 && y >= 0 && x <= site.w && y <= site.h
 /** Change one stretch of wall to glass, a door or an opening, or back to plain wall. */
@@ -1042,18 +1060,18 @@ export function setEdges(s: GameState, ref: string, run: WallRun, kind: 'wall' |
   const price = EDGE_COST[kind]
   let same = 0
   const keepDoors = keepsDoors(kind, (run.edges?.length ?? 0) + (run.bays?.length ?? 0))
-  const pay = (now: string): boolean => {
+  const pay = (now: string, cost = price): boolean => {
     if (now === kind || (keepDoors && now === 'door')) {
       same++
       out.skipped++
       return false
     }
-    if (!canAfford(s, price)) {
+    if (!canAfford(s, cost)) {
       out.short++
       return false
     }
-    spend(s, price, siteBucket(site))
-    out.cost += price
+    spend(s, cost, siteBucket(site))
+    out.cost += cost
     out.done++
     return true
   }
@@ -1061,9 +1079,20 @@ export function setEdges(s: GameState, ref: string, run: WallRun, kind: 'wall' |
   const curved = way && site.curves?.length ? curveTiles(site) : undefined
   let cutShort = 0
   const done = new Set<string>()
+  const inner = partitionRun(site, run.edges ?? [])
   for (const e of run.edges ?? []) {
     // a stretch named twice in one run is changed, and paid for, once
     const key = `${e?.x},${e?.y},${e?.side}`
+    // inside a room: a partition goes up, changes, or (as an opening) comes down. Only a run drawn wholly inside
+    // rooms does that: one along a room's own walls that strays inside passes over the stretches that are not wall
+    if (inner && e && isEdge(site, e.x, e.y, e.side) && !done.has(key) && canPartition(site, e.x, e.y, e.side)) {
+      done.add(key)
+      const part = partAt(site, e.x, e.y, e.side)
+      if (!pay(part?.kind ?? 'open', edgePrice(site, e.x, e.y, e.side, kind))) continue
+      site.walls = site.walls.filter((w) => !(w.x === e.x && w.y === e.y && w.side === e.side))
+      if (kind !== 'open') site.walls.push({ id: `w${s.nextId++}`, x: e.x, y: e.y, side: e.side, kind, part: true })
+      continue
+    }
     if (!e || !isEdge(site, e.x, e.y, e.side) || done.has(key) || !isBoundary(site, e.x, e.y, e.side)) {
       out.skipped++
       continue
@@ -1328,7 +1357,7 @@ export function layoutValue(site: Site, has: { facade: number; roof: number; flo
   let total = 0
   for (const r of site.rooms) total += roomCost(ground, r.type, Math.max(1, Math.round(roomArea(site, r.n))))
   let edges = 0
-  for (const w of site.walls) edges += EDGE_COST[w.kind]
+  for (const w of site.walls) edges += wallCost(w)
   for (const c of site.curves ?? []) for (const kind of Object.values(c.walls ?? {})) edges += EDGE_COST[kind]
   total += Math.max(0, edges - site.rooms.length * EDGE_COST.door)
   for (const it of site.items) total += ITEMS[site.kind][it.kind]?.cost ?? 0
@@ -1368,7 +1397,7 @@ export function layoutSig(site: Site): string {
     plot: [site.kind, site.tier, site.w, site.h],
     grid,
     rooms: site.rooms.filter((r) => order.has(r.n)).map((r) => `${order.get(r.n)}:${r.type}:${r.style}`).sort(),
-    walls: site.walls.map((w) => `${w.x},${w.y},${w.side}:${w.kind}`).sort(),
+    walls: site.walls.map((w) => `${w.x},${w.y},${w.side}:${w.kind}${w.part ? '|p' : ''}`).sort(),
     cuts: pairs(site.cuts),
     curves: (site.curves ?? []).map((c) => [order.get(c.room) ?? 0, c.cx, c.cy, c.rx, c.ry, c.t ?? 0, c.from ?? 0, c.sweep ?? 360, pairs(c.walls), Object.keys(c.square ?? {}).sort()].join('|')).sort(),
     floor: pairs(site.floor),
@@ -2665,9 +2694,9 @@ export function migrate(input: GameState): GameState {
     }
     news(s, 'finance', `Prices across the market have settled: now that technology has matured, devices no longer get dearer every year. Every list price, yours and your rivals', was brought down by ${Math.round((1 - k) * 100)}% together, so each device is as attractive as it was.`)
   }
-  // ---- version 7: plots grew. Every plot smaller than its kind now is widened to the new size, with what
+  // ---- version 8: office plots grew. Every plot smaller than its kind now is widened to the new size, with what
   // stands on it moved to the middle, as an upgrade to the next size does: nothing is lost or rebuilt
-  if (from < 7) {
+  if (from < 8) {
     if (s.office) s.office = growPlot(s.office)
     if (s.factory) s.factory = growPlot(s.factory)
     if (s.venue) s.venue = growPlot(s.venue)

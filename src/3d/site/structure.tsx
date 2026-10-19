@@ -349,9 +349,11 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
     const oz = -site.h / 2
     const full = mode === 'full'
     const H = mode === 'cut' ? CUT_H : STOREY - 0.1
+    const WALL_TOP = H
     const top = full ? site.floors * STOREY : H
     const half = WALL_T / 2
     const overrides = new Map(site.walls.map((w) => [`${w.x},${w.y},${w.side}`, w.kind]))
+    const parts = new Set(site.walls.filter((w) => w.part && w.kind !== 'open').map((w) => `${w.x},${w.y},${w.side}`))
     /** What stands on each edge that has a wall: 'wall' covers doors too, since their jambs finish the run. */
     const edges = new Map<string, 'wall' | 'glass'>()
     /** Posts wanted off the grid corners, where a curved wall ends or turns: position to height. */
@@ -453,6 +455,8 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
       // is no way in (see doorFits), so the wall is drawn plain
       if ((kind === 'door' || kind === 'open') && !wholeRun({ a, c, u0, u1 })) kind = undefined
       const exterior = !a || !c
+      // under a roof an inside wall stops inside the roof slab: level with its top, the two flickered along every wall
+      const H = full && !exterior ? WALL_TOP - 0.11 : WALL_TOP
       const seed = x * 53 + y * 97 + (side === 'n' ? 0 : 7)
       const ra = rooms.get(a)
       const rc = rooms.get(c)
@@ -541,6 +545,8 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
           // the whole edge in the ordinary case; where a curve crosses it, only the stretches whose two sides differ.
           // A stretch of a centimetre or two just squares off a corner the curve clips: the curved wall closes it.
           for (const r of edgeRuns(site, x, y, side, curved)) if (r.u1 - r.u0 >= CLIP) run(x, y, side, r.a, r.c, r.u0, r.u1)
+          // a partition inside a room: the room on both sides
+          if (parts.has(`${x},${y},${side}`)) run(x, y, side, gridAt(site, x, y), gridAt(site, x, y), 0, 1)
         }
       }
     }

@@ -308,7 +308,7 @@ export function LabsScreen() {
   const g = useGame()
   const [view, setView] = useKept<'chips' | 'os' | 'look'>('labs:view', 'chips')
   return (
-    <div className="flex h-full min-h-0 flex-col gap-2 p-4">
+    <div className="flex h-full min-h-0 flex-col gap-4 px-6 pb-6 pt-4">
       <div className="shrink-0">
         <Filters label="Lab" value={view} onChange={setView} options={[{ value: 'chips', label: 'Chips', count: g.chips.length || undefined }, { value: 'os', label: 'Operating system' }, { value: 'look', label: 'System design' }]} />
       </div>

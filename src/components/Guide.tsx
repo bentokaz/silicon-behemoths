@@ -15,7 +15,7 @@ import { type GameState, monthCosts } from '../sim/types'
 import { INCIDENTS, INCIDENT_WAIT } from '../sim/world'
 import { type Tab, useGame, useStore } from '../store/game'
 import { Icon, type IconName } from './icons'
-import { Btn, Lead, money, moneyDelta, num, pct, useLayer } from './ui'
+import { Btn, DIALOG, Lead, money, moneyDelta, num, pct, useLayer } from './ui'
 
 // ---------------------------------------------------------------- guided start
 
@@ -115,17 +115,17 @@ export function Decision() {
   const options = def.choices(g, i)
   return (
     <div className="absolute inset-0 z-40 flex items-center justify-center bg-carbon/70 p-4">
-      <div ref={box} role="alertdialog" aria-label={def.title} className="max-h-full w-[460px] max-w-full overflow-y-auto border border-warn bg-panel outline-none">
-        <div className="flex items-center gap-2 border-b border-line px-3 py-2">
-          <Icon name={INCIDENT_ICON[i.kind] ?? 'alert'} className="text-warn" />
-          <span className="t-title">{def.title}</span>
-          <span className="num ml-auto text-[11px] text-faint">
+      <div ref={box} role="alertdialog" aria-label={def.title} className={`${DIALOG} w-[540px] border-warn`}>
+        <div className="flex items-center gap-3 border-b border-line px-5 py-3.5">
+          <Icon name={INCIDENT_ICON[i.kind] ?? 'alert'} size={18} className="text-warn" />
+          <span className="t-section">{def.title}</span>
+          <span className="num ml-auto text-2xs text-faint">
             <Lead icon="hourglass" size={10} />
             {Math.max(0, INCIDENT_WAIT - (g.day - i.day))} days to decide
           </span>
         </div>
-        <div className="px-3 py-3 text-xs leading-relaxed text-fg">{def.text(g, i)}</div>
-        <div className="space-y-1 px-3 pb-3">
+        <div className="px-5 py-4 text-sm leading-relaxed text-fg">{def.text(g, i)}</div>
+        <div className="space-y-2 px-5 pb-5">
           {options.map((o, n) => (
             <button
               key={o.label}
@@ -134,13 +134,13 @@ export function Decision() {
                 if (err) say(err, 'bad')
                 else sfx.confirm()
               }}
-              className="block w-full border border-line2 p-2 text-left hover:border-accent hover:bg-accent/10"
+              className="block w-full border border-line2 bg-raise px-4 py-3 text-left hover:border-accent hover:bg-accent/10"
             >
               <div className="flex items-baseline justify-between gap-2">
-                <span className="text-xs text-fg">{o.label}</span>
-                {o.cost ? <span className={`num text-xs ${o.cost > 0 ? 'text-neg' : 'text-pos'}`}>{moneyDelta(-o.cost)}</span> : null}
+                <span className="text-sm font-medium text-fg">{o.label}</span>
+                {o.cost ? <span className={`num text-sm ${o.cost > 0 ? 'text-neg' : 'text-pos'}`}>{moneyDelta(-o.cost)}</span> : null}
               </div>
-              <div className="mt-[2px] text-[11px] leading-snug text-dim">{o.note}</div>
+              <div className="mt-1 text-xs leading-snug text-dim">{o.note}</div>
             </button>
           ))}
         </div>
@@ -182,30 +182,30 @@ export function YearEnd() {
   ]
   return (
     <div className="absolute inset-0 z-40 flex items-center justify-center bg-carbon/80 p-4">
-      <div ref={box} role="dialog" aria-label={`${year}: the year in review`} className="max-h-full w-[560px] max-w-full overflow-y-auto border border-line2 bg-panel outline-none">
-        <div className="border-b border-line px-4 py-3">
+      <div ref={box} role="dialog" aria-label={`${year}: the year in review`} className={`${DIALOG} w-[660px] border-line2`}>
+        <div className="border-b border-line px-6 py-4">
           <div className="label">{player(g).name}</div>
-          <div className="text-xl font-semibold text-fg">{year} in review</div>
+          <div className="t-page mt-0.5">{year} in review</div>
         </div>
         <div className="grid grid-cols-3 gap-px bg-line">
           {cells.map(([label, value, sub, icon]) => (
-            <div key={label} className="bg-panel px-4 py-3">
+            <div key={label} className="bg-panel px-5 py-4">
               <div className="label flex items-center gap-[5px]">
                 <Icon name={icon} size={12} />
                 {label}
               </div>
-              <div className="t-value mt-1 text-fg">{value}</div>
-              {sub && <div className="text-[11px] text-dim">{sub}</div>}
+              <div className="t-value mt-1.5 text-fg">{value}</div>
+              {sub && <div className="mt-0.5 text-xs text-dim">{sub}</div>}
             </div>
           ))}
         </div>
         {best && (
-          <div className="border-t border-line px-4 py-2 text-[12px] text-dim">
+          <div className="border-t border-line px-6 py-3 text-sm text-dim">
             <Lead icon="star" size={12} />
             Best seller: <span className="text-fg">{best.name}</span>, {num(best.history.slice(-12).reduce((a, b) => a + b, 0))} units, reviews {best.reviewAvg.toFixed(1)}.
           </div>
         )}
-        <div className="flex justify-end gap-2 border-t border-line px-4 py-3">
+        <div className="flex justify-end gap-2 border-t border-line px-6 py-4">
           <Btn tone="ghost" icon="goals" onClick={() => (close(), useStore.getState().setTab('goals'))}>
             See goals
           </Btn>

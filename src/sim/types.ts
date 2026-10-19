@@ -383,13 +383,17 @@ export interface SiteItem {
 /**
  * A change to the wall on the north or west edge of a tile. Walls stand
  * wherever two rooms meet; this swaps one stretch for glass, a door or a gap.
+ * With `part` set it is a partition instead: a wall, glass or a door put up
+ * on an edge inside one room, where no wall would otherwise stand.
  */
 export interface SiteWall {
   id: string
   x: number
   y: number
   side: 'n' | 'w'
-  kind: 'glass' | 'door' | 'open'
+  kind: 'glass' | 'door' | 'open' | 'wall'
+  /** A partition inside one room. Missing in older saves and on walls between rooms. */
+  part?: true
 }
 
 export type Corner = 'ne' | 'nw' | 'se' | 'sw'

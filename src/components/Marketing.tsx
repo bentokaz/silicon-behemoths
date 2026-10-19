@@ -214,7 +214,7 @@ function Campaigns() {
     <>
       <div className="flex shrink-0 items-stretch gap-2">
         <div className="w-[240px] shrink-0">
-          <Headline label="Awareness" icon="eye" value={pct(me.awareness)} sub="of buyers know you exist" />
+          <Headline label="Awareness" icon="eye" value={pct(me.awareness)} sub="of buyers know you exist" info="The share of buyers who have heard of you. A buyer who has never heard of you does not consider your devices, however good they are. Campaigns, events, every sale and your fans raise it, region by region." />
         </div>
         <Strip
           className="flex min-w-0 flex-1 flex-col justify-center"

@@ -31,7 +31,7 @@
 // the history is dropped rather than guessed at. It is also dropped when the
 // builder is left (`forget`), when another game is loaded (the game object is
 // a different one), and it holds 50 steps at most, oldest dropped first.
-import { EDGE_COST, canAfford, lookCost, roomCost, siteOf } from '../sim/game'
+import { EDGE_COST, canAfford, wallCost, lookCost, roomCost, siteOf } from '../sim/game'
 import { ITEMS } from '../sim/sites'
 import type { GameState, Site } from '../sim/types'
 
@@ -125,9 +125,9 @@ export function settle(from: Site, to: Site): number {
   }
   for (const [type, tiles] of back) cash -= roomCost(to, type, tiles)
   // walls: a door or a pane that comes back is fitted again; plain wall and openings are free
-  const wallKey = (w: { x: number; y: number; side: string; kind: string }) => `${w.x},${w.y},${w.side},${w.kind}`
+  const wallKey = (w: { x: number; y: number; side: string; kind: string; part?: true }) => `${w.x},${w.y},${w.side},${w.kind}${w.part ? ',p' : ''}`
   const stood = new Set(from.walls.map(wallKey))
-  for (const w of to.walls) if (!stood.has(wallKey(w))) cash -= EDGE_COST[w.kind as keyof typeof EDGE_COST] ?? 0
+  for (const w of to.walls) if (!stood.has(wallKey(w))) cash -= wallCost(w)
   ;(to.curves ?? []).forEach((c, k) => {
     const now = from.curves?.[k]?.walls ?? {}
     for (const [bay, kind] of Object.entries(c.walls ?? {})) if (now[bay] !== kind) cash -= EDGE_COST[kind as keyof typeof EDGE_COST] ?? 0

@@ -68,15 +68,29 @@ interface Props<R> {
   label?: string
 }
 
-const widthOf = <R,>(c: Column<R>) => c.min ?? (c.num ? 88 : 120)
+/**
+ * Column widths are given in pixels at the 12px size they were measured at;
+ * the type scale is larger now and larger again in big windows, so they grow
+ * with it (k is the table text size over 12).
+ */
+const typeScale = () => {
+  if (typeof window === 'undefined') return 1
+  const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--text-xs'))
+  return Number.isFinite(v) && v > 0 ? v / 12 : 1
+}
+const widthAt = <R,>(c: Column<R>, k: number) => Math.round((c.min ?? (c.num ? 88 : 120)) * k)
 
-export function Table<R>({ cols, rows, groups, rowKey, onRow, selected, action, actionAlways, actionWidth = 104, sort: initial, keep, empty, rowTitle, rowClass, firstMin = 150, className = '', label }: Props<R>) {
+export function Table<R>({ cols, rows, groups, rowKey, onRow, selected, action, actionAlways, actionWidth: actionAt12 = 104, sort: initial, keep, empty, rowTitle, rowClass, firstMin: firstAt12 = 150, className = '', label }: Props<R>) {
   const box = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
+  const [k, setK] = useState(typeScale)
+  const widthOf = (c: Column<R>) => widthAt(c, k)
+  const actionWidth = Math.round(actionAt12 * k + 8)
+  const firstMin = Math.round(firstAt12 * k)
   useLayoutEffect(() => {
     const el = box.current
     if (!el) return
-    const read = () => setWidth(el.clientWidth)
+    const read = () => (setWidth(el.clientWidth), setK(typeScale()))
     read()
     if (typeof ResizeObserver === 'undefined') return
     const watch = new ResizeObserver(read)
@@ -107,10 +121,17 @@ export function Table<R>({ cols, rows, groups, rowKey, onRow, selected, action, 
       width - (action ? actionWidth : 0),
     )
     return cols.filter((c) => ids.includes(c.id))
-  }, [cols, width, action, actionWidth, firstMin])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cols, width, action, actionWidth, firstMin, k])
 
   // when even the columns that must stay do not fit, they narrow in proportion: a table never scrolls sideways
   const tight = width ? squeeze(Math.min(firstMin, 120), shown.slice(1).reduce((sum, c) => sum + widthOf(c), 0) + (action ? actionWidth : 0), width) : 1
+
+  // in a wide window the names column stops growing, and the room left over is shared out
+  // between every column, so the figures stay near the names they belong to
+  const rest = shown.slice(1).reduce((sum, c) => sum + widthOf(c), 0) + (action ? actionWidth : 0)
+  const roomy = Math.round(400 * k)
+  const first = width && width - rest > roomy * 1.25 ? roomy : 0
 
   const by = sort ? cols.find((c) => c.id === sort.col) : undefined
   const order = (list: readonly R[]) => (by?.sort && sort ? sortRows(list, by.sort, sort.dir) : [...list])
@@ -129,7 +150,7 @@ export function Table<R>({ cols, rows, groups, rowKey, onRow, selected, action, 
       <table aria-label={label} className="w-full table-fixed border-collapse text-xs">
         <colgroup>
           {shown.map((c, i) => (
-            <col key={c.id} style={i === 0 ? undefined : { width: Math.floor(widthOf(c) * tight) }} />
+            <col key={c.id} style={i === 0 ? (first ? { width: first } : undefined) : { width: Math.floor(widthOf(c) * tight) }} />
           ))}
           {action && <col style={{ width: Math.floor(actionWidth * tight) }} />}
         </colgroup>
@@ -137,7 +158,7 @@ export function Table<R>({ cols, rows, groups, rowKey, onRow, selected, action, 
           <tr>
             {shown.map((c, i) => {
               const on = sort?.col === c.id
-              const cls = `th sticky top-0 z-[2] h-7 border-b border-line2 bg-panel px-2 ${c.num ? 'text-right' : 'text-left'} ${i === 0 ? 'left-0 z-[3]' : ''}`
+              const cls = `th sticky top-0 z-[2] h-9 border-b border-line2 bg-panel px-3 ${c.num ? 'text-right' : 'text-left'} ${i === 0 ? 'left-0 z-[3]' : ''}`
               if (!c.sort)
                 return (
                   <th key={c.id} scope="col" title={c.title} className={cls}>
@@ -146,24 +167,24 @@ export function Table<R>({ cols, rows, groups, rowKey, onRow, selected, action, 
                 )
               return (
                 <th key={c.id} scope="col" aria-sort={on ? (sort!.dir === 'asc' ? 'ascending' : 'descending') : 'none'} className={`${cls} !p-0`}>
-                  <button type="button" title={c.title ?? 'Sort by this column'} onClick={() => setSort(nextSort(sort, c.id, c.first ?? (c.num ? 'desc' : 'asc')))} className={`th flex h-7 w-full min-w-0 items-center gap-1 px-2 hover:text-fg ${c.num ? 'justify-end' : 'justify-start'} ${on ? '!text-fg' : ''}`}>
+                  <button type="button" title={c.title ?? 'Sort by this column'} onClick={() => setSort(nextSort(sort, c.id, c.first ?? (c.num ? 'desc' : 'asc')))} className={`th flex h-9 w-full min-w-0 items-center gap-1 px-3 hover:text-fg ${c.num ? 'justify-end' : 'justify-start'} ${on ? '!text-fg' : ''}`}>
                     <span className="min-w-0 truncate">{c.head}</span>
                     {on && <Icon name={sort!.dir === 'asc' ? 'chevronUp' : 'chevronDown'} size={10} className="text-accent" />}
                   </button>
                 </th>
               )
             })}
-            {action && <th scope="col" className="th sticky top-0 z-[2] h-7 border-b border-line2 bg-panel" aria-label="Actions" />}
+            {action && <th scope="col" className="th sticky top-0 z-[2] h-9 border-b border-line2 bg-panel" aria-label="Actions" />}
           </tr>
         </thead>
         <tbody>
           {sets.map((g) => [
             g.label !== null && (
               <tr key={`g:${g.key}`}>
-                <td colSpan={span} className="h-7 border-b border-line bg-raise px-2">
+                <td colSpan={span} className="h-9 border-b border-line bg-raise px-3">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="min-w-0 truncate text-xs font-semibold text-fg">{g.label}</span>
-                    {g.right !== undefined && <span className="num shrink-0 text-[11px] text-dim">{g.right}</span>}
+                    <span className="min-w-0 truncate text-sm font-semibold text-fg">{g.label}</span>
+                    {g.right !== undefined && <span className="num shrink-0 text-2xs text-dim">{g.right}</span>}
                   </div>
                 </td>
               </tr>
@@ -182,12 +203,12 @@ export function Table<R>({ cols, rows, groups, rowKey, onRow, selected, action, 
                   className={`group/row ${onRow ? 'cursor-pointer' : ''} ${on ? '[&>td]:bg-accent/10' : 'hover:[&>td]:bg-hover'} ${rowClass?.(row) ?? ''}`}
                 >
                   {shown.map((c, i) => (
-                    <td key={c.id} className={`h-8 overflow-hidden text-ellipsis whitespace-nowrap border-b border-line px-2 ${c.num ? 'num text-right' : 'text-left'} ${i === 0 ? `sticky left-0 z-[1] bg-panel ${on ? 'border-l-2 border-l-accent' : ''}` : ''} ${c.className ?? ''}`}>
+                    <td key={c.id} className={`h-10 overflow-hidden text-ellipsis whitespace-nowrap border-b border-line px-3 ${c.num ? 'num text-right' : 'text-left'} ${i === 0 ? `sticky left-0 z-[1] bg-panel ${on ? 'border-l-2 border-l-accent' : ''}` : ''} ${c.className ?? ''}`}>
                       {c.cell(row)}
                     </td>
                   ))}
                   {action && (
-                    <td className="h-8 border-b border-line px-1 text-right" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                    <td className="h-10 border-b border-line px-2 text-right" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                       <span className={`inline-flex items-center justify-end gap-1 ${always ? '' : 'opacity-0 focus-within:opacity-100 group-hover/row:opacity-100 group-focus/row:opacity-100 group-focus-within/row:opacity-100'}`}>{action(row)}</span>
                     </td>
                   )}
@@ -197,7 +218,7 @@ export function Table<R>({ cols, rows, groups, rowKey, onRow, selected, action, 
           ])}
         </tbody>
       </table>
-      {count === 0 && empty !== undefined && <div className="px-3 py-6 text-center text-xs text-dim">{empty}</div>}
+      {count === 0 && empty !== undefined && <div className="px-4 py-8 text-center text-sm text-dim">{empty}</div>}
     </div>
   )
 }
