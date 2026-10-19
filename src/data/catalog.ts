@@ -1,5 +1,5 @@
 // Game content as data: research tracks, parts, materials, customer segments.
-import type { Lens, Levels, SupplyCat, Track } from '../sim/types'
+import type { Lens, Levels, SegmentId, SupplyCat, Track } from '../sim/types'
 import { TODAY, eraInfo } from './eras'
 
 export const MAX_LEVEL = 8
@@ -155,13 +155,60 @@ export const STORAGE_OPTIONS = [64, 128, 256, 512, 1024, 2048, 4096]
 export const idealRam = (mLevel: number) => 4 * Math.pow(2, mLevel / 2.5)
 export const idealStorage = (mLevel: number) => 128 * Math.pow(2, mLevel / 2.5)
 
-export const EXTRAS: { id: string; name: string; track: Track; level: number; cost: number }[] = [
-  { id: 'nfc', name: 'NFC', track: 'chipset', level: 0, cost: 2 },
-  { id: 'stereo', name: 'Stereo speakers', track: 'design', level: 0, cost: 3 },
-  { id: 'ip68', name: 'IP68 water resistance', track: 'materials', level: 1, cost: 5 },
-  { id: 'wireless', name: 'Wireless charging', track: 'charging', level: 2, cost: 6 },
-  { id: 'sat', name: 'Satellite link', track: 'chipset', level: 4, cost: 9 },
+export interface ExtraInfo {
+  id: string
+  name: string
+  track: Track
+  level: number
+  /** Dollars a unit. */
+  cost: number
+  /** What it does, for the designer's list. */
+  note: string
+  /**
+   * Segments that care about it, and how much: a share added to how good the device looks to that segment
+   * (0.03 = 3%). Every extra also adds a little to every segment through the general feature bonus.
+   */
+  likes: Record<SegmentId, number>
+  /** Extras in the same group are alternatives: fitting one takes out the others (water resistance grades). */
+  group?: string
+  /** Another extra this one cannot work without. */
+  needs?: string
+}
+export const EXTRAS: ExtraInfo[] = [
+  { id: 'nfc', name: 'NFC', track: 'chipset', level: 0, cost: 2, note: 'Contactless payments and tap-to-pair.', likes: { 'w-smart': 0.02, business: 0.01, mainstream: 0.01, 'ri-fit': 0.025, 'ri-health': 0.025, 'ri-lux': 0.03 } },
+  { id: 'esim', name: 'eSIM', track: 'chipset', level: 1, cost: 1, note: 'A built-in SIM: a second line, and a cellular watch.', likes: { business: 0.02, flagship: 0.01, 'f-work': 0.02, 'w-smart': 0.02, 't-pro': 0.01 } },
+  { id: 'ir', name: 'IR blaster', track: 'design', level: 0, cost: 1, note: 'Works the TV and the air conditioning.', likes: { budget: 0.02, mainstream: 0.01, 't-budget': 0.01 } },
+  { id: 'jack', name: 'Headphone jack', track: 'design', level: 0, cost: 1, note: 'Wired audio with no lag.', likes: { budget: 0.02, gamer: 0.03, camera: 0.01, 'h-pocket': 0.02, 'h-pc': 0.015 } },
+  { id: 'sd', name: 'Memory card slot', track: 'design', level: 0, cost: 1, note: 'Cheap extra storage for photos and footage.', likes: { budget: 0.02, camera: 0.025, 't-budget': 0.02, 'a-sport': 0.03, 'a-vlog': 0.02, 'r-basic': 0.01, 'h-pc': 0.02, 'l-pro': 0.01 } },
+  { id: 'stereo', name: 'Stereo speakers', track: 'design', level: 0, cost: 3, note: 'A second speaker in the earpiece.', likes: { gamer: 0.03, mainstream: 0.01, 't-main': 0.02, 't-pro': 0.01 } },
+  { id: 'haptics', name: 'Precision haptics', track: 'design', level: 1, cost: 3, note: 'A wide linear motor: crisp taps instead of a buzz.', likes: { gamer: 0.03, flagship: 0.015, mainstream: 0.01, 'w-smart': 0.02, 'f-flag': 0.01, 'l-ultra': 0.015, 'h-elite': 0.02 } },
+  { id: 'ip54', name: 'IP54 splash resistance', track: 'materials', level: 0, cost: 1, note: 'Survives rain and spills.', likes: { budget: 0.015, 'w-fit': 0.02, 'e-budget': 0.02, 'r-basic': 0.02 }, group: 'ip' },
+  { id: 'ip68', name: 'IP68 water resistance', track: 'materials', level: 1, cost: 5, note: 'Sealed for a swim.', likes: { camera: 0.02, flagship: 0.015, mainstream: 0.01, 'w-fit': 0.03, 'w-smart': 0.015, 'e-anc': 0.01, 'r-premium': 0.04, 'a-sport': 0.04, 'a-vlog': 0.02, 'ri-fit': 0.03 }, group: 'ip' },
+  { id: 'ip69', name: 'IP69 pressure-proof', track: 'materials', level: 4, cost: 8, note: 'Takes hot, high-pressure water jets: built for work sites and the sea.', likes: { business: 0.02, 'w-fit': 0.025, 'a-sport': 0.05, 'a-pro': 0.05, 'ri-fit': 0.02 }, group: 'ip' },
+  { id: 'wireless', name: 'Wireless charging', track: 'charging', level: 2, cost: 6, note: 'Also allows a device with no port at all.', likes: { flagship: 0.02, mainstream: 0.01, 'w-smart': 0.015, 'e-anc': 0.015, 'r-premium': 0.03 } },
+  { id: 'reverse', name: 'Reverse wireless charging', track: 'charging', level: 4, cost: 4, note: 'Tops up earbuds or a watch laid on the back.', likes: { flagship: 0.015, 'f-flag': 0.015, business: 0.01 }, needs: 'wireless' },
+  { id: 'face', name: '3D face unlock', track: 'camera', level: 3, cost: 7, note: 'A dot projector and infrared camera beside the front camera.', likes: { flagship: 0.02, mainstream: 0.015, business: 0.02, 't-pro': 0.02, 'f-flag': 0.015, 'l-pro': 0.015, 'l-ultra': 0.01 } },
+  { id: 'uwb', name: 'Ultra-wideband', track: 'chipset', level: 3, cost: 3, note: 'Finds tags and unlocks cars to the centimetre.', likes: { flagship: 0.02, 'f-flag': 0.02, 'w-smart': 0.015, business: 0.01 } },
+  { id: 'mmwave', name: '5G mmWave', track: 'chipset', level: 3, cost: 8, note: 'Gigabit speeds in city centres, through extra aerials.', likes: { flagship: 0.02, business: 0.025, gamer: 0.02, 'f-flag': 0.02, 't-pro': 0.015 } },
+  { id: 'vapor', name: 'Vapour-chamber cooling', track: 'materials', level: 2, cost: 5, note: 'A flat copper heat pipe: the chip keeps its speed under load.', likes: { gamer: 0.04, flagship: 0.01, 't-pro': 0.015, 'l-game': 0.03, 'h-pc': 0.03, 'h-elite': 0.015 } },
+  { id: 'stylus', name: 'Stylus with silo', track: 'design', level: 2, cost: 9, note: 'A pen that lives in the body, for notes and drawing.', likes: { business: 0.04, 't-pro': 0.04, 't-main': 0.01, 'f-work': 0.05, 'r-note': 0.06 } },
+  { id: 'sat', name: 'Satellite messaging', track: 'chipset', level: 4, cost: 9, note: 'Emergency texts with no coverage.', likes: { flagship: 0.02, business: 0.02, 'w-fit': 0.02, 'w-smart': 0.015, 'f-flag': 0.01 } },
 ]
+export const extraInfo = (id: string) => EXTRAS.find((e) => e.id === id)
+/** How much more a segment wants a device for the extras fitted to it: a share of its quality, at most 10%. */
+export const extrasAppeal = (extras: readonly string[] | undefined, segment: SegmentId): number => {
+  let k = 0
+  for (const id of extras ?? []) k += extraInfo(id)?.likes[segment] ?? 0
+  return Math.min(0.1, k)
+}
+/** The extras with one fitted and its alternatives taken out, or with it taken out (and whatever needs it). */
+export function toggleExtra(extras: readonly string[], id: string): string[] {
+  if (extras.includes(id)) return extras.filter((e) => e !== id && extraInfo(e)?.needs !== id)
+  const group = extraInfo(id)?.group
+  const needs = extraInfo(id)?.needs
+  const out = extras.filter((e) => !group || extraInfo(e)?.group !== group)
+  return [...out, ...(needs && !out.includes(needs) ? [needs] : []), id]
+}
 
 export interface MaterialInfo {
   id: string
@@ -202,7 +249,7 @@ export const FEATURES: FeatureInfo[] = [
   { id: 'hz144', name: '144 Hz refresh', track: 'display', level: 4, note: 'Favoured by the gamer segment.' },
   { id: 'hz240', name: '240 Hz refresh', track: 'display', level: 6, note: 'Top display score at a power cost.' },
   { id: 'nfc', name: 'NFC', track: 'chipset', level: 0, note: 'Contactless payments. A cheap extra.' },
-  { id: 'sat', name: 'Satellite link', track: 'chipset', level: 4, note: 'Emergency messaging without coverage.' },
+  { id: 'sat', name: 'Satellite messaging', track: 'chipset', level: 4, note: 'Emergency texts with no coverage.' },
   { id: 'periscope', name: 'Periscope zoom lens', track: 'camera', level: 3, note: 'The strongest telephoto option.' },
   { id: 'wireless', name: 'Wireless charging', track: 'charging', level: 2, note: 'Also allows a phone with no port at all.' },
   { id: 'ip68', name: 'IP68 sealing', track: 'materials', level: 1, note: 'Water and dust resistance.' },
@@ -210,6 +257,20 @@ export const FEATURES: FeatureInfo[] = [
   { id: 'punch', name: 'Punch-hole camera', track: 'design', level: 1, note: 'A front camera inside the screen with no notch.' },
   { id: 'fpdisplay', name: 'Under-display fingerprint', track: 'design', level: 2, note: 'Fingerprint sensor placed on the front.' },
   { id: 'udc', name: 'Under-display camera', track: 'design', level: 5, note: 'An invisible front camera.' },
+  // extras that are researched before they can be fitted (see EXTRAS)
+  { id: 'esim', name: 'eSIM', track: 'chipset', level: 1, note: 'A built-in SIM. Business buyers and smartwatches want it.' },
+  { id: 'ir', name: 'IR blaster', track: 'design', level: 0, note: 'A cheap extra that budget buyers like.' },
+  { id: 'jack', name: 'Headphone jack', track: 'design', level: 0, note: 'Gamers and budget buyers still ask for one.' },
+  { id: 'sd', name: 'Memory card slot', track: 'design', level: 0, note: 'Liked by budget buyers and anyone shooting video.' },
+  { id: 'haptics', name: 'Precision haptics', track: 'design', level: 1, note: 'A linear motor for crisp taps. Gamers notice.' },
+  { id: 'ip54', name: 'IP54 splash resistance', track: 'materials', level: 0, note: 'The cheapest water resistance grade.' },
+  { id: 'ip69', name: 'IP69 pressure-proof sealing', track: 'materials', level: 4, note: 'The toughest grade: action cameras and rugged buyers.' },
+  { id: 'reverse', name: 'Reverse wireless charging', track: 'charging', level: 4, note: 'Charge other devices from the back. Needs wireless charging.' },
+  { id: 'face', name: '3D face unlock', track: 'camera', level: 3, note: 'A dot projector beside the front camera.' },
+  { id: 'uwb', name: 'Ultra-wideband', track: 'chipset', level: 3, note: 'Precise finding and digital car keys.' },
+  { id: 'mmwave', name: '5G mmWave', track: 'chipset', level: 3, note: 'The fastest mobile data, through extra aerials.' },
+  { id: 'vapor', name: 'Vapour-chamber cooling', track: 'materials', level: 2, note: 'Keeps a hot chip fast. The gamer segment pays for it.' },
+  { id: 'stylus', name: 'Stylus with silo', track: 'design', level: 2, note: 'A pen stored in the body: business and note-takers.' },
 ]
 export const featureInfo = (id: string) => FEATURES.find((f) => f.id === id)
 export const featureCost = (f: FeatureInfo) => Math.max(250e3, Math.round((researchCost(f.level) * 0.35) / 1e4) * 1e4)

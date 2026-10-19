@@ -37,6 +37,9 @@ const ANGLES: Partial<Record<DeviceType, [number, number, number]>> = {
   headset: [0.5, 0.36, 0.79],
   speaker: [0.36, 0.46, 0.81],
   handheld: [0.3, 0.22, 0.93],
+  ereader: [0.3, 0.16, 0.94],
+  ring: [0.34, 0.66, 0.67],
+  drone: [0.52, 0.42, 0.74],
 }
 const BACK: [number, number, number] = [-0.36, 0.12, -0.92]
 
@@ -46,7 +49,7 @@ function setup() {
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true })
   renderer.setSize(W, H)
   renderer.setPixelRatio(2)
-  renderer.toneMapping = THREE.ACESFilmicToneMapping
+  renderer.toneMapping = THREE.NeutralToneMapping
   scene = new THREE.Scene()
   const pmrem = new THREE.PMREMGenerator(renderer)
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
@@ -78,8 +81,9 @@ export function deviceThumbnail(key: string, design: DeviceDesign, logo?: string
     const wide = design.body.width > design.body.height * 1.2 ? 1.18 : 1
     const dist = deviceFrame(design).radius * 5.4 * wide
     camera.position.set(dir[0] * dist, dir[1] * dist, dir[2] * dist)
-    camera.near = dist * 0.05
-    camera.far = dist * 4
+    // the model lies within a fifth of the distance of its centre: a near plane close to it keeps the depth buffer fine enough for its decals
+    camera.near = dist * 0.55
+    camera.far = dist * 1.8
     camera.updateProjectionMatrix()
     camera.lookAt(0, 0, 0)
     renderer!.render(scene, camera)

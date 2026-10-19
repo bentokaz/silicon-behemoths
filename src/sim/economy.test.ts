@@ -8,7 +8,7 @@ import { demandEstimate, storeMonth } from './insight'
 import { prototypeVerdicts, testPrototype } from './prototype'
 import { storeAdvice, storeTrade } from './retail'
 import { SITE_TIERS } from './sites'
-import { FREE_OS, osLookOf, osRoyalty, softwareBonus } from './tech'
+import { FREE_OS, cleanLook, osRoyalty, softwareBonus } from './tech'
 import type { GameConfig, GameState } from './types'
 import { unlockBlocked } from './world'
 
@@ -76,11 +76,10 @@ describe('operating systems', () => {
 
   it('keeps a designed look that is checked part by part', () => {
     const s = game()
-    setOsLook(s, { accent: '#00ff00', icons: 'hexagon', layout: 'tiles', font: 'comic' as never, bg: 'red' })
-    s.os.own = true
-    const look = osLookOf(s)
-    expect(look).toMatchObject({ accent: '#00ff00', icons: 'hexagon', layout: 'tiles', font: 'sans' })
-    expect(look.bg).toMatch(/^#[0-9a-f]{6}$/)
+    setOsLook(s, { accent: '#00FF00', iconShape: 'circle', layout: 'tiles', font: 'comic' as never, wallpaper: 'red', dark: false })
+    const look = cleanLook(s.os.look)
+    expect(look).toMatchObject({ accent: '#00ff00', iconShape: 'circle', layout: 'tiles', font: 'sans', dark: false })
+    expect(look.wallpaper).toMatch(/^#[0-9a-f]{6}$/)
   })
 })
 

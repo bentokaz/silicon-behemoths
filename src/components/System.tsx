@@ -12,7 +12,7 @@ import { THEMES, type ThemeId, applyTheme, getTheme } from '../store/theme'
 import { LogoPicker } from './LogoPicker'
 import type { IconName } from './icons'
 import { useSettings } from '../store/settings'
-import { Btn, type Column, ConfirmBtn, ConfirmIconBtn, Fold, NameInput, Page, Panel, Row, Strip, Table, TextInput, money, pct, useKept } from './ui'
+import { Btn, ColorField, type Column, ConfirmBtn, ConfirmIconBtn, Fold, NameInput, Page, Panel, Row, Strip, Table, TextInput, money, pct, useKept } from './ui'
 import { KeysPanel, SavesBeyond, SettingsPanel } from './Settings'
 
 /** How long ago a save was made, in a few words: "just now", "2 hours ago", "yesterday", then the day. */
@@ -288,7 +288,7 @@ function CompanyPage() {
             <NameInput aria-label="Your company name" value={me.name} maxLength={18} onChange={(v) => rename(me.id, v)} className="w-56 min-w-0" />
           </Field>
           <Field label="Brand colour">
-            <input type="color" aria-label="Brand colour" value={me.color} onChange={(e) => act(() => void (me.color = e.target.value))} />
+            <ColorField label="Brand colour" showHex value={me.color} onChange={(v) => act(() => void (me.color = v))} />
           </Field>
           <Field label="Logo">
             <LogoPicker value={me.logo} onChange={(logo) => act((s) => void (player(s).logo = logo))} />
@@ -299,7 +299,7 @@ function CompanyPage() {
           <div className="grid grid-cols-2 gap-x-4">
             {rivals.map((c) => (
               <div key={c.id} className="flex min-h-8 items-center gap-2">
-                <input type="color" aria-label={`Colour of ${c.name}`} value={c.color} onChange={(e) => act(() => void (c.color = e.target.value))} />
+                <ColorField label={`Colour of ${c.name}`} value={c.color} onChange={(v) => act(() => void (c.color = v))} />
                 <NameInput aria-label={`Name of ${c.name}`} value={c.name} maxLength={18} onChange={(v) => rename(c.id, v)} className="min-w-0 flex-1" />
               </div>
             ))}

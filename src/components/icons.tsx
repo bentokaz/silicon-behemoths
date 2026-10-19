@@ -193,6 +193,10 @@ const PATHS = {
   visor: 'M2 8h20v9h-7l-3-3-3 3H2zM6 8V6h12v2',
   speaker: 'M6 3h12v18H6zM12 12a3 3 0 100 6 3 3 0 000-6zM12 7v0',
   handheld: 'M2 7h20v10H2zM7 9h10v6H7zM4.500 11v2M19.500 12v0',
+  ereader: 'M5 2h14v20H5zM8 6h8M8 9h8M8 12h8M8 15h5',
+  smartring: 'M4 10a8 4 0 1016 0 8 4 0 10-16 0zM4 10v4a8 4 0 0016 0v-4M8 10a4 2 0 108 0 4 2 0 10-8 0z',
+  actioncam: 'M3 7h18v13H3zM16 10a3.500 3.500 0 100 7 3.500 3.500 0 000-7zM6 11h4v4H6zM14 4h4v3',
+  drone: 'M9 9h6v6H9zM9 9L5 5M15 9l4-4M9 15l-4 4M15 15l4 4M2 5h6M16 5h6M2 19h6M16 19h6',
 } as const
 
 export type IconName = keyof typeof PATHS
@@ -257,6 +261,10 @@ export const TYPE_ICON: Record<string, IconName> = {
   headset: 'visor',
   speaker: 'speaker',
   handheld: 'handheld',
+  ereader: 'ereader',
+  ring: 'smartring',
+  actioncam: 'actioncam',
+  drone: 'drone',
 }
 export const typeIcon = (type: string): IconName => TYPE_ICON[type] ?? 'devices'
 

@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { DeviceView, type ViewName } from '../3d/DeviceView'
+import { osLookOf } from '../3d/osLook'
 import { deviceThumbnail } from '../3d/thumbnail'
 import { sfx } from '../audio/sfx'
 import { EXTRAS, LENSES, SUPPLY_LABELS, materialInfo, panelInfo, sensorInfo } from '../data/catalog'
@@ -16,7 +17,7 @@ import { normalised } from '../sim/market'
 import { supplyPrice } from '../sim/ops'
 import { VARIANTS } from '../sim/rivals'
 import { coverScreen, isCoverCam, isFlip } from '../sim/geometry'
-import { batteryLabel, chargeWatts, chipFor, foldedThickness, panelName } from '../sim/scoring'
+import { batteryLabel, chargeWatts, chipFor, foldedThickness, lifeLabel as lifeText, panelName } from '../sim/scoring'
 import { type DeviceDesign, type DeviceType, type GameState, type Product, type Review, SUBS, SUPPLY_CATS } from '../sim/types'
 import { freeFamily, useGame, useStore } from '../store/game'
 import { lastMonth, score, statusNote } from './DeviceLogic'
@@ -28,7 +29,7 @@ import { MAX_PRICE, MAX_RUN } from './format'
 import { Btn, ConfirmBtn, Drawer, IconBtn, Key, Legend, Meter, NumInput, Row, Swatch, Tabs, Tag, chart, money, moneyDelta, num, pct, price, reducedMotion, useLayer } from './ui'
 
 /** Where to look from when a device is opened up: at the side that comes off. */
-const TEAR_VIEW: Partial<Record<DeviceType, ViewName>> = { laptop: 'front', console: 'front', earbuds: 'front', headset: 'front', speaker: 'front' }
+const TEAR_VIEW: Partial<Record<DeviceType, ViewName>> = { laptop: 'front', console: 'front', earbuds: 'front', headset: 'front', speaker: 'front', ring: 'front', drone: 'front' }
 
 /** The icon beside each line of a spec sheet. Lines not listed here get the plain list mark. */
 const SPEC_ICON: Record<string, IconName> = {
@@ -60,7 +61,7 @@ const SPEC_ICON: Record<string, IconName> = {
 /** Weight the way people quote it: grams for things you carry, kilograms for things you do not. */
 export const weightLabel = (g: number) => (g >= 2000 ? `${(g / 1000).toFixed(1)} kg` : `${Math.round(g)} g`)
 /** What the battery-life figure means for a type, or null where there is no battery. */
-export const lifeLabel = (type: DeviceType) => (TYPES[type].mains ? null : type === 'earbuds' ? 'Listening, with case' : 'Battery life')
+export const lifeLabel = (type: DeviceType) => (TYPES[type].mains ? null : lifeText(type, 0).name)
 
 export function specLines(d: DeviceDesign, diag: number, g?: GameState): [string, string][] {
   const s = d.specs
@@ -75,7 +76,8 @@ export function specLines(d: DeviceDesign, diag: number, g?: GameState): [string
   if (type === 'console') lines.push(['Video output', `${panelName(type, s.panel)}, ${s.refresh} Hz`])
   else if (type === 'headset') lines.push(['Displays', `${panelInfo(s.panel).name} ${s.refresh} Hz, ${OPTICS[s.optics ?? 0].name.toLowerCase()}`])
   else if (type === 'speaker') lines.push(['Screen', d.body.screen ? `${diag.toFixed(1)}" ${panelInfo(s.panel).name}` : 'none'])
-  else if (!T.noScreen) lines.push(['Display', `${diag.toFixed(type === 'watch' ? 2 : 1)}" ${panelInfo(s.panel).name}${type === 'watch' ? '' : ` ${s.refresh} Hz`}`])
+  else if (type === 'drone') lines.push(['Video link', panelName(type, s.panel)])
+  else if (!T.noScreen) lines.push(['Display', `${diag.toFixed(type === 'watch' || type === 'actioncam' ? 2 : 1)}" ${panelName(type, s.panel)}${type === 'watch' || type === 'ereader' ? '' : ` ${s.refresh} Hz`}`])
   if (type === 'foldable') {
     const cover = coverScreen(d.body)
     lines.push(['Form', isFlip(d.body) ? 'Flip: folds in half across the middle' : 'Book: opens sideways'])
@@ -103,6 +105,7 @@ export function specLines(d: DeviceDesign, diag: number, g?: GameState): [string
     lines.push(['Rear cameras', rear.length ? rear.map((p) => `${sensorInfo(p.sensor ?? 0).name} ${LENSES[p.lens ?? 'wide'].name.split(' ')[0].toLowerCase()}`).join(' + ') : 'none'])
     lines.push(['Front camera', selfie.length ? selfie.map((p) => sensorInfo(p.sensor ?? 0).name + (p.underDisplay ? ' under-display' : '')).join(' + ') : 'none'])
   }
+  if (type === 'actioncam' || type === 'drone') lines.push(['Camera', d.parts.filter((p) => p.kind === 'camera').map((p) => sensorInfo(p.sensor ?? 0).name).join(' + ') || 'none'])
   if (type === 'watch') lines.push(['Strap', STRAPS.find((x) => x.id === d.body.strap)?.name ?? 'Silicone'])
   if (T.input) lines.push([INPUT_NAMES[T.input], inputOptions(type)[s.keyboard ?? 0].name])
   if (T.ioLabel) lines.push([T.ioLabel, fitted])
@@ -220,7 +223,7 @@ function Model({ product, onClose }: { product: Product; onClose: () => void }) 
   }, [product.id])
   return (
     <div className="relative h-[240px] border-b border-line">
-      <DeviceView design={product.design} view={view} viewNonce={nonce} autoRotate={!torn && !reducedMotion()} logo={player(g).logo} colorIndex={color} teardown={torn} />
+      <DeviceView design={product.design} view={view} viewNonce={nonce} autoRotate={!torn && !reducedMotion()} logo={player(g).logo} colorIndex={color} osLook={osLookOf(g, product.companyId)} teardown={torn} />
       <div className="absolute left-2 top-2 flex border border-line bg-panel">
         {(['back', 'front', 'side'] as ViewName[]).map((v) => (
           <Btn key={v} small tone="ghost" active={view === v} onClick={() => (setView(v), setNonce((x) => x + 1))}>
@@ -403,7 +406,7 @@ function Specs({ g, product, mine }: { g: GameState; product: Product; mine: boo
         <Row key={k} icon={SPEC_ICON[k] ?? 'feed'} k={<span className="whitespace-nowrap">{k}</span>} v={<span className="whitespace-normal text-right">{v}</span>} />
       ))}
       <Row icon="weight" k="Weight" v={weightLabel(product.weight)} />
-      {lifeLabel(product.type) && <Row icon="battery" k={lifeLabel(product.type)} v={`${Math.round(product.lifeHours * 10) / 10} h`} />}
+      {lifeLabel(product.type) && <Row icon="battery" k={lifeLabel(product.type)} v={lifeText(product.type, product.lifeHours).value} />}
       {product.tiers.map((t) => (
         <Row key={t.storage} icon="tag" k={`${t.storage >= 1024 ? t.storage / 1024 + ' TB' : t.storage + ' GB'} option`} v={price(t.price)} />
       ))}

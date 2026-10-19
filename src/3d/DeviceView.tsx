@@ -2,11 +2,12 @@
 // lighting rig. Used read-only in the dashboard and interactively in the designer.
 import { Environment, Html, Lightformer, OrbitControls } from '@react-three/drei'
 import { type ThreeEvent, useFrame, useThree } from '@react-three/fiber'
-import { EffectComposer, N8AO } from '@react-three/postprocessing'
+import { EffectComposer, N8AO, ToneMapping } from '@react-three/postprocessing'
+import { ToneMappingMode } from 'postprocessing'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { TYPES } from '../data/devices'
-import type { DeviceDesign, DeviceType } from '../sim/types'
+import type { DeviceDesign, DeviceType, OsLook } from '../sim/types'
 import { type Quality, useSettings } from '../store/settings'
 import { AutoTurn, SafeCanvas, StrainWatch, useShadingRelease, useStrain } from './SafeCanvas'
 import { layoutInternals, weightShares } from '../sim/internals'
@@ -35,10 +36,12 @@ const DESK_VIEWS: Partial<Record<DeviceType, Views>> = {
   earbuds: { back: [-0.44, 0.34, -0.83], front: [0.36, 0.4, 0.84], side: [0.93, 0.28, 0.24], bottom: [0.2, -0.82, 0.54] },
   headset: { back: [-0.5, 0.42, -0.76], front: [0.46, 0.3, 0.84], side: [0.95, 0.24, 0.2], bottom: [0.22, 0.92, 0.32] },
   speaker: { back: [-0.42, 0.3, -0.86], front: [0.32, 0.5, 0.8], side: [0.93, 0.3, 0.22], bottom: [0.12, 0.95, 0.3] },
+  ring: { back: [-0.36, 0.62, -0.7], front: [0.3, 0.6, 0.74], side: [0.95, 0.3, 0.1], bottom: [0.1, 0.98, 0.15] },
+  drone: { back: [-0.5, 0.4, -0.77], front: [0.5, 0.36, 0.79], side: [0.96, 0.26, 0.1], bottom: [0.18, 0.95, 0.25] },
 }
 const viewDir = (d: DeviceDesign, v: ViewName) => (DESK_VIEWS[d.type] ?? VIEWS)[v]
 /** What the fourth view button shows for a device type. */
-export const fourthView = (type: DeviceType): string => (type === 'laptop' || type === 'console' || type === 'headset' || type === 'speaker' ? 'top' : type === 'desktop' || type === 'tv' ? 'under' : 'bottom')
+export const fourthView = (type: DeviceType): string => (type === 'laptop' || type === 'console' || type === 'headset' || type === 'speaker' || type === 'ring' || type === 'drone' ? 'top' : type === 'desktop' || type === 'tv' ? 'under' : 'bottom')
 /**
  * What the studio spends at each quality setting. One device is little to draw; the cost of this view is the
  * shading laid over it, which on a laptop's built-in graphics is most of a frame.
@@ -51,6 +54,8 @@ const STUDIO: Record<Quality, { dpr: number; shadows: number; ao: 'off' | 'spare
 }
 /** Camera distance per unit of device radius, for a 26 degree lens. */
 const FRAMING = 5.3
+/** A panel on a stand is wide and low, and the radius that bounds it is mostly empty above and below it: it can stand closer. */
+const FRAMING_BY_TYPE: Partial<Record<DeviceType, number>> = { tv: 4.1, desktop: 4.6 }
 
 interface Props {
   design: DeviceDesign
@@ -72,6 +77,8 @@ interface Props {
   logo?: string
   /** Preview one of the design's extra colourways; -1 shows the main colour. */
   colorIndex?: number
+  /** The look of the operating system shown on the screen (see osLook.ts). */
+  osLook?: OsLook
 }
 
 function Rig({ dir, dist, nonce }: { dir: [number, number, number]; dist: number; nonce: number }) {
@@ -86,9 +93,27 @@ function Rig({ dir, dist, nonce }: { dir: [number, number, number]; dist: number
   return null
 }
 
+/**
+ * Keeps the near plane as far out as the model allows. Depth precision depends on the ratio of the camera's distance
+ * to its near plane, and with a fixed near plane a device seen from across the room (a TV, a desktop zoomed out) had
+ * its screen, bezel and decals flickering through one another. The model lies within `radius` of the origin (2.5
+ * radii with the layers of a teardown pulled apart), so everything nearer than that can be clipped.
+ */
+function NearPlane({ radius, min }: { radius: number; min: number }) {
+  useFrame(({ camera }) => {
+    const cam = camera as THREE.PerspectiveCamera
+    const near = Math.max(min, (cam.position.length() - 2.5 * radius) * 0.6)
+    if (Math.abs(near - cam.near) > cam.near * 0.04) {
+      cam.near = near
+      cam.updateProjectionMatrix()
+    }
+  })
+  return null
+}
+
 /** The model as a still object, for the dashboard. The designer uses LiveDevice instead. */
-function Device({ design, selectedId, logo, colorIndex = -1, teardown }: Props) {
-  const group = useMemo(() => buildDevice(design, selectedId, logo, colorIndex), [design, selectedId, logo, colorIndex])
+function Device({ design, selectedId, logo, colorIndex = -1, osLook, teardown }: Props) {
+  const group = useMemo(() => buildDevice(design, selectedId, logo, colorIndex, 1, osLook), [design, selectedId, logo, colorIndex, osLook])
   useEffect(() => () => disposeDevice(group), [group])
   const opened = useRef(0)
   const mem = useRef(newRigMemory())
@@ -164,7 +189,7 @@ export function DeviceView(props: Props) {
   const { radius, bottom } = deviceFrame(design)
   // everything in the studio scales with the device, so a watch and a TV are lit alike
   const k = radius / 87
-  const dist = radius * FRAMING
+  const dist = radius * (FRAMING_BY_TYPE[design.type] ?? FRAMING)
   const desk = !!DESK_VIEWS[design.type]
   const view = props.view ?? TYPES[design.type].hero
   const dir = viewDir(design, view)
@@ -183,7 +208,7 @@ export function DeviceView(props: Props) {
       shadows={S.shadows > 0 ? 'percentage' : false}
       dpr={[0.5, S.dpr]}
       camera={{ fov: 26, near: 5 * k, far: 6000 * k, position: [dir[0] * dist, dir[1] * dist, dir[2] * dist] }}
-      gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.05 }}
+      gl={{ antialias: true, toneMapping: THREE.NeutralToneMapping, toneMappingExposure: 1 }}
       // the teardown cuts an opening in a cover where it is drawn (see teardown.ts)
       onCreated={(st) => (st.gl.localClippingEnabled = true)}
       onPointerMissed={() => (props.onPick?.(null), props.studio && useStudio.getState().pick && useStudio.setState({ pick: null }))}
@@ -195,7 +220,7 @@ export function DeviceView(props: Props) {
       <directionalLight
         color="#ffe3c2"
         intensity={1.9 * sun}
-        position={[220 * k, 320 * k, 380 * k]}
+        position={[200 * k, 430 * k, 330 * k]}
         castShadow={S.shadows > 0}
         shadow-mapSize={[S.shadows || 512, S.shadows || 512]}
         shadow-bias={-0.0004}
@@ -208,7 +233,7 @@ export function DeviceView(props: Props) {
         shadow-camera-far={1200 * k}
       />
       <directionalLight color="#b9d2ff" intensity={0.9} position={[-320 * k, 80 * k, 260 * k]} />
-      <directionalLight color="#ffffff" intensity={1.5 * sun} position={[-160 * k, 260 * k, -380 * k]} />
+      <directionalLight color="#ffffff" intensity={1.5 * sun} position={[-140 * k, 470 * k, -260 * k]} />
       {backFill > 0 && <directionalLight color="#d5deea" intensity={backFill} position={[-240 * k, 150 * k, -420 * k]} />}
       <ambientLight intensity={0.12} />
       {/* a lamp at the camera, lit only while a device is open: whatever is being looked into is seen (see LiveDevice) */}
@@ -218,12 +243,13 @@ export function DeviceView(props: Props) {
         <color attach="background" args={['#050608']} />
         <Lightformer form="rect" intensity={5} color="#fff1e0" position={[4, 6, 6]} scale={[8, 5, 1]} target={[0, 0, 0]} />
         <Lightformer form="rect" intensity={2.2} color="#cfe0ff" position={[-8, 1, 3]} scale={[3, 9, 1]} target={[0, 0, 0]} />
-        <Lightformer form="rect" intensity={6} color="#ffffff" position={[-3, 5, -8]} scale={[9, 3, 1]} target={[0, 0, 0]} />
+        {/* the rim box sits high: lower, it was what a dark deck or lid facing up mirrored at the usual viewing angle, turning black metal grey */}
+        <Lightformer form="rect" intensity={5} color="#ffffff" position={[-3, 9, -5]} scale={[9, 3, 1]} target={[0, 0, 0]} />
         <Lightformer form="rect" intensity={1.6} color="#ffffff" position={[8, -1, -4]} scale={[2, 10, 1]} target={[0, 0, 0]} />
         <Lightformer form="ring" intensity={1.2} color="#9fb4c8" position={[0, -7, 0]} scale={6} target={[0, 0, 0]} />
       </Environment>
 
-      {props.studio ? <LiveDevice design={design} selectedId={props.selectedId} onPick={props.onPick} logo={props.logo} colorIndex={props.colorIndex} scale={k} editable={props.studio.editable} hints={props.studio.hints} tear={props.studio.tear} home={[dir[0] * dist, dir[1] * dist, dir[2] * dist]} /> : <Device {...props} />}
+      {props.studio ? <LiveDevice design={design} selectedId={props.selectedId} onPick={props.onPick} logo={props.logo} colorIndex={props.colorIndex} osLook={props.osLook} scale={k} editable={props.studio.editable} hints={props.studio.hints} tear={props.studio.tear} home={[dir[0] * dist, dir[1] * dist, dir[2] * dist]} /> : <Device {...props} />}
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, floorY, 0]} receiveShadow>
         <planeGeometry args={[3000 * k, 3000 * k]} />
@@ -233,6 +259,8 @@ export function DeviceView(props: Props) {
       {ao && (
         <EffectComposer ref={shading} multisampling={4}>
           <N8AO halfRes={S.ao === 'spare'} aoRadius={9 * k} distanceFalloff={1} intensity={2.2} quality={S.ao === 'spare' ? 'performance' : 'medium'} />
+          {/* the composer turns the renderer's tone mapping off, so without this the shaded view was clipped where the plain one rolled off */}
+          <ToneMapping mode={ToneMappingMode.NEUTRAL} />
         </EffectComposer>
       )}
       {ao && S.ao === 'spare' && <StrainWatch />}
@@ -240,6 +268,7 @@ export function DeviceView(props: Props) {
       <OrbitControls makeDefault enablePan={false} minDistance={dist * 0.3} maxDistance={dist * 2.4} />
       {props.autoRotate && <AutoTurn speed={5.4} />}
       <Rig dir={dir} dist={dist} nonce={props.viewNonce ?? 0} />
+      <NearPlane radius={radius} min={5 * k} />
     </SafeCanvas>
   )
 }

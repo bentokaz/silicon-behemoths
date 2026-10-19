@@ -111,8 +111,8 @@ export function unlockBlocked(s: GameState, type: DeviceType): string | null {
 export const eraNeed = (need: number | undefined) => (need === undefined ? undefined : Math.max(0, need - (3 - eraInfo().techLevel)))
 
 /** The kinds a new company can choose to start with. */
-// a new company can begin with anything but the two kinds that need years of research behind them
-export const START_TYPES = DEVICE_TYPES.filter((t) => t !== 'foldable' && t !== 'headset')
+// a new company can begin with anything but the three kinds that need years of research behind them
+export const START_TYPES = DEVICE_TYPES.filter((t) => t !== 'foldable' && t !== 'headset' && t !== 'drone')
 /** The same for a company starting in a given year: only what is on sale then. */
 export const startTypesIn = (year: number): DeviceType[] => START_TYPES.filter((t) => TYPE_YEAR[t] <= year)
 

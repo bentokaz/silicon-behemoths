@@ -21,8 +21,38 @@ const BACK: Record<string, Params> = {
   graphene: { metalness: 0.45, roughness: 0.5, sheen: 0.6, sheenRoughness: 0.4 },
 }
 
+/** Linear luminance of a CSS colour, 0 (black) to 1 (white). */
+export function linearLuminance(color: string): number {
+  const c = new THREE.Color(color)
+  return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
+}
+
+/**
+ * Keeps a finish true to its colour under the studio's bright soft boxes. A metal's reflection is tinted by its own
+ * colour, but at a glancing angle every surface mirrors white; on a near-black metal that white sheen was all that
+ * showed, so a black aluminium deck facing the lights came out mid-grey. Real dark finishes are coatings (anodising,
+ * PVD, DLC) over the metal: a dyed, slightly dielectric skin. So the darker the colour, the less metal and the weaker
+ * the white sheen and the mirrored surroundings; pale and mid colours are left as they were. Very low roughness is
+ * floored too: a pin-sharp reflection of a soft box turns into a white sliver that flickers as the model turns.
+ */
+export function colourTrue(p: Params, color: string): Params {
+  const metal = p.metalness ?? 0
+  const out: Params = { ...p, roughness: Math.max(p.roughness ?? 0.5, metal > 0.5 ? 0.2 : 0.08) }
+  // 0 for black, 1 from a mid grey (linear 0.12, about #606060) up
+  const t = Math.min(1, Math.sqrt(linearLuminance(color) / 0.12))
+  if (t >= 1) return out
+  // glossy black glass or ceramic is meant to mirror the room, so a dielectric keeps its sheen; only metals are tamed
+  const k = Math.min(1, metal / 0.6) * (1 - t)
+  out.metalness = metal * (1 - 0.6 * (1 - t))
+  out.specularIntensity = 1 - 0.6 * k
+  out.envMapIntensity = 1 - 0.55 * k
+  if (out.clearcoat) out.clearcoat *= 1 - 0.45 * k
+  if (out.sheen) out.sheen *= 1 - 0.65 * k
+  return out
+}
+
 export function frameMaterial(mat: string, color: string): THREE.MeshPhysicalMaterial {
-  return new THREE.MeshPhysicalMaterial({ color, ...(FRAME[mat] ?? FRAME.aluminium) })
+  return new THREE.MeshPhysicalMaterial({ color, ...colourTrue(FRAME[mat] ?? FRAME.aluminium, color) })
 }
 
 export function backMaterial(mat: string, color: string, finish: 'gloss' | 'matte'): THREE.MeshPhysicalMaterial {
@@ -34,7 +64,7 @@ export function backMaterial(mat: string, color: string, finish: 'gloss' | 'matt
     p.sheen = 0.4
     p.sheenRoughness = 0.5
   }
-  return new THREE.MeshPhysicalMaterial({ color, ...p })
+  return new THREE.MeshPhysicalMaterial({ color, ...colourTrue(p, color) })
 }
 
 export const blackGlass = () => new THREE.MeshPhysicalMaterial({ color: '#040506', metalness: 0, roughness: 0.12, clearcoat: 0.7, clearcoatRoughness: 0.08, reflectivity: 0.5 })

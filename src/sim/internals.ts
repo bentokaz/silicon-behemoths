@@ -5,7 +5,7 @@
 // Pure: same design, same layout.
 import { EXTRAS, LENSES, sensorInfo } from '../data/catalog'
 import { ANC, COOLERS, DRIVERS, GPUS, HINGES, MIC_ARRAYS, OPTICS, SPEAKERS, SPEAKER_DRIVERS, TYPES, headStrap, inputOptions, ioInfo, standInfo } from '../data/devices'
-import { HINGE_CLEAR, carrierBody, caseShape, consoleFans, edgeBevel, faceBasis, faceSink, handheldControls, headsetEyes, isCoverCam, isFlip, laptopDeck, laptopSplit, mountOf, screenRect, speakerShape, standMount, visorShape } from './geometry'
+import { HINGE_CLEAR, carrierBody, caseShape, consoleFans, droneShape, edgeBevel, faceBasis, faceSink, handheldControls, headsetEyes, isCoverCam, isFlip, laptopDeck, laptopSplit, mountOf, ringShape, screenRect, selfieScreen, speakerShape, standMount, visorShape } from './geometry'
 import { clamp } from './rng'
 import { type ChipSpec, type WeightKey, batteryLabel, chargeWatts, chipFor, maxBattery, minThickness, panelName, weightParts } from './scoring'
 import type { Body, CustomChip, DeviceDesign, DeviceType, Evaluation, Levels, PlacedPart, Specs } from './types'
@@ -479,8 +479,10 @@ function slabGuts(g: Gen, L: Lay, o: SlabOpt) {
       L.add(`spk${i}${sx}`, 'speaker', r, top, Math.max(0.5, Math.min(3.2 * k, D - top - 0.3)), { label: 'Speaker', specs: grilles.length > 1 || has('stereo') ? ['extra:stereo'] : [] }, false)
       local.push(r)
     })
-    const motor = L.fit(S, Math.min(10.5 * k, cw * 0.2), sb - 1.6, [grilles.length && at(grilles[0])[0] > (A.u0 + A.u1) / 2 ? 0.08 : 0.92, 0.5], local, 0.5)
-    if (motor) L.add(`haptic${sx}`, 'motor', motor, top, Math.max(0.5, Math.min(3 * k, D - top - 0.3)), { label: 'Haptic motor' }, false)
+    // precision haptics are a wide linear motor in place of the little spinning weight
+    const wide = has('haptics')
+    const motor = L.fit(S, Math.min((wide ? 15 : 10.5) * k, cw * (wide ? 0.28 : 0.2)), sb - 1.6, [grilles.length && at(grilles[0])[0] > (A.u0 + A.u1) / 2 ? 0.08 : 0.92, 0.5], local, 0.5)
+    if (motor) L.add(`haptic${sx}`, 'motor', motor, top, Math.max(0.5, Math.min(3 * k, D - top - 0.3)), wide ? { label: 'Wide linear haptic motor', specs: ['extra:haptics'], v: 1 } : { label: 'Haptic motor' }, false)
     L.taken.push(S)
   }
   const rest: R = { ...A, v0: low + (o.strip ? 0.6 : 0) }
@@ -515,21 +517,48 @@ function slabGuts(g: Gen, L: Lay, o: SlabOpt) {
     const items: Item[] = [chipItem(g, [8.5, 10, 12][s.chipTier] ?? 10, k), ...memoryItems(g, k)]
     items.push({ id: 'modem', kind: 'shield', su: 10 * k, sv: 6.5 * k, sw: 1.1 * k, at: [0.8, 0.3], o: { label: 'Modem and radios', specs: has('sat') ? ['extra:sat'] : [], v: 0 } })
     items.push({ id: 'pmic', kind: 'mem', su: 4.4 * k, sv: 4.4 * k, sw: 0.7 * k, at: [0.2, 0.2], o: { label: 'Power management', specs: ['charging'], v: 2, text: `${chargeWatts(d.type, s.charging)}W` } })
-    if (d.type !== 'tablet') items.push({ id: 'sim', kind: 'tray', su: 12 * Math.min(1, k), sv: 8 * Math.min(1, k), sw: 1 * k, at: [0, 0.5], o: { label: 'SIM tray' } })
+    if (d.type !== 'tablet' && d.type !== 'ereader' && d.type !== 'actioncam') items.push({ id: 'sim', kind: 'tray', su: 12 * Math.min(1, k), sv: 8 * Math.min(1, k), sw: 1 * k, at: [0, 0.5], o: { label: 'SIM tray' } })
     if (has('stereo')) items.push({ id: 'earpiece', kind: 'speaker', su: 9 * k, sv: 3.4 * k, sw: 1.6 * k, at: [0.5, 1], o: { label: 'Earpiece speaker', specs: ['extra:stereo'] } })
+    // the extras that are parts: each stands on the board where it would sit in a real device
+    if (has('face')) items.push({ id: 'face', kind: 'sensor', su: 10 * k, sv: 4 * k, sw: 2 * k, at: [0.5, 1], o: { label: 'Dot projector and infrared camera', specs: ['extra:face'], v: 1 } })
+    if (has('ir')) items.push({ id: 'ir', kind: 'led', su: 2.4 * k, sv: 2.4 * k, sw: 1 * k, at: [0.15, 1], o: { label: 'Infrared emitter', specs: ['extra:ir'] } })
+    if (has('jack')) items.push({ id: 'jack', kind: 'port', su: 6 * k, sv: 5 * k, sw: 3.5 * k, at: [0.1, 0.95], o: { label: 'Headphone jack', specs: ['extra:jack'] } })
+    if (has('esim')) items.push({ id: 'esim', kind: 'mem', su: 3.2 * k, sv: 3.2 * k, sw: 0.6 * k, at: [0.65, 0.15], o: { label: 'eSIM chip', specs: ['extra:esim'], v: 2, text: 'eSIM' } })
+    if (has('uwb')) items.push({ id: 'uwb', kind: 'shield', su: 5 * k, sv: 4 * k, sw: 0.8 * k, at: [0.9, 0.8], o: { label: 'Ultra-wideband radio', specs: ['extra:uwb'], v: 0 } })
+    if (has('mmwave')) {
+      items.push({ id: 'mmw0', kind: 'shield', su: 7 * k, sv: 2.4 * k, sw: 1.2 * k, at: [0, 0.9], o: { label: 'mmWave aerial module', specs: ['extra:mmwave'], v: 1 } })
+      items.push({ id: 'mmw1', kind: 'shield', su: 7 * k, sv: 2.4 * k, sw: 1.2 * k, at: [1, 0.1], o: { label: 'mmWave aerial module', specs: ['extra:mmwave'], v: 1 } })
+    }
+    const tray = items.find((it) => it.id === 'sim')
+    if (has('sd') && tray) tray.o = { label: 'SIM and memory card tray', specs: ['extra:sd'] }
+    else if (has('sd')) items.push({ id: 'sd', kind: 'tray', su: 11 * Math.min(1, k), sv: 9 * Math.min(1, k), sw: 1 * k, at: [0, 0.5], o: { label: 'Memory card slot', specs: ['extra:sd'] } })
     const placed = populate(L, boards, top, items, obs)
     const soc = placed.get('chip')
     if (soc) {
       // a shield can over the processor: drawn lifted, so the package under it shows
       L.add('can', 'shield', keep(grow(soc, 0.9), A), top, Math.max(0.3, Math.min(1.5 * k, D - top - 0.1)), { label: 'Shield can', specs: ['chip'], over: true, v: 1 }, false)
       // heat leaves through the floor: a graphite pad, a graphite sheet or a vapour chamber, by how hard the chip runs
-      const tier = g.chip.custom ? 2 : s.chipTier
+      const tier = g.chip.custom || has('vapor') ? 2 : s.chipTier
       const span = tier === 0 ? grow(soc, 4) : tier === 1 ? boards[0] : (join([boards[0], { ...rest, v1: boards[0].v0, v0: Math.max(rest.v0, boards[0].v0 - restH * 0.3) }]) ?? boards[0])
-      L.add('thermal', 'sheet', keep(grow(span, -0.6), A), 0.02, Math.max(0.05, Math.min(0.22, base * 0.7)), { label: ['Graphite pad', 'Graphite sheet', 'Vapour chamber'][tier], specs: ['chip'], v: tier === 2 ? 1 : 0, figure: 'Cooling', note: 'Follows the chip tier: this kind of device has no cooling row of its own.', layer: 0 }, false)
+      L.add('thermal', 'sheet', keep(grow(span, -0.6), A), 0.02, Math.max(0.05, Math.min(0.22, base * 0.7)), { label: ['Graphite pad', 'Graphite sheet', 'Vapour chamber'][tier], specs: has('vapor') ? ['chip', 'extra:vapor'] : ['chip'], v: tier === 2 ? 1 : 0, figure: 'Cooling', note: has('vapor') ? undefined : 'Follows the chip tier, unless a vapour chamber is fitted as an extra.', layer: 0 }, false)
     }
     if (has('nfc')) {
       const r = L.fit(boards[boards.length - 1], 14 * k, 9 * k, [0.85, 0.5], fixed, 0.5)
       if (r) L.add('nfc', 'coil', r, Math.max(top, D - 0.5), 0.3, { host: 'cover', label: 'NFC antenna', specs: ['extra:nfc'], v: 1, over: true, layer: 4 }, false)
+    }
+  }
+
+  // ---- a stylus lives in a silo up one side from the bottom edge: the battery has to make room for it
+  if (has('stylus') && o.board === 'full') {
+    const pen = Math.min(5.5 * k, cw * 0.1, D - base - 0.4)
+    const len = Math.min(rh(rest) * 0.85, 125 * Math.min(1.4, k))
+    // as long as fits clear of the boards and what stands on them, down to a stub
+    for (let f = 1; pen > 1.5 && f >= 0.4; f -= 0.15) {
+      if (len * f < 30) break
+      const r = L.fit(rest, pen, len * f, [1, 0], [...L.taken, ...obs], 0.5)
+      if (!r) continue
+      L.add('stylus', 'motor', r, base, pen, { label: 'Stylus in its silo', specs: ['extra:stylus'], v: 1 })
+      break
     }
   }
 
@@ -572,7 +601,7 @@ function slabGuts(g: Gen, L: Lay, o: SlabOpt) {
     if (has('wireless') && d.type !== 'tablet' && o.share >= 0.5) {
       const dia = Math.min(rw(main), rh(main), 54) * 0.86
       const [cu, cv] = mid(main)
-      L.add('coil', 'coil', R4(cu, cv, dia, dia), D - 0.6, 0.45, { host: 'cover', label: 'Wireless charging coil', specs: ['extra:wireless'], v: 0, layer: 4 }, false)
+      L.add('coil', 'coil', R4(cu, cv, dia, dia), D - 0.6, 0.45, { host: 'cover', label: has('reverse') ? 'Two-way wireless charging coil' : 'Wireless charging coil', specs: has('reverse') ? ['extra:wireless', 'extra:reverse'] : ['extra:wireless'], v: 0, layer: 4 }, false)
     }
   }
   if (boards.length) {
@@ -1529,7 +1558,164 @@ function layoutSpeaker(g: Gen) {
 
 // ---------------------------------------------------------------- the lot
 
-const LAYOUTS: Record<DeviceType, (g: Gen) => void> = { phone: layoutSlab, tablet: layoutSlab, watch: layoutWatch, laptop: layoutLaptop, desktop: layoutPanel, tv: layoutPanel, console: layoutConsole, earbuds: layoutEarbuds, foldable: layoutFoldable, headset: layoutHeadset, speaker: layoutSpeaker, handheld: layoutHandheld }
+// ---------------------------------------------------------------- e-reader and action camera: slabs with extras
+
+/** An e-reader is a slab, with a light guide over the ink and, for a stylus, a digitiser behind it. */
+function layoutEreader(g: Gen) {
+  layoutSlab(g)
+  const io = g.s.io ?? []
+  const disp = g.out.find((c) => c.id === 'display')
+  if (!disp) return
+  disp.figure = panelName('ereader', g.s.panel)
+  disp.label = 'E-ink panel'
+  const [cx, cy, z] = disp.box.c
+  const [w, h, th] = disp.box.s
+  // the stack is shared out: the ink in the middle, the light guide on top, the digitiser underneath
+  const lit = io.includes('light')
+  const pen = io.includes('stylus')
+  const ink = th * (lit && pen ? 0.5 : lit || pen ? 0.68 : 1)
+  const bottom = z - th / 2
+  const under = pen ? th * (lit ? 0.22 : 0.32) : 0
+  disp.box = { c: [cx, cy, bottom + under + ink / 2], s: [w, h, ink] }
+  if (pen) g.out.push({ ...disp, id: 'digitiser', kind: 'sheet', box: { c: [cx, cy, bottom + under / 2], s: [w, h, under] }, specs: ['io:stylus'], label: 'Pen digitiser', figure: 'Stylus and note-taking', v: 0, n: undefined })
+  if (lit) {
+    const top = bottom + under + ink
+    g.out.push({ ...disp, id: 'frontlight', kind: 'sheet', box: { c: [cx, cy, (top + z + th / 2) / 2], s: [w, h, z + th / 2 - top] }, specs: ['io:light', ...(io.includes('warm') ? ['io:warm'] : [])], label: 'Front light guide', figure: io.includes('warm') ? 'Warm and cool LEDs along the bottom edge' : 'White LEDs along the bottom edge', v: 1, n: undefined })
+  }
+}
+
+/** An action camera is a thick slab: the lens module behind the lens side, the rear screen on the front, the selfie screen beside the lens. */
+function layoutActioncam(g: Gen) {
+  layoutSlab(g)
+  const { b, s } = g
+  const disp = g.out.find((c) => c.id === 'display')
+  if (disp) disp.label = 'Rear screen'
+  if (!(s.io ?? []).includes('front')) return
+  const f = selfieScreen(b)
+  const th = 0.9
+  // the back face runs the other way across the body
+  g.out.push({ id: 'selfie', kind: 'display', zone: 'body', host: 'cover', box: { c: [-f.x, f.y, -b.thickness / 2 + th / 2 + 0.2], s: [f.w, f.h, th] }, ax: [-1, 2, -3], fits: true, layer: 4, specs: ['io:front'], label: 'Selfie screen', figure: 'Beside the lens', v: s.panel, n: f.r })
+}
+
+// ---------------------------------------------------------------- ring
+
+/**
+ * A smart ring: everything is curved round inside its band. Its axis is upright, the outside of the band at the
+ * front is where the badge goes, and the sensors look in at the finger from the back. The shell is solid, so the
+ * view takes it away and lifts what was inside up off the ring, layer by layer.
+ */
+function layoutRing(g: Gen) {
+  const { b, s } = g
+  const { outer, inner } = ringShape(b)
+  const rm = (outer + inner) / 2
+  const t = outer - inner
+  const h = b.height
+  const io = s.io ?? []
+  g.zones.push({ id: 'main', anchor: 'body', box: { c: [0, 0, 0], s: [2 * outer, h, 2 * outer] }, up: 2, wall: 0 })
+  const put = (id: string, kind: CompKind, c: V3, size: V3, ax: [Dir, Dir, Dir], o: Partial<Comp>) => {
+    const comp: Comp = { id, kind, zone: 'main', host: 'tray', box: { c, s: size }, ax, fits: true, layer: 0, specs: [], label: '', ...o }
+    g.out.push(comp)
+    return comp
+  }
+  const bh = h * 0.62
+  // a U-shaped cell round the back of the band
+  const sd = 0.86
+  const cell = put('battery', 'battery', [0, 0, -rm - t * 0.11], [rm * 1.0, bh, t * 0.44], [1, 2, 3], { specs: ['battery'], label: 'Curved battery cell', figure: batteryLabel('ring', s.battery), fits: g.fitBat, layer: 0, text: `${s.battery} mAh|${((s.battery * 3.85) / 1000).toFixed(2)} Wh  3.85 V` })
+  cell.more = [-1, 1].map((k) => ({ c: [k * rm * sd, 0, -rm * 0.4] as V3, s: [t * 0.44, bh, rm * 0.44] as V3 }))
+  // the board is a flex that runs round the front, the chip on it
+  put('board', 'board', [0, 0, rm], [rm * 1.2, h * 0.72, Math.max(0.2, t * 0.16)], [-1, 2, -3], { label: 'Flex board', v: 1, layer: 1 })
+  put('chip', 'chip', [0, 0, rm - t * 0.21], [Math.min(3.6, h * 0.45), Math.min(3.6, h * 0.45), Math.max(0.25, t * 0.24)], [-1, 2, -3], { specs: ['chip'], label: g.chip.name, figure: 'System in package', v: g.chip.custom ? 2 : s.chipTier, text: g.chip.name, layer: 2 })
+  put('pmic', 'mem', [rm * 0.42, 0, rm * 0.9 - t * 0.12], [2.2, 2.2, Math.max(0.2, t * 0.18)], [-1, 2, -3], { label: 'Power management', specs: ['charging'], v: 2, text: 'PM', layer: 2 })
+  // the sensors look in through the window at the back, against the palm side of the finger
+  if (io.length) put('sensors', 'sensor', [0, 0, -(inner + t * 0.22)], [Math.min(7, rm * 0.7), h * 0.56, Math.max(0.25, t * 0.3)], [1, 2, 3], { label: 'Sensor array', figure: `${io.length} sensor${io.length > 1 ? 's' : ''}`, specs: io.map((id) => `io:${id}`), n: io.length, v: 0, layer: 3 })
+  // charging contacts or a coil, at the side
+  put('coil', 'coil', [rm, 0, 0], [Math.max(0.2, t * 0.2), h * 0.7, h * 0.7], [3, 2, -1], { label: 'Charging coil', figure: `${chargeWatts('ring', s.charging)} W on its dock`, specs: ['charging'], v: 0, layer: 1 })
+  if (io.includes('pay')) put('nfc', 'antenna', [-rm, 0, rm * 0.2], [Math.max(0.2, t * 0.2), h * 0.6, rm * 0.7], [-3, 2, 1], { label: 'Payment aerial', specs: ['io:pay'], v: 1, layer: 1 })
+  put('ant', 'antenna', [-rm * 0.7, 0, rm * 0.7], [rm * 0.36, h * 0.5, rm * 0.36], [-1, 2, -3], { label: 'Bluetooth aerial', over: true, v: 0, layer: 1 })
+}
+
+// ---------------------------------------------------------------- drone
+
+/** A drone: the battery slides into the tail, the flight board sits in the middle and the camera hangs from the nose. The top shell lifts off. */
+function layoutDrone(g: Gen) {
+  const { b, d, s } = g
+  const sh = droneShape(b)
+  const wall = 1.6
+  const L0 = b.thickness
+  const ins = wall + 0.2929 * Math.max(0, sh.plan - wall)
+  const hw = b.width / 2 - ins
+  const hq = L0 / 2 - wall - 1
+  const D = b.height - 2 * wall
+  // across, towards the tail, and up from the floor
+  const f = new Frame([0, -b.height / 2 + wall, 0], 1, -3, 2)
+  const A: R = { u0: -hw, v0: -hq, u1: hw, v1: hq }
+  const seam = -b.height / 2 + wall + D * 0.42
+  g.zones.push({ id: 'main', anchor: 'body', box: f.box(A, 0, D), up: 2, cut: { axis: 1, at: seam, side: 1 }, wall })
+  const L = new Lay(g.out, 'main', f, A, D)
+  const io = s.io ?? []
+  const base = 0.4
+  const bt = Math.min(1.2, D * 0.06)
+  const top = base + bt
+  const tMax = Math.max(0.6, seam - (-b.height / 2 + wall) - base - 0.6)
+  // ---- the nose: the camera's processor behind the gimbal, and the eyes that watch for obstacles
+  const cam = d.parts.find((p) => p.kind === 'camera')
+  if (cam) {
+    const [u] = L.f.at(partPoint(d, cam))
+    const r = keep(R4(u, A.v0 + 6, Math.min(2 * hw - 2, 16), 10), A)
+    L.add(`cam:${cam.id}`, 'camera', r, base, Math.min(tMax, 9), { partId: cam.id, specs: ['camera'], label: 'Gimbal camera module', figure: sensorInfo(cam.sensor ?? 0).name, v: cam.sensor ?? 0 })
+  }
+  if (io.includes('avoid') || io.includes('omni')) {
+    const specs = [...(io.includes('avoid') ? ['io:avoid'] : []), ...(io.includes('omni') ? ['io:omni'] : [])]
+    for (const k of [-1, 1]) {
+      const r = keep(R4(k * hw * 0.62, A.v0 + 2.6, 5, 4), A)
+      L.add(`eye${k < 0 ? 'L' : 'R'}`, 'camera', r, Math.max(base, D * 0.55), Math.min(4, D * 0.3), { label: 'Obstacle sensor', specs, v: 0, n: 2 }, false)
+    }
+  }
+  // ---- the tail: the charging port, then the battery bay
+  const port = d.parts.find((p) => p.kind === 'port')
+  if (port) {
+    const [u, , w] = L.f.at(partPoint(d, port))
+    const r = keep(R4(u, A.v1 - 4, port.w + 2, 7), A)
+    L.add(`port:${port.id}`, 'port', r, clamp(w - port.h / 2 - 0.5, base, Math.max(base, D - port.h - 1)), Math.min(port.h + 1, D - 1), { partId: port.id, label: 'Charging port', figure: `${chargeWatts('drone', s.charging)} W`, specs: ['charging'] })
+  }
+  const bay = { ...A, v0: A.v1 - 2 * hq * 0.48 }
+  const room = L.largest(bay)
+  if (room) {
+    const c = cell(g, L, 'battery', room, base, tMax)
+    c.label = io.includes('swap') ? 'Hot-swap flight battery' : 'Flight battery'
+    if (io.includes('swap')) c.specs.push('io:swap')
+  }
+  // ---- the middle: the flight board and what stands on it
+  const middle = { ...A, v0: A.v0 + 12, v1: A.v1 - 2 * hq * 0.48 - 1 }
+  const board = L.fit(middle, 2 * hw * 0.9, rh(middle) * 0.92, [0.5, 0.5])
+  if (board) {
+    L.add('board', 'board', board, base, bt, { v: 0, label: 'Flight controller' })
+    const k = clamp(Math.min(rw(board), rh(board)) / 40, 0.6, 1.4)
+    const items: Item[] = [chipItem(g, [8, 10, 12][s.chipTier] ?? 10, k, [0.5, 0.45])]
+    items.push({ id: 'imu', kind: 'mem', su: 4 * k, sv: 4 * k, sw: 0.8 * k, at: [0.15, 0.2], o: { label: 'Motion sensors', v: 2, text: 'IMU' } })
+    items.push({ id: 'link', kind: 'shield', su: 11 * k, sv: 8 * k, sw: 1.4 * k, at: [0.85, 0.75], o: { label: 'Video link radio', figure: panelName('drone', s.panel), specs: ['panel'], v: 0 } })
+    for (let i = 0; i < 4; i++) items.push({ id: `esc${i}`, kind: 'mem', su: 3.6 * k, sv: 3.6 * k, sw: 0.7 * k, at: [i % 2 ? 0.95 : 0.05, i < 2 ? 0.05 : 0.95], o: { label: 'Motor controller', figure: 'one for each motor', v: 1, text: 'ESC' } })
+    if (io.includes('track')) items.push({ id: 'npu', kind: 'mem', su: 5 * k, sv: 5 * k, sw: 0.8 * k, at: [0.2, 0.8], o: { label: 'Tracking processor', specs: ['io:track'], v: 2, text: 'AI' } })
+    const placed = populate(L, [board], top, items, [])
+    const soc = placed.get('chip')
+    if (soc && s.chipTier >= 1) {
+      const fan = L.fit({ ...middle, v1: board.v0 }, 14, 10, [0.5, 1], L.taken)
+      if (fan) L.add('fan0', 'fan', fan, base, Math.min(tMax, 6), { label: 'Cooling fan', figure: `${Math.round(g.chip.watts * 0.3)} W of heat to shed`, specs: ['chip'], axis: 2 })
+    }
+  }
+  // ---- under the top shell: GPS and the long-range aerials
+  if (io.includes('gps')) L.add('gps', 'sensor', R4(0, -hq * 0.1, Math.min(18, 2 * hw * 0.5), 14), Math.max(top, D - 2), 1.2, { host: 'cover', label: 'GPS module', specs: ['io:gps'], v: 1, layer: 4 }, false)
+  for (const k of [-1, 1]) L.add(`ant${k < 0 ? 'L' : 'R'}`, 'antenna', R4(k * (hw - 0.6), 0, 0.8, 2 * hq * 0.5), base, Math.min(D * 0.5, 8), { label: io.includes('range') ? 'Long-range aerial' : 'Aerial', specs: io.includes('range') ? ['io:range'] : ['panel'], over: true, v: io.includes('range') ? 1 : 0 }, false)
+  const boardC = g.out.find((c) => c.id === 'board')
+  const batC = g.out.find((c) => c.id === 'battery')
+  if (boardC && batC) {
+    const a = L.f.at(boardC.box.c)
+    const z = L.f.at(batC.box.c)
+    run(L, 'cable0', 'cable', [a[0] + hw * 0.3, a[1]], [z[0] + hw * 0.3, z[1]], top + 1, Math.min(2.4, D * 0.1), { label: 'Power harness' })
+  }
+}
+
+const LAYOUTS: Record<DeviceType, (g: Gen) => void> = { phone: layoutSlab, tablet: layoutSlab, watch: layoutWatch, laptop: layoutLaptop, desktop: layoutPanel, tv: layoutPanel, console: layoutConsole, earbuds: layoutEarbuds, foldable: layoutFoldable, headset: layoutHeadset, speaker: layoutSpeaker, handheld: layoutHandheld, ereader: layoutEreader, ring: layoutRing, actioncam: layoutActioncam, drone: layoutDrone }
 
 /**
  * Everything inside a device and where it goes. With the company's research

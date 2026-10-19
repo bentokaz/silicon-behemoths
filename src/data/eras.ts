@@ -49,6 +49,10 @@ export const TYPE_YEAR: Record<DeviceType, number> = {
   earbuds: 2016,
   headset: 2016,
   foldable: 2019,
+  drone: 2013,
+  actioncam: 2009,
+  ereader: 2007,
+  ring: 2019,
 }
 
 /** Customer segments that appear later than their device type. */

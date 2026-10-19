@@ -5,7 +5,7 @@ import { sfx } from '../audio/sfx'
 import { DAYS_PER_MONTH } from '../data/catalog'
 import { setEra, startYear } from '../data/eras'
 import { TYPES } from '../data/devices'
-import { clampPart, isCoverCam, newPart, nextPartId } from '../sim/geometry'
+import { clampPart, isCoverCam, newPart, nextPartId, notchStyle } from '../sim/geometry'
 import { migrate, newGame, player, starterDesign, tick } from '../sim/game'
 import { type CapId, type Where, capOf, capOfTab, has, isNear, locked, stepProgress } from '../sim/progress'
 import { monthCosts } from '../sim/types'
@@ -110,12 +110,13 @@ function readLayout(d: DeviceDesign, g: GameState): SimpleLayout {
   const selfie = d.parts.find((p) => p.kind === 'camera' && p.face === 'front')
   const fp = d.parts.find((p) => p.kind === 'fingerprint')
   const logo = d.parts.find((p) => p.kind === 'logo')
+  const notch = d.parts.find((p) => p.kind === 'notch' && p.face === 'front')
   return {
     layout: 1,
     // a headset's cameras are the tracking cameras on its front
     cams: d.type === 'headset' ? d.parts.filter((p) => p.kind === 'camera').length : Math.min(4, Math.max(d.type === 'phone' || d.type === 'foldable' ? 1 : 0, rear.length)),
     sensor: d.parts.filter((p) => p.kind === 'camera' && !isCoverCam(d, p)).reduce((m, p) => Math.max(m, p.sensor ?? 0), 0),
-    front: selfie?.underDisplay ? 'under' : d.parts.some((p) => p.kind === 'notch') ? 'notch' : g.features.includes('punch') ? 'punch' : 'notch',
+    front: selfie?.underDisplay ? 'under' : notch ? notchStyle(d.body, notch) : g.features.includes('punch') ? 'punch' : 'notch',
     fingerprint: !fp ? 'none' : fp.face === 'front' ? 'display' : fp.face === 'back' ? 'back' : 'side',
     flash: d.parts.some((p) => p.kind === 'flash' || p.kind === 'light'),
     logo: logo?.text ?? player(g).name.split(' ')[0].slice(0, 10).toUpperCase(),

@@ -1,383 +1,252 @@
-// Paints an operating system's look (OsLook, designed in Labs) onto a 2D
-// canvas: the wallpaper, the clock, the app icons in their layout and the dock.
-// Used by the OS designer's live preview and, through a canvas texture, by
-// device screens. Pure drawing: no React, no three, no clock of its own.
-import type { OsLook } from '../sim/types'
+// The home screen of an operating system, painted onto a device's screen texture from its look: wallpaper and
+// accent colours, the shape of the app icons, how the apps are laid out, the typeface, light or dark. Pure canvas
+// drawing, sized from the canvas, so the same look reads alike on a phone, a tablet or a foldable.
+import type { Company, GameState, OsLook } from '../sim/types'
 
-export interface PaintOpts {
-  /** 'home' shows the app icons; 'lock' the lock screen with its big clock. */
-  screen?: 'home' | 'lock'
-  /** Time shown on the clock, 'HH:MM'. */
-  time?: string
-  /** Labels under icons and on list rows, when there is room for them. */
-  labels?: boolean
-}
+/** The look of a company's own operating system before anything is chosen. */
+export const DEFAULT_OS_LOOK: OsLook = { wallpaper: '#16324a', accent: '#ff8a3d', iconShape: 'squircle', layout: 'grid', font: 'sans', dark: true }
 
 const FONTS: Record<OsLook['font'], string> = {
-  sans: '"Inter", "Segoe UI", system-ui, sans-serif',
-  mono: '"JetBrains Mono", "Consolas", monospace',
-  serif: '"Georgia", "Times New Roman", serif',
-  rounded: '"Nunito", "Varela Round", "Segoe UI", system-ui, sans-serif',
+  sans: '"Segoe UI", system-ui, sans-serif',
+  mono: '"Cascadia Mono", Consolas, "Courier New", monospace',
+  serif: 'Georgia, "Times New Roman", serif',
 }
-const APPS = ['Phone', 'Mail', 'Maps', 'Camera', 'Photos', 'Music', 'Store', 'Notes', 'Clock', 'Weather', 'Wallet', 'Health', 'Chat', 'Files', 'Video', 'Settings']
+const APPS = ['Mail', 'Maps', 'Music', 'Photos', 'Notes', 'Clock', 'Store', 'Files', 'Camera', 'Chat', 'News', 'Health', 'Wallet', 'Games', 'Video', 'Books', 'Weather', 'Home', 'Voice', 'Docs']
+const TINTS = ['#2f9bf0', '#ff9f1c', '#34c77b', '#f0484e', '#8e6cf0', '#22c3c9', '#f5d43c', '#ff6fa3']
 
-/** '#rrggbb' mixed towards '#rrggbb' by t (0-1). */
-function mix(a: string, b: string, t: number): string {
-  const p = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) || 0)
-  const [x, y] = [p(a), p(b)]
-  return `#${x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, '0')).join('')}`
-}
-const luma = (h: string) => {
-  const [r, g, b] = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) || 0)
-  return (0.299 * r + 0.587 * g + 0.114 * b) / 255
-}
+type Ctx = CanvasRenderingContext2D
 
-function wallpaper(ctx: CanvasRenderingContext2D, look: OsLook, w: number, h: number) {
-  ctx.fillStyle = look.bg
-  ctx.fillRect(0, 0, w, h)
-  const u = Math.min(w, h)
-  ctx.save()
-  ctx.strokeStyle = look.bg2
-  ctx.fillStyle = look.bg2
-  ctx.globalAlpha = 0.55
-  switch (look.wallpaper) {
-    case 'stripes': {
-      ctx.lineWidth = u * 0.05
-      for (let x = -h; x < w + h; x += u * 0.16) {
-        ctx.beginPath()
-        ctx.moveTo(x, 0)
-        ctx.lineTo(x + h, h)
-        ctx.stroke()
-      }
-      break
-    }
-    case 'dots': {
-      const step = u * 0.09
-      for (let y = step / 2; y < h; y += step) for (let x = ((Math.round(y / step) % 2) * step) / 2 + step / 4; x < w; x += step) {
-        ctx.beginPath()
-        ctx.arc(x, y, step * 0.16, 0, Math.PI * 2)
-        ctx.fill()
-      }
-      break
-    }
-    case 'waves': {
-      ctx.lineWidth = u * 0.025
-      for (let k = 0; k < 7; k++) {
-        const y0 = h * (0.35 + k * 0.1)
-        ctx.beginPath()
-        for (let x = 0; x <= w; x += w / 40) ctx.lineTo(x, y0 + Math.sin((x / w) * Math.PI * 2 + k * 0.7) * u * 0.05)
-        ctx.stroke()
-      }
-      break
-    }
-    case 'grid': {
-      ctx.lineWidth = Math.max(1, u * 0.006)
-      const step = u * 0.12
-      for (let x = 0; x < w; x += step) ctx.strokeRect(x, -1, 0, h + 2)
-      for (let y = 0; y < h; y += step) ctx.strokeRect(-1, y, w + 2, 0)
-      break
-    }
-    case 'rings': {
-      ctx.lineWidth = u * 0.03
-      for (let r = u * 0.12; r < Math.hypot(w, h); r += u * 0.12) {
-        ctx.beginPath()
-        ctx.arc(w * 0.8, h * 0.78, r, 0, Math.PI * 2)
-        ctx.stroke()
-      }
-      break
-    }
-    case 'solid':
-      break
-  }
-  ctx.restore()
+const rgb = (hex: string): [number, number, number] => {
+  const h = hex.replace('#', '')
+  const f = h.length === 3 ? h.split('').map((c) => c + c).join('') : h.padEnd(6, '0').slice(0, 6)
+  const n = parseInt(f, 16)
+  return Number.isFinite(n) ? [(n >> 16) & 255, (n >> 8) & 255, n & 255] : [0, 0, 0]
+}
+/** Relative luminance, 0 to 1. */
+const lum = (hex: string) => {
+  const [r, g, b] = rgb(hex).map((v) => {
+    const c = v / 255
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+  })
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+/** The colour mixed towards another by t. */
+const mix = (a: string, b: string, t: number) => {
+  const x = rgb(a)
+  const y = rgb(b)
+  return `rgb(${x.map((v, i) => Math.round(v + (y[i] - v) * t)).join(',')})`
 }
 
-function iconPath(ctx: CanvasRenderingContext2D, shape: OsLook['icons'], x: number, y: number, s: number) {
-  const r = s / 2
-  const cx = x + r
-  const cy = y + r
-  ctx.beginPath()
-  switch (shape) {
-    case 'circle':
-      ctx.arc(cx, cy, r, 0, Math.PI * 2)
-      break
-    case 'square':
-      ctx.rect(x, y, s, s)
-      break
-    case 'hexagon':
-      for (let i = 0; i < 6; i++) {
-        const a = Math.PI / 6 + (i * Math.PI) / 3
-        ctx.lineTo(cx + r * Math.cos(a), cy + r * Math.sin(a))
-      }
-      ctx.closePath()
-      break
-    case 'drop':
-      ctx.moveTo(x, y)
-      ctx.lineTo(cx, y)
-      ctx.arc(cx, cy, r, -Math.PI / 2, Math.PI)
-      ctx.closePath()
-      break
-    case 'squircle':
-    default: {
-      const k = s * 0.28
-      ctx.moveTo(x + k, y)
-      ctx.arcTo(x + s, y, x + s, y + s, k)
-      ctx.arcTo(x + s, y + s, x, y + s, k)
-      ctx.arcTo(x, y + s, x, y, k)
-      ctx.arcTo(x, y, x + s, y, k)
-      ctx.closePath()
-    }
-  }
+function rounded(g: Ctx, x: number, y: number, w: number, h: number, r: number) {
+  g.beginPath()
+  g.roundRect(x, y, w, h, Math.max(0, Math.min(r, w / 2, h / 2)))
 }
 
-/** An app icon: the shape in a colour picked from the look, with a small glyph. */
-function icon(ctx: CanvasRenderingContext2D, look: OsLook, i: number, x: number, y: number, s: number) {
-  const tones = [look.accent, mix(look.accent, '#ffffff', 0.45), mix(look.bg2, '#ffffff', 0.2), mix(look.accent, look.bg, 0.5), look.theme === 'dark' ? '#e9ebee' : '#2a2d31']
-  const fill = tones[i % tones.length]
-  iconPath(ctx, look.icons, x, y, s)
-  ctx.fillStyle = fill
-  ctx.fill()
-  // a simple glyph so the icons read as different apps
-  ctx.save()
-  ctx.strokeStyle = luma(fill) > 0.6 ? '#1b1d21' : '#ffffff'
-  ctx.lineWidth = Math.max(1, s * 0.08)
-  const c = x + s / 2
-  const m = y + s / 2
-  const g = s * 0.22
-  ctx.beginPath()
-  switch (i % 5) {
+/** An app icon of the look's shape: a filled shape in a tint with a simple white glyph. */
+function appIcon(g: Ctx, look: OsLook, cx: number, cy: number, size: number, n: number) {
+  const fill = n % 5 === 0 ? look.accent : TINTS[(n * 3 + 1) % TINTS.length]
+  g.fillStyle = fill
+  if (look.iconShape === 'circle') {
+    g.beginPath()
+    g.arc(cx, cy, size / 2, 0, Math.PI * 2)
+  } else rounded(g, cx - size / 2, cy - size / 2, size, size, look.iconShape === 'squircle' ? size * 0.28 : size * 0.06)
+  g.fill()
+  const ink = lum(fill) > 0.45 ? '#15171b' : '#ffffff'
+  g.fillStyle = ink
+  g.strokeStyle = ink
+  g.lineWidth = size * 0.09
+  g.lineCap = 'round'
+  const r = size * 0.22
+  g.beginPath()
+  switch (n % 4) {
     case 0:
-      ctx.arc(c, m, g, 0, Math.PI * 2)
+      g.arc(cx, cy, r, 0, Math.PI * 2)
+      g.stroke()
       break
     case 1:
-      ctx.rect(c - g, m - g * 0.7, g * 2, g * 1.4)
+      g.moveTo(cx - r * 0.7, cy - r)
+      g.lineTo(cx + r, cy)
+      g.lineTo(cx - r * 0.7, cy + r)
+      g.closePath()
+      g.fill()
       break
     case 2:
-      ctx.moveTo(c - g, m + g)
-      ctx.lineTo(c, m - g)
-      ctx.lineTo(c + g, m + g)
-      break
-    case 3:
-      ctx.moveTo(c - g, m)
-      ctx.lineTo(c + g, m)
-      ctx.moveTo(c, m - g)
-      ctx.lineTo(c, m + g)
+      for (const dy of [-1, 0, 1]) {
+        g.moveTo(cx - r, cy + dy * r * 0.7)
+        g.lineTo(cx + r, cy + dy * r * 0.7)
+      }
+      g.stroke()
       break
     default:
-      ctx.moveTo(c - g, m - g * 0.5)
-      ctx.lineTo(c + g, m - g * 0.5)
-      ctx.moveTo(c - g, m + g * 0.5)
-      ctx.lineTo(c + g * 0.4, m + g * 0.5)
+      g.rect(cx - r, cy - r, r * 2, r * 2)
+      g.stroke()
   }
-  ctx.stroke()
-  ctx.restore()
-}
-
-function clock(ctx: CanvasRenderingContext2D, look: OsLook, x: number, y: number, w: number, h: number, time: string, ink: string, big: boolean) {
-  const font = FONTS[look.font]
-  const [hh, mm] = time.split(':')
-  ctx.save()
-  ctx.fillStyle = ink
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  const cx = x + w / 2
-  const cy = y + h / 2
-  const style = big && look.clock === 'minimal' ? 'digital' : look.clock
-  switch (style) {
-    case 'analog': {
-      const r = Math.min(w, h) * 0.42
-      ctx.strokeStyle = ink
-      ctx.lineWidth = Math.max(1, r * 0.06)
-      ctx.beginPath()
-      ctx.arc(cx, cy, r, 0, Math.PI * 2)
-      ctx.stroke()
-      for (let i = 0; i < 12; i++) {
-        const a = (i / 12) * Math.PI * 2
-        ctx.beginPath()
-        ctx.moveTo(cx + Math.sin(a) * r * 0.82, cy - Math.cos(a) * r * 0.82)
-        ctx.lineTo(cx + Math.sin(a) * r * 0.92, cy - Math.cos(a) * r * 0.92)
-        ctx.stroke()
-      }
-      const hour = ((+hh % 12) + +mm / 60) / 12
-      const min = +mm / 60
-      ctx.lineWidth = Math.max(1.5, r * 0.09)
-      ctx.beginPath()
-      ctx.moveTo(cx, cy)
-      ctx.lineTo(cx + Math.sin(hour * Math.PI * 2) * r * 0.5, cy - Math.cos(hour * Math.PI * 2) * r * 0.5)
-      ctx.stroke()
-      ctx.strokeStyle = look.accent
-      ctx.lineWidth = Math.max(1, r * 0.05)
-      ctx.beginPath()
-      ctx.moveTo(cx, cy)
-      ctx.lineTo(cx + Math.sin(min * Math.PI * 2) * r * 0.78, cy - Math.cos(min * Math.PI * 2) * r * 0.78)
-      ctx.stroke()
-      break
-    }
-    case 'stacked': {
-      const size = Math.min(h * 0.46, w * 0.36)
-      ctx.font = `600 ${size}px ${font}`
-      ctx.fillText(hh, cx, cy - size * 0.48)
-      ctx.fillStyle = look.accent
-      ctx.fillText(mm, cx, cy + size * 0.48)
-      break
-    }
-    case 'big': {
-      const size = Math.min(h * 0.75, w * 0.26)
-      ctx.font = `300 ${size}px ${font}`
-      ctx.fillText(time, cx, cy)
-      break
-    }
-    case 'minimal': {
-      const size = Math.min(h * 0.3, w * 0.12)
-      ctx.textAlign = 'left'
-      ctx.font = `400 ${size}px ${font}`
-      ctx.fillText(time, x + w * 0.08, cy)
-      ctx.fillStyle = look.accent
-      ctx.fillRect(x + w * 0.08, cy + size * 0.7, size * 1.6, Math.max(1, size * 0.08))
-      break
-    }
-    case 'digital':
-    default: {
-      const size = Math.min(h * 0.5, w * 0.2)
-      ctx.font = `500 ${size}px ${font}`
-      ctx.fillText(time, cx, cy)
-    }
-  }
-  ctx.restore()
 }
 
 /**
- * Paints the look of an operating system onto a canvas of w x h pixels: a home
- * screen by default, or the lock screen. Works for any size and shape, portrait
- * or landscape; nothing outside the rectangle is touched.
+ * Paints the home screen of an operating system with the given look over the whole of a w x h canvas.
+ * A screen too wide for one column of phone layout (a tablet, an open foldable) gets more columns.
  */
-export function paintOsLook(ctx: CanvasRenderingContext2D, look: OsLook, w: number, h: number, opts: PaintOpts = {}) {
-  const time = opts.time ?? '09:41'
-  const dark = look.theme === 'dark'
-  const ink = dark ? '#f4f5f7' : '#16181c'
-  const panel = dark ? 'rgba(10,12,16,0.55)' : 'rgba(255,255,255,0.7)'
-  const font = FONTS[look.font]
-  const u = Math.min(w, h)
-  ctx.save()
-  ctx.beginPath()
-  ctx.rect(0, 0, w, h)
-  ctx.clip()
-  wallpaper(ctx, look, w, h)
-
-  // status bar
-  const bar = Math.max(8, u * 0.05)
-  ctx.fillStyle = ink
-  ctx.font = `600 ${bar * 0.62}px ${font}`
-  ctx.textBaseline = 'middle'
-  ctx.textAlign = 'left'
-  if (opts.screen !== 'lock') ctx.fillText(time, u * 0.05, bar * 0.75)
-  ctx.fillRect(w - u * 0.12, bar * 0.5, u * 0.07, bar * 0.5)
-  ctx.fillStyle = look.accent
-  ctx.fillRect(w - u * 0.12, bar * 0.5, u * 0.045, bar * 0.5)
-
-  if (opts.screen === 'lock') {
-    clock(ctx, look, 0, h * 0.12, w, h * 0.3, time, ink, true)
-    ctx.fillStyle = ink
-    ctx.textAlign = 'center'
-    ctx.font = `400 ${u * 0.045}px ${font}`
-    ctx.fillText('Tuesday 9 June', w / 2, h * 0.47)
-    // two notifications and the unlock bar
-    for (let i = 0; i < 2; i++) {
-      const y = h * (0.56 + i * 0.11)
-      ctx.fillStyle = panel
-      ctx.fillRect(w * 0.06, y, w * 0.88, h * 0.09)
-      icon(ctx, look, i + 2, w * 0.09, y + h * 0.015, h * 0.06)
-      ctx.fillStyle = ink
-      ctx.globalAlpha = 0.8
-      ctx.fillRect(w * 0.09 + h * 0.08, y + h * 0.025, w * 0.4, Math.max(1, h * 0.012))
-      ctx.globalAlpha = 0.5
-      ctx.fillRect(w * 0.09 + h * 0.08, y + h * 0.05, w * 0.55, Math.max(1, h * 0.01))
-      ctx.globalAlpha = 1
-    }
-    ctx.fillStyle = ink
-    ctx.fillRect(w * 0.35, h - u * 0.05, w * 0.3, Math.max(2, u * 0.012))
-    ctx.restore()
-    return
+export function paintOsLook(ctx: CanvasRenderingContext2D, look: OsLook, w: number, h: number) {
+  const g = ctx
+  const font = FONTS[look.font] ?? FONTS.sans
+  const u = Math.min(w, h * 0.6) / 100
+  const wide = w > h * 0.8
+  // the wallpaper: the look's colour with two large quiet shapes in the accent
+  g.fillStyle = look.wallpaper
+  g.fillRect(0, 0, w, h)
+  g.globalAlpha = 0.16
+  g.fillStyle = look.accent
+  g.beginPath()
+  g.arc(w * 0.92, h * 0.18, Math.max(w, h) * 0.32, 0, Math.PI * 2)
+  g.fill()
+  g.globalAlpha = 0.1
+  g.beginPath()
+  g.arc(w * 0.05, h * 0.86, Math.max(w, h) * 0.42, 0, Math.PI * 2)
+  g.fill()
+  g.globalAlpha = 1
+  // ink that reads on the wallpaper, and the panels the apps sit on
+  const light = lum(look.wallpaper) > 0.35
+  const ink = light ? '#15171b' : '#f4f5f7'
+  const panel = look.dark ? 'rgba(10,12,16,0.55)' : 'rgba(255,255,255,0.72)'
+  const panelInk = look.dark ? '#f4f5f7' : '#15171b'
+  const say = (s: string, x: number, y: number, size: number, opts: { weight?: number; align?: CanvasTextAlign; color?: string; alpha?: number } = {}) => {
+    g.font = `${opts.weight ?? 400} ${size}px ${font}`
+    g.textAlign = opts.align ?? 'left'
+    g.textBaseline = 'middle'
+    g.fillStyle = opts.color ?? ink
+    g.globalAlpha = opts.alpha ?? 1
+    g.fillText(s, x, y)
+    g.globalAlpha = 1
   }
+  // status bar: the time at the left, where a centred camera covers nothing; signal and battery at the right
+  const bar = wide ? 3.4 * u : 5.4 * u
+  say('09:41', (wide ? 3.5 : 7) * u, bar, (wide ? 2.4 : 4) * u, { weight: 600 })
+  g.fillStyle = ink
+  const sx = w - (wide ? 3.5 : 7) * u
+  const su = wide ? 1.6 * u : 2.6 * u
+  rounded(g, sx - su * 2.3, bar - su * 0.55, su * 2.3, su * 1.1, su * 0.3)
+  g.fill()
+  for (let i = 0; i < 4; i++) {
+    const bh = su * (0.4 + i * 0.25)
+    g.fillRect(sx - su * 3.2 - (4 - i) * su * 0.45, bar + su * 0.55 - bh, su * 0.3, bh)
+  }
+  // the clock, in the accent on a dark look and in ink on a light one
+  const clockY = wide ? 13 * u : 22 * u
+  const clockSize = wide ? 11 * u : 19 * u
+  say('09:41', wide ? 8 * u : w / 2, clockY, clockSize, { weight: look.font === 'mono' ? 500 : 300, align: wide ? 'left' : 'center', color: look.dark && !light ? look.accent : ink })
+  say('Saturday 10 October', wide ? 8.4 * u : w / 2, clockY + clockSize * 0.68, (wide ? 2.4 : 4.2) * u, { align: wide ? 'left' : 'center', alpha: 0.85 })
+  // the home indicator
+  g.fillStyle = ink
+  g.globalAlpha = 0.8
+  rounded(g, w / 2 - 16 * u, h - 3 * u, 32 * u, 1.1 * u, u)
+  g.fill()
+  g.globalAlpha = 1
 
-  // home: a clock widget, the apps in their layout, and a dock
-  const top = bar * 1.6
-  const clockH = look.clock === 'minimal' ? h * 0.08 : h * 0.16
-  clock(ctx, look, 0, top, w, clockH, time, ink, false)
-  const dockH = Math.min(h * 0.13, u * 0.24)
-  const area = { x: w * 0.06, y: top + clockH + h * 0.03, w: w * 0.88, h: h - dockH - (top + clockH + h * 0.05) - u * 0.04 }
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'top'
+  const top = wide ? 26 * u : clockY + clockSize * 0.68 + 9 * u
+  const bottom = h - 7 * u
   if (look.layout === 'list') {
-    const rows = Math.max(1, Math.floor(area.h / (u * 0.13)))
-    const rh = area.h / rows
-    for (let i = 0; i < rows; i++) {
-      const y = area.y + i * rh
-      const s = rh * 0.7
-      icon(ctx, look, i, area.x, y + (rh - s) / 2, s)
-      ctx.fillStyle = ink
-      ctx.textAlign = 'left'
-      ctx.textBaseline = 'middle'
-      ctx.font = `500 ${rh * 0.32}px ${font}`
-      if (opts.labels !== false) ctx.fillText(APPS[i % APPS.length], area.x + s * 1.35, y + rh / 2)
-      ctx.globalAlpha = 0.25
-      ctx.fillRect(area.x + s * 1.35, y + rh - 1, area.w - s * 1.35, 1)
-      ctx.globalAlpha = 1
-    }
-  } else if (look.layout === 'tiles') {
-    const cols = w > h ? 4 : 2
-    const gap = u * 0.025
-    const tw = (area.w - gap * (cols - 1)) / cols
-    const th = tw * 0.62
-    const rows = Math.max(1, Math.floor((area.h + gap) / (th + gap)))
-    for (let r = 0; r < rows; r++)
-      for (let c = 0; c < cols; c++) {
-        const i = r * cols + c
-        // every third row opens with a wide tile that takes the next one's place
-        const wide = r % 3 === 0 && c % 2 === 0
-        if (r % 3 === 0 && c % 2 === 1) continue
-        const x = area.x + c * (tw + gap)
-        const y = area.y + r * (th + gap)
-        const tileW = wide ? tw * 2 + gap : tw
-        ctx.fillStyle = i % 3 === 0 ? look.accent : panel
-        ctx.fillRect(x, y, tileW, th)
-        icon(ctx, look, i, x + th * 0.15, y + th * 0.15, th * 0.36)
-        ctx.fillStyle = i % 3 === 0 && luma(look.accent) > 0.6 ? '#16181c' : i % 3 === 0 ? '#ffffff' : ink
-        ctx.textAlign = 'left'
-        ctx.textBaseline = 'bottom'
-        ctx.font = `500 ${th * 0.18}px ${font}`
-        if (opts.labels !== false) ctx.fillText(APPS[i % APPS.length], x + th * 0.15, y + th * 0.9)
-      }
-  } else {
-    const cols = w > h ? 6 : 4
-    const cell = area.w / cols
-    const s = cell * 0.62
-    const rh = cell * (opts.labels === false ? 1 : 1.25)
-    const rows = Math.max(1, Math.floor(area.h / rh))
-    for (let r = 0; r < rows; r++)
-      for (let c = 0; c < cols; c++) {
-        const i = r * cols + c
-        const x = area.x + c * cell + (cell - s) / 2
-        const y = area.y + r * rh
-        icon(ctx, look, i, x, y, s)
-        if (opts.labels !== false) {
-          ctx.fillStyle = ink
-          ctx.textAlign = 'center'
-          ctx.textBaseline = 'top'
-          ctx.font = `500 ${cell * 0.15}px ${font}`
-          ctx.fillText(APPS[i % APPS.length], x + s / 2, y + s + cell * 0.05)
+    // apps as rows on a panel, one column on a phone and two on a wider screen
+    const cols = wide ? 2 : 1
+    const mx = 6 * u
+    const colW = (w - mx * (cols + 1)) / cols
+    const rowH = (wide ? 7 : 11) * u
+    const rows = Math.max(1, Math.floor((bottom - top - 2 * u) / rowH))
+    for (let c = 0; c < cols; c++) {
+      const x = mx + c * (colW + mx)
+      g.fillStyle = panel
+      rounded(g, x, top, colW, rows * rowH + 2 * u, look.iconShape === 'square' ? u * 0.6 : 4 * u)
+      g.fill()
+      for (let r = 0; r < rows; r++) {
+        const n = c * rows + r
+        const cy = top + u + r * rowH + rowH / 2
+        appIcon(g, look, x + 3 * u + rowH * 0.32, cy, rowH * 0.62, n)
+        say(APPS[n % APPS.length], x + 5 * u + rowH * 0.66, cy, rowH * 0.3, { color: panelInk, weight: 500 })
+        if (r < rows - 1) {
+          g.fillStyle = panelInk
+          g.globalAlpha = 0.12
+          g.fillRect(x + 5 * u + rowH * 0.66, cy + rowH / 2, colW - 8 * u - rowH * 0.66, Math.max(1, u * 0.15))
+          g.globalAlpha = 1
         }
       }
+    }
+    return
   }
-
-  // dock
-  const dy = h - dockH - u * 0.03
-  ctx.fillStyle = panel
-  ctx.fillRect(w * 0.04, dy, w * 0.92, dockH)
-  ctx.fillStyle = look.accent
-  ctx.fillRect(w * 0.04, dy, w * 0.92, Math.max(1, u * 0.006))
-  const n = w > h ? 6 : 4
-  const ds = Math.min(dockH * 0.66, (w * 0.92) / n * 0.62)
-  for (let i = 0; i < n; i++) icon(ctx, look, i, w * 0.04 + ((i + 0.5) * w * 0.92) / n - ds / 2, dy + (dockH - ds) / 2, ds)
-  ctx.restore()
+  if (look.layout === 'tiles') {
+    // live tiles: a grid of square cells, some tiles two cells wide, each a block of colour with its name
+    const cols = wide ? 6 : 4
+    const gap = 1.6 * u
+    const mx = 5 * u
+    const cell = (w - 2 * mx - gap * (cols - 1)) / cols
+    let x = 0
+    let y = 0
+    let n = 0
+    while (top + y * (cell + gap) + cell <= bottom) {
+      const span = (n % 5 === 0 || n % 7 === 3) && x + 2 <= cols ? 2 : 1
+      const px = mx + x * (cell + gap)
+      const py = top + y * (cell + gap)
+      const tw = span * cell + (span - 1) * gap
+      const fill = n % 4 === 0 ? look.accent : look.dark ? mix(TINTS[n % TINTS.length], '#0a0c10', 0.35) : TINTS[n % TINTS.length]
+      g.fillStyle = fill
+      rounded(g, px, py, tw, cell, look.iconShape === 'square' ? 0 : look.iconShape === 'circle' ? cell * 0.18 : cell * 0.1)
+      g.fill()
+      const tileInk = lum(fill) > 0.45 ? '#15171b' : '#ffffff'
+      g.strokeStyle = tileInk
+      g.lineWidth = cell * 0.05
+      g.beginPath()
+      g.arc(px + cell * 0.32, py + cell * 0.34, cell * 0.13, 0, Math.PI * 2)
+      g.stroke()
+      say(APPS[n % APPS.length], px + cell * 0.14, py + cell * 0.8, cell * 0.15, { color: tileInk, weight: 600 })
+      n++
+      x += span
+      if (x >= cols) {
+        x = 0
+        y++
+      }
+    }
+    return
+  }
+  // grid: rows of icons with names, and a dock on a panel along the bottom
+  const cols = wide ? Math.max(6, Math.round(w / (17 * u))) : Math.max(4, Math.min(6, Math.round(w / (23 * u))))
+  const size = wide ? 9 * u : 14.5 * u
+  const dockH = size + (wide ? 4 : 6.5) * u
+  const dockY = bottom - dockH
+  g.fillStyle = panel
+  rounded(g, 4 * u, dockY, w - 8 * u, dockH, look.iconShape === 'square' ? u : 7 * u)
+  g.fill()
+  const pitch = (w - 8 * u) / cols
+  for (let i = 0; i < cols; i++) appIcon(g, look, 4 * u + pitch * (i + 0.5), dockY + dockH / 2, size, i + 10)
+  const rowH = size * 1.55
+  const rows = Math.max(0, Math.min(6, Math.floor((dockY - 3 * u - top) / rowH)))
+  let n = 0
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cx = 4 * u + pitch * (c + 0.5)
+      const cy = top + r * rowH + size / 2
+      appIcon(g, look, cx, cy, size, n)
+      say(APPS[n % APPS.length], cx, cy + size * 0.78, size * 0.2, { align: 'center', alpha: 0.95 })
+      n++
+    }
+  }
 }
+
+/**
+ * The look of the operating system a company's devices run, or undefined for the stock system (which keeps the
+ * screens' own artwork). The player's own system shows its chosen look, or one in the company colour until one is chosen.
+ */
+export function osLookOf(g: GameState, companyId: string): OsLook | undefined {
+  if (companyId !== 'player' || !g.os?.own) return undefined
+  if (g.os.look) return g.os.look
+  const me = g.companies.find((c: Company) => c.id === 'player')
+  const accent = me?.color ?? DEFAULT_OS_LOOK.accent
+  // the same object for the same colour, so a view keyed on the look is not rebuilt on every tick
+  const hit = derived.get(accent)
+  if (hit) return hit
+  const x = rgb(accent)
+  const y = rgb('#0b0e13')
+  const wallpaper = `#${x.map((v, i) => Math.round(v + (y[i] - v) * 0.78).toString(16).padStart(2, '0')).join('')}`
+  const look = { ...DEFAULT_OS_LOOK, accent, wallpaper }
+  derived.set(accent, look)
+  return look
+}
+const derived = new Map<string, OsLook>()

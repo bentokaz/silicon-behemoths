@@ -81,7 +81,7 @@ export function LaunchPlan({ plan, patch, back }: { plan: LaunchState; patch: (p
   const perDay = (mode === 'contract' ? CONTRACT.perDay : (line?.throughput ?? 0)) / T.capacity
   const buildDays = perDay > 0 ? Math.ceil(quantity / perDay) + (mode === 'contract' ? CONTRACT.leadDays : 0) : 0
   const slowBuild = buildDays > BUILD_DAYS_LONG
-  const best = bestSegment({ raw: ev.raw, featureBonus: ev.featureBonus, price: plan.price, type }, me, g.day)
+  const best = bestSegment({ raw: ev.raw, featureBonus: ev.featureBonus, price: plan.price, type, design: draft }, me, g.day)
   const words = priceWords(plan.price, est.typicalPrice)
   const margin = plan.price * (1 - RETAIL_CUT) - cost.total
   // the parts of the unit cost are written so that they add up as printed

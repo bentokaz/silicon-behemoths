@@ -1,15 +1,18 @@
 // Procedural device generation, used for AI rivals, for the player's starting
 // templates, for the simple editor and for Pro/Lite style variants.
-import { CHARGE_W, MATERIALS, RAM_OPTIONS, REFRESH, STORAGE_OPTIONS, idealRam, idealStorage, sensorInfo } from '../data/catalog'
+import { CHARGE_W, EXTRAS, MATERIALS, RAM_OPTIONS, REFRESH, STORAGE_OPTIONS, idealRam, idealStorage, extraInfo, sensorInfo } from '../data/catalog'
 import { ANC, COOLERS, DRIVERS, HINGES, type IoInfo, MIC_ARRAYS, OPTICS, SPEAKERS, SPEAKER_DRIVERS, STRAPS, TIERS, TYPES, headStrap, inputOptions, ioInfo, ioOptions, segmentInfo, sizeLimits } from '../data/devices'
-import { GRIP, SHOULDER, caseShape, clampPart, coverScreen, faceSize, facesFor, isFlip, lightRing, screenRect, speakerShape, speakerSockets } from './geometry'
+import { GRIP, SHOULDER, caseShape, clampPart, coverScreen, faceSize, facesFor, isFlip, lightRing, screenRect, selfieScreen, speakerShape, speakerSockets } from './geometry'
 export { speakerSockets }
 import { type RngHolder, clamp, int, pick, range } from './rng'
-import { maxBattery, minBezel, minThickness, selfieMinDia, thermal } from './scoring'
+import { batteryStep, maxBattery, minBezel, minThickness, selfieMinDia, thermal } from './scoring'
 import type { Body, DeviceDesign, DeviceType, Lens, Levels, PlacedPart, SegmentId } from './types'
 
-export const LAYOUT_NAMES = ['Vertical pill', 'Square island', 'Loose column', 'Centre circle', 'Full-width bar']
-export type FrontStyle = 'notch' | 'punch' | 'under'
+/** Types whose screen, if any, has no refresh rate to choose: e-ink, a drone's video link, a ring. */
+export const NO_REFRESH: DeviceType[] = ['ereader', 'ring', 'drone']
+
+export const LAYOUT_NAMES =['Vertical pill', 'Square island', 'Loose column', 'Centre circle', 'Full-width bar']
+export type FrontStyle = 'notch' | 'drop' | 'pill' | 'punch' | 'under'
 export type FingerprintStyle = 'side' | 'back' | 'display' | 'none'
 
 /** Everything the simple editor (and the rival generator) decides about parts. */
@@ -44,6 +47,10 @@ export function layoutParts(body: Body, o: LayoutOptions): PlacedPart[] {
   else if (o.type === 'headset') layoutHeadset(body, o, add)
   else if (o.type === 'speaker') layoutSpeaker(body, o, add)
   else if (o.type === 'handheld') layoutHandheld(body, o, add)
+  else if (o.type === 'ereader') layoutEreader(body, o, add)
+  else if (o.type === 'ring') layoutRing(body, o, add)
+  else if (o.type === 'actioncam') layoutActioncam(body, o, add)
+  else if (o.type === 'drone') layoutDrone(body, o, add)
   else layoutSlab(body, o, add)
   return parts
 }
@@ -137,6 +144,20 @@ function frontCamera(body: Body, o: LayoutOptions, add: Add, x = 0) {
     add({ ...selfie, y: scr.cy + scr.h / 2 - 5, underDisplay: true })
   } else if (o.front === 'punch') {
     add({ ...selfie, y: scr.cy + scr.h / 2 - 4.5 })
+  } else if (o.front === 'drop') {
+    // a waterdrop: a small rounded cut hanging from the edge, the camera in its round end
+    const w = selfieDia + 3.4
+    const h = w + 0.6
+    const ny = scr.cy + scr.h / 2 - h / 2 + 0.25
+    add({ kind: 'notch', face: 'front', x, y: ny, rot: 0, w, h, r: w / 2 })
+    add({ ...selfie, y: ny - h / 2 + w / 2 })
+  } else if (o.front === 'pill') {
+    // a pill standing clear of the edge, with the camera at its right end and the face sensors in the rest
+    const h = selfieDia + 3
+    const w = Math.max(h * 3, 18)
+    const ny = scr.cy + scr.h / 2 - 1.6 - h / 2
+    add({ kind: 'notch', face: 'front', x, y: ny, rot: 0, w, h, r: h / 2 })
+    add({ ...selfie, x: x + w / 2 - h / 2, y: ny })
   } else {
     const ny = scr.cy + scr.h / 2 - 3
     add({ kind: 'notch', face: 'front', x, y: ny, rot: 0, w: 26, h: 6.5, r: 3 })
@@ -505,6 +526,60 @@ function layoutHandheld(body: Body, o: LayoutOptions, add: Add) {
   add({ kind: 'grille', face: 'bottom', x: -width * 0.26, y: 0, rot: 0, w: 16, h: 1.4 })
 }
 
+/** An e-reader: the power key and the charging port along the bottom edge, the badge on the back. */
+function layoutEreader(body: Body, o: LayoutOptions, add: Add) {
+  const { width, height } = body
+  add({ kind: 'button', face: 'bottom', x: width * 0.3, y: 0, rot: 0, w: 9, h: 2.4 })
+  add({ kind: 'port', face: 'bottom', x: 0, y: 0, rot: 0, w: 8.6, h: 2.8, text: 'usbc' })
+  if (o.flash && body.bezelBottom >= 3.2) {
+    const dot = Math.min(1.6, body.bezelBottom * 0.4)
+    add({ kind: 'light', face: 'front', x: width * 0.3, y: -height / 2 + body.bezelBottom / 2, rot: 0, w: dot, h: dot, color: '#ffb35a' })
+  }
+  addLogo(o, add, height * 0.12, 1.1)
+}
+
+/** A ring: the sensor window on the inside of the band, against the finger, and the name engraved round the outside. */
+function layoutRing(body: Body, o: LayoutOptions, add: Add) {
+  const band = body.height
+  add({ kind: 'island', face: 'back', x: 0, y: 0, rot: 0, w: 7, h: Math.max(2, band - 3), r: 1.2, finish: 'black' })
+  if (o.logo && !o.logoImage) add({ kind: 'logo', face: 'front', x: 0, y: 0, rot: 0, w: Math.min(body.width * 0.55, 1.5 * o.logo.length + 2), h: Math.min(2.4, band * 0.3), text: o.logo })
+}
+
+/**
+ * An action camera. The back is the lens side: the lens in its square housing to one side, leaving room beside it
+ * for the selfie screen. The shutter and the recording light are on top, the door for the battery and the port on
+ * the right, the microphones underneath and the badge down the left side.
+ */
+function layoutActioncam(body: Body, o: LayoutOptions, add: Add) {
+  const { width, height, thickness } = body
+  const housing = Math.min(height - 6, width * 0.5, 34)
+  const cx = width / 2 - housing / 2 - 3
+  add({ kind: 'island', face: 'back', x: cx, y: 0, rot: 0, w: housing, h: housing, r: housing * 0.22, finish: 'black' })
+  const dia = Math.min(housing - 5, sensorInfo(o.sensor).minDia + 6)
+  add({ kind: 'camera', face: 'back', x: cx, y: 0, rot: 0, w: dia, h: dia, sensor: o.sensor, lens: 'wide' })
+  // the recording light sits level with the lens, between the housing and the selfie screen
+  if (o.flash) add({ kind: 'light', face: 'back', x: (cx - housing / 2 + selfieScreen(body).x + selfieScreen(body).w / 2) / 2, y: 0, rot: 0, w: 2.2, h: 2.2, color: '#ff3b30' })
+  add({ kind: 'button', face: 'top', x: -width * 0.16, y: 0, rot: 0, w: 11, h: Math.min(9, thickness - 6) })
+  add({ kind: 'button', face: 'right', x: height * 0.2, y: 0, rot: 0, w: 7, h: 3 })
+  add({ kind: 'port', face: 'right', x: -height * 0.16, y: 0, rot: 0, w: 8.6, h: 2.8, text: 'usbc' })
+  add({ kind: 'grille', face: 'bottom', x: -width * 0.2, y: 0, rot: 0, w: 8, h: 1.2 })
+  add({ kind: 'grille', face: 'top', x: width * 0.12, y: 0, rot: 0, w: 6, h: 1.2 })
+  if (o.logo && !o.logoImage) add({ kind: 'logo', face: 'left', x: 0, y: 0, rot: 0, w: Math.min(height * 0.62, 2.8 * o.logo.length + 2), h: Math.min(4, thickness * 0.2), text: o.logo })
+}
+
+/** A drone: the gimbal camera under the nose, the badge and the power button on top, the port and the tail light at the back. */
+function layoutDrone(body: Body, o: LayoutOptions, add: Add) {
+  const { width, height, thickness: length } = body
+  const dia = sensorInfo(o.sensor).minDia + 3
+  add({ kind: 'camera', face: 'front', x: 0, y: -height * 0.12, rot: 0, w: dia, h: dia, sensor: o.sensor, lens: 'wide' })
+  if (o.logoImage) add({ kind: 'logo', face: 'top', x: 0, y: length * 0.06, rot: 0, w: 14, h: 14, text: o.logo, useImage: true })
+  else if (o.logo) add({ kind: 'logo', face: 'top', x: 0, y: length * 0.06, rot: 0, w: Math.min(width * 0.6, 4.4 * o.logo.length + 4), h: 6, text: o.logo })
+  add({ kind: 'button', face: 'top', x: 0, y: length * 0.3, rot: 0, w: 6, h: 6 })
+  add({ kind: 'vent', face: 'bottom', x: 0, y: 0, rot: 0, w: width * 0.4, h: length * 0.22 })
+  add({ kind: 'port', face: 'back', x: 0, y: -height * 0.22, rot: 0, w: 8.6, h: 2.8, text: 'usbc' })
+  if (o.flash) add({ kind: 'light', face: 'back', x: 0, y: height * 0.18, rot: 0, w: Math.min(16, width * 0.3), h: 1.6, color: '#ff4d3d' })
+}
+
 /** Fit a speaker to its body: the best drivers its enclosure has room for, and no more sockets than its back panel holds. */
 export function fitSpeaker(d: DeviceDesign) {
   if (d.type !== 'speaker') return
@@ -603,7 +678,11 @@ export function generateDesign(r: RngHolder, o: GenOptions): DeviceDesign {
               ? Math.round(range(r, 18, 30))
               : type === 'handheld'
                 ? Math.round(range(r, 10, 18))
-                : Math.round(range(r, 7, 13))
+                : type === 'actioncam'
+                  ? Math.round(range(r, 4, 8))
+                  : type === 'ring'
+                    ? Math.round(range(r, 1, 2))
+                    : Math.round(range(r, 7, 13))
 
   const body: Body = {
     width,
@@ -638,7 +717,9 @@ export function generateDesign(r: RngHolder, o: GenOptions): DeviceDesign {
     body.screen = !!t.screen
     body.backFinish = 'matte'
   }
-  if (type === 'handheld') body.backFinish = 'matte'
+  if (type === 'handheld' || type === 'actioncam' || type === 'drone') body.backFinish = 'matte'
+  // a reader is bought to be held for hours: grippy, never a fingerprint magnet
+  if (type === 'ereader' && body.backMat === 'glass') body.backMat = 'plastic'
   if (flip) {
     body.fold = 'flip'
     body.cover = dLevel >= 4 ? 2 : t.matRank >= 1 ? 1 : 0
@@ -684,7 +765,7 @@ export function generateDesign(r: RngHolder, o: GenOptions): DeviceDesign {
     if (!body.screen) s.panel = 0
   }
   // each half of a flip is a little thicker than a book's, as it has half the area for the same parts
-  body.thickness = Math.round((minThickness(type, dLevel, s) + t.thick + range(r, 0, 0.5) + (flip ? 1.2 : 0)) * 10) / 10
+  body.thickness = Math.round((minThickness(type, dLevel, s) + t.thick + range(r, 0, type === 'ring' ? 0.1 : 0.5) + (flip ? 1.2 : 0)) * 10) / 10
   if (type === 'speaker') {
     // as deep as it is wide, or a little shallower if it is a block
     body.thickness = clamp(half(body.form === 'block' ? width * 0.74 : width), minThickness(type, dLevel, s), T.maxThickness)
@@ -692,18 +773,30 @@ export function generateDesign(r: RngHolder, o: GenOptions): DeviceDesign {
   }
   if (type === 'earbuds') body.corner = Math.min(body.corner, Math.floor(body.thickness / 2))
   if (type === 'console' && Math.max(width, height) < 132) s.io = s.io?.filter((id) => id !== 'disc')
-  if (type === 'earbuds') s.panel = 0
-  if (type !== 'watch' && type !== 'earbuds' && !(type === 'speaker' && !body.screen)) s.refresh = REFRESH.filter((x) => x.level <= s.panel).pop()!.hz
+  if (type === 'earbuds' || type === 'ring') s.panel = 0
+  if (type !== 'watch' && type !== 'earbuds' && !NO_REFRESH.includes(type) && !(type === 'speaker' && !body.screen)) s.refresh = REFRESH.filter((x) => x.level <= s.panel).pop()!.hz
   fitInside(design, o.levels)
-  const fill = o.segment === 'gamer' || o.segment === 'business' || type === 'watch' ? 0.98 : 0.9
-  s.battery = Math.round((maxBattery(body, o.levels.battery, type) * fill) / 50) * 50
+  const fill = o.segment === 'gamer' || o.segment === 'business' || type === 'watch' || type === 'ring' ? 0.98 : 0.9
+  const bStep = batteryStep(type)
+  s.battery = Math.round((maxBattery(body, o.levels.battery, type) * fill) / bStep) * bStep
   const fits = (id: string) => T.extras.includes(id)
   if (t.matRank >= 1 && fits('stereo')) s.extras.push('stereo')
   if (o.levels.materials >= 1 && t.matRank >= 1 && fits('ip68')) s.extras.push('ip68')
   if (o.levels.charging >= 2 && (t.matRank >= 2 || type === 'watch') && fits('wireless')) s.extras.push('wireless')
   if (o.levels.chipset >= 4 && o.segment === 'flagship') s.extras.push('sat')
+  // the thing its buyers ask for most, a maker fits once the research behind it is well established
+  let wanted = 0
+  for (const e of EXTRAS) {
+    if (wanted >= 1) break
+    if (!fits(e.id) || s.extras.includes(e.id) || (e.likes[o.segment] ?? 0) < 0.03 || o.levels[e.track] < e.level + 2) continue
+    if (e.group && s.extras.some((x) => extraInfo(x)?.group === e.group)) continue
+    if (e.needs && !s.extras.includes(e.needs)) continue
+    s.extras.push(e.id)
+    wanted++
+  }
 
-  const camLevel = L('camera', o.segment === 'camera' ? 0 : o.segment === 'gamer' || (type !== 'phone' && type !== 'foldable') ? 2 : t.drop)
+  // for an action camera or a drone the camera is the product, so it is as good as the tier allows
+  const camLevel = L('camera', o.segment === 'camera' ? 0 : o.segment === 'gamer' || (type !== 'phone' && type !== 'foldable' && type !== 'actioncam' && type !== 'drone') ? 2 : t.drop)
   design.parts = layoutParts(body, {
     type,
     layout: type === 'tablet' ? [0, 1, 2][o.layout % 3] : o.layout,
@@ -738,7 +831,7 @@ export function deriveVariant(base: DeviceDesign, variant: VariantId, levels: Le
   const T = TYPES[d.type]
   const s = d.specs
   const step = (opts: number[], v: number, by: number) => opts[clamp(opts.indexOf(largestAtMost(opts, v)) + by, 0, opts.length - 1)]
-  const hasRefresh = d.type !== 'watch' && d.type !== 'earbuds'
+  const hasRefresh = d.type !== 'watch' && d.type !== 'earbuds' && !NO_REFRESH.includes(d.type)
   const bestRefresh = () => REFRESH.filter((x) => x.level <= s.panel && (!x.feat || feats.includes(x.feat))).pop()!.hz
   const scale = (f: number) => {
     const b = d.body
@@ -791,7 +884,7 @@ export function deriveVariant(base: DeviceDesign, variant: VariantId, levels: Le
     s.panel = Math.max(0, s.panel - 1)
     if (hasRefresh) s.refresh = Math.min(s.refresh, 90) === 90 && feats.includes('hz90') && s.panel >= 1 ? 90 : 60
     s.charging = Math.max(0, s.charging - 1)
-    s.extras = s.extras.filter((e) => e !== 'wireless' && e !== 'sat')
+    s.extras = s.extras.filter((e) => e !== 'wireless' && e !== 'reverse' && e !== 'sat' && e !== 'mmwave')
     d.body.frameMat = d.body.frameMat === 'plastic' ? 'plastic' : 'aluminium'
     d.body.backMat = T.oneShell ? d.body.frameMat : 'plastic'
     d.parts = d.parts.filter((p) => !(p.kind === 'camera' && p.face === 'back' && (p.lens === 'tele' || p.lens === 'periscope' || p.lens === 'macro')))
@@ -822,7 +915,8 @@ export function deriveVariant(base: DeviceDesign, variant: VariantId, levels: Le
   if (before.length !== (s.io ?? []).length) d.parts = syncSockets(d, before)
   d.parts = d.parts.map((p) => clampPart(d.body, p, d.type))
   const cap = maxBattery(d.body, levels.battery, d.type)
-  s.battery = variant === 'Max' || variant === 'Ultra' ? Math.round((cap * 0.92) / 50) * 50 : Math.min(s.battery, cap)
+  const bStep = batteryStep(d.type)
+  s.battery = variant === 'Max' || variant === 'Ultra' ? Math.round((cap * 0.92) / bStep) * bStep : Math.min(s.battery, cap)
   return d
 }
 

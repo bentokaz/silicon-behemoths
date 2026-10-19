@@ -8,10 +8,11 @@ import { HINGES, MIC_ARRAYS, headStrap, standInfo } from '../data/devices'
 import { type Carrier, GRIP, faceSize, partExtent, carrierBody, caseShape, consoleFans, consoleShape, coverScreen, designFace, edgeBevel, faceBasis, faceSink, handheldControls, headsetEyes, isCoverCam, isEdge, isFlip, isRing, laptopDeck, mountOf, screenRect, speakerShape, standLift, standMount, visorShape } from '../sim/geometry'
 import { clamp } from '../sim/rng'
 import { panelName } from '../sim/scoring'
-import type { Body, DeviceDesign, DeviceType, Face, PlacedPart, Specs } from '../sim/types'
+import type { Body, DeviceDesign, DeviceType, Face, OsLook, PlacedPart, Specs } from '../sim/types'
 import { themeColor } from '../store/theme'
 import { WEAVE, backMaterial, blackGlass, contactMetal, darkMatte, darkPlastic, fabric, flashMaterial, frameMaterial, lensCore, lensGlass, lightMaterial, rubber } from './materials'
 import { screenTexture } from './screens'
+import { buildActioncam, buildDrone, buildEreader, buildRing, moreFrame } from './buildMore'
 
 // ------------------------------------------------------------ shapes
 
@@ -35,7 +36,7 @@ export function roundedRectShape(w: number, h: number, radius: number | [number,
 }
 
 /** Flat plate with UVs stretched over its bounding box. */
-function plate(w: number, h: number, r: number | [number, number, number, number]): THREE.ShapeGeometry {
+export function plate(w: number, h: number, r: number | [number, number, number, number]): THREE.ShapeGeometry {
   const g = new THREE.ShapeGeometry(roundedRectShape(w, h, r), 16)
   const pos = g.attributes.position
   const uv = g.attributes.uv
@@ -44,7 +45,7 @@ function plate(w: number, h: number, r: number | [number, number, number, number
 }
 
 /** Rounded slab from z = 0 to z = depth. `r` may be one radius or one for each corner, as for roundedRectShape. */
-function slab(w: number, h: number, r: number | [number, number, number, number], depth: number, bevel: number, segments = 3): THREE.BufferGeometry {
+export function slab(w: number, h: number, r: number | [number, number, number, number], depth: number, bevel: number, segments = 3): THREE.BufferGeometry {
   const b = Math.min(bevel, depth / 2 - 0.01, w / 2 - 0.02, h / 2 - 0.02)
   const inner = (v: number) => Math.max(v - b, 0.05)
   const g = new THREE.ExtrudeGeometry(roundedRectShape(w - 2 * b, h - 2 * b, typeof r === 'number' ? inner(r) : [inner(r[0]), inner(r[1]), inner(r[2]), inner(r[3])]), {
@@ -67,7 +68,7 @@ function flatSlab(w: number, d: number, r: number, thick: number, bevel: number)
   return g
 }
 
-function disc(radius: number, height: number): THREE.CylinderGeometry {
+export function disc(radius: number, height: number): THREE.CylinderGeometry {
   const g = new THREE.CylinderGeometry(radius, radius, height, 48)
   g.rotateX(Math.PI / 2)
   g.translate(0, 0, height / 2)
@@ -102,7 +103,7 @@ function cup(w: number, d: number, r: number, h: number, bevel: number, flat: 't
  * `axis` is the direction it was extruded along (0 = x, 1 = y, 2 = z); the flat
  * end faces across it are reset afterwards, or the smoothing would shade them unevenly.
  */
-function smoothBevels(g: THREE.BufferGeometry, axis: 0 | 1 | 2): THREE.BufferGeometry {
+export function smoothBevels(g: THREE.BufferGeometry, axis: 0 | 1 | 2): THREE.BufferGeometry {
   const out = toCreasedNormals(g, 0.7)
   const pos = out.attributes.position
   const nor = out.attributes.normal
@@ -152,7 +153,7 @@ export function pointToFace(type: DeviceType, carrier: Carrier, point: THREE.Vec
 // ------------------------------------------------------------ textures
 
 const logoCache = new Map<string, THREE.CanvasTexture>()
-function logoTexture(text: string): THREE.CanvasTexture {
+export function logoTexture(text: string): THREE.CanvasTexture {
   const hit = logoCache.get(text)
   if (hit) return hit
   const c = document.createElement('canvas')
@@ -192,7 +193,7 @@ export function imageTexture(url: string): THREE.Texture {
 
 // ------------------------------------------------------------ parts
 
-interface Mats {
+export interface Mats {
   frame: THREE.Material
   back: THREE.Material
   glass: THREE.Material
@@ -202,7 +203,7 @@ interface Mats {
 }
 
 /** What the builders need to know besides the design itself. */
-interface Ctx {
+export interface Ctx {
   type: DeviceType
   body: Body
   m: Mats
@@ -213,12 +214,14 @@ interface Ctx {
   detail: number
   /** True if the front has a chin plate in the body colour below the screen. */
   chin: boolean
+  /** The look of the operating system the device runs, for the screens that show its home screen. */
+  look?: OsLook
 }
 
 /** A bottom bezel this tall on a desktop is covered with a plate in the body colour. */
 const CHIN_MIN = 18
 
-function mesh(g: THREE.BufferGeometry, m: THREE.Material, shadow = true): THREE.Mesh {
+export function mesh(g: THREE.BufferGeometry, m: THREE.Material, shadow = true): THREE.Mesh {
   const o = new THREE.Mesh(g, m)
   o.castShadow = shadow
   o.receiveShadow = true
@@ -231,7 +234,7 @@ function mesh(g: THREE.BufferGeometry, m: THREE.Material, shadow = true): THREE.
  * the hair grows with the device: 1 for a phone, about 8 for a TV.
  */
 let layerScale = 1
-const lift = (n: number) => n * layerScale
+export const lift = (n: number) => n * layerScale
 /** The same scale for code that draws on top of a finished model: handles, guides, demonstrations. */
 export const layerScaleOf = (d: DeviceDesign) => Math.min(12, Math.max(1, deviceFrame(d).radius / 87))
 
@@ -239,6 +242,31 @@ export const layerScaleOf = (d: DeviceDesign) => Math.min(12, Math.max(1, device
 const isDim = (p: PlacedPart, c: Ctx) => luminance(surfaceUnder(p, c)) < 0.05
 const satin = () => new THREE.MeshPhysicalMaterial({ color: '#3d4046', metalness: 0.7, roughness: 0.4 })
 const recess = () => new THREE.MeshPhysicalMaterial({ color: '#2a2d33', metalness: 0.2, roughness: 0.7 })
+/** The dark anodised barrel round a front camera, catching a little light at its bevel. */
+const cameraRim = () => new THREE.MeshPhysicalMaterial({ color: '#4a4f58', metalness: 0.85, roughness: 0.3 })
+
+/**
+ * A cut-out hanging from the top edge of the screen (a notch, or a waterdrop when it is narrow and fully rounded),
+ * centred on the origin with its top at `top`. Its lower corners are rounded by `r`; where it meets the edge it flares
+ * out into the bezel with small inward fillets, as the cut in a real panel does, instead of a sharp inside corner.
+ */
+function notchGeometry(w: number, h: number, r: number, top: number): THREE.ShapeGeometry {
+  const f = clamp(Math.min(w, h) * 0.22, 0.5, 1.6)
+  const bottom = -h / 2
+  const side = top - f
+  const re = Math.max(0.05, Math.min(r, w / 2 - 0.001, side - bottom - 0.001))
+  const s = new THREE.Shape()
+  s.moveTo(-w / 2 - f, top)
+  s.lineTo(w / 2 + f, top)
+  s.absarc(w / 2 + f, side, f, Math.PI / 2, Math.PI, false)
+  s.lineTo(w / 2, bottom + re)
+  s.absarc(w / 2 - re, bottom + re, re, 0, -Math.PI / 2, true)
+  s.lineTo(-w / 2 + re, bottom)
+  s.absarc(-w / 2 + re, bottom + re, re, -Math.PI / 2, -Math.PI, true)
+  s.lineTo(-w / 2, side)
+  s.absarc(-w / 2 - f, side, f, 0, Math.PI / 2, false)
+  return new THREE.ShapeGeometry(s, 24)
+}
 
 /** A round grille flat on a surface: a fan outlet or a woofer. Its +Z points out of the surface. */
 function roundGrille(r: number, blades = 0): THREE.Group {
@@ -277,6 +305,8 @@ function pickPlate(w: number, h: number): THREE.Mesh {
 
 /** Stands in for a console's dark rear panel when asking how light a surface is. */
 const REAR_PANEL = darkPlastic()
+/** The black plastic of a display's port panel. */
+const portPanel = () => new THREE.MeshPhysicalMaterial({ color: '#101114', metalness: 0, roughness: 0.58 })
 
 /** The material a part on this face is seen against. */
 function surfaceUnder(p: PlacedPart, c: Ctx): THREE.Material {
@@ -309,7 +339,7 @@ export function logoFinish(light: number): { color: string; metalness: number; r
 }
 
 /** `solid` is the carrier the part sits on and `face` the face of that carrier. */
-function buildPart(p: PlacedPart, solid: Body, face: Face, c: Ctx): THREE.Group {
+export function buildPart(p: PlacedPart, solid: Body, face: Face, c: Ctx): THREE.Group {
   const g = new THREE.Group()
   const m = c.m
   const edge = isEdge(p.face, c.type)
@@ -323,11 +353,16 @@ function buildPart(p: PlacedPart, solid: Body, face: Face, c: Ctx): THREE.Group 
           ring.position.z = lift(0.07)
           g.add(ring)
         } else {
-          const hole = mesh(new THREE.CircleGeometry(r, 40), m.dark, false)
+          // a hole through the display: black glass, the bevelled rim of the lens barrel, the lens and its coated core
+          const hole = mesh(new THREE.CircleGeometry(r, 48), m.glass, false)
           hole.position.z = lift(0.07)
-          const core = mesh(new THREE.CircleGeometry(r * 0.45, 32), m.core, false)
+          const rim = mesh(new THREE.RingGeometry(r * 0.6, r * 0.8, 48), cameraRim(), false)
+          rim.position.z = lift(0.08)
+          const lens = mesh(new THREE.CircleGeometry(r * 0.6, 40), m.lens, false)
+          lens.position.z = lift(0.08)
+          const core = mesh(new THREE.CircleGeometry(r * 0.3, 32), m.core, false)
           core.position.z = lift(0.09)
-          g.add(hole, core)
+          g.add(hole, rim, lens, core)
           if (c.type === 'headset') {
             // a tracking camera looks out through dark glass: a pale rim and a wide lens show where
             const rim = mesh(new THREE.RingGeometry(r * 0.8, r, 40), new THREE.MeshPhysicalMaterial({ color: '#6b7078', metalness: 0.8, roughness: 0.35 }), false)
@@ -357,7 +392,9 @@ function buildPart(p: PlacedPart, solid: Body, face: Face, c: Ctx): THREE.Group 
       break
     }
     case 'island': {
-      const mat = p.finish === 'frame' ? m.frame : p.finish === 'black' ? m.glass : m.back
+      // a port panel on the back of a screen is moulded plastic: in mirror-black glass it caught the back light and showed white
+      const black = c.type === 'desktop' || c.type === 'tv' ? portPanel() : m.glass
+      const mat = p.finish === 'frame' ? m.frame : p.finish === 'black' ? black : m.back
       // on a large panel the raised plate is thicker, so it still reads as a step
       const t = Math.max(1.3, lift(0.4))
       g.add(mesh(slab(p.w, p.h, p.r ?? 6, t, Math.min(0.35 * Math.max(1, layerScale / 2), t / 2 - 0.05)), mat))
@@ -372,7 +409,11 @@ function buildPart(p: PlacedPart, solid: Body, face: Face, c: Ctx): THREE.Group 
       break
     }
     case 'notch': {
-      const n = mesh(plate(p.w, p.h, p.r ?? 3), m.dark, false)
+      // the cut-out is the same black glass as the bezel, so where it meets the bezel the two are one surface
+      const top = screenRect(solid).cy + screenRect(solid).h / 2
+      const reach = top - (p.y + p.h / 2)
+      const attached = p.face === 'front' && Math.abs(p.rot % 180) < 1 && reach < 0.8 && reach > -p.h / 2
+      const n = mesh(attached ? notchGeometry(p.w, p.h, p.r ?? 3, top - p.y + 0.05) : plate(p.w, p.h, Math.min(p.r ?? 3, p.w / 2, p.h / 2)), m.glass, false)
       n.position.z = lift(0.06)
       g.add(n)
       break
@@ -585,14 +626,18 @@ function fitted(p: PlacedPart, d: DeviceDesign): PlacedPart {
   return { ...p, w, h, x: Math.min(reachX, Math.max(-reachX, p.x)), y: Math.min(reachY, Math.max(-reachY, p.y)) }
 }
 
-function addParts(target: THREE.Object3D, d: DeviceDesign, carrier: Carrier, c: Ctx, only?: (p: PlacedPart) => boolean) {
+export function addParts(target: THREE.Object3D, d: DeviceDesign, carrier: Carrier, c: Ctx, only?: (p: PlacedPart) => boolean) {
   const solid = carrierBody(d.body, d.type, carrier)
   const mine = d.parts.filter((p) => mountOf(d.type, p.face).carrier === carrier && (!only || only(p)))
   // raised plates first, so anything placed on one can be lifted onto it
   const plates = mine.filter((p) => p.kind === 'island')
-  for (const placed of [...plates, ...mine.filter((q) => q.kind !== 'island')]) {
+  let n = 0
+  // cut-outs next, lowest of the flat parts, so the cameras set in them always draw on top
+  for (const placed of [...plates, ...mine.filter((q) => q.kind === 'notch'), ...mine.filter((q) => q.kind !== 'island' && q.kind !== 'notch')]) {
     const p = fitted(placed, d)
     const g = buildPart(p, solid, mountOf(d.type, p.face).face, c)
+    // flat parts dropped on top of one another (a logo over a vent) would share a plane and flicker: each sits a hair above the last
+    if (p.kind !== 'island') g.translateZ(lift(0.004) * (n++ % 6))
     if (p.kind !== 'island' && (d.type === 'desktop' || d.type === 'tv')) {
       // a port panel is a real step on something this size, so sockets inside it sit on top of it
       const under = plates.find((i) => i.face === p.face && Math.abs(p.x - i.x) <= i.w / 2 && Math.abs(p.y - i.y) <= i.h / 2)
@@ -619,12 +664,12 @@ function materials(d: DeviceDesign, colorIndex: number): Mats {
 }
 
 /** What a screen's artwork says about its own panel. Thumbnails leave it out. */
-const panelInfoOf = (c: Ctx) => (c.detail < 1 ? undefined : { name: panelName(c.type, c.specs.panel) ?? '', hz: c.specs.refresh, lcd: c.specs.panel === 0 })
-/** A lit screen showing the given artwork. A better panel is a little brighter. */
-const litScreen = (tex: THREE.Texture, panel: number) =>
-  new THREE.MeshPhysicalMaterial({ map: tex, emissiveMap: tex, emissive: '#ffffff', emissiveIntensity: 0.39 + 0.02 * Math.min(panel, 6), roughness: 0.14, metalness: 0, clearcoat: 0.6, clearcoatRoughness: 0.1 })
+export const panelInfoOf = (c: Ctx) => (c.detail < 1 ? undefined : { name: panelName(c.type, c.specs.panel) ?? '', hz: c.specs.refresh, lcd: c.specs.panel === 0, level: c.specs.panel })
+/** A lit screen showing the given artwork. A better panel is brighter, and its anti-glare coating mirrors less of the room. */
+export const litScreen = (tex: THREE.Texture, panel: number) =>
+  new THREE.MeshPhysicalMaterial({ map: tex, emissiveMap: tex, emissive: '#ffffff', emissiveIntensity: 0.3 + 0.036 * Math.min(panel, 8), roughness: 0.14, metalness: 0, clearcoat: 0.62 - 0.045 * Math.min(panel, 8), clearcoatRoughness: 0.1 })
 
-interface SlabOptions {
+export interface SlabOptions {
   carrier: Carrier
   /** Wallpaper index for the screen; leave out for a slab with no screen. */
   wallpaper?: number
@@ -635,7 +680,7 @@ interface SlabOptions {
 }
 
 /** A slab with a screen on its +Z face: a phone, a tablet, a watch case, a laptop lid, a display panel. */
-function buildSlab(b: Body, c: Ctx, o: SlabOptions): THREE.Group {
+export function buildSlab(b: Body, c: Ctx, o: SlabOptions): THREE.Group {
   const m = c.m
   const root = new THREE.Group()
   const bevel = edgeBevel(b)
@@ -673,7 +718,7 @@ function buildSlab(b: Body, c: Ctx, o: SlabOptions): THREE.Group {
   const sr = Math.min(o.screenRadius ?? Math.max(scr.r, capR - inset), sw / 2, sh / 2)
   // the interface names its own panel, and a better panel is a little brighter
   const panel = c.specs.panel
-  const screen = mesh(plate(sw, sh, sr), litScreen(screenTexture(c.type, o.wallpaper, sw, sh, c.detail, panelInfoOf(c)), panel), false)
+  const screen = mesh(plate(sw, sh, sr), litScreen(screenTexture(c.type, o.wallpaper, sw, sh, c.detail, panelInfoOf(c), c.look), panel), false)
   screen.position.set((x0 + x1) / 2, (y0 + y1) / 2, b.thickness / 2 + lift(0.04))
   screen.userData.tear = 'screen'
   root.add(screen)
@@ -813,7 +858,7 @@ function buildLaptop(d: DeviceDesign, c: Ctx): THREE.Group {
   space.position.set(0, blockY + blockH / 2 - pitch - (rows - 1) * pitch * 0.94, top + lift(0.05))
   deck.add(space)
   const padH = Math.max(40, Math.min(90, b.height / 2 + blockY - blockH / 2 - 14))
-  const pad = mesh(plate(Math.min(130, b.width * 0.38), padH, 3), new THREE.MeshPhysicalMaterial({ color: '#0e0f11', roughness: 0.25, metalness: 0, clearcoat: 0.4, transparent: true, opacity: 0.55 }), false)
+  const pad = mesh(plate(Math.min(130, b.width * 0.38), padH, 3), new THREE.MeshPhysicalMaterial({ color: '#0e0f11', roughness: 0.32, metalness: 0, clearcoat: 0.15, clearcoatRoughness: 0.3, transparent: true, opacity: 0.55 }), false)
   pad.position.set(0, blockY - blockH / 2 - 7 - padH / 2, top + lift(0.04))
   deck.add(pad)
   // the keyboard is scenery: pointing at it means pointing at the deck underneath
@@ -953,6 +998,8 @@ function buildPanel(d: DeviceDesign, c: Ctx): THREE.Group {
   if (sound === 2 || sound === 3) {
     const woofer = roundGrille(Math.min(64, b.height * 0.09))
     placeOnFace(woofer, b, d.type, 'back', -b.width * 0.3, d.type === 'tv' ? -b.height * 0.12 : b.height * 0.16, 0)
+    // above anything placed on the back where it sits (a vent, a logo), so the two never share a plane
+    woofer.translateZ(lift(0.04))
     woofer.userData.tear = 'cover'
     root.add(woofer)
   }
@@ -1283,7 +1330,7 @@ function buildFoldable(d: DeviceDesign, c: Ctx): THREE.Group {
   const sr = Math.min(Math.max(scr.r, capR - inset), x1, sh / 2)
   const panel = c.specs.panel
   // the picture is drawn upright for the design, whichever way the halves lie
-  const inner = litScreen(screenTexture('foldable', d.wallpaper, flip ? sh : 2 * x1, flip ? 2 * x1 : sh, c.detail, panelInfoOf(c)), panel)
+  const inner = litScreen(screenTexture('foldable', d.wallpaper, flip ? sh : 2 * x1, flip ? 2 * x1 : sh, c.detail, panelInfoOf(c), c.look), panel)
   for (const side of [-1, 1]) {
     const half = side < 0 ? left : right
     const solid = halfSlab(b, side, bevel)
@@ -1336,7 +1383,7 @@ function buildFoldable(d: DeviceDesign, c: Ctx): THREE.Group {
     win.userData.tear = 'cover'
     leftD.add(win)
   }
-  const cover = mesh(plate(cov.w, cov.h, cov.r), litScreen(screenTexture('phone', d.wallpaper, cov.w, cov.h, c.detail, panelInfoOf(c)), panel), false)
+  const cover = mesh(plate(cov.w, cov.h, cov.r), litScreen(screenTexture('phone', d.wallpaper, cov.w, cov.h, c.detail, panelInfoOf(c), c.look), panel), false)
   // a flip's cover screen is read with the phone shut and its hinge uppermost, so it is drawn the other way up
   if (flip) cover.rotation.x = Math.PI
   else cover.rotation.y = Math.PI
@@ -1930,7 +1977,7 @@ function buildSpeaker(d: DeviceDesign, c: Ctx): THREE.Group {
     const glassR = s.form === 'orb' ? (s.screen.w + 5) / 2 : s.screen.r + 2.5
     const glass = mesh(plate(s.screen.w + 5, s.screen.h + 5, glassR), m.glass, false)
     glass.position.set(0, s.screen.y, frontZ + lift(0.02))
-    const screen = mesh(plate(s.screen.w, s.screen.h, s.screen.r), litScreen(screenTexture('speaker', d.wallpaper, s.screen.w, s.screen.h, c.detail, panelInfoOf(c)), c.specs.panel), false)
+    const screen = mesh(plate(s.screen.w, s.screen.h, s.screen.r), litScreen(screenTexture('speaker', d.wallpaper, s.screen.w, s.screen.h, c.detail, panelInfoOf(c), c.look), c.specs.panel), false)
     screen.position.set(0, s.screen.y, frontZ + lift(0.04))
     glass.userData.tear = screen.userData.tear = 'cover'
     root.add(glass, screen)
@@ -2141,6 +2188,9 @@ export function deviceFrame(d: DeviceDesign): { radius: number; bottom: number }
     }
     case 'speaker':
       return { radius: Math.hypot(b.width, b.height, b.thickness) * 0.5, bottom: b.height / 2 }
+    case 'ring':
+    case 'drone':
+      return moreFrame(d)
     default:
       return { radius: Math.hypot(b.width, b.height) / 2, bottom: b.height / 2 }
   }
@@ -2151,8 +2201,8 @@ export function deviceFrame(d: DeviceDesign): { radius: number; bottom: number }
  * colorIndex >= 0 previews one of the design's extra colourways; detail below
  * 1 is for thumbnails.
  */
-export function buildDevice(d: DeviceDesign, selectedId?: string | null, logoUrl?: string, colorIndex = -1, detail = 1): THREE.Group {
-  const c: Ctx = { type: d.type, body: d.body, m: materials(d, colorIndex), specs: d.specs, selectedId, logoUrl, detail, chin: d.type === 'desktop' && d.body.bezelBottom >= CHIN_MIN }
+export function buildDevice(d: DeviceDesign, selectedId?: string | null, logoUrl?: string, colorIndex = -1, detail = 1, look?: OsLook): THREE.Group {
+  const c: Ctx = { type: d.type, body: d.body, m: materials(d, colorIndex), specs: d.specs, selectedId, logoUrl, detail, chin: d.type === 'desktop' && d.body.bezelBottom >= CHIN_MIN, look }
   layerScale = Math.min(12, Math.max(1, deviceFrame(d).radius / 87))
   switch (d.type) {
     case 'laptop':
@@ -2172,6 +2222,14 @@ export function buildDevice(d: DeviceDesign, selectedId?: string | null, logoUrl
       return buildSpeaker(d, c)
     case 'handheld':
       return buildHandheld(d, c)
+    case 'ereader':
+      return buildEreader(d, c)
+    case 'actioncam':
+      return buildActioncam(d, c)
+    case 'ring':
+      return buildRing(d, c)
+    case 'drone':
+      return buildDrone(d, c)
     default: {
       const root = buildSlab(d.body, c, { carrier: 'body', wallpaper: d.wallpaper })
       if (d.type === 'watch') root.add(buildStrap(d.body))

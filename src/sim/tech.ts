@@ -105,20 +105,19 @@ export interface OsLicence {
   quality: number
   royalty: number
   note: string
-  look: OsLook
 }
-export const DEFAULT_OS_LOOK: OsLook = { wallpaper: 'rings', bg: '#14202c', bg2: '#ff6b1a', accent: '#ff6b1a', theme: 'dark', icons: 'squircle', font: 'sans', layout: 'grid', clock: 'big' }
-const look = (o: Partial<OsLook>): OsLook => ({ ...DEFAULT_OS_LOOK, ...o })
+/** The look of the company's own system before anything is chosen (src/3d/osLook.ts keeps the same). */
+export const DEFAULT_OS_LOOK: OsLook = { wallpaper: '#16324a', accent: '#ff8a3d', iconShape: 'squircle', layout: 'grid', font: 'sans', dark: true }
 export const FREE_OS = 'opencore'
 /** Kinds of device that run the company's operating system, and so pay a licence royalty. Consoles, earbuds and speakers run firmware of their own. */
 export const OS_TYPES: DeviceType[] = ['phone', 'tablet', 'watch', 'foldable', 'laptop', 'desktop', 'headset', 'handheld', 'tv']
 export const OS_LICENCES: OsLicence[] = [
-  { id: FREE_OS, name: 'OpenCore', vendor: 'an open-source project', from: 0, quality: -10, royalty: 0, note: 'Free and open, but rough: few apps and a clumsy interface.', look: look({ wallpaper: 'solid', bg: '#2a2d31', accent: '#8fb3d9', icons: 'square', font: 'mono', layout: 'list', clock: 'digital' }) },
-  { id: 'symbion', name: 'Symbion', vendor: 'a handset consortium', from: 1998, until: 2013, quality: -3, royalty: 5, note: 'The established phone system of its day. Solid, and ageing.', look: look({ wallpaper: 'stripes', bg: '#1d3b5c', bg2: '#2b5a85', accent: '#7fd0ff', theme: 'light', icons: 'square', layout: 'list', clock: 'digital' }) },
-  { id: 'windscape', name: 'Windscape Mobile', vendor: 'a desktop software giant', from: 2002, until: 2015, quality: -1, royalty: 9, note: 'Office tools and email everywhere; dear, and clumsy to touch.', look: look({ wallpaper: 'grid', bg: '#0f2a4a', bg2: '#1c4c80', accent: '#3fa0ff', icons: 'square', layout: 'tiles', clock: 'stacked' }) },
-  { id: 'androyd', name: STOCK_OS, vendor: 'a search giant', from: 2008, quality: 0, royalty: 3, note: 'The everyday standard: exactly as good as buyers expect.', look: look({ wallpaper: 'waves', bg: '#1b2a24', bg2: '#3ddc84', accent: '#3ddc84', icons: 'circle', clock: 'big' }) },
-  { id: 'androyd-plus', name: `${STOCK_OS} with Services`, vendor: 'a search giant', from: 2011, quality: 3, royalty: 9, note: 'The standard system with the full app store and services: a little better, and dearer.', look: look({ wallpaper: 'waves', bg: '#16222e', bg2: '#4f8fd6', accent: '#4f8fd6', icons: 'circle', clock: 'big' }) },
-  { id: 'nebula', name: 'Nebula OS', vendor: 'an independent studio', from: 2018, quality: 6, royalty: 18, note: 'The most polished system you can buy in. Its makers know it.', look: look({ wallpaper: 'dots', bg: '#191526', bg2: '#9c6ade', accent: '#c59cff', icons: 'drop', font: 'rounded', clock: 'analog' }) },
+  { id: FREE_OS, name: 'OpenCore', vendor: 'an open-source project', from: 0, quality: -10, royalty: 0, note: 'Free and open, but rough: few apps and a clumsy interface.' },
+  { id: 'symbion', name: 'Symbion', vendor: 'a handset consortium', from: 1998, until: 2013, quality: -3, royalty: 5, note: 'The established phone system of its day. Solid, and ageing.' },
+  { id: 'windscape', name: 'Windscape Mobile', vendor: 'a desktop software giant', from: 2002, until: 2015, quality: -1, royalty: 9, note: 'Office tools and email everywhere; dear, and clumsy to touch.' },
+  { id: 'androyd', name: STOCK_OS, vendor: 'a search giant', from: 2008, quality: 0, royalty: 3, note: 'The everyday standard: exactly as good as buyers expect.' },
+  { id: 'androyd-plus', name: `${STOCK_OS} with Services`, vendor: 'a search giant', from: 2011, quality: 3, royalty: 9, note: 'The standard system with the full app store and services: a little better, and dearer.' },
+  { id: 'nebula', name: 'Nebula OS', vendor: 'an independent studio', from: 2018, quality: 6, royalty: 18, note: 'The most polished system you can buy in. Its makers know it.' },
 ]
 /** The licence a company runs: saves from before licences ran Androyd. */
 export const licenceInfo = (id: string | undefined): OsLicence => OS_LICENCES.find((l) => l.id === (id ?? 'androyd')) ?? OS_LICENCES[0]
@@ -138,8 +137,6 @@ export function osQuality(s: GameState): number {
 }
 /** The name of the system the company's devices run. */
 export const osName = (s: GameState) => (s.os.own ? `${s.os.name} ${s.os.version}` : licenceInfo(s.os.licence).name)
-/** How the company's devices look when switched on: its own design, or the licensed system's. For paintOsLook (src/3d/osLook.ts). */
-export const osLookOf = (s: GameState): OsLook => (s.os.own ? cleanLook(s.os.look) : licenceInfo(s.os.licence).look)
 
 /** Why a licence cannot be signed, or null. */
 export function licenceBlocked(s: GameState, id: string): string | null {
@@ -155,19 +152,17 @@ export const newOs = (): OsState => ({ own: false, licence: FREE_OS, name: STOCK
 
 const HEX = /^#[0-9a-f]{6}$/i
 export const OS_LOOK_CHOICES = {
-  wallpaper: ['solid', 'stripes', 'dots', 'waves', 'grid', 'rings'],
-  theme: ['dark', 'light'],
-  icons: ['circle', 'squircle', 'square', 'hexagon', 'drop'],
-  font: ['sans', 'mono', 'serif', 'rounded'],
+  iconShape: ['circle', 'squircle', 'square'],
   layout: ['grid', 'list', 'tiles'],
-  clock: ['digital', 'big', 'analog', 'stacked', 'minimal'],
-} as const satisfies { [K in Exclude<keyof OsLook, 'bg' | 'bg2' | 'accent'>]: readonly OsLook[K][] }
+  font: ['sans', 'mono', 'serif'],
+} as const satisfies { [K in 'iconShape' | 'layout' | 'font']: readonly OsLook[K][] }
 /** A look with every part checked: colours must be '#rrggbb' and choices on the list; anything else keeps what `base` has. */
 export function cleanLook(patch: unknown, base: OsLook = DEFAULT_OS_LOOK): OsLook {
   const out = { ...base }
   if (!patch || typeof patch !== 'object') return out
   const p = patch as Record<string, unknown>
-  for (const k of ['bg', 'bg2', 'accent'] as const) {
+  if (typeof p.dark === 'boolean') out.dark = p.dark
+  for (const k of ['wallpaper', 'accent'] as const) {
     const v = p[k]
     if (typeof v === 'string' && HEX.test(v)) out[k] = v.toLowerCase()
   }

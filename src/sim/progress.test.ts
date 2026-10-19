@@ -37,6 +37,7 @@ import {
   train,
   unlockType,
   zoneRoom,
+  setOsLicence,
 } from './game'
 import { GOALS, nextGoals } from './goals'
 import { bestSegment } from './market'
@@ -94,6 +95,8 @@ function play(difficulty: Difficulty, years: number, seed = 11): GameState {
   expect(take(s, 'engineer')).toBeNull()
   expect(take(s, 'researcher')).toBeNull()
   expect(launch(s, 1)).toBeNull()
+  // a sensible opening moves off the free system onto the standard one
+  expect(setOsLicence(s, 'androyd')).toBeNull()
   s.rdBudget = 80e3
   expect(toggleResearch(s, 'chipset')).toBeNull()
   let n = 2

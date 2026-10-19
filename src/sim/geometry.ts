@@ -42,6 +42,13 @@ const FACES: Record<DeviceType, FaceMap> = {
   speaker: { light: ['top'], button: ['top', 'back'], port: ['back'], logo: ['back', 'top'] },
   // front = the screen and controls; the triggers take the ends of the top edge and the grips the ends of the back
   handheld: { button: ['top'], port: ['bottom', 'top'], vent: ['top', 'back'], grille: ['bottom', 'top'], light: ['front'], logo: ['back', 'front'] },
+  ereader: { button: ['bottom', 'top', 'left', 'right'], port: ['bottom', 'top'], light: ['front'], logo: ['back', 'front'] },
+  // front = the outside of the band, back = the inside, against the finger
+  ring: { island: ['back'], logo: ['front', 'back'], light: ['front'] },
+  // back = the lens side, front = the rear screen, top = where the shutter is
+  actioncam: { camera: ['back'], island: ['back'], button: ['top', 'left', 'right'], port: ['left', 'right', 'bottom'], grille: ['left', 'right', 'top', 'bottom'], light: ['back', 'front', 'top'], logo: ['back', 'left', 'right', 'front'] },
+  // front = the nose, where the gimbal hangs; back = the tail, where the battery goes in
+  drone: { camera: ['front'], light: ['back', 'front', 'left', 'right'], button: ['top', 'back'], port: ['back', 'left', 'right'], vent: ['top', 'bottom', 'left', 'right'], logo: ['top', 'left', 'right'] },
 }
 const KINDS: PartKind[] = ['camera', 'island', 'flash', 'notch', 'slot', 'port', 'button', 'light', 'grille', 'vent', 'fingerprint', 'logo']
 
@@ -78,6 +85,15 @@ export function partLabel(p: Pick<PlacedPart, 'kind' | 'crown' | 'face'>, type: 
   if (type === 'headset' && p.kind === 'camera') return 'Tracking camera'
   if (type === 'speaker' && p.kind === 'light') return 'Light ring'
   if (type === 'speaker' && p.kind === 'button') return 'Control button'
+  if (type === 'ring' && p.kind === 'island') return 'Sensor window'
+  if (type === 'ring' && p.kind === 'light') return 'Status light'
+  if (type === 'actioncam' && p.kind === 'island') return 'Lens housing'
+  if (type === 'actioncam' && p.kind === 'camera') return 'Main lens'
+  if (type === 'actioncam' && p.kind === 'light') return 'Recording light'
+  if (type === 'actioncam' && p.kind === 'grille') return 'Microphone'
+  if (type === 'actioncam' && p.kind === 'button' && p.face === 'top') return 'Shutter button'
+  if (type === 'drone' && p.kind === 'camera') return 'Gimbal camera'
+  if (type === 'drone' && p.kind === 'light') return 'Navigation light'
   return PART_LABELS[p.kind]
 }
 
@@ -91,6 +107,10 @@ const FACE_LABELS: Partial<Record<DeviceType, Partial<Record<Face, string>>>> = 
   headset: { front: 'visor front', top: 'top of the visor', bottom: 'underside' },
   speaker: { top: 'top', back: 'back panel' },
   handheld: { top: 'top edge', bottom: 'bottom edge' },
+  ereader: { top: 'top edge', bottom: 'bottom edge', left: 'left edge', right: 'right edge' },
+  ring: { front: 'outside of the band', back: 'inside of the band', top: 'top edge', bottom: 'bottom edge' },
+  actioncam: { front: 'screen side', back: 'lens side', left: 'left side', right: 'right side', bottom: 'underside' },
+  drone: { front: 'nose', back: 'tail', bottom: 'underside', left: 'left side', right: 'right side' },
 }
 /** What a face is called on a given device, for the editor. */
 export const faceLabel = (face: Face, type: DeviceType): string => FACE_LABELS[type]?.[face] ?? face
@@ -297,6 +317,61 @@ export function handheldControls(b: Body): { x: number; up: number; down: number
   return { x: b.width / 2 - flank / 2 - 1.5, up: b.height * 0.2, down: -b.height * 0.2, r: Math.min(10, b.height * 0.105) }
 }
 
+// ---- drones
+
+export interface DroneShape {
+  /** Rounding of the fuselage's top and bottom edges, and the corner radius of its outline seen from above. */
+  round: number
+  plan: number
+  /** Where the four motors are, in body coordinates (x across, z along, nose at +z): front left, front right, back left, back right. */
+  motors: { x: number; z: number }[]
+  /** Height of the arms' centre line, thickness of an arm, and size of a motor. */
+  armY: number
+  arm: number
+  motorR: number
+  motorH: number
+  /** Radius of the disc each propeller sweeps. */
+  propR: number
+  /** Half the span of the whole drone, arms and propellers included, across and along. */
+  spanX: number
+  spanZ: number
+}
+
+/** Everything about the shape of a drone that the model, the layout and the scoring share. Its length is the body's thickness. */
+export function droneShape(b: Body): DroneShape {
+  const L = b.thickness
+  const round = b.edge === 'round' ? clamp(b.height * 0.3, 3, 14) : 1.6
+  const plan = clamp(Math.min(b.width * 0.36, b.corner * 2.4), 4, b.width / 2 - 1)
+  const reach = L * 0.42
+  const x = b.width / 2 + reach
+  const propR = L * 0.31
+  const motors = [
+    { x: -x, z: L * 0.47 },
+    { x, z: L * 0.47 },
+    { x: -x, z: -L * 0.43 },
+    { x, z: -L * 0.43 },
+  ]
+  return { round, plan, motors, armY: b.height * 0.18, arm: clamp(L * 0.055, 5, 14), motorR: clamp(L * 0.062, 5, 16), motorH: clamp(L * 0.09, 7, 22), propR, spanX: x + propR, spanZ: L * 0.47 + propR }
+}
+
+// ---- action cameras
+
+/** The selfie screen beside an action camera's lens, in lens-side (back face) coordinates, if it has one room for one. */
+export function selfieScreen(b: Body): { x: number; y: number; w: number; h: number; r: number } {
+  const housing = Math.min(b.height - 6, b.width * 0.5, 34)
+  const side = Math.max(8, Math.min(b.width - housing - 13, b.height - 10))
+  return { x: -(b.width / 2 - side / 2 - 4), y: 0, w: side, h: side, r: Math.min(3, side * 0.12) }
+}
+
+// ---- rings
+
+/** A ring's band: the radius to the outside, to the inside, and of the rounding of its edges. */
+export function ringShape(b: Body): { outer: number; inner: number; round: number } {
+  const outer = b.width / 2
+  const inner = Math.max(4, outer - b.thickness)
+  return { outer, inner, round: b.edge === 'round' ? Math.min(b.thickness * 0.48, b.height * 0.3) : Math.min(0.45, b.thickness * 0.2) }
+}
+
 /** Dimensions of the solid that carries a design face. */
 export function carrierBody(b: Body, type: DeviceType, carrier: Carrier): Body {
   if (type === 'laptop') {
@@ -308,7 +383,7 @@ export function carrierBody(b: Body, type: DeviceType, carrier: Carrier): Body {
 }
 
 /** A console's sides are large surfaces, so their coordinates run across and up like a front face. */
-const uprightSides = (type: DeviceType) => type === 'console'
+const uprightSides = (type: DeviceType) => type === 'console' || type === 'drone'
 
 /**
  * Axes of a solid's face in the solid's own space: where x and y of a part point,
@@ -336,7 +411,7 @@ export const isSide = (f: Face) => f !== 'front' && f !== 'back'
 
 /** True if the face is a thin edge, where parts sit in a row and cannot move across it. */
 export function isEdge(face: Face, type: DeviceType): boolean {
-  if (type === 'console' || type === 'earbuds' || type === 'headset' || type === 'speaker') return false
+  if (type === 'console' || type === 'earbuds' || type === 'headset' || type === 'speaker' || type === 'drone' || type === 'ring') return false
   return isSide(mountOf(type, face).face)
 }
 
@@ -361,6 +436,12 @@ export function faceSize(b: Body, face: Face, type: DeviceType = 'phone'): { w: 
 /** Strip at each end of a face that parts must keep clear of, where the surface curves away. */
 function faceInset(b: Body, face: Face, type: DeviceType): { x: number; y: number } {
   const fs = faceSize(b, face, type)
+  if (type === 'drone') {
+    // the shell is rounded all over: keep parts to the flatter middle of each face
+    const r = droneShape(b).round
+    return { x: Math.min(r, fs.w * 0.3), y: Math.min(r, fs.h * 0.3) }
+  }
+  if (type === 'ring') return { x: 0, y: Math.min(1, fs.h * 0.2) }
   if (type === 'console') {
     if (face === 'top' || face === 'bottom') return { x: Math.min(b.corner, fs.w * 0.3), y: 2 }
     if (face === 'left' || face === 'right') return { x: 2, y: Math.min(b.corner, fs.h * 0.3) }
@@ -385,6 +466,17 @@ export function screenRect(b: Body) {
   const h = Math.max(10, b.height - b.bezelTop - b.bezelBottom)
   const minBezel = Math.min(b.bezelSide, b.bezelTop, b.bezelBottom)
   return { w, h, cx: 0, cy: (b.bezelBottom - b.bezelTop) / 2, r: Math.max(b.corner - minBezel, 0.6) }
+}
+
+/**
+ * What kind of cut-out a notch part is: one hanging from the top edge of the screen is a notch, or a waterdrop when
+ * it is small and fully rounded; one standing clear of the edge is a pill (an island in the screen).
+ */
+export function notchStyle(b: Body, p: PlacedPart): 'notch' | 'drop' | 'pill' {
+  const scr = screenRect(b)
+  const gap = scr.cy + scr.h / 2 - (p.y + p.h / 2)
+  if (gap >= 0.8) return 'pill'
+  return p.w <= 14 && (p.r ?? 0) >= Math.min(p.w, p.h) / 2 - 0.6 ? 'drop' : 'notch'
 }
 
 /** Bevel of the body edge. Round edges adapt so the screen always sits on flat glass. */
@@ -527,6 +619,12 @@ export function newPart(kind: PartKind, d: DeviceDesign, sensorLevel = 0): Place
         p = { ...base, w: 8, h: 8, sensor: Math.max(0, sensorLevel - 1), lens: 'wide', x: fs.w * 0.3, y: fs.h * 0.22 }
         break
       }
+      if (type === 'drone' || type === 'actioncam') {
+        // the one big lens: under a drone's nose on its gimbal, or beside an action camera's front screen
+        const dia = sensorInfo(sensorLevel).minDia + (type === 'actioncam' ? 6 : 3)
+        p = { ...base, w: dia, h: dia, sensor: sensorLevel, lens: 'wide', x: type === 'actioncam' ? fs.w * 0.2 : 0, y: type === 'actioncam' ? fs.h * 0.08 : -fs.h * 0.12 }
+        break
+      }
       if (base.face === 'front') {
         p = { ...base, w: 3.6, h: 3.6, sensor: Math.max(0, sensorLevel - 1), lens: 'wide', y: b.height / 2 - Math.max(3, b.bezelTop / 2) }
         break
@@ -537,6 +635,8 @@ export function newPart(kind: PartKind, d: DeviceDesign, sensorLevel = 0): Place
     }
     case 'island':
       if (type === 'watch') p = { ...base, w: 26, h: 26, r: 13, finish: 'black' }
+      else if (type === 'ring') p = { ...base, w: 7, h: Math.max(2, b.height - 3), r: 1.2, finish: 'black' }
+      else if (type === 'actioncam') p = { ...base, w: Math.min(34, fs.h - 6), h: Math.min(34, fs.h - 6), r: 7, finish: 'black', x: fs.w * 0.2 }
       else if (type === 'desktop' || type === 'tv') p = { ...base, w: 70 * big, h: 40 * big, r: 6, finish: 'black', x: fs.w * 0.25 }
       else p = { ...base, w: 30, h: 30, r: 8, finish: 'back', y: b.height / 2 - 24 }
       break
@@ -554,6 +654,8 @@ export function newPart(kind: PartKind, d: DeviceDesign, sensorLevel = 0): Place
       else if (type === 'headset') p = { ...base, w: 12, h: 5, x: fs.w * 0.3 }
       else if (type === 'speaker') p = { ...base, w: Math.max(5, Math.min(10, fs.w * 0.16)), h: Math.max(5, Math.min(10, fs.w * 0.16)), y: fs.h * 0.25 }
       else if (type === 'handheld') p = { ...base, w: 10, h: 2.6, x: 24 }
+      else if (type === 'actioncam') p = { ...base, w: 11, h: Math.min(9, b.thickness - 6), x: -fs.w * 0.22 }
+      else if (type === 'drone') p = { ...base, w: 7, h: 7, y: -fs.h * 0.25 }
       else p = { ...base, face: 'right', w: 11, h: 2.2, x: 20 }
       break
     case 'port':
@@ -566,8 +668,8 @@ export function newPart(kind: PartKind, d: DeviceDesign, sensorLevel = 0): Place
       p = type === 'laptop' ? { ...base, w: 13, h: 9, x: fs.w / 2 - 26, y: fs.h / 2 - 10 } : { ...base, w: 9, h: 9, y: 25 }
       break
     case 'logo': {
-      const w = type === 'laptop' ? 44 : type === 'watch' ? 14 : type === 'earbuds' ? 16 : 22 * big
-      const h = type === 'laptop' ? 14 : type === 'watch' ? 4 : type === 'earbuds' ? 5 : 7 * big
+      const w = type === 'laptop' ? 44 : type === 'watch' ? 14 : type === 'earbuds' ? 16 : type === 'ring' ? 9 : type === 'actioncam' ? 16 : 22 * big
+      const h = type === 'laptop' ? 14 : type === 'watch' ? 4 : type === 'earbuds' ? 5 : type === 'ring' ? 2.4 : type === 'actioncam' ? 4.5 : 7 * big
       // on a screen, the logo goes in the bezel below it
       if ((type === 'tv' || type === 'desktop') && face === 'front') {
         const room = Math.max(3, b.bezelBottom * 0.5)
@@ -585,6 +687,9 @@ export function newPart(kind: PartKind, d: DeviceDesign, sensorLevel = 0): Place
       if (type === 'console') p = { ...base, w: Math.min(60, fs.w * 0.3), h: 1.6, y: -fs.h * 0.25, color: '#5ab4ff' }
       else if (type === 'speaker') p = lightRing(b, base)
       else if (type === 'headset') p = { ...base, w: 12, h: 1.4, y: -fs.h * 0.3, color: '#ffffff' }
+      else if (type === 'drone') p = { ...base, w: 8, h: 1.6, color: '#ff4d3d' }
+      else if (type === 'ring') p = { ...base, w: 1.2, h: 1.2, color: '#8dffa8' }
+      else if (type === 'actioncam') p = { ...base, w: 2.4, h: 2.4, x: -fs.w * 0.36, y: fs.h * 0.34, color: '#ff3b30' }
       else p = { ...base, w: 1.2 * (big + 1), h: 1.2 * (big + 1), y: type === 'earbuds' ? fs.h * 0.2 : -b.height / 2 + Math.max(2, b.bezelBottom / 2), color: type === 'earbuds' ? '#8dffa8' : '#ffffff' }
       break
   }

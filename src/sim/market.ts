@@ -1,13 +1,14 @@
 // Demand model: how attractive a product is to each customer segment, the
 // review scores outlets give it, and what owners say about it.
-import { marketLevel, refScore } from '../data/catalog'
+import { extrasAppeal, marketLevel, refScore } from '../data/catalog'
 import { OUTLETS, type SegmentInfo, TYPES, segmentsOf, subLabel } from '../data/devices'
 import { adoption, segmentOpen } from '../data/eras'
 import { type RngHolder, clamp, pick, range } from './rng'
 import { priceIndex } from './world'
 import { type Company, type Feedback, type Product, type Review, SUBS, type SubScores } from './types'
 
-type Probe = Pick<Product, 'raw' | 'featureBonus' | 'price' | 'type'>
+/** What the demand model needs of a device. With its design, the segments that care about its extras see them. */
+type Probe = Pick<Product, 'raw' | 'featureBonus' | 'price' | 'type'> & { design?: { specs: { extras: readonly string[] } } }
 type Maker = Pick<Company, 'brand' | 'software'>
 
 /** Sub-scores relative to what the leading edge of the market offers today. */
@@ -25,14 +26,14 @@ export function priceFactor(price: number, seg: SegmentInfo): number {
 }
 
 /** Quality as this segment sees it, 1.0 = exactly what the segment expects. */
-export function segmentQuality(n: SubScores, maker: Maker, featureBonus: number, seg: SegmentInfo): number {
+export function segmentQuality(n: SubScores, maker: Maker, featureBonus: number, seg: SegmentInfo, extras?: readonly string[]): number {
   let q = seg.weights.brand * maker.brand
   for (const k of SUBS) q += seg.weights[k] * n[k]
-  return (q * (1 + featureBonus + maker.software)) / seg.expect
+  return (q * (1 + featureBonus + extrasAppeal(extras, seg.id) + maker.software)) / seg.expect
 }
 
 export function utility(p: Probe, maker: Maker, seg: SegmentInfo, day: number): number {
-  const q = segmentQuality(normalised(p.raw, day), maker, p.featureBonus, seg)
+  const q = segmentQuality(normalised(p.raw, day), maker, p.featureBonus, seg, p.design?.specs.extras)
   // what counts as cheap or dear moves with the years
   return Math.pow(Math.max(0, q), 1.5) * priceFactor(p.price / priceIndex(day), seg)
 }
@@ -165,6 +166,13 @@ const PRAISE: Record<string, string[]> = {
   home: ['It runs every light and lock in the house.', 'It set itself up with everything I already own.'],
   bass: ['It fills the whole flat without straining.', 'Real bass from something this size.'],
   play: ['The sticks and triggers feel as good as a proper gamepad.', 'It docks to the TV and I carry on where I left off.'],
+  reading: ['I read in bed every night without waking anyone.', 'My notes and my books are all in one place now.'],
+  eink: ['It looks like real paper, even in bright sun.', 'Crisp text and no glare. My eyes thank me.'],
+  insight: ['It knows I am getting ill before I do.', 'The sleep reports actually changed my habits.'],
+  fit: ['I forget I am wearing it, even at night.', 'Light and slim enough to sleep in.'],
+  rugged: ['Survived a season of mountain biking and a dunk in the lake.', 'The footage is smooth however hard I ride.'],
+  link: ['The picture stays sharp right to the edge of its range.', 'Live view never drops, even behind trees.'],
+  flight: ['Steady as a tripod in the wind, and the footage is gorgeous.', 'It follows me and never hits a branch.'],
 }
 const GRIPES: Record<string, string[]> = {
   perf: ['Stutters with a few apps open.', 'Feels slow already.'],
@@ -196,6 +204,13 @@ const GRIPES: Record<string, string[]> = {
   home: ['It works with almost nothing else I own.', 'It is a speaker with a voice. It does little else.'],
   bass: ['No bass at all.', 'Too quiet to fill even a small room.'],
   play: ['The sticks drifted within a month.', 'The buttons feel mushy and it is missing the basics.'],
+  reading: ['No light, so no reading once the sun goes down.', 'Bare-bones. It shows a page and that is all.'],
+  eink: ['Grey and ghosty: I can see the last page under this one.', 'Text looks fuzzy next to my old reader.'],
+  insight: ['The app tells me numbers but never what they mean.', 'Its sleep tracking is guesswork.'],
+  fit: ['Too chunky to wear to bed.', 'It digs into the fingers either side.'],
+  rugged: ['Shaky footage, and it died in the first rain.', 'The housing cracked on its first fall.'],
+  link: ['The picture breaks up a few hundred metres out.', 'Laggy, blocky live view.'],
+  flight: ['It drifts in the slightest breeze.', 'Footage is jittery, and it flew straight into a tree.'],
 }
 
 /** One owner's comment, picked from what this product does well or badly. */
