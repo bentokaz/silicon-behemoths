@@ -8,6 +8,7 @@
 import { Act, Body, Crowd, Kind, Mode, Tool, rnd } from './crowd'
 import type { Nav } from './nav'
 import { Pose, RISER, type Spot, USE, frameOf, frameX, frameZ, seatAisles, seatRank } from './spots'
+import { ITEMS, isStage } from '../../sim/sites'
 import type { Site } from '../../sim/types'
 
 export interface Programme {
@@ -142,8 +143,9 @@ export class VenueCrowd extends Crowd {
     const x = tile % w
     const y = (tile / w) | 0
     for (const it of this.site.items) {
-      if (it.kind !== 'stage' && !it.kind.startsWith('seats')) continue
-      if (x >= it.x - 3 && x <= it.x + 8 && y >= it.y - 3 && y <= it.y + 6 && x < w && y < h) return true
+      if (!isStage(it.kind) && !it.kind.startsWith('seats')) continue
+      const def = ITEMS.venue[it.kind]
+      if (def && x >= it.x - 3 && x <= it.x + def.w + 2 && y >= it.y - 3 && y <= it.y + def.h + 2 && x < w && y < h) return true
     }
     return false
   }

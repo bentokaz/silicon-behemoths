@@ -4,7 +4,7 @@
 // into a handful of meshes; only what changes is rebuilt.
 import { memo, useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import { ITEMS, gridAt } from '../../sim/sites'
+import { ITEMS, gridAt, isScreen } from '../../sim/sites'
 import { type GameState, SUPPLY_CATS, type Site, type SupplyCat } from '../../sim/types'
 import { Sign, Trees, hash } from '../site/kit'
 import { Batch, Ground, STOREY, Structure, surface } from '../site/structure'
@@ -418,7 +418,11 @@ function useBatch(make: () => THREE.Mesh[], deps: unknown[]) {
 /** How things standing out of doors on a site are drawn from far off: [height, colour, how far in from the tile edge]. */
 const OUTDOORS: Record<string, [number, string, number?]> = {
   stage: [1.2, '#2c3036'],
+  stage_l: [1.2, '#2c3036'],
+  stage_xl: [1.2, '#2c3036'],
   screen: [7, '#16181b', 0.05],
+  screen_l: [9, '#16181b', 0.05],
+  screen_xl: [12.5, '#16181b', 0.05],
   lights: [8, '#3a3d42', 0.36],
   speakers: [3.2, '#1f2226', 0.15],
   camera: [1.6, '#3a3d42', 0.3],
@@ -463,7 +467,7 @@ function buildOutdoors(site: Site): { meshes: THREE.Mesh[]; trees: [number, numb
     if (!hint) continue
     const [h, color, inset = 0] = hint
     b.box('wall', x, h / 2 + 0.01, z, w - inset * 2, h, d - inset * 2, color)
-    if (it.kind === 'screen') b.box('lit', x, 4, z, w - 0.4, 5, d + 0.02, '#27353f')
+    if (isScreen(it.kind)) b.box('lit', x, h * 0.57, z, w - 0.4, h * 0.71, d + 0.02, '#27353f')
     if (it.kind === 'fountain') b.box('floor1', x, 0.56, z, w - 0.8, 0.02, d - 0.8, '#3f7f9c')
     if (it.kind === 'parking') b.box('trim', x, 0.8, z, turned ? 4.2 : 1.8, 1.3, turned ? 1.8 : 4.2, ['#d8dadd', '#1d2023', '#7a1f24', '#2c4a6e'][(it.x + it.y) % 4])
     if (it.kind === 'truck') {

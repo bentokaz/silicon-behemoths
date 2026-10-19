@@ -4,19 +4,22 @@
 // orders live with the devices (Orders.tsx) and component supply with the
 // company's money (Supply.tsx): neither is about this building.
 import { sfx } from '../audio/sfx'
-import { autoLine, buildFactory, roomCost, zoneable } from '../sim/game'
+import { useState } from 'react'
+import { autoLine, buildFactory, fixFactoryLayout, roomCost, zoneable } from '../sim/game'
 import { CONTRACT, FACTORY_SAVING, factoryLine } from '../sim/ops'
-import { ITEMS, SITE_TIERS, starterLine, tierOf } from '../sim/sites'
+import { ITEMS, type LineStats, SITE_TIERS, planFix, starterLine, tierOf } from '../sim/sites'
+import { FactoryGuide, guideSeen, markGuideSeen } from './FactoryGuide'
 import { useGame, useStore } from '../store/game'
 import { SiteBuilder } from './SiteBuilder'
 import { aSite, factoryNow, factoryStatus } from './SitesFigures'
 import { BarRow, Detail, Fact, Note, Sec, SiteIntro } from './SitesParts'
-import { Btn, ConfirmBtn, Legend, Meter, money, num, pct } from './ui'
+import { Btn, ConfirmBtn, IconBtn, Legend, Meter, money, num, pct } from './ui'
 
 export function FactoryScreen() {
   const g = useGame()
   const { act, say, go } = useStore.getState()
   const line = factoryLine(g)
+  const [guide, setGuide] = useState(() => !guideSeen())
   const next = SITE_TIERS.factory[g.factory ? g.factory.tier + 1 : 0]
   const build = () => {
     const err = act((s) => buildFactory(s))
@@ -47,11 +50,29 @@ export function FactoryScreen() {
   const now = factoryNow(g)
   const plan = starterLine(g.factory)
   const starterCost = plan ? plan.items.reduce((a, p) => a + ITEMS.factory[p.kind].cost, 0) + roomCost(g.factory, 'hall', zoneable(g.factory, ...plan.hall, 'rect').length) : 0
-  const stages: [string, number][] = line ? [['Board assembly', line.caps.smt], ['Device assembly', line.caps.assembly], ['Packaging', line.caps.pack], ['Testing', line.caps.test]] : []
-  const peak = Math.max(1, ...stages.map((s) => s[1]))
+  const canFix = !!planFix(g.factory)
+  const fix = () => {
+    const err = act((s) => fixFactoryLayout(s))
+    if (err) say(err, 'bad')
+    else sfx.confirm()
+  }
+  const example = () => {
+    const err = act((s) => autoLine(s))
+    if (err) say(err, 'bad')
+    else {
+      sfx.confirm()
+      closeGuide()
+    }
+  }
+  const closeGuide = () => {
+    markGuideSeen()
+    setGuide(false)
+  }
   const down = now.state === 'stopped' || now.state === 'none'
 
   return (
+    <>
+    <FactoryGuide open={guide} onClose={closeGuide} example={starterCost} onExample={example} fix={canFix} onFix={fix} />
     <SiteBuilder
       siteRef="factory"
       site={g.factory}
@@ -60,7 +81,11 @@ export function FactoryScreen() {
       producing={now.queue.length > 0}
       status={factoryStatus(g)}
       tools={
-        starterCost > 0 && !line?.running ? (
+        <>
+        <Btn small tone="ghost" icon="help" title="Input and output faces, transfer belts, the order of the stages and what sets the output" onClick={() => setGuide(true)}>
+          How factories work
+        </Btn>
+        {starterCost > 0 && !line?.running ? (
           <ConfirmBtn
             small
             tone="default"
@@ -75,7 +100,8 @@ export function FactoryScreen() {
           >
             Lay a starter line for {money(starterCost)}
           </ConfirmBtn>
-        ) : undefined
+        ) : null}
+        </>
       }
     >
      <Detail>
@@ -103,19 +129,7 @@ export function FactoryScreen() {
           </>
         )}
       </Sec>
-      <Sec title="Line">
-        {line?.running ? (
-          <>
-            {stages.map(([name, cap]) => (
-              <BarRow key={name} label={name} share={cap / peak} value={num(cap)} tone={cap === line.throughput && name !== 'Testing' ? 'warn' : 'accent'} title={name === 'Testing' ? 'Units a day the test stations can check. Testing never slows the line: it only lowers the share of faulty units.' : `Units a day this stage can handle`} />
-            ))}
-            <Legend className="mt-1" items={[{ label: 'Units a day', tone: 'accent' }, { label: 'Slowest stage: sets the output', tone: 'warn' }]} />
-            <Fact k="Running cost a day, at full output" v={money(line.runCost)} num />
-          </>
-        ) : (
-          <Note tone="warn">{line?.problem ?? 'There is no line yet.'} A line runs from a receiving dock to a shipping dock through board assembly, device assembly and packaging, joined directly or by conveyors.</Note>
-        )}
-      </Sec>
+      <LineSection line={line} onGuide={() => setGuide(true)} onFix={fix} canFix={canFix} />
       <Sec title="Site">
         <Fact k="Size" v={`${tierOf(g.factory).name}, ${g.factory.w} x ${g.factory.h} m`} />
         {next ? (
@@ -128,5 +142,54 @@ export function FactoryScreen() {
       </Sec>
      </Detail>
     </SiteBuilder>
+    </>
+  )
+}
+
+const STAGE_LABEL = { smt: 'Board assembly', assembly: 'Device assembly', pack: 'Packaging', test: 'Testing' } as const
+
+/** What each line on the floor can do, what holds it back, and what stops the ones that do not run. */
+function LineSection({ line, onGuide, onFix, canFix }: { line: LineStats | null; onGuide: () => void; onFix: () => void; canFix: boolean }) {
+  const lines = line?.lines ?? []
+  const help = <IconBtn small icon="help" tone="ghost" title="How factories work" onClick={onGuide} />
+  const fixBtn = canFix && (
+    <Btn small tone="primary" icon="turn" className="mt-1.5 w-full" title="Turns blocks in place so each output faces the next input. Free: nothing moves." onClick={onFix}>
+      Fix layout: turn blocks to face the flow
+    </Btn>
+  )
+  if (!line?.running) {
+    return (
+      <Sec title="Line" right={help}>
+        <Note tone="warn">{line?.problem ?? 'There is no line yet.'}</Note>
+        {lines.slice(1).map((l, i) => l.problem && (
+          <Note key={l.id} tone="dim">
+            Line {i + 2}: {l.problem}
+          </Note>
+        ))}
+        {fixBtn}
+        <div className="mt-1 text-[11px] text-dim">Parts run from a receiving dock to a shipping dock through board assembly, device assembly and packaging, each block's output face touching the next one's input.</div>
+      </Sec>
+    )
+  }
+  const stages = (['smt', 'assembly', 'pack', 'test'] as const).map((k) => [k, line.caps[k]] as const)
+  const peak = Math.max(1, ...stages.map((s) => s[1]))
+  const bottleneck = lines.find((l) => l.running)?.bottleneck
+  const blocked = line.joints.filter((j) => !j.ok)
+  return (
+    <Sec title="Line" count={lines.length > 1 ? lines.length : undefined} right={help}>
+      {stages.map(([k, cap]) => (
+        <BarRow key={k} label={STAGE_LABEL[k]} share={cap / peak} value={num(cap)} tone={k === bottleneck ? 'warn' : 'accent'} title={k === 'test' ? 'Units a day the test stations can check. Testing never slows the line: it only lowers the share of faulty units.' : 'Units a day this stage can handle: blocks of one kind in a row add up'} />
+      ))}
+      <Legend className="mt-1" items={[{ label: 'Units a day', tone: 'accent' }, { label: 'Slowest stage: sets the output', tone: 'warn' }]} />
+      <Fact k="Running cost a day, at full output" v={money(line.runCost)} num />
+      {lines.length > 1 && lines.map((l, i) => <Fact key={l.id} k={`Line ${i + 1}`} v={l.running ? `${num(l.throughput)} a day` : 'stopped'} tone={l.running ? undefined : 'warn'} title={l.problem} />)}
+      {blocked.length > 0 && (
+        <Note tone="neg">
+          {blocked.length === 1 ? 'One joint is' : `${blocked.length} joints are`} blocked. {blocked[0].why}
+        </Note>
+      )}
+      {line.loose.length > 0 && <Note tone="dim">{line.loose.length === 1 ? 'One block is' : `${line.loose.length} blocks are`} not joined to a receiving dock.</Note>}
+      {fixBtn}
+    </Sec>
   )
 }
