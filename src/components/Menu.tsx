@@ -14,21 +14,27 @@ import { ImportButton, SaveList, loadSlot, savedAgo } from './System'
 import { FeedbackLinks } from './Safety'
 import { KeysPanel, SettingsPanel } from './Settings'
 import { Icon, type IconName, trackIcon, typeIcon } from './icons'
-import { Btn, Choice, ColorField, Fold, Head, NumInput, Panel, Row, Slider, Tabs, TextInput, money, pct, useLayer } from './ui'
+import { Btn, Choice, ColorField, Fold, Head, NumInput, Panel, Row, Section, Slider, Tabs, TextInput, money, pct, useLayer } from './ui'
 
 function Wordmark() {
   return (
     <div>
-      <div className="text-[11px] text-accent">Tech company simulation / build 0.1</div>
-      <h1 className="mt-2 text-5xl font-semibold leading-none text-fg">
+      <div className="text-xs font-medium text-accent">Tech company simulation / build 0.1</div>
+      <h1 className="font-display mt-3 text-5xl font-semibold leading-[0.95] tracking-[0.01em] text-fg">
         SILICON<span className="text-accent">/</span>
         <br />
         BEHEMOTHS
       </h1>
-      <div className="mt-4 h-px w-full bg-line2" />
+      <div className="mt-6 h-px w-full bg-line2" />
     </div>
   )
 }
+
+const PILLARS: { icon: IconName; title: string; text: string }[] = [
+  { icon: 'design', title: 'Design', text: 'Shape a device, choose what goes inside, and price it against the market.' },
+  { icon: 'truck', title: 'Build and sell', text: 'Order a run, watch the reviews come in, and keep it in stock.' },
+  { icon: 'campus', title: 'Grow', text: 'Hire, research, open factories and stores, and take on the giants.' },
+]
 
 const INTRO = 'You start as a small maker of one kind of device in 2026. More than twenty established companies already sell phones, tablets, watches, laptops, desktops, consoles, earbuds and TVs. Design a device, get it built, launch it, read the reviews, and put the money back into research, people and places.'
 
@@ -52,10 +58,10 @@ export function MainMenu() {
   const last = saves?.[0]
   const again = () => setNonce((n) => n + 1)
   return (
-    <div className="grid h-full grid-cols-[420px_minmax(0,1fr)] bg-carbon">
-      <div className="flex min-h-0 flex-col justify-between gap-4 border-r border-line bg-panel p-8">
+    <div className="grid h-full grid-cols-[minmax(360px,440px)_minmax(0,1fr)] bg-carbon">
+      <div className="flex min-h-0 flex-col justify-between gap-6 border-r border-line bg-panel px-10 py-10">
         <Wordmark />
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-3">
           {last && (
             <div>
               <Btn tone="primary" large icon="play" className="w-full !justify-start" title={`Carry on with ${last.company} from ${slotName(last.slot)}`} onClick={() => void loadSlot(last.slot).then((ok) => !ok && again())}>
@@ -63,7 +69,7 @@ export function MainMenu() {
                   Continue: {last.company}, {fmtDate(last.day)}
                 </span>
               </Btn>
-              <div className="mt-1 truncate text-[11px] text-dim">
+              <div className="mt-1.5 truncate text-xs text-dim">
                 {slotName(last.slot)}, <span className="num">{money(last.cash)}</span> in the bank, saved {savedAgo(last.savedAt)}
               </div>
             </div>
@@ -81,7 +87,7 @@ export function MainMenu() {
         </div>
         <FeedbackLinks />
       </div>
-      <div className="flex min-h-0 flex-col gap-2 p-8">
+      <div className="relative flex min-h-0 flex-col gap-4 overflow-hidden p-10">
         {open === 'settings' ? (
           <>
             <Tabs
@@ -100,10 +106,21 @@ export function MainMenu() {
           </Panel>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col justify-center">
-            <div className="max-w-[460px] border-l border-line2 pl-6">
-              <div className="t-title">Build a device company, from a garage to a giant.</div>
-              <p className="mt-2 text-xs leading-relaxed text-dim">{INTRO}</p>
-              <p className="mt-4 text-[11px] leading-relaxed text-faint">Saves are kept in this browser; export one to keep a copy. A free game made for fun: the code, models and sounds were written by an AI (Claude) under one person's direction. Every company in it is made up.</p>
+            {/* a quiet field of lines behind the pitch, in the house hairline */}
+            <div aria-hidden className="pointer-events-none absolute inset-0 opacity-60" style={{ backgroundImage: 'linear-gradient(var(--color-line) 1px, transparent 1px), linear-gradient(90deg, var(--color-line) 1px, transparent 1px)', backgroundSize: '64px 64px', maskImage: 'radial-gradient(ellipse at 70% 60%, black, transparent 70%)', WebkitMaskImage: 'radial-gradient(ellipse at 70% 60%, black, transparent 70%)' }} />
+            <div className="relative max-w-[640px]">
+              <h2 className="font-display text-3xl font-semibold text-fg">Build a device company, from a garage to a giant.</h2>
+              <p className="mt-4 text-base leading-relaxed text-dim">{INTRO}</p>
+              <div className="mt-8 grid grid-cols-3 gap-3">
+                {PILLARS.map((p) => (
+                  <div key={p.title} className="border border-line bg-panel/80 p-4">
+                    <Icon name={p.icon} size={20} className="text-accent" />
+                    <div className="t-title mt-3">{p.title}</div>
+                    <div className="mt-1 text-xs leading-snug text-dim">{p.text}</div>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-8 text-xs leading-relaxed text-faint">Saves are kept in this browser; export one to keep a copy. A free game made for fun: the code, models and sounds were written by an AI (Claude) under one person's direction. Every company in it is made up.</p>
             </div>
           </div>
         )}
@@ -118,24 +135,34 @@ const logMax = 9
 /** One of a few choices, drawn as a tile: a name, an optional mark at the right, a line under it. */
 function Option({ on, onClick, icon, name, tag, children, big, className = '' }: { on: boolean; onClick: () => void; icon?: IconName; name: string; tag?: string; children?: ReactNode; /** A 13px name, for a choice with no icon. */ big?: boolean; className?: string }) {
   return (
-    <button type="button" aria-pressed={on} onClick={() => (onClick(), sfx.toggle())} className={`min-w-0 border px-3 py-2 text-left ${on ? 'border-accent bg-accent/10' : 'border-line2 bg-raise hover:border-fg'} ${className}`}>
+    <button type="button" aria-pressed={on} onClick={() => (onClick(), sfx.toggle())} className={`min-w-0 border px-4 py-3 text-left ${on ? 'border-accent bg-accent/10' : 'border-line2 bg-raise hover:border-fg'} ${className}`}>
       <div className="flex items-center justify-between gap-2">
-        <span className={`flex min-w-0 items-center gap-2 ${big ? 'text-[13px]' : 'text-xs'} ${on ? 'font-semibold text-accent' : 'text-fg'}`}>
-          {icon && <Icon name={icon} size={16} className={`shrink-0 ${on ? 'text-accent' : 'text-dim'}`} />}
+        <span className={`flex min-w-0 items-center gap-2.5 ${big ? 'text-base' : 'text-sm'} ${on ? 'font-semibold text-accent' : 'font-medium text-fg'}`}>
+          {icon && <Icon name={icon} size={18} className={`shrink-0 ${on ? 'text-accent' : 'text-dim'}`} />}
           <span className="min-w-0 truncate">{name}</span>
         </span>
-        {tag && <span className="shrink-0 text-[11px] text-dim">{tag}</span>}
+        {tag && <span className="shrink-0 text-xs text-dim">{tag}</span>}
       </div>
-      {children !== undefined && <div className={`mt-1 text-[11px] leading-snug text-dim ${icon ? 'pl-6' : ''}`}>{children}</div>}
+      {children !== undefined && <div className={`mt-1 text-xs leading-snug text-dim ${icon ? 'pl-[30px]' : ''}`}>{children}</div>}
     </button>
+  )
+}
+
+/** The number of a step of the form, before its title. */
+function Step({ n, children }: { n: number; children: ReactNode }) {
+  return (
+    <span className="flex items-center gap-3">
+      <span className="num flex h-6 w-6 items-center justify-center border border-line2 text-xs text-dim">{n}</span>
+      {children}
+    </span>
   )
 }
 
 /** A line of a form: what it is at the left, the control at the right. */
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <label className="flex min-h-9 items-center justify-between gap-3">
-      <span className="shrink-0 text-xs text-dim">{label}</span>
+    <label className="flex min-h-10 items-center justify-between gap-4">
+      <span className="shrink-0 text-sm text-dim">{label}</span>
       {children}
     </label>
   )
@@ -162,53 +189,58 @@ export function NewGame() {
   const summary: ReactNode[] = [makes, GROWTH[growth], DIFFICULTY[cfg.difficulty].label, cfg.unlimitedMoney ? 'Unlimited money' : <><span className="num text-fg">{money(cfg.startCash)}</span> to start</>]
   return (
     <div className="flex h-full flex-col bg-carbon">
-      <div className="grid min-h-0 flex-1 grid-cols-[420px_minmax(0,1fr)]">
-        <div className="flex min-h-0 flex-col gap-8 border-r border-line bg-panel p-8">
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(320px,440px)_minmax(0,1fr)]">
+        <div className="flex min-h-0 flex-col gap-8 border-r border-line bg-panel px-10 py-10">
           <Wordmark />
-          <p className="text-xs leading-relaxed text-dim">{INTRO}</p>
+          <p className="text-sm leading-relaxed text-dim">{INTRO}</p>
         </div>
-        {/* (12px above and below: at the smallest window the three panels and the fold fit above the footer with nothing to scroll) */}
-        <div className="min-h-0 overflow-y-auto px-4 py-3">
-          <div className="flex max-w-[900px] flex-col gap-2">
-            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.7fr)] gap-2">
-              <Panel title="Company" icon="campus" bodyClass="px-3 py-2">
-                <Field label="Name">
-                  <TextInput autoFocus aria-label="Company name" value={cfg.companyName} maxLength={18} onChange={(v) => up({ companyName: v })} onEnter={found} className={`min-w-0 flex-1 ${name ? '' : '!border-warn'}`} placeholder="Name your company" />
-                </Field>
-                <Field label="Brand colour">
-                  <ColorField label="Brand colour" showHex value={cfg.color} onChange={(color) => up({ color })} />
-                </Field>
-              </Panel>
-              <Panel title="How the company grows" icon="branch" bodyClass="grid grid-cols-2 gap-2 p-3">
-                <Option on={growth === 'guided'} onClick={() => up({ progression: 'guided' })} icon="lock" name={GROWTH.guided} tag="Recommended">
-                  A garage and a few desks. Everything else opens as you grow.
-                </Option>
-                <Option on={growth === 'open'} onClick={() => up({ progression: 'open' })} icon="unlock" name={GROWTH.open}>
-                  Every screen and lever from the first day. Nothing to earn.
-                </Option>
-              </Panel>
+        <div className="min-h-0 overflow-y-auto px-10 py-8">
+          <div className="mx-auto flex max-w-[980px] flex-col gap-8">
+            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] gap-6">
+              <Section title={<Step n={1}>Your company</Step>}>
+                <div className="flex flex-col gap-1 border border-line bg-panel px-4 py-3">
+                  <Field label="Name">
+                    <TextInput autoFocus aria-label="Company name" value={cfg.companyName} maxLength={18} onChange={(v) => up({ companyName: v })} onEnter={found} className={`min-w-0 flex-1 !h-9 !text-sm ${name ? '' : '!border-warn'}`} placeholder="Name your company" />
+                  </Field>
+                  <Field label="Brand colour">
+                    <ColorField label="Brand colour" showHex value={cfg.color} onChange={(color) => up({ color })} />
+                  </Field>
+                </div>
+              </Section>
+              <Section title={<Step n={2}>How it grows</Step>}>
+                <div className="grid grid-cols-2 gap-3">
+                  <Option on={growth === 'guided'} onClick={() => up({ progression: 'guided' })} icon="lock" name={GROWTH.guided} tag="Recommended">
+                    A garage and a few desks, with a guide. Everything else opens as you grow.
+                  </Option>
+                  <Option on={growth === 'open'} onClick={() => up({ progression: 'open' })} icon="unlock" name={GROWTH.open}>
+                    Every screen and lever from the first day. Nothing to earn.
+                  </Option>
+                </div>
+              </Section>
             </div>
 
-            <Panel title="What your company makes" icon="devices" bodyClass="p-3" right={<span className="pr-1 text-[11px] text-faint">Other lines open under Research as you grow</span>}>
-              <div className="grid grid-cols-4 gap-1">
+            <Section title={<Step n={3}>What it makes first</Step>} sub="Other kinds of device open under Research as you grow.">
+              <div className="grid grid-cols-4 gap-2">
                 {START_TYPES.map((type) => (
-                  <Option key={type} on={cfg.startType === type} onClick={() => up({ startType: type })} icon={typeIcon(type)} name={TYPES[type].plural} className="!py-[5px]">
+                  <Option key={type} on={cfg.startType === type} onClick={() => up({ startType: type })} icon={typeIcon(type)} name={TYPES[type].plural}>
                     <span className="num">{segmentsOf(type).length}</span> markets{['console', 'handheld', 'speaker'].includes(type) ? ', slow start' : ''}
                   </Option>
                 ))}
-                <Option on={cfg.startType === 'all'} onClick={() => up({ startType: 'all' })} icon="overview" name="Everything" className="!py-[5px]">
+                <Option on={cfg.startType === 'all'} onClick={() => up({ startType: 'all' })} icon="overview" name="Everything">
                   Every line open
                 </Option>
               </div>
-            </Panel>
+            </Section>
 
-            <Panel title="Difficulty" icon="gauge" bodyClass="grid grid-cols-3 gap-2 p-3">
-              {(Object.keys(DIFFICULTY) as Difficulty[]).map((k) => (
-                <Option key={k} big on={cfg.difficulty === k} onClick={() => up({ difficulty: k, startCash: DIFFICULTY[k].startCash })} name={DIFFICULTY[k].label} tag={`${money(DIFFICULTY[k].startCash)} to start`}>
-                  {DIFFICULTY[k].blurb}
-                </Option>
-              ))}
-            </Panel>
+            <Section title={<Step n={4}>Difficulty</Step>}>
+              <div className="grid grid-cols-3 gap-3">
+                {(Object.keys(DIFFICULTY) as Difficulty[]).map((k) => (
+                  <Option key={k} big on={cfg.difficulty === k} onClick={() => up({ difficulty: k, startCash: DIFFICULTY[k].startCash })} name={DIFFICULTY[k].label} tag={`${money(DIFFICULTY[k].startCash)} to start`}>
+                    {DIFFICULTY[k].blurb}
+                  </Option>
+                ))}
+              </div>
+            </Section>
 
             <Fold title="Advanced" icon="system" open={false} bodyClass="p-3">
               <div className="grid grid-cols-2 gap-x-8">
@@ -267,11 +299,11 @@ export function NewGame() {
           </div>
         </div>
       </div>
-      <footer className="flex h-14 shrink-0 items-center gap-4 border-t border-line2 bg-panel px-4">
+      <footer className="flex h-16 shrink-0 items-center gap-4 border-t border-line2 bg-panel px-6">
         <Btn tone="ghost" large icon="arrowLeft" title="Back to the main menu (Esc)" onClick={back}>
           Back
         </Btn>
-        <div className="flex min-w-0 flex-1 items-center justify-end gap-3 overflow-hidden whitespace-nowrap text-xs text-dim" aria-label="What you are about to start">
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-3 overflow-hidden whitespace-nowrap text-sm text-dim" aria-label="What you are about to start">
           <span className={`min-w-0 truncate font-semibold ${name ? 'text-fg' : 'text-warn'}`}>{name || 'No name yet'}</span>
           {summary.map((part, i) => (
             <span key={i} className="flex shrink-0 items-center gap-3">

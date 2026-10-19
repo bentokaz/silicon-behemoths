@@ -171,7 +171,7 @@ export function ColorField({ value, onChange, onCommit, label, presets, showHex 
         aria-label={`${label}: ${current}. Choose a colour`}
         title={label}
         onClick={toggle}
-        className={`inline-flex h-7 shrink-0 items-center gap-2 rounded-none border bg-raise px-1 text-xs disabled:cursor-not-allowed disabled:border-dashed ${open ? 'border-accent' : 'border-line2 hover:border-fg'} ${className}`}
+        className={`inline-flex h-8 shrink-0 items-center gap-2 rounded-none border bg-raise px-1 text-xs disabled:cursor-not-allowed disabled:border-dashed ${open ? 'border-accent' : 'border-line2 hover:border-fg'} ${className}`}
       >
         <span aria-hidden className="h-[18px] w-7 border border-line2" style={{ background: current }} />
         {showHex && <span className="num pr-1 text-fg">{current}</span>}

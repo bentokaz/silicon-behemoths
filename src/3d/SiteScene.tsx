@@ -8,9 +8,9 @@ import * as THREE from 'three'
 import { AutoTurn, CameraFence, SafeCanvas, useShadingRelease } from './SafeCanvas'
 import { type Pt, bayRun, bayStands, curveTiles, nearestBay } from '../sim/curves'
 import { money, moneyDelta, num, pct } from '../components/format'
-import { EDGE_COST, keepsDoors, roomCost, zonePlan } from '../sim/game'
+import { EDGE_COST, edgePrice, keepsDoors, partitionRun, roomCost, zonePlan } from '../sim/game'
 import type { FactoryLife, OfficeLife, StoreLife, VenueLife } from '../sim/life'
-import { ITEMS, type LineStats, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, areaOf, areaTiles, canPlace, curveFor, cutAt, doorFits, fillError, gridAt, inPlot, isBoundary, itemAt, lineTiles, pocketAt, reachable, roomOf, rowSpots, tilesOf, wallAt } from '../sim/sites'
+import { ITEMS, type LineStats, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, areaOf, areaTiles, canPartition, canPlace, curveFor, cutAt, doorFits, fillError, gridAt, inPlot, isBoundary, hasGround, itemAt, itemTiles, pocketAt, reachable, roomOf, rowSpots, tilesOf, wallAt } from '../sim/sites'
 import { ROLE_INFO, inTraining, jobTitle } from '../sim/staff'
 import type { Employee, Product, Site, SiteItem, SiteKind } from '../sim/types'
 import { QUALITY, type Quality, isHeld, useSettings } from '../store/settings'
@@ -27,15 +27,16 @@ import { FactoryCrowd } from './site/factorycrowd'
 import { FactoryFloor, shippingDocks } from './site/factorylife'
 import { Jacks } from './site/jacks'
 import { Doors, Dropping, Sparks, SparksView, WallFx, type WallPiece, snapshot, wallChanges, wallHeight } from './site/fx'
-import { Baked, type PersonLook, Sparing, hash } from './site/kit'
+import { Baked, Bamboo, type Fit, type PersonLook, Sparing, Tree, hash, idSeed } from './site/kit'
 import { DeskScreens, FrontSigns, RoomLights, StageLights } from './site/lights'
 import { buildNav, cutOffRooms } from './site/nav'
 import { OfficeItem } from './site/office'
-import { type Target, itemTarget, placeBeside, rayBox } from './site/pick'
+import { type Target, itemBox, itemTarget, placeBeside, rayBox } from './site/pick'
 import { seatOwners } from './site/seats'
 import { buildSpots, seatAisles } from './site/spots'
 import { Shoppers, StoreItem } from './site/store'
 import { Batch, CUT_H, Ground, STOREY, Structure, type ViewMode, WALL_T } from './site/structure'
+import { Walk } from './site/walk'
 import { Heartbeat, type Pulse, useTick } from './site/tick'
 import { VenueItem } from './site/venue'
 import { type Phase, VenueCrowd } from './site/venuecrowd'
@@ -201,6 +202,9 @@ export interface SiteViewProps {
   research?: ResearchNow[]
   /** Told once the view has drawn its first frames. */
   onDrawn?: () => void
+  /** Walk the site at eye height (see site/walk). The view asks for it to end through onWalkEnd: Esc, or the pointer let go. */
+  walk?: boolean
+  onWalkEnd?: () => void
 }
 
 const CHUNK = 8
@@ -222,6 +226,8 @@ const ON_AIR: ShowState = { crowd: 0, cheer: false, presenter: false }
 const STAGED: Phase[] = ['rehearsal', 'doors', 'show', 'ovation']
 /** Heights of the things worth clicking at a venue, in metres. */
 const VENUE_TALL: Record<string, number> = { stage: 1.95, screen: 5.4, lights: 6.6, speakers: 3.4, camera: 2.3, seats: 1.05, seats_mid: 1.6, seats_high: 2.3, demo: 1.0, reception: 1.16, logowall: 2.0 }
+/** How tall things are to the pointer, where that is more than the usual pick height (see itemBox): what the sell and turn tools find when a click lands on their top. */
+const PICK_TALL: Record<string, number> = { otree: 4.4, bamboo: 3.8, tree: 2.2, lamp: 3.4, flag: 6, sculpture: 1.6, sign: 1.6, fountain: 1.7, tank: 3, forklift: 2.2, truck: 3.6, rack: 2.4, stockrack: 2, lights: 6.6, speakers: 3.4, screen: 2, aquarium: 1.6, bookshelf: 2, vending: 1.9, arcade: 1.8, booth: 2.2, lockers: 1.9 }
 /** Rooms that get a status screen on the wall. */
 const BOARD_ROOMS = new Set(['lab', 'eng', 'studio', 'media', 'support', 'server', 'meeting', 'soft'])
 
@@ -247,6 +253,8 @@ interface ItemCtx {
   aisles?: number
   /** Built from fewer triangles: see Sparing. */
   sparing?: boolean
+  /** Trees and bamboo: the room they have to grow in (see Fit). */
+  fit?: Fit
 }
 
 /** The model for one placed item of any kind of site. */
@@ -259,6 +267,9 @@ function ItemModel({ kind, item, c }: { kind: SiteKind; item: string; c: ItemCtx
 }
 
 function ItemKind({ kind, item, c }: { kind: SiteKind; item: string; c: ItemCtx }) {
+  // plants that grow the same on every kind of site, and keep clear of the walls beside them
+  if (item === 'otree') return <Tree seed={c.seed} fit={c.fit} />
+  if (item === 'bamboo') return <Bamboo seed={c.seed} fit={c.fit} />
   if (kind === 'office') return <OfficeItem kind={item} c={{ who: c.who, glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, devices: c.devices, on: c.on, live: c.live, progress: c.progress, busy: c.busy }} />
   if (kind === 'factory') return <FactoryItem kind={item} c={{ running: !!c.running, flow: c.flow, glow: c.glow, seed: c.seed, fill: c.fill, away: c.away, live: c.live }} />
   if (kind === 'store') return <StoreItem kind={item} c={{ products: c.products, glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, soldOut: c.soldOut }} />
@@ -810,7 +821,12 @@ const PLATE_TEXT = { accent: 'text-fg', pos: 'text-pos', warn: 'text-warn', neg:
 const researchOn = (o: OfficeLife, given?: ResearchNow[]): ResearchNow[] => given ?? o.research
 const fmtHour = (h: number) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`
 
-export function SiteScene({ site, mode, mood, tool, company, color, logo, selectedRoom, sealed, onTile, onRow, onEdges, onSell, onRun, onArea, onPreview, seated = [], idle = [], applicants, onPerson, day = 0, line, producing = false, products = [], busy = 0, show, autoRotate, speed = 0, life, card, onCutOff, budget = Infinity, onOff, clear, month, research, onDrawn }: SiteViewProps) {
+export function SiteScene({ site, mode: chosen, mood, tool, company, color, logo, selectedRoom, sealed, onTile, onRow, onEdges, onSell, onRun, onArea, onPreview, seated = [], idle = [], applicants, onPerson, day = 0, line, producing = false, products = [], busy = 0, show, autoRotate, speed = 0, life, card, onCutOff, budget = Infinity, onOff, clear, month, research, onDrawn, walk = false, onWalkEnd }: SiteViewProps) {
+  /** The camera is the walker's: from the glide down to eye height until the glide back up. */
+  const [walking, setWalking] = useState(false)
+  // low cut walls are no use to someone walking about: the walls stand full height, under a roof if the outside was being shown
+  const mode: ViewMode = walking && chosen === 'cut' ? 'walls' : chosen
+  const endWalk = useCallback(() => onWalkEnd?.(), [onWalkEnd])
   const prefs = useSettings((s) => s.settings)
   const Q = QUALITY[prefs.quality]
   const shading = useShadingRelease()
@@ -863,6 +879,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
   useEffect(() => {
     setAnchor(null)
     setDrag(null)
+    pressed.current = null
     setOff(false)
   }, [tool?.type, tool && 'room' in tool ? tool.room : '', tool && 'kind' in tool ? tool.kind : ''])
   useEffect(() => {
@@ -870,6 +887,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
       if (e.key !== 'Escape') return
       setAnchor(null)
       setDrag(null)
+      pressed.current = null
       setOpen(null)
     }
     window.addEventListener('keydown', key)
@@ -1120,7 +1138,23 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
   const soldOut = life?.store?.soldOut
   const soldKey = soldOut ? [...soldOut].join('.') : ''
   const liveKinds = lively && site.kind === 'office'
-  const ctxFor = (item: { id?: string; kind: string }, seed: number, flow?: [number, number], glow = M.glow): ItemCtx => {
+  /** The room a tree or a clump of bamboo has: out to the nearest wall, and up to the ceiling indoors. */
+  const fitOf = (item: { x?: number; y?: number }): Fit | undefined => {
+    if (item.x === undefined || item.y === undefined) return undefined
+    const n = gridAt(site, item.x, item.y)
+    let reach = 3
+    for (let dy = -3; dy <= 3; dy++) {
+      for (let dx = -3; dx <= 3; dx++) {
+        const x = item.x + dx
+        const y = item.y + dy
+        if ((!dx && !dy) || !inPlot(site, x, y) || gridAt(site, x, y) === n) continue
+        // from the middle of the plant's tile to the nearest point of a tile across a wall
+        reach = Math.min(reach, Math.hypot(Math.max(0, Math.abs(dx) - 0.5), Math.max(0, Math.abs(dy) - 0.5)) - WALL_T / 2)
+      }
+    }
+    return [Math.max(0.3, reach), n ? STOREY - 0.3 : 99]
+  }
+  const ctxFor = (item: { id?: string; kind: string; x?: number; y?: number }, seed: number, flow?: [number, number], glow = M.glow): ItemCtx => {
     const on = shown.get(item.id ?? '')
     return {
       who: item.id ? occupant.get(item.id) : undefined,
@@ -1143,6 +1177,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
       away: !!item.id && yard.managed.has(item.id),
       aisles: site.kind === 'venue' && 'x' in item ? seatAisles(site, item as SiteItem) : 0,
       sparing,
+      fit: item.kind === 'otree' || item.kind === 'bamboo' ? fitOf(item) : undefined,
     }
   }
   const sigOf = (items: { item: SiteItem }[], glow: number) =>
@@ -1150,7 +1185,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
       .map(({ item }) => {
         const who = occupant.get(item.id)
         const on = shown.get(item.id)
-        return `${item.id}:${item.x},${item.y},${item.rot}:${who ? who.look + who.color : liveSeats.has(item.id) ? 'L' : ''}:${line?.linked.has(item.id) ? 1 : 0}${line?.flow.get(item.id)?.join('') ?? ''}${on ? on.devices.map((p) => p.id).join('') + (on.progress ?? '') : ''}${yard.managed.has(item.id) ? 'A' : ''}${site.kind === 'venue' ? seatAisles(site, item) || '' : ''}`
+        return `${item.id}:${item.x},${item.y},${item.rot}:${who ? who.look + who.color : liveSeats.has(item.id) ? 'L' : ''}:${line?.linked.has(item.id) ? 1 : 0}${line?.flow.get(item.id)?.join('') ?? ''}${on ? on.devices.map((p) => p.id).join('') + (on.progress ?? '') : ''}${yard.managed.has(item.id) ? 'A' : ''}${site.kind === 'venue' ? seatAisles(site, item) || '' : ''}${item.kind === 'otree' || item.kind === 'bamboo' ? `f${fitOf(item)?.map((v) => v.toFixed(2)).join('/')}` : ''}`
       })
       .join('|') + `#${Math.round(glow * 10)}${running ? 'r' : ''}${site.kind === 'factory' ? `${Math.round(busy * 5)}${crowdOn ? 'w' : ''}` : ''}${company}${logo?.length ?? 0}${color}${productKey}${soldKey}${liveKinds ? 'v' : ''}${crowdOn ? 'c' : ''}${researching ? 'R' : ''}${showcaseList[0]?.id ?? ''}${staged ? `s${staged.screen?.uuid ?? ''}` : ''}${sparing ? 'S' : ''}`
 
@@ -1167,17 +1202,20 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
     const a = (item.rot * Math.PI) / 2
     return [Math.round(f[0] * Math.cos(a) - f[1] * Math.sin(a)), Math.round(f[0] * Math.sin(a) + f[1] * Math.cos(a))]
   }
-  const model = (item: SiteItem, index: number, glow: number) => (
+  const model = (item: SiteItem, glow: number) => (
     <group key={item.id} position={place(item)} rotation-y={(-item.rot * Math.PI) / 2}>
-      <ItemModel kind={site.kind} item={item.kind} c={ctxFor(item, Math.floor(hash(item.x * 13 + item.y * 7 + index) * 1000), flowOf(item), glow)} />
+      <ItemModel kind={site.kind} item={item.kind} c={ctxFor(item, idSeed(item.id), flowOf(item), glow)} />
     </group>
   )
 
   const locate = (e: ThreeEvent<PointerEvent | MouseEvent>) => {
     const fx = e.point.x + w / 2
     const fy = e.point.z + h / 2
-    const x = Math.min(w - 1, Math.max(0, Math.floor(fx)))
-    const y = Math.min(h - 1, Math.max(0, Math.floor(fy)))
+    let x = Math.min(w - 1, Math.max(0, Math.floor(fx)))
+    let y = Math.min(h - 1, Math.max(0, Math.floor(fy)))
+    // the tools that act on furniture take what the pointer is on, a treetop as much as a desk
+    const it = tool?.type === 'remove' || tool?.type === 'rotate' ? rayItem(e.ray, e.distance) : undefined
+    if (it) (x = it.x), (y = it.y)
     const u = fx - x
     const v = fy - y
     // nearest of the tile's four edges, expressed as a north or west edge
@@ -1213,14 +1251,37 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
     }
     return { edges }
   }
-  /** What the sell tool would take between two tiles: everything standing on the line. */
+  /** What the sell tool would take between two corners: everything standing on any tile of the box between them. */
   const sellRun = (x0: number, y0: number, x1: number, y1: number): SiteItem[] => {
-    const out = new Set<SiteItem>()
-    for (const [x, y] of lineTiles(x0, y0, x1, y1)) {
-      const item = itemAt(site, x, y)
-      if (item) out.add(item)
+    const [ax, bx, ay, by] = [Math.min(x0, x1), Math.max(x0, x1), Math.min(y0, y1), Math.max(y0, y1)]
+    return site.items.filter((it) => ITEMS[site.kind][it.kind] && itemTiles(site, it).some(([x, y]) => x >= ax && x <= bx && y >= ay && y <= by))
+  }
+  /** The tiles of the box between two corners, on the plot. */
+  const boxTiles = (x0: number, y0: number, x1: number, y1: number): [number, number][] => {
+    const out: [number, number][] = []
+    for (let y = Math.max(0, Math.min(y0, y1)); y <= Math.min(h - 1, Math.max(y0, y1)); y++) for (let x = Math.max(0, Math.min(x0, x1)); x <= Math.min(w - 1, Math.max(x0, x1)); x++) out.push([x, y])
+    return out
+  }
+  /**
+   * The piece of furniture the pointer's ray meets first, before it reaches the floor: so a click on the crown of
+   * a tree or the top of a rack finds it, not the floor tile behind it.
+   */
+  const pickBox = (it: SiteItem): Target['box'] => {
+    const box = itemBox(site, it, PICK_TALL[it.kind])
+    if (it.kind !== 'otree' && it.kind !== 'bamboo') return box
+    // a crown spreads past the trunk's own metre, as far as it has room to
+    const out = Math.min(it.kind === 'otree' ? 1.3 : 0.4, Math.max(0, (fitOf(it)?.[0] ?? 0) - 0.5))
+    return [box[0] - out, box[1], box[2] - out, box[3] + out, box[4], box[5] + out]
+  }
+  const rayItem = (ray: THREE.Ray, floor: number): SiteItem | undefined => {
+    let best: SiteItem | undefined
+    let near = floor
+    for (const it of site.items) {
+      if (!ITEMS[site.kind][it.kind]) continue
+      const d = rayBox(ray.origin.x, ray.origin.y, ray.origin.z, ray.direction.x, ray.direction.y, ray.direction.z, pickBox(it))
+      if (d < near) (near = d), (best = it)
     }
-    return [...out]
+    return best
   }
 
   // ---- cursor
@@ -1251,9 +1312,26 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
       const all = areaTiles(from[0], from[1], hover.x, hover.y, shape, opts, tool.type === 'room').filter(([x, y]) => inPlot(site, x, y))
       // what the sim itself would take: a room is laid on every open tile (whatever stands there is cleared and sold), demolition takes the built ones
       const good = all.filter(([x, y]) => (tool.type === 'clear' ? !!gridAt(site, x, y) : !gridAt(site, x, y)))
+      // ground is laid, as the sim lays it, on the strip of open ground outside a slanted or curved wall too
+      // (not water: a pond is never dug against a wall)
+      // (not water: a pond is never dug against a wall); those strips are tinted in their own shape
+      const strips: Pt[][] = []
+      let stripTiles = 0
+      if (tool.type === 'ground' && tool.id !== 'water') {
+        const live = curveTiles(site)
+        for (const [x, y] of areaTiles(from[0], from[1], hover.x, hover.y, shape, opts, true)) {
+          if (!inPlot(site, x, y) || !gridAt(site, x, y) || !hasGround(site, x, y)) continue
+          stripTiles++
+          const cut = cutAt(site, x, y)
+          const corners: Record<string, Pt> = { nw: [x, y], ne: [x + 1, y], se: [x + 1, y + 1], sw: [x, y + 1] }
+          const across: Record<string, string> = { nw: 'se', ne: 'sw', se: 'nw', sw: 'ne' }
+          if (cut) strips.push((['nw', 'ne', 'se', 'sw'] as const).filter((k) => k !== across[cut]).map((k) => corners[k]))
+          else strips.push(...(live.get(`${x},${y}`)?.shape.outside ?? []))
+        }
+      }
       const bad = tool.type === 'room' ? all.filter(([x, y]) => gridAt(site, x, y)) : []
       const curve = anchor ? curveFor(from[0], from[1], hover.x, hover.y, shape, opts) : null
-      const area = tool.type === 'room' ? Math.max(good.length ? 1 : 0, Math.round(areaOf(good, curve))) : good.length
+      const area = tool.type === 'room' ? Math.max(good.length ? 1 : 0, Math.round(areaOf(good, curve))) : good.length + stripTiles
       if (tool.type === 'room') {
         const standing = new Set<string>()
         for (const [x, y] of good) {
@@ -1265,10 +1343,10 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
         // (a first corner inside a room of the same kind extends that room, so built ground is only wrong once the box is drawn)
         if (anchor && !good.length) note.error = 'That land is already built on'
         else if (cost > budget) note.error = `Not enough cash: ${anchor ? 'this room costs' : 'a square metre costs'} ${money(cost)}`
-      } else if (anchor && !good.length) note.error = tool.type === 'clear' ? 'There are no rooms there to knock down' : 'Ground can only be laid on open land'
+      } else if (anchor && !good.length && !stripTiles) note.error = tool.type === 'clear' ? 'There are no rooms there to knock down' : 'Ground can only be laid on open land'
       // refused: the whole box is drawn in the warning colour
       if (note.error) return { good: [] as [number, number][], bad: all, curve, area, note }
-      return { good, bad, curve, area, note }
+      return { good, bad, curve, area, note, ...(strips.length ? { shapes: strips } : {}) }
     }
     if (tool.type === 'item') {
       const def = ITEMS[site.kind][tool.kind]
@@ -1296,9 +1374,10 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
     if (tool.type === 'remove') {
       const items = drag ? sellRun(drag.x, drag.y, hover.x, hover.y) : sellRun(hover.x, hover.y, hover.x, hover.y)
       const good = items.flatMap((it) => tilesOf(ITEMS[site.kind][it.kind], it.x, it.y, it.rot))
-      const line = drag ? lineTiles(drag.x, drag.y, hover.x, hover.y) : ([[hover.x, hover.y]] as [number, number][])
+      const area = drag ? boxTiles(drag.x, drag.y, hover.x, hover.y) : ([[hover.x, hover.y]] as [number, number][])
       const taken = new Set(good.map(([x, y]) => `${x},${y}`))
-      return { good, bad: line.filter(([x, y]) => !taken.has(`${x},${y}`)), items, run: { tool: 'remove' as const, count: items.length, blocked: 0, cost: items.reduce((a, it) => a + ITEMS[site.kind][it.kind].cost / 2, 0) } }
+      // the box is drawn in the warning colour only while there is nothing in it to sell
+      return { good, bad: items.length ? [] : area.filter(([x, y]) => !taken.has(`${x},${y}`)), zone: drag && items.length ? area : undefined, items, run: { tool: 'remove' as const, count: items.length, blocked: 0, cost: items.reduce((a, it) => a + ITEMS[site.kind][it.kind].cost / 2, 0) } }
     }
     if (tool.type === 'rotate') {
       const target = itemAt(site, hover.x, hover.y)
@@ -1314,16 +1393,20 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
       // a door or an opening needs its whole metre: a stretch a curved wall cuts short cannot take one
       const way = tool.kind === 'door' || tool.kind === 'open'
       const live = way && site.curves?.length ? curveTiles(site) : undefined
+      // a run wholly inside rooms puts up, changes or takes down partitions (see setEdges)
+      const parting = partitionRun(site, run.edges ?? [])
       const edges = (run.edges ?? []).map((e) => {
-        const wall = isBoundary(site, e.x, e.y, e.side)
-        const short = wall && !!live && !doorFits(site, e.x, e.y, e.side, live)
-        const now = wallAt(site, e.x, e.y, e.side)?.kind ?? 'wall'
-        return { ...e, ok: wall && !short, short, same: kept(now), door: now === 'door' }
+        const inner = parting && canPartition(site, e.x, e.y, e.side)
+        const wall = inner || isBoundary(site, e.x, e.y, e.side)
+        const short = !inner && wall && !!live && !doorFits(site, e.x, e.y, e.side, live)
+        const now = wallAt(site, e.x, e.y, e.side)?.kind ?? (inner ? 'open' : 'wall')
+        return { ...e, ok: wall && !short, short, same: kept(now), door: now === 'door', price: edgePrice(site, e.x, e.y, e.side, tool.kind) }
       })
       const bays = (run.bays ?? []).map((bay) => ({ bay, ok: bayStands(site, run.curve!, bay), same: kept(c?.walls?.[bay] ?? 'wall'), door: c?.walls?.[bay] === 'door' }))
       const count = edges.filter((e) => e.ok && !e.same).length + bays.filter((b) => b.ok && !b.same).length
+      const cost = edges.reduce((a, e) => a + (e.ok && !e.same ? e.price : 0), 0) + bays.filter((b) => b.ok && !b.same).length * EDGE_COST[tool.kind]
       const left = spare ? edges.filter((e) => e.ok && e.door).length + bays.filter((b) => b.ok && b.door).length : 0
-      return { good: [], bad: [], wall: { run, edges, bays }, run: { tool: 'edge' as const, count, blocked: edges.filter((e) => !e.ok).length + bays.filter((b) => !b.ok).length, cost: count * EDGE_COST[tool.kind], kept: left, short: edges.filter((e) => e.short).length } }
+      return { good: [], bad: [], wall: { run, edges, bays }, run: { tool: 'edge' as const, count, blocked: edges.filter((e) => !e.ok).length + bays.filter((b) => !b.ok).length, cost, kept: left, short: edges.filter((e) => e.short).length } }
     }
     return null
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1336,29 +1419,23 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => onRun?.(runInfo), [runKey, onRun])
   const finish = useRef<() => void>(() => {})
+  const pressed = useRef<{ drag: NonNullable<typeof drag>; hover: NonNullable<typeof hover> } | null>(null)
   finish.current = () => {
-    if (!drag) return
+    // a quick click can come up before the view has drawn the press: what it pressed is kept here meanwhile
+    const press = pressed.current
+    if (!press) return
+    pressed.current = null
+    const from = drag ?? press.drag
+    const to = drag ? hover : press.hover
     setDrag(null)
-    if (!hover || !tool) return
-    if (tool.type === 'item') onRow?.(drag.x, drag.y, hover.x, hover.y)
-    else if (tool.type === 'edge') onEdges?.(wallRun(drag, hover))
+    if (!to || !tool) return
+    if (tool.type === 'item') onRow?.(from.x, from.y, to.x, to.y)
+    else if (tool.type === 'edge') onEdges?.(wallRun(from, to))
     else if (tool.type === 'remove') {
-      const ids = sellRun(drag.x, drag.y, hover.x, hover.y).map((i) => i.id)
+      const ids = sellRun(from.x, from.y, to.x, to.y).map((i) => i.id)
       if (ids.length) onSell?.(ids)
     }
   }
-  const dragging = !!drag
-  useEffect(() => {
-    if (!dragging) return
-    // the button may come up anywhere, on the plot or off it
-    const up = (e: PointerEvent) => e.button === 0 && finish.current()
-    window.addEventListener('pointerup', up)
-    window.addEventListener('pointercancel', up)
-    return () => {
-      window.removeEventListener('pointerup', up)
-      window.removeEventListener('pointercancel', up)
-    }
-  }, [dragging])
 
   const previewCount = areaTool && (anchor || filling) && preview ? ('area' in preview && preview.area !== undefined ? preview.area : preview.good.length) : 0
   const areaNote = areaTool && preview && 'note' in preview ? preview.note : undefined
@@ -1723,6 +1800,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
         rotation-x={-Math.PI / 2}
         position={[0, 0.005, 0]}
         onPointerMove={(e) => {
+          if (walking) return
           const t = locate(e)
           if (!hover || hover.x !== t.x || hover.y !== t.y || hover.edge.x !== t.edge.x || hover.edge.y !== t.edge.y || hover.edge.side !== t.edge.side || hover.edge.bay !== t.edge.bay || hover.edge.curve !== t.edge.curve) setHover({ x: t.x, y: t.y, edge: t.edge })
           // a drag along a curved wall runs to the last bay of that wall the pointer was on
@@ -1733,12 +1811,24 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
         onPointerDown={(e) => {
           if (!dragTool || e.button !== 0) return
           const t = locate(e)
-          setHover({ x: t.x, y: t.y, edge: t.edge })
-          setDrag({ x: t.x, y: t.y, fx: t.fx, fy: t.fy, edge: t.edge, bay: t.edge.bay })
+          const at = { x: t.x, y: t.y, edge: t.edge }
+          const from = { x: t.x, y: t.y, fx: t.fx, fy: t.fy, edge: t.edge, bay: t.edge.bay }
+          setHover(at)
+          setDrag(from)
+          pressed.current = { drag: from, hover: at }
+          // the button may come up anywhere, on the plot or off it, and at once
+          const up = (ev: PointerEvent) => {
+            if (ev.type === 'pointerup' && ev.button !== 0) return
+            window.removeEventListener('pointerup', up)
+            window.removeEventListener('pointercancel', up)
+            finish.current()
+          }
+          window.addEventListener('pointerup', up)
+          window.addEventListener('pointercancel', up)
         }}
         onClick={(e) => {
           // tools that paint as they are dragged act when the button comes up, wherever that is
-          if (dragTool) return
+          if (dragTool || walking) return
           if (e.delta > 5) return
           // something standing on the floor was clicked, not the floor itself
           if (performance.now() - consumed.current < 250) return
@@ -1788,7 +1878,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
 
       {chunks.map((chunk) => {
         const glow = lit.current.get(chunk.key) ?? M.glow
-        return <Chunk key={chunk.key} sig={sigOf(chunk.items, glow)} render={() => chunk.items.map(({ item, index }) => model(item, index, glow))} />
+        return <Chunk key={chunk.key} sig={sigOf(chunk.items, glow)} render={() => chunk.items.map(({ item }) => model(item, glow))} />
       })}
 
       <Heartbeat
@@ -1824,7 +1914,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
                   })
                 }}
               >
-                <ItemModel kind={site.kind} item={item.kind} c={ctxFor(item, Math.floor(hash(item.x * 13 + item.y * 7 + index) * 1000), flowOf(item))} />
+                <ItemModel kind={site.kind} item={item.kind} c={ctxFor(item, idSeed(item.id), flowOf(item))} />
               </Dropping>
             </group>
           ) : null,
@@ -1858,11 +1948,11 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
         {liveKinds && showcases.map((item, i) => <Showcase key={item.id} site={site} item={item} products={showcaseList} offset={i} />)}
         {office && <Celebrate count={office.researchDone} places={places} sparks={sparks} palette={palette} />}
         {site.kind === 'factory' && lively && life?.factory && <FactoryFloor site={site} life={life.factory} sparks={sparks} plan={yard} />}
-        {lively && <Pointer enabled={!tool} targets={targets} crowd={crowd} titles={titles} hover={hotRef} onHover={onHover} onPick={onPick} consumed={consumed} />}
-        {hot && !tool && hot.target.key !== open?.key && <HoverMark hover={hot} color={accent} />}
+        {lively && <Pointer enabled={!tool && !walking} targets={targets} crowd={crowd} titles={titles} hover={hotRef} onHover={onHover} onPick={onPick} consumed={consumed} />}
+        {hot && !tool && !walking && hot.target.key !== open?.key && <HoverMark hover={hot} color={accent} />}
         {import.meta.env.DEV && <DevHandle pulse={pulse} crowd={crowd} />}
       </Heartbeat>
-      {open && card && !tool && (
+      {open && card && !tool && !walking && (
         <Html position={open.anchor} calculatePosition={cardPosition} zIndexRange={[40, 31]}>
           <Sized>{card(open, () => setOpen(null))}</Sized>
         </Html>
@@ -1870,6 +1960,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
       {/* (put up once the view has drawn: signs mounted while the scene is still loading its parts come up empty) */}
       {up &&
         !tool &&
+        !walking &&
         plates.map((p) =>
           p.target.key === open?.key ? null : (
             <Html key={p.key} position={p.at} center zIndexRange={[19, 10]}>
@@ -1892,7 +1983,9 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
 
       {roomFloor.tiles.length + roomFloor.shapes.length > 0 && <Tint tiles={roomFloor.tiles} shapes={roomFloor.shapes} w={w} h={h} color={accent} opacity={0.16} y={0.014} inset={0} />}
       {sealedFloor.tiles.length + sealedFloor.shapes.length > 0 && <Tint tiles={sealedFloor.tiles} shapes={sealedFloor.shapes} w={w} h={h} color={neg} opacity={0.22} y={0.016} inset={0} />}
-      {preview && preview.good.length > 0 && <Tint tiles={preview.good} shapes={'shapes' in preview ? preview.shapes : undefined} w={w} h={h} color={accent} opacity={ghost ? 0.22 : 0.45} inset={'shapes' in preview && preview.shapes ? 0 : undefined} />}
+      {preview && (preview.good.length > 0 || ('shapes' in preview && !!preview.shapes?.length)) && <Tint tiles={preview.good} shapes={'shapes' in preview ? preview.shapes : undefined} w={w} h={h} color={accent} opacity={ghost ? 0.22 : 0.45} inset={'shapes' in preview && preview.shapes ? 0 : undefined} />}
+      {/* the box the sell tool is being dragged over, faintly, round what it would take */}
+      {preview && 'zone' in preview && preview.zone && <Tint tiles={preview.zone} w={w} h={h} color={accent} opacity={0.1} y={0.012} inset={0} />}
       {preview && preview.bad.length > 0 && <Tint tiles={preview.bad} w={w} h={h} color={neg} opacity={0.5} />}
       {preview && 'curve' in preview && preview.curve && <CurveOutline spec={preview.curve} w={w} h={h} color={accent} />}
       {ghost}
@@ -1911,10 +2004,11 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
         </EffectComposer>
       )}
       <Drawn on={onUp} />
-      {!autoRotate && <CameraKeys span={span} home={home} aim={aim} />}
+      {!autoRotate && !walking && <CameraKeys span={span} home={home} aim={aim} />}
+      <Walk nav={nav} on={walk} onActive={setWalking} onLeave={endWalk} />
       {autoRotate && <AutoTurn speed={3} />}
       <CameraFence span={span} top={height + 6} />
-      <OrbitControls makeDefault target={aim} minDistance={near * 6} maxDistance={span * 3 + 40} maxPolarAngle={Math.PI * 0.485} enablePan screenSpacePanning={false} panSpeed={1.3 * prefs.cameraSpeed} rotateSpeed={0.9 * prefs.cameraSpeed} zoomSpeed={1.2 * prefs.cameraSpeed} zoomToCursor={prefs.zoomToPointer} enableDamping dampingFactor={0.2} mouseButtons={mouseButtons} touches={touches} />
+      <OrbitControls makeDefault enabled={!walking} target={aim} minDistance={near * 6} maxDistance={span * 3 + 40} maxPolarAngle={Math.PI * 0.485} enablePan screenSpacePanning={false} panSpeed={1.3 * prefs.cameraSpeed} rotateSpeed={0.9 * prefs.cameraSpeed} zoomSpeed={1.2 * prefs.cameraSpeed} zoomToCursor={prefs.zoomToPointer} enableDamping dampingFactor={0.2} mouseButtons={mouseButtons} touches={touches} />
     </SafeCanvas>
   )
 }

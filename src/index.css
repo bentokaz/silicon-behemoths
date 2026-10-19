@@ -26,8 +26,52 @@
   --color-pos: #5fd08a;
   --color-neg: #ff4d4f;
   --color-warn: #f2b631;
-  --font-sans: Bahnschrift, 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
-  --font-mono: 'Cascadia Mono', 'JetBrains Mono', Consolas, ui-monospace, monospace;
+  --font-sans: 'Segoe UI Variable Text', 'Segoe UI', -apple-system, BlinkMacSystemFont, Inter, 'Helvetica Neue', system-ui, sans-serif;
+  --font-display: Bahnschrift, 'DIN Alternate', 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'Cascadia Mono', 'JetBrains Mono', 'SF Mono', Consolas, ui-monospace, monospace;
+  /* the type scale (see "The type scale" below); larger again in large windows */
+  --text-2xs: 12px;
+  --text-2xs--line-height: 16px;
+  --text-xs: 13px;
+  --text-xs--line-height: 18px;
+  --text-sm: 14px;
+  --text-sm--line-height: 20px;
+  --text-base: 15px;
+  --text-base--line-height: 22px;
+  --text-lg: 17px;
+  --text-lg--line-height: 24px;
+  --text-xl: 21px;
+  --text-xl--line-height: 28px;
+  --text-2xl: 26px;
+  --text-2xl--line-height: 32px;
+  --text-3xl: 34px;
+  --text-3xl--line-height: 40px;
+}
+
+/*
+ * Large windows get a roomier interface: everything sized by the spacing
+ * unit or the type scale grows by about a twelfth above 1600 x 860.
+ */
+@media (min-width: 1600px) and (min-height: 860px) {
+  :root {
+    --spacing: 0.27rem;
+    --text-2xs: 13px;
+    --text-2xs--line-height: 17px;
+    --text-xs: 14px;
+    --text-xs--line-height: 20px;
+    --text-sm: 15px;
+    --text-sm--line-height: 22px;
+    --text-base: 16px;
+    --text-base--line-height: 24px;
+    --text-lg: 18px;
+    --text-lg--line-height: 26px;
+    --text-xl: 23px;
+    --text-xl--line-height: 30px;
+    --text-2xl: 29px;
+    --text-2xl--line-height: 36px;
+    --text-3xl: 38px;
+    --text-3xl--line-height: 44px;
+  }
 }
 
 [data-theme='volt'] {
@@ -81,8 +125,8 @@ body {
   background: var(--color-carbon);
   color: var(--color-fg);
   font-family: var(--font-sans);
-  font-size: 12px;
-  line-height: 1.4;
+  font-size: var(--text-sm);
+  line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
   user-select: none;
@@ -192,49 +236,72 @@ input[type='color']::-webkit-color-swatch {
 }
 
 /*
- * The type scale. Nothing in the interface is smaller than 11px.
- *   11  labels and table headers            .label  .th
- *   12  body, table cells, buttons          (the body size)
- *   13  panel titles and navigation         .t-title
- *   16  the value of a tile                 .t-value
- *   20  the one headline figure of a screen .t-headline
- *   48  the main menu only
- * Uppercase is for navigation and table headers and nothing else; the
- * monospace face is for numbers and nothing else.
+ * The type scale (sizes are tokens: larger in large windows, see the top).
+ *   2xs 12/13  labels, table headers, meta lines     .label  .th  text-2xs
+ *   xs  13/14  table cells, buttons, secondary text  text-xs
+ *   sm  14/15  body                                  (the body size)  .t-title
+ *   lg  17/18  section titles                        .t-section
+ *   xl  21/23  page titles                           .t-page
+ *   value      the figure of a tile                  .t-value  (20/22)
+ *   headline   the one figure of a screen            .t-headline (28/31)
+ * Uppercase is for the brand mark and nothing else; the monospace face is for
+ * numbers and nothing else; the display face (condensed) is for titles.
  */
 .label {
-  font-size: 11px;
-  line-height: 1.3;
+  font-size: var(--text-2xs);
+  line-height: var(--text-2xs--line-height);
   color: var(--color-dim);
 }
 .th {
-  font-size: 11px;
-  font-weight: 400;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  letter-spacing: 0.01em;
   color: var(--color-faint);
 }
 .t-title {
-  font-size: 13px;
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
   font-weight: 600;
+  color: var(--color-fg);
+}
+.t-section {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  line-height: var(--text-lg--line-height);
+  font-weight: 600;
+  letter-spacing: 0.005em;
+  color: var(--color-fg);
+}
+.t-page {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  line-height: var(--text-xl--line-height);
+  font-weight: 600;
+  letter-spacing: 0.005em;
   color: var(--color-fg);
 }
 .t-value {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 16px;
-  line-height: 1.1;
+  font-size: calc(var(--text-xl) - 1px);
+  line-height: 1.15;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 .t-headline {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 20px;
+  font-size: calc(var(--text-2xl) + 2px);
   font-weight: 600;
   line-height: 1.1;
+  letter-spacing: -0.02em;
 }
 .num {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+}
+.font-display {
+  font-family: var(--font-display);
 }
 /* a key the player can press, drawn as a small cap */
 .kbd {
@@ -244,10 +311,63 @@ input[type='color']::-webkit-color-swatch {
   border: 1px solid var(--color-line2);
   background: var(--color-raise);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   line-height: 16px;
   text-align: center;
   color: var(--color-fg);
+}
+
+/*
+ * Surfaces, from the back: carbon (the page), panel (a section), raise (a
+ * control, a hovered card), hover. A section is told apart by its surface and
+ * the space around it; its outline is one hairline in `line`. Space: 4, 8,
+ * 12, 16, 24, 32 (Tailwind 1, 2, 3, 4, 6, 8).
+ */
+.surface {
+  background: var(--color-panel);
+  border: 1px solid var(--color-line);
+}
+
+/* the styled tooltip and info card (see Tooltips in ui.tsx) */
+.sb-tip {
+  position: fixed;
+  z-index: 80;
+  pointer-events: none;
+  max-width: min(360px, calc(100vw - 16px));
+  padding: 8px 10px;
+  border: 1px solid var(--color-line2);
+  background: var(--color-raise);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+  white-space: pre-line;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.45);
+}
+.sb-card {
+  position: fixed;
+  z-index: 80;
+  width: min(380px, calc(100vw - 16px));
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  border: 1px solid var(--color-line2);
+  background: var(--color-raise);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
+}
+
+/* a soft entrance for things that appear (cards, toasts); none when motion is reduced */
+@keyframes sb-rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.sb-rise {
+  animation: sb-rise 140ms ease-out;
 }
 
 /* The plain HTML table, where the Table component is not used. */
@@ -257,13 +377,11 @@ table.grid-table {
 }
 table.grid-table th {
   text-align: left;
-  font-weight: 400;
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-weight: 500;
+  font-size: var(--text-2xs);
   color: var(--color-faint);
-  height: 28px;
-  padding: 0 8px;
+  height: 32px;
+  padding: 0 10px;
   border-bottom: 1px solid var(--color-line2);
   position: sticky;
   top: 0;
@@ -272,8 +390,8 @@ table.grid-table th {
   white-space: nowrap;
 }
 table.grid-table td {
-  height: 32px;
-  padding: 0 8px;
+  height: 38px;
+  padding: 0 10px;
   border-bottom: 1px solid var(--color-line);
   white-space: nowrap;
 }
@@ -282,9 +400,6 @@ table.grid-table td {
 .tight table.grid-table td {
   padding-left: 4px;
   padding-right: 4px;
-}
-.tight table.grid-table th {
-  letter-spacing: 0;
 }
 /* and its longer names are cut short there; the cell's tooltip has them in full */
 .tight table.grid-table td.clip {
@@ -297,4 +412,40 @@ table.grid-table tr.row:hover td {
 }
 table.grid-table .r {
   text-align: right;
+}
+
+/*
+ * Sizes written as pixels before the type scale had tokens follow the scale:
+ * 11px is the label size, 12px the small text, 13px the body.
+ */
+.text-\[11px\] {
+  font-size: var(--text-2xs);
+}
+.text-\[12px\] {
+  font-size: var(--text-xs);
+}
+.text-\[13px\] {
+  font-size: var(--text-sm);
+}
+
+/*
+ * Chrome that floats over a 3D view (a site's toolbar, a build palette, a
+ * status card): the panel surface, a hairline and a shadow to lift it off
+ * the picture. Use with Btn and IconBtn inside; `.sb-toolbar` lays a row out.
+ */
+.sb-float {
+  background: color-mix(in srgb, var(--color-panel) 94%, transparent);
+  border: 1px solid var(--color-line2);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
+}
+.sb-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+}
+.sb-float-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-fg);
 }

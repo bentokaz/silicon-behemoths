@@ -344,5 +344,5 @@ export function SharesScreen() {
 
 /** This page keeps its two columns inside the window and lets each scroll by itself, so the money controls stay beside the list. */
 function Columns({ children }: { children: React.ReactNode }) {
-  return <div className="flex h-full min-h-0 flex-col gap-2 p-4">{children}</div>
+  return <div className="flex h-full min-h-0 flex-col gap-4 px-6 pb-6 pt-4">{children}</div>
 }

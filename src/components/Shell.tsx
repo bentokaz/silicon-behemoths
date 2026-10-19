@@ -33,7 +33,8 @@ import { GoalsHub } from './GoalsHub'
 import { LockCard } from './Progress'
 import { FactoryScreen } from './Operations'
 import { ResearchScreen } from './Lines'
-import { Messenger } from './Messenger'
+import { GuideCard, Messenger, useGuideOpen } from './Messenger'
+import { PAGE_INTRO } from './pageIntro'
 import { Market, Products, Rivals } from './Devices'
 import { Finance } from './Finance'
 import { Dashboard } from './Overview'
@@ -176,7 +177,9 @@ function useHotkeys() {
 // ---------------------------------------------------------------- the feed
 
 /** Whether the feed is open beside a screen: the player's own choice for that screen if they have made one. */
-const feedShown = (choice: Partial<Record<Tab, boolean>>, tab: Tab) => !WIDE.includes(tab) && (choice[tab] ?? FEED_BY_DEFAULT.includes(tab))
+const feedShown = (choice: Partial<Record<Tab, boolean>>, tab: Tab) => !WIDE.includes(tab) && (choice[tab] ?? (FEED_BY_DEFAULT.includes(tab) && roomForFeed()))
+/** The feed opens by itself only in a window wide enough that the page keeps its room beside it. */
+const roomForFeed = () => typeof window === 'undefined' || window.innerWidth >= 1600
 function toggleFeedHere() {
   const st = useStore.getState()
   if (WIDE.includes(st.tab) || st.designing) return st.say('The news feed is not shown beside a 3D view. The line at the bottom has the latest.')
@@ -212,8 +215,8 @@ function Feed() {
   const [rivals, setRivals] = useState(false)
   const rows = foldNews(g.news, rivals)
   return (
-    <aside data-chrome="feed" aria-label="News feed" className="flex w-[236px] shrink-0 flex-col border-l border-line bg-panel">
-      <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-line pl-3 pr-1">
+    <aside data-chrome="feed" aria-label="News feed" className="flex w-[272px] shrink-0 flex-col border-l border-line bg-panel">
+      <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-line pl-4 pr-2">
         <span className="t-title">News</span>
         <span className="flex items-center gap-1">
           <Btn small tone="ghost" active={rivals} onClick={() => setRivals(!rivals)} title="Show what rival companies launch as well">
@@ -223,17 +226,17 @@ function Feed() {
         </span>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {rows.length === 0 && <div className="px-3 py-4 text-xs text-dim">Nothing has happened yet.</div>}
+        {rows.length === 0 && <div className="px-4 py-5 text-xs text-dim">Nothing has happened yet.</div>}
         {rows.map(({ item: n, count }) => (
-          <div key={n.id} {...(n.productId ? { role: 'button', ...pressable(() => focus(n.productId!)) } : {})} className={`border-b border-line px-3 py-[6px] ${n.productId ? 'cursor-pointer hover:bg-hover' : ''}`}>
-            <div className="flex justify-between gap-2 text-[11px]">
+          <div key={n.id} {...(n.productId ? { role: 'button', ...pressable(() => focus(n.productId!)) } : {})} className={`border-b border-line px-4 py-2.5 ${n.productId ? 'cursor-pointer hover:bg-hover' : ''}`}>
+            <div className="flex justify-between gap-2 text-2xs">
               <span className={NEWS_TONE[n.kind]}>{NEWS_WORD[n.kind]}</span>
               <span className="num text-faint">
                 {count > 1 && `x${count}  `}
                 {fmtDate(n.day)}
               </span>
             </div>
-            <div className={`text-xs leading-snug ${n.kind === 'rival' ? 'text-dim' : 'text-fg'}`}>{n.text}</div>
+            <div className={`mt-0.5 text-xs leading-snug ${n.kind === 'rival' ? 'text-dim' : 'text-fg'}`}>{n.text}</div>
           </div>
         ))}
       </div>
@@ -267,7 +270,7 @@ function CashDelta() {
   }, [delta])
   if (!delta || g.config.unlimitedMoney) return <span className="w-14" />
   return (
-    <span role="status" className={`num w-14 text-left text-[11px] ${delta.amount < 0 ? 'text-neg' : 'text-pos'}`}>
+    <span role="status" className={`num w-16 text-left text-2xs ${delta.amount < 0 ? 'text-neg' : 'text-pos'}`}>
       {moneyDelta(delta.amount)}
     </span>
   )
@@ -312,14 +315,17 @@ function GameOver() {
     )
   return (
     <div className="absolute inset-0 z-50 flex items-center justify-center bg-carbon/85 p-4">
-      <div ref={box} role="alertdialog" aria-label={title} className="w-[440px] max-w-full border border-neg bg-panel p-4 outline-none">
-        <div className="text-[11px] text-neg">{title}</div>
-        <div className="mt-1 text-xl font-semibold text-fg">{g.overReason === 'ousted' ? `The board of ${me.name} has replaced you.` : `${me.name} has run out of credit.`}</div>
-        <div className="mt-2 text-xs leading-relaxed text-dim">{whatWentWrong(g)}</div>
-        <div className="mt-2 text-xs text-dim">
+      <div ref={box} role="alertdialog" aria-label={title} className="sb-rise w-[520px] max-w-full border border-neg bg-panel p-6 shadow-[0_24px_64px_rgb(0_0_0/0.6)] outline-none">
+        <div className="flex items-center gap-2 text-xs font-semibold text-neg">
+          <Icon name="alert" size={14} />
+          {title}
+        </div>
+        <div className="t-page mt-2">{g.overReason === 'ousted' ? `The board of ${me.name} has replaced you.` : `${me.name} has run out of credit.`}</div>
+        <div className="mt-3 text-sm leading-relaxed text-dim">{whatWentWrong(g)}</div>
+        <div className="mt-2 text-sm text-dim">
           Lasted until <span className="num text-fg">{fmtDate(g.day)}</span> and sold <span className="num text-fg">{num(me.unitsTotal)}</span> devices for <span className="num text-fg">{money(me.revenueTotal)}</span>.
         </div>
-        <div className="mt-4 flex flex-col gap-2">
+        <div className="mt-6 flex flex-col gap-2">
           {checkpoint ? (
             <Btn tone="primary" large icon="load" autoFocus onClick={() => (rewind(), sfx.confirm())}>
               Go back to {fmtDate(checkpoint.day)}, before the debt
@@ -360,6 +366,9 @@ export function Shell() {
   const kept = useStore((s) => s.kept)
   const { setSpeed, toggleRail, openDesigner, showLock, go, goDest } = useStore.getState()
   useSettings((s) => s.binds)
+  const [guideOpen] = useGuideOpen()
+  // (the guide's card gives way to a drawer: it would lie over it)
+  const drawerUp = useStore((s) => s.inspect !== null || s.person !== null)
   useGameLoop()
   useHotkeys()
   // each place has its own background sound
@@ -377,7 +386,7 @@ export function Shell() {
   const here = destOfTab(tab, view)
   const page = pageOf(tab, view)
   const showFeed = !designing && feedShown(feedOn, tab)
-  const railW = railOpen ? 'w-[172px]' : 'w-[52px]'
+  const railW = railOpen ? 'w-[208px]' : 'w-[56px]'
 
   /** A page is in the row of tabs once it is open, or while it is the next thing to earn. */
   const pageShown = (p: NavPage) => {
@@ -394,11 +403,11 @@ export function Shell() {
     const locks = d.pages.map((p) => pageLock(g, p))
     const shut = locks.every(Boolean)
     const label = d.id === 'system' ? 'Save / settings' : d.label
-    const base = `relative flex h-9 w-full items-center justify-between border-l-2 text-left ${railOpen ? 'pl-3 pr-2' : 'justify-center px-0'}`
+    const base = `relative flex h-10 w-full items-center justify-between border-l-2 text-left ${railOpen ? 'pl-4 pr-3' : 'justify-center px-0'}`
     const name = (
-      <span className="flex min-w-0 items-center gap-2">
-        <Icon name={d.icon as IconName} size={railOpen ? 15 : 18} />
-        {railOpen && <span className="truncate text-[13px] uppercase tracking-[0.06em]">{label}</span>}
+      <span className="flex min-w-0 items-center gap-3">
+        <Icon name={d.icon as IconName} size={railOpen ? 17 : 19} />
+        {railOpen && <span className="truncate text-sm font-medium">{label}</span>}
       </span>
     )
     if (shut) {
@@ -407,7 +416,7 @@ export function Shell() {
       return (
         <button key={d.id} onClick={(e) => (open ? showLock(null) : showLock(cap, e.currentTarget.getBoundingClientRect().top))} title={locked(g, cap) ?? undefined} aria-label={`${d.label}, locked`} className={`${base} ${open ? 'border-l-line2 bg-hover text-dim' : 'border-l-transparent text-faint hover:bg-hover hover:text-dim'}`}>
           {name}
-          <Icon name="lock" size={railOpen ? 11 : 9} className={railOpen ? '' : 'absolute right-[6px] top-[5px]'} />
+          <Icon name="lock" size={railOpen ? 12 : 9} className={railOpen ? 'text-mute' : 'absolute right-[7px] top-[7px]'} />
         </button>
       )
     }
@@ -418,13 +427,13 @@ export function Shell() {
       <button
         key={d.id}
         onClick={() => goDest(d.id)}
-        title={railOpen ? (d.id === 'system' ? 'Saves, company, settings and keys' : undefined) : `${d.label}${k ? ` (${k})` : ''}`}
+        title={railOpen ? (d.id === 'system' ? 'Saves, company, settings and keys' : k ? `${d.label} (${k})` : undefined) : `${d.label}${k ? ` (${k})` : ''}`}
         aria-label={n > 0 ? `${d.label}, ${n} need attention` : isNew ? `${d.label}, new` : d.label}
         aria-current={on ? 'page' : undefined}
-        className={`${base} ${on ? 'border-l-accent bg-accent/10 text-accent' : designing ? 'border-l-transparent text-faint hover:bg-hover hover:text-fg' : 'border-l-transparent text-dim hover:bg-hover hover:text-fg'}`}
+        className={`${base} ${on ? 'border-l-accent bg-accent/10 text-fg [&_svg]:text-accent' : designing ? 'border-l-transparent text-faint hover:bg-hover hover:text-fg' : 'border-l-transparent text-dim hover:bg-hover hover:text-fg'}`}
       >
         {name}
-        {n > 0 ? <span className={`num text-[11px] text-warn ${railOpen ? '' : 'absolute right-1 top-0'}`}>{n}</span> : isNew ? <span className={`text-[11px] text-accent ${railOpen ? '' : 'absolute right-[3px] top-0'}`}>{railOpen ? 'NEW' : '+'}</span> : railOpen && k && d.id !== 'system' && <span className={`num text-[11px] ${on ? 'text-dim' : 'text-faint'}`}>{k}</span>}
+        {n > 0 ? <span className={`num min-w-5 bg-warn/15 px-1.5 text-center text-2xs font-semibold leading-[18px] text-warn ${railOpen ? '' : 'absolute right-1 top-0.5'}`}>{n}</span> : isNew ? <span className={`bg-accent/15 px-1.5 text-2xs font-semibold leading-[18px] text-accent ${railOpen ? '' : 'absolute right-1 top-0.5'}`}>{railOpen ? 'New' : '+'}</span> : null}
       </button>
     )
   }
@@ -435,31 +444,39 @@ export function Shell() {
 
   return (
     <div className="flex h-full flex-col">
-      <header data-chrome="top" className="flex h-10 shrink-0 items-stretch border-b border-line bg-panel">
-        <div className={`flex ${railW} shrink-0 items-center border-r border-line px-3`}>
-          <span className="truncate text-[11px] font-semibold tracking-[0.2em] text-fg">{railOpen ? <>SILICON<span className="text-accent">/</span>BEHEMOTHS</> : <>S<span className="text-accent">/</span>B</>}</span>
+      <header data-chrome="top" className="flex h-12 shrink-0 items-stretch border-b border-line bg-panel">
+        <div className={`flex ${railW} shrink-0 items-center border-r border-line ${railOpen ? 'px-4' : 'justify-center'}`}>
+          <span className="font-display truncate text-sm font-semibold tracking-[0.08em] text-fg">{railOpen ? <>SILICON<span className="text-accent">/</span>BEHEMOTHS</> : <>S<span className="text-accent">/</span>B</>}</span>
         </div>
-        <div className="flex min-w-0 items-center gap-2 border-r border-line px-3">
-          {me.logo ? <img src={me.logo} alt="" className="h-6 w-6 object-contain" /> : <span className="h-2 w-2 shrink-0" style={{ background: me.color }} />}
-          <span className="truncate text-[13px] text-fg">{me.name}</span>
+        <div className="flex min-w-0 items-center gap-2.5 px-4">
+          {me.logo ? <img src={me.logo} alt="" className="h-7 w-7 object-contain" /> : <span className="h-2.5 w-2.5 shrink-0" style={{ background: me.color }} />}
+          <span className="truncate text-sm font-semibold text-fg">{me.name}</span>
         </div>
-        <div className="flex items-center gap-2 border-r border-line px-3">
-          <Icon name="calendar" className="text-faint" />
-          <span className="num whitespace-nowrap text-[13px] font-semibold text-fg">{fmtDate(g.day)}</span>
+        <div className="my-2.5 w-px shrink-0 bg-line" />
+        <div className="flex items-center gap-2 px-4" title="Today's date in the game">
+          <Icon name="calendar" size={15} className="text-faint" />
+          <span className="num whitespace-nowrap text-sm font-semibold text-fg">{fmtDate(g.day)}</span>
         </div>
-        <button className="flex items-center gap-2 border-r border-line px-3 hover:bg-hover" onClick={() => go({ tab: has(g, 'finance') ? 'finance' : 'dashboard' })} title="Cash in the bank. Click for where it comes from and where it goes.">
-          <Icon name="cash" className="text-faint" />
-          <span className={`num text-[13px] font-semibold ${g.cash < 0 && !g.config.unlimitedMoney ? 'text-neg' : 'text-accent'}`}>{g.config.unlimitedMoney ? 'Unlimited' : money(g.cash)}</span>
+        <button className="flex items-center gap-2 px-4 hover:bg-hover" onClick={() => go({ tab: has(g, 'finance') ? 'finance' : 'dashboard' })} title="Cash in the bank. Click for where it comes from and where it goes.">
+          <Icon name="cash" size={15} className="text-faint" />
+          <span className={`num text-base font-semibold ${g.cash < 0 && !g.config.unlimitedMoney ? 'text-neg' : 'text-accent'}`}>{g.config.unlimitedMoney ? 'Unlimited' : money(g.cash)}</span>
           <CashDelta />
         </button>
         <div className="flex-1" />
-        <div className="flex items-center gap-1 border-l border-line px-2" title="Pause and speed keys can be changed under Save and settings, Keys.">
-          <span className="mr-1 hidden text-[11px] text-dim md:block">{designing ? 'Paused in the designer' : speed ? 'Running' : 'Paused'}</span>
-          {SPEEDS.map((s) => (
-            <IconBtn key={s.speed} icon={s.icon} title={s.label} disabled={designing} active={!designing && speed === s.speed} onClick={() => setSpeed(s.speed)} />
-          ))}
+        <div className="flex items-center gap-3 px-3" title="Pause and speed keys can be changed under Save and settings, Keys.">
+          <span className="hidden items-center gap-2 text-xs text-dim md:flex">
+            <span aria-hidden className={`h-2 w-2 ${designing || !speed ? 'bg-warn' : 'bg-pos'}`} />
+            {designing ? 'Paused in the designer' : speed ? 'Running' : 'Paused'}
+          </span>
+          <div role="group" aria-label="Game speed" className="flex border border-line2">
+            {SPEEDS.map((s) => (
+              <button key={s.speed} type="button" title={s.label} aria-label={s.label} aria-pressed={!designing && speed === s.speed} disabled={designing} onClick={() => setSpeed(s.speed)} className={`flex h-8 w-9 items-center justify-center border-l border-line first:border-l-0 disabled:cursor-not-allowed disabled:text-faint ${!designing && speed === s.speed ? 'bg-accent text-carbon' : 'text-dim enabled:hover:bg-hover enabled:hover:text-fg'}`}>
+                <Icon name={s.icon} size={15} />
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex items-center gap-1 border-l border-line px-2">
+        <div className="flex items-center gap-1 border-l border-line px-3">
           <FeedbackButton small />
           <IconBtn icon="save" title={`Quick save${keysFor('save')[0] ? ` (${keyName(keysFor('save')[0])})` : ''}`} onClick={quickSave} />
           <IconBtn icon="feed" title={`Show or hide the news feed${keysFor('feed')[0] ? ` (${keyName(keysFor('feed')[0])})` : ''}`} active={showFeed} onClick={toggleFeedHere} />
@@ -468,24 +485,24 @@ export function Shell() {
 
       <div className="flex min-h-0 flex-1">
         <nav data-chrome="nav" aria-label="Screens" className={`flex ${railW} shrink-0 flex-col border-r border-line bg-panel`}>
-          <div className="border-b border-line p-2">
+          <div className="p-3">
             <button
               onClick={() => openDesigner()}
               data-coach-target="new-device"
               title={designing ? 'The designer is open' : kept ? 'Go back to the design you set aside' : `Design a new device${keysFor('newDevice')[0] ? ` (${keyName(keysFor('newDevice')[0])})` : ''}`}
               aria-label={designing ? 'Designing' : kept ? 'Resume design' : 'New device'}
-              className={`flex h-10 w-full items-center border text-left text-[13px] font-semibold ${railOpen ? 'justify-between px-3' : 'justify-center'} ${designing ? 'border-accent bg-transparent text-accent' : 'border-accent bg-accent text-carbon hover:bg-transparent hover:text-accent'}`}
+              className={`flex h-10 w-full items-center gap-2 border text-left text-sm font-semibold ${railOpen ? 'px-3' : 'justify-center'} ${designing ? 'border-accent bg-accent text-carbon' : 'border-accent bg-accent/10 text-accent hover:bg-accent hover:text-carbon'}`}
             >
+              <Icon name={kept && !designing ? 'design' : 'plus'} size={17} />
               {railOpen && (designing ? 'Designing' : kept ? 'Resume design' : 'New device')}
-              <Icon name={kept && !designing ? 'design' : 'plus'} size={16} />
             </button>
           </div>
           <div className="min-h-0 flex-1 py-1">{RAIL.map(railItem)}</div>
-          <div className="border-t border-line py-1">
+          <div className="border-t border-line py-2">
             {railItem(destOf('system'))}
-            <button onClick={toggleRail} className={`flex h-7 w-full items-center text-[11px] text-faint hover:text-fg ${railOpen ? 'px-3' : 'justify-center'}`} title={railOpen ? 'Collapse the menu' : 'Expand the menu'} aria-label={railOpen ? 'Collapse the menu' : 'Expand the menu'} aria-expanded={railOpen}>
-              <Icon name={railOpen ? 'collapse' : 'expand'} size={12} />
-              {railOpen && <span className="ml-2">Collapse</span>}
+            <button onClick={toggleRail} className={`flex h-8 w-full items-center text-xs text-faint hover:text-fg ${railOpen ? 'px-4' : 'justify-center'}`} title={railOpen ? 'Collapse the menu' : 'Expand the menu'} aria-label={railOpen ? 'Collapse the menu' : 'Expand the menu'} aria-expanded={railOpen}>
+              <Icon name={railOpen ? 'collapse' : 'expand'} size={14} />
+              {railOpen && <span className="ml-3">Collapse</span>}
             </button>
           </div>
         </nav>
@@ -493,9 +510,13 @@ export function Shell() {
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="relative flex min-h-0 flex-1">
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              {!designing && pages.length > 1 && (
+              {!designing && (pages.length > 1 || !WIDE.includes(tab)) && (
+                <div className="flex h-11 shrink-0 items-stretch border-b border-line bg-panel">
+                  <h1 className="t-section flex shrink-0 items-center pl-6 pr-4">{here.label}</h1>
+                  {pages.length > 1 && <span aria-hidden className="my-3 w-px shrink-0 bg-line" />}
+                  {pages.length > 1 && (
                 <Tabs
-                  className="bg-panel pl-1"
+                  className="min-w-0 flex-1 !border-b-0 pl-1"
                   value={page.id}
                   options={pages.map((p) => {
                     const lock = pageLock(g, p)
@@ -505,6 +526,13 @@ export function Shell() {
                   onChange={(id) => go(whereOf(here.pages.find((p) => p.id === id)!))}
                   onLocked={(id) => showLock(pageLock(g, here.pages.find((p) => p.id === id)!) ?? null)}
                 />
+                  )}
+                </div>
+              )}
+              {!designing && !WIDE.includes(tab) && PAGE_INTRO[page.id] && (
+                <p data-page-intro className="w-full shrink-0 px-6 pt-4 text-sm text-dim">
+                  {PAGE_INTRO[page.id]}
+                </p>
               )}
               <main className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-carbon">
                 {designing ? (
@@ -537,6 +565,7 @@ export function Shell() {
             {showFeed && <Feed />}
             {/* the one drawer: at the right-hand edge, over the feed, never over the strip below */}
             <div id="sb-drawer" className="pointer-events-none absolute inset-0 z-[35]" />
+            {!designing && !showing && !g.gameOver && guideOpen && !drawerUp && <GuideCard />}
             {!designing && <ProductDrawer />}
             {!designing && <PersonCard />}
           </div>

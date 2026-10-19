@@ -4,7 +4,7 @@
 import { type ReactNode, useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { CLIP, bayBeyond, bayStands, curveTiles, geomOf } from '../../sim/curves'
-import { FACADES, doorFits, edgeIds, edgeRuns, styleOf } from '../../sim/sites'
+import { FACADES, doorFits, edgeIds, edgeRuns, gridAt, styleOf } from '../../sim/sites'
 import type { Site } from '../../sim/types'
 import type { Crowd } from './crowd'
 import { rnd } from './crowd'
@@ -214,7 +214,7 @@ export interface WallPiece {
 /** Every stretch of solid wall on a site, straight and curved, keyed by where it stands. */
 function solidWalls(site: Site): Map<string, WallPiece> {
   const out = new Map<string, WallPiece>()
-  const gaps = new Set(site.walls.filter((w) => w.kind !== 'glass').map((w) => `${w.x},${w.y},${w.side}`))
+  const gaps = new Set(site.walls.filter((w) => !w.part && w.kind !== 'glass').map((w) => `${w.x},${w.y},${w.side}`))
   const rooms = new Map(site.rooms.map((r) => [r.n, r]))
   const facade = (FACADES[site.facade] ?? FACADES[0]).color
   const curved = curveTiles(site)
@@ -233,6 +233,12 @@ function solidWalls(site: Site): Map<string, WallPiece> {
         }
       }
     }
+  }
+  // partitions inside a room, in the room's own wall colour
+  for (const w of site.walls) {
+    if (!w.part || w.kind !== 'wall') continue
+    const room = rooms.get(gridAt(site, w.x, w.y))
+    out.set(`${w.x},${w.y},${w.side},p`, { x: ox + w.x + (w.side === 'n' ? 0.5 : 0), z: oz + w.y + (w.side === 'w' ? 0.5 : 0), len: 1, rot: w.side === 'n' ? 0 : Math.PI / 2, color: room ? styleOf(site, room).wall : facade, delay: 0 })
   }
   // curved walls, facet by facet as they are drawn, so they rise and fall in their true shape
   const standing = new Map<string, boolean>()
@@ -384,7 +390,7 @@ export function doorLeaves(site: Site): Leaf[] {
   for (const w of site.walls) {
     if (w.kind !== 'door') continue
     // a door needs its whole metre of wall; on a shorter stretch it is only a way through
-    if (!doorFits(site, w.x, w.y, w.side, curved)) continue
+    if (!w.part && !doorFits(site, w.x, w.y, w.side, curved)) continue
     const [a, b] = edgeIds(site, w.x, w.y, w.side)
     const cx = ox + w.x + (w.side === 'n' ? 0.5 : 0)
     const cz = oz + w.y + (w.side === 'w' ? 0.5 : 0)
