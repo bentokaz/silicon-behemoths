@@ -71,7 +71,7 @@ export interface TypeSpec {
   /** Battery drain per watt of chip heat, for battery devices that run their chip hard. */
   chipDrain?: number
   /** What the third sub-score means for this type. */
-  special: 'camera' | 'sensors' | 'io' | 'games' | 'smarts' | 'ports' | 'tracking' | 'home' | 'play'
+  special: 'camera' | 'sensors' | 'io' | 'games' | 'smarts' | 'ports' | 'tracking' | 'home' | 'play' | 'reading' | 'flight'
   specialLabel: string
   /** Names of the other sub-scores, where they differ from the usual ones. */
   labels?: Partial<Record<keyof SubScores, string>>
@@ -97,25 +97,25 @@ export const TYPES: Record<DeviceType, TypeSpec> = {
   phone: {
     name: 'Phone', plural: 'Phones', series: '', width: [58, 92, 74], height: [120, 185, 158], maxThickness: 14, thickBase: 0, bezelScale: 1, diag: [6, 7.1], weight: [190, 265], density: 0.55, sbrFloor: 0.65, thin: [1.2, 4.5],
     batt: { mx: 6, my: 30, mt: 3.6, fill: 0.42 }, drainBase: 12, lifeScore: 0.9, lifeHours: 0.3, chipCost: 1, panelCost: 1, assembly: 12, capacity: 1, devCost: 1, memory: 1, special: 'camera', specialLabel: 'Camera',
-    extras: ['nfc', 'stereo', 'ip68', 'wireless', 'sat'], hero: 'back',
+    extras: ['nfc', 'esim', 'ir', 'jack', 'sd', 'stereo', 'haptics', 'ip54', 'ip68', 'ip69', 'wireless', 'reverse', 'face', 'uwb', 'mmwave', 'vapor', 'stylus', 'sat'], hero: 'back',
     unlock: { cost: 0, needs: {} },
   },
   tablet: {
     name: 'Tablet', plural: 'Tablets', series: 'Tab', width: [130, 230, 178], height: [190, 310, 250], maxThickness: 11, thickBase: -1, bezelScale: 2, diag: [10, 13.2], weight: [480, 760], density: 0.75, sbrFloor: 0.62, thin: [0.9, 3.2],
     batt: { mx: 10, my: 20, mt: 3.2, fill: 0.25 }, drainBase: 22, lifeScore: 1.75, lifeHours: 0.28, chipCost: 1.2, panelCost: 0.55, assembly: 18, capacity: 1.4, devCost: 1.2, memory: 1, special: 'camera', specialLabel: 'Camera',
-    extras: ['nfc', 'stereo', 'ip68'], hero: 'back',
+    extras: ['nfc', 'esim', 'sd', 'stereo', 'haptics', 'ip54', 'ip68', 'wireless', 'face', 'mmwave', 'stylus'], hero: 'back',
     unlock: { cost: 2e6, needs: { display: 1 }, from: ['phone'] },
   },
   watch: {
     name: 'Watch', plural: 'Watches', series: 'Watch', width: [32, 52, 42], height: [34, 56, 46], maxThickness: 16, thickBase: 2.5, bezelScale: 0.9, diag: [1.5, 2.3], weight: [42, 90], density: 0.9, sbrFloor: 0.42, thin: [1.5, 4],
     batt: { mx: 8, my: 8, mt: 6, fill: 0.22 }, drainBase: 3, lifeScore: 1.6, lifeHours: 1.1, chipCost: 0.4, panelCost: 1.6, assembly: 9, capacity: 0.6, devCost: 0.7, memory: 0, special: 'sensors', specialLabel: 'Sensors',
-    ioLabel: 'Health sensors', extras: ['nfc', 'ip68', 'wireless'], hero: 'back',
+    ioLabel: 'Health sensors', extras: ['nfc', 'esim', 'haptics', 'ip54', 'ip68', 'ip69', 'wireless', 'uwb', 'sat'], hero: 'back',
     unlock: { cost: 2.5e6, needs: { chipset: 1, battery: 1 }, from: ['phone', 'earbuds'] },
   },
   laptop: {
     name: 'Laptop', plural: 'Laptops', series: 'Book', width: [280, 400, 322], height: [190, 285, 222], maxThickness: 30, thickBase: 4, bezelScale: 2.2, dims: ['Width', 'Depth', 'Thickness'], oneShell: true, diag: [13.2, 17.5], weight: [1300, 2600], density: 0.68, sbrFloor: 0.68, thin: [3, 12],
     batt: { mx: 20, my: 90, mt: 6, fill: 0.2 }, drainBase: 150, lifeScore: 2.3, lifeHours: 0.4, chipCost: 2.4, panelCost: 0.5, assembly: 45, capacity: 2.2, devCost: 1.8, memory: 2, gpu: true, input: 'keyboard', special: 'io', specialLabel: 'Keyboard and ports',
-    ioLabel: 'Ports', extras: ['stereo'], hero: 'front',
+    ioLabel: 'Ports', extras: ['stereo', 'haptics', 'face', 'vapor', 'sd'], hero: 'front',
     unlock: { cost: 5e6, needs: { chipset: 2 }, from: ['tablet', 'desktop'] },
   },
   // An all-in-one: the computer lives behind the display, or in a chin below it.
@@ -139,7 +139,7 @@ export const TYPES: Record<DeviceType, TypeSpec> = {
     name: 'Earbuds', plural: 'Earbuds', series: 'Buds', width: [44, 76, 58], height: [28, 62, 48], maxThickness: 34, thickBase: 20, thickScale: 0, bezelScale: 1, dims: ['Case width', 'Case height', 'Case depth'], noScreen: true, diag: [0, 0], weight: [50, 82], density: 0.5, sbrFloor: 0, thin: [0, 0],
     sizes: [{ name: 'Pocket', width: 50, height: 44, thickness: 21 }, { name: 'Standard', width: 58, height: 48, thickness: 23 }, { name: 'Wide', width: 68, height: 48, thickness: 26 }, { name: 'Tall', width: 47, height: 58, thickness: 22 }],
     batt: { mx: 14, my: 22, mt: 12, fill: 0.13 }, drainBase: 8, lifeScore: 5.8, lifeHours: 1, chipCost: 0.25, panelCost: 0, assembly: 3, capacity: 0.35, devCost: 0.6, memory: 0, special: 'smarts', specialLabel: 'Smart features',
-    labels: { perf: 'Sound quality', display: 'Noise cancelling' }, voice: { perf: 'audio', display: 'anc', camera: 'smarts' }, ioLabel: 'Smart features', extras: ['ip68', 'wireless'], hero: 'front',
+    labels: { perf: 'Sound quality', display: 'Noise cancelling' }, voice: { perf: 'audio', display: 'anc', camera: 'smarts' }, ioLabel: 'Smart features', extras: ['ip54', 'ip68', 'wireless'], hero: 'front',
     unlock: { cost: 1.5e6, needs: {}, from: ['phone', 'speaker'] },
   },
   tv: {
@@ -154,7 +154,7 @@ export const TYPES: Record<DeviceType, TypeSpec> = {
   foldable: {
     name: 'Foldable', plural: 'Foldables', series: 'Fold', width: [118, 172, 144], height: [138, 178, 156], maxThickness: 11, thickBase: -1.2, bezelScale: 1.4, dims: ['Width, open', 'Height', 'Thickness, open'], diag: [7.3, 8.7], weight: [245, 335], density: 0.5, sbrFloor: 0.72, thin: [0.8, 3],
     batt: { mx: 16, my: 26, mt: 3, fill: 0.27 }, drainBase: 13, lifeScore: 1.6, lifeHours: 0.5, chipCost: 1, panelCost: 1.5, assembly: 26, capacity: 1.5, devCost: 1.5, memory: 1, special: 'camera', specialLabel: 'Camera',
-    labels: { design: 'Design and hinge' }, voice: { design: 'fold' }, extras: ['nfc', 'stereo', 'ip68', 'wireless', 'sat'], hero: 'front',
+    labels: { design: 'Design and hinge' }, voice: { design: 'fold' }, extras: ['nfc', 'esim', 'stereo', 'haptics', 'ip54', 'ip68', 'wireless', 'reverse', 'face', 'uwb', 'mmwave', 'stylus', 'sat'], hero: 'front',
     unlock: { cost: 15e6, needs: { display: 5, materials: 4 }, from: ['phone', 'tablet'] },
   },
   // A headset: the body is the visor, and its "thickness" is the depth of the visor from front glass to face.
@@ -176,8 +176,40 @@ export const TYPES: Record<DeviceType, TypeSpec> = {
   handheld: {
     name: 'Handheld', plural: 'Handhelds', series: 'Play', width: [190, 310, 256], height: [84, 130, 106], maxThickness: 40, thickBase: 9, bezelScale: 1.6, flank: 44, oneShell: true, diag: [6.8, 8.6], weight: [360, 820], density: 0.52, sbrFloor: 0.36, thin: [2, 10],
     batt: { mx: 80, my: 24, mt: 9, fill: 0.1 }, drainBase: 30, chipDrain: 4, lifeScore: 2.2, lifeHours: 0.2, chipCost: 1.5, panelCost: 0.8, assembly: 24, capacity: 1.6, devCost: 1.5, memory: 1.5, input: 'controls', special: 'play', specialLabel: 'Controls and features',
-    voice: { camera: 'play' }, ioLabel: 'Ports and features', extras: [], hero: 'front',
+    voice: { camera: 'play' }, ioLabel: 'Ports and features', extras: ['jack', 'sd', 'haptics', 'vapor'], hero: 'front',
     unlock: { cost: 8e6, needs: { chipset: 3 }, from: ['console', 'phone', 'tablet'] },
+  },
+  // An e-reader: a light slab with a paper-like e-ink screen that draws power only when the page changes.
+  ereader: {
+    name: 'E-reader', plural: 'E-readers', series: 'Read', width: [100, 180, 126], height: [140, 240, 172], maxThickness: 12, thickBase: -1.5, bezelScale: 2.2, diag: [6.8, 8], weight: [165, 330], density: 0.5, sbrFloor: 0.5, thin: [0.8, 3.5],
+    batt: { mx: 12, my: 30, mt: 3.6, fill: 0.12 }, drainBase: 1.4, lifeScore: 0.2, lifeHours: 0.25, chipCost: 0.3, panelCost: 0.2, assembly: 8, capacity: 0.8, devCost: 0.6, memory: 0, special: 'reading', specialLabel: 'Reading features',
+    labels: { display: 'E-ink screen' }, voice: { display: 'eink', camera: 'reading' }, ioLabel: 'Reading features', extras: ['ip54', 'ip68', 'wireless', 'sd', 'stylus'], hero: 'front',
+    unlock: { cost: 3e6, needs: { display: 2 }, from: ['tablet', 'phone'] },
+  },
+  // A smart ring. Its "width" is the outer diameter, its "height" the width of the band along the finger and its
+  // "thickness" the thickness of the band. It has no screen and charges on a dock.
+  ring: {
+    name: 'Smart ring', plural: 'Smart rings', series: 'Ring', width: [18, 27, 22], height: [6, 11, 8], maxThickness: 4.5, thickBase: 0.6, thickScale: 0.25, bezelScale: 1, dims: ['Outer diameter', 'Band width', 'Band thickness'], oneShell: true, noScreen: true, diag: [0, 0], weight: [4, 9], density: 6, sbrFloor: 0, thin: [0.3, 1.6],
+    sizes: [{ name: 'Small', width: 19.5, height: 7, thickness: 2.4 }, { name: 'Medium', width: 22, height: 8, thickness: 2.5 }, { name: 'Large', width: 24.5, height: 8.5, thickness: 2.6 }, { name: 'Wide', width: 23, height: 10, thickness: 2.6 }],
+    batt: { mx: 0, my: 0, mt: 0, fill: 0.05 }, drainBase: 0.16, lifeScore: 0.5, lifeHours: 1, chipCost: 0.3, panelCost: 0, matCost: 0.7, assembly: 16, capacity: 0.3, devCost: 0.6, memory: 0, special: 'sensors', specialLabel: 'Sensors',
+    labels: { perf: 'Health insights', display: 'Comfort and fit' }, voice: { perf: 'insight', display: 'fit' }, ioLabel: 'Health sensors', extras: ['nfc', 'ip68', 'ip69', 'uwb'], hero: 'front',
+    unlock: { cost: 5e6, needs: { battery: 3, materials: 2 }, from: ['watch', 'earbuds'] },
+  },
+  // An action camera: a small rugged box. Its back carries the big lens (like a phone's), its front the rear screen.
+  actioncam: {
+    name: 'Action camera', plural: 'Action cameras', series: 'Action', width: [52, 80, 62], height: [38, 60, 44], maxThickness: 42, thickBase: 15.5, bezelScale: 1.6, diag: [1.9, 2.5], weight: [115, 200], density: 0.75, sbrFloor: 0.3, thin: [3, 14],
+    batt: { mx: 14, my: 8, mt: 12, fill: 0.2 }, drainBase: 60, lifeScore: 2.6, lifeHours: 0.06, chipCost: 0.9, panelCost: 1.3, assembly: 14, capacity: 0.8, devCost: 1, memory: 0, special: 'camera', specialLabel: 'Camera and stabilisation',
+    labels: { display: 'Screens' }, voice: { camera: 'rugged' }, ioLabel: 'Camera features', extras: ['ip68', 'ip69', 'sd'], hero: 'back',
+    unlock: { cost: 4e6, needs: { camera: 3 }, from: ['phone', 'drone'] },
+  },
+  // A folding camera drone. The body is the fuselage: width across, height, and "thickness" its length nose to tail.
+  // The arms, motors and propellers follow from its size. The front is the nose, where the gimbal camera hangs.
+  drone: {
+    name: 'Drone', plural: 'Drones', series: 'Air', width: [52, 120, 78], height: [34, 80, 46], maxThickness: 260, thickBase: 110, thickScale: 0, bezelScale: 1, dims: ['Body width', 'Body height', 'Body length'], oneShell: true, noScreen: true, diag: [0, 0], weight: [249, 950], density: 0.16, sbrFloor: 0, thin: [0, 0],
+    sizes: [{ name: 'Mini', width: 62, height: 38, thickness: 128 }, { name: 'Compact', width: 78, height: 46, thickness: 150 }, { name: 'Creator', width: 92, height: 56, thickness: 182 }, { name: 'Pro', width: 110, height: 70, thickness: 230 }],
+    batt: { mx: 18, my: 12, mt: 60, fill: 0.05 }, drainBase: 6, lifeScore: 1.4, lifeHours: 0.012, chipCost: 0.9, panelCost: 0, assembly: 26, capacity: 1.2, devCost: 1.4, memory: 0, special: 'flight', specialLabel: 'Camera and flight',
+    labels: { display: 'Video link' }, voice: { display: 'link', camera: 'flight' }, ioLabel: 'Flight features', extras: [], hero: 'front',
+    unlock: { cost: 12e6, needs: { camera: 4, battery: 3 }, from: ['actioncam', 'phone'] },
   },
 }
 
@@ -427,6 +459,60 @@ export const HANDHELD_IO: IoInfo[] = [
   { id: 'stream', name: 'Game streaming chip', cost: 9, level: 4, value: 0.7 },
   { id: 'egpu', name: 'External graphics port', cost: 9, level: 5, value: 0.8, size: [8.6, 2.8], face: 'top' },
 ]
+/** What an e-reader can do besides show a page. Values add up to its special score, like a watch's sensors. */
+export const READER_FEATURES: IoInfo[] = [
+  { id: 'light', name: 'Front light', cost: 1.5, level: 0, value: 24 },
+  { id: 'sync', name: 'Cloud library and sync', cost: 1, level: 0, value: 16 },
+  { id: 'warm', name: 'Warm-light adjustment', cost: 2, level: 0, value: 14 },
+  { id: 'pages', name: 'Page-turn buttons', cost: 1.5, level: 0, value: 12 },
+  { id: 'audio', name: 'Audiobooks over wireless', cost: 2, level: 1, value: 14 },
+  { id: 'stylus', name: 'Stylus and note-taking', cost: 9, level: 2, value: 24 },
+  { id: 'dict', name: 'Instant dictionary and translation', cost: 2, level: 3, value: 14 },
+  { id: 'colour', name: 'Colour e-ink layer', cost: 10, level: 4, value: 20 },
+  { id: 'ink', name: 'Handwriting to text', cost: 5, level: 5, value: 16 },
+  { id: 'assist', name: 'Reading assistant', cost: 6, level: 6, value: 18 },
+]
+/** A smart ring's sensors. Values add up to its special score. */
+export const RING_SENSORS: IoInfo[] = [
+  { id: 'heart', name: 'Heart rate', cost: 2, level: 0, value: 24 },
+  { id: 'sleep', name: 'Sleep staging', cost: 1, level: 0, value: 20 },
+  { id: 'temp', name: 'Skin temperature', cost: 3, level: 0, value: 16 },
+  { id: 'spo2', name: 'Blood oxygen', cost: 3, level: 1, value: 16 },
+  { id: 'pay', name: 'Tap-to-pay', cost: 3, level: 1, value: 14 },
+  { id: 'hrv', name: 'Stress and recovery', cost: 2, level: 2, value: 16 },
+  { id: 'ecg', name: 'ECG', cost: 5, level: 3, value: 18 },
+  { id: 'gesture', name: 'Gesture control', cost: 4, level: 4, value: 14 },
+  { id: 'bp', name: 'Blood pressure trend', cost: 9, level: 5, value: 18 },
+  { id: 'glucose', name: 'Glucose trend', cost: 20, level: 7, value: 30 },
+]
+/** An action camera always has its main lens, a rear screen and a charging door; these are the choices. */
+export const ACTIONCAM_IO: IoInfo[] = [
+  { id: 'front', name: 'Front selfie screen', cost: 6, level: 0, value: 1 },
+  { id: 'mount', name: 'Fold-out mounting fingers', cost: 1, level: 0, value: 0.6 },
+  { id: 'stab', name: 'Horizon-lock stabilisation', cost: 4, level: 1, value: 1.2 },
+  { id: 'voice', name: 'Voice control', cost: 1.5, level: 1, value: 0.5 },
+  { id: 'gps', name: 'GPS and telemetry', cost: 3, level: 2, value: 0.6 },
+  { id: 'live', name: 'Live streaming', cost: 3, level: 2, value: 0.7 },
+  { id: 'slomo', name: '8x slow motion', cost: 5, level: 3, value: 0.8 },
+  { id: 'mods', name: 'Swappable lens mods', cost: 8, level: 4, value: 0.8 },
+  { id: 'edit', name: 'Automatic editing', cost: 5, level: 5, value: 0.7 },
+]
+/** A drone always has its gimbal camera, four motors and a battery; these are the choices. */
+export const DRONE_IO: IoInfo[] = [
+  { id: 'gps', name: 'GPS and return-to-home', cost: 2, level: 0, value: 1 },
+  { id: 'fold', name: 'Folding arms', cost: 3, level: 0, value: 0.6 },
+  { id: 'avoid', name: 'Forward obstacle sensing', cost: 4, level: 0, value: 0.8 },
+  { id: 'gimbal', name: 'Three-axis gimbal', cost: 6, level: 1, value: 1.1 },
+  { id: 'track', name: 'Subject tracking', cost: 4, level: 2, value: 0.8 },
+  { id: 'omni', name: 'All-round obstacle sensing', cost: 8, level: 3, value: 0.9 },
+  { id: 'range', name: 'Long-range antennas', cost: 5, level: 3, value: 0.6 },
+  { id: 'swap', name: 'Hot-swap batteries', cost: 4, level: 4, value: 0.5 },
+  { id: 'lidar', name: 'Night-flight lidar', cost: 9, level: 5, value: 0.8 },
+]
+/** What an e-reader's display levels are, by Display level: generations of e-ink. */
+export const EINK_PANELS = ['E-ink Pearl', 'E-ink Carta', 'Carta 1200', 'Carta 1300', 'Kaleido colour', 'Gallery colour', 'Gallery 3', 'Video-rate e-ink', 'Holo-paper']
+/** What a drone's display levels are, by Display level: the video link to the pilot's screen. */
+export const VIDEO_LINKS = ['720p link, 2 km', '1080p link, 6 km', '2.7K link, 10 km', '4K link, 12 km', '4K HDR link, 15 km', '4K/120 link, 20 km', '6K link, 25 km', '8K link, mesh relay', 'Holo link']
 export const STRAPS = [
   { id: 'silicone', name: 'Silicone', cost: 2, premium: 0.4, level: 0 },
   { id: 'nylon', name: 'Woven nylon', cost: 4, premium: 0.55, level: 0 },
@@ -435,7 +521,7 @@ export const STRAPS = [
   { id: 'titanium', name: 'Titanium link', cost: 45, premium: 1, level: 3 },
 ]
 
-const IO_LISTS: Partial<Record<DeviceType, IoInfo[]>> = { laptop: PORTS, desktop: DESKTOP_PORTS, watch: SENSORS, console: CONSOLE_IO, tv: TV_IO, earbuds: BUD_FEATURES, headset: HEADSET_IO, speaker: SPEAKER_IO, handheld: HANDHELD_IO }
+const IO_LISTS: Partial<Record<DeviceType, IoInfo[]>> = { laptop: PORTS, desktop: DESKTOP_PORTS, watch: SENSORS, console: CONSOLE_IO, tv: TV_IO, earbuds: BUD_FEATURES, headset: HEADSET_IO, speaker: SPEAKER_IO, handheld: HANDHELD_IO, ereader: READER_FEATURES, ring: RING_SENSORS, actioncam: ACTIONCAM_IO, drone: DRONE_IO }
 /** The ports, sensors or features a device type chooses from. Empty for types with none. */
 export const ioOptions = (type: DeviceType): IoInfo[] => IO_LISTS[type] ?? []
 export const ioInfo = (type: DeviceType, id: string) => ioOptions(type).find((x) => x.id === id)
@@ -506,6 +592,22 @@ export const SEGMENTS: SegmentInfo[] = [
   { id: 'h-pocket', type: 'handheld', name: 'Pocket console', size: 7e6, priceRef: 290, sens: 1.8, expect: 0.66, weights: { perf: 0.16, display: 0.16, camera: 0.24, battery: 0.18, design: 0.12, brand: 0.14 } },
   { id: 'h-pc', type: 'handheld', name: 'Handheld gaming PC', size: 3.5e6, priceRef: 680, sens: 1.3, expect: 0.86, weights: { perf: 0.36, display: 0.2, camera: 0.16, battery: 0.14, design: 0.06, brand: 0.08 } },
   { id: 'h-elite', type: 'handheld', name: 'Premium handheld', size: 1.2e6, priceRef: 1050, sens: 0.9, expect: 0.94, weights: { perf: 0.32, display: 0.26, camera: 0.14, battery: 0.1, design: 0.1, brand: 0.08 } },
+
+  { id: 'r-basic', type: 'ereader', name: 'Everyday reader', size: 9e6, priceRef: 110, sens: 2, expect: 0.62, weights: { perf: 0.08, display: 0.24, camera: 0.18, battery: 0.24, design: 0.12, brand: 0.14 } },
+  { id: 'r-premium', type: 'ereader', name: 'Premium reader', size: 5e6, priceRef: 230, sens: 1.3, expect: 0.82, weights: { perf: 0.08, display: 0.28, camera: 0.22, battery: 0.14, design: 0.18, brand: 0.1 } },
+  { id: 'r-note', type: 'ereader', name: 'Note-taking reader', size: 2e6, priceRef: 420, sens: 1, expect: 0.9, weights: { perf: 0.16, display: 0.26, camera: 0.3, battery: 0.1, design: 0.1, brand: 0.08 } },
+
+  { id: 'ri-fit', type: 'ring', name: 'Fitness ring', size: 4e6, priceRef: 199, sens: 1.8, expect: 0.66, weights: { perf: 0.1, display: 0.14, camera: 0.3, battery: 0.26, design: 0.1, brand: 0.1 } },
+  { id: 'ri-health', type: 'ring', name: 'Health ring', size: 2.5e6, priceRef: 349, sens: 1.2, expect: 0.84, weights: { perf: 0.16, display: 0.12, camera: 0.36, battery: 0.16, design: 0.12, brand: 0.08 } },
+  { id: 'ri-lux', type: 'ring', name: 'Luxury ring', size: 0.8e6, priceRef: 650, sens: 0.8, expect: 0.9, weights: { perf: 0.08, display: 0.16, camera: 0.2, battery: 0.1, design: 0.36, brand: 0.1 } },
+
+  { id: 'a-sport', type: 'actioncam', name: 'Sports camera', size: 4e6, priceRef: 250, sens: 1.8, expect: 0.66, weights: { perf: 0.1, display: 0.1, camera: 0.38, battery: 0.2, design: 0.12, brand: 0.1 } },
+  { id: 'a-vlog', type: 'actioncam', name: 'Vlogging camera', size: 2.5e6, priceRef: 400, sens: 1.3, expect: 0.82, weights: { perf: 0.12, display: 0.2, camera: 0.36, battery: 0.14, design: 0.1, brand: 0.08 } },
+  { id: 'a-pro', type: 'actioncam', name: 'Pro action camera', size: 1e6, priceRef: 600, sens: 0.9, expect: 0.93, weights: { perf: 0.16, display: 0.12, camera: 0.46, battery: 0.12, design: 0.06, brand: 0.08 } },
+
+  { id: 'dr-mini', type: 'drone', name: 'Beginner drone', size: 4.5e6, priceRef: 380, sens: 1.8, expect: 0.66, weights: { perf: 0.1, display: 0.12, camera: 0.3, battery: 0.2, design: 0.18, brand: 0.1 } },
+  { id: 'dr-creator', type: 'drone', name: 'Creator drone', size: 2.5e6, priceRef: 950, sens: 1.2, expect: 0.84, weights: { perf: 0.12, display: 0.14, camera: 0.38, battery: 0.16, design: 0.1, brand: 0.1 } },
+  { id: 'dr-pro', type: 'drone', name: 'Cinema drone', size: 0.8e6, priceRef: 2100, sens: 0.8, expect: 0.93, weights: { perf: 0.14, display: 0.16, camera: 0.42, battery: 0.14, design: 0.06, brand: 0.08 } },
 ]
 export const segmentInfo = (id: SegmentId) => SEGMENTS.find((s) => s.id === id)!
 export const segmentsOf = (type: DeviceType) => SEGMENTS.filter((s) => s.type === type)
@@ -587,6 +689,20 @@ export const TIERS: Record<SegmentId, Tier> = {
   'h-pocket': { drop: 2, chipTier: 0, cams: 0, thick: 2, bezel: 2.2, matRank: 0, margin: 0.2, keyboard: 1, ioShare: 0.5, size: [0.3, 0.3] },
   'h-pc': { drop: 1, chipTier: 2, cams: 0, thick: 8, bezel: 1.5, matRank: 0, margin: 0.3, keyboard: 2, ioShare: 0.8, size: [0.6, 0.6] },
   'h-elite': { drop: 0, chipTier: 2, cams: 0, thick: 6, bezel: 1.1, matRank: 0.5, margin: 0.55, keyboard: 3, ioShare: 1, size: [0.75, 0.7] },
+  'r-basic': { drop: 2, chipTier: 0, cams: 0, thick: 1.8, bezel: 2, matRank: 0, margin: 0.3, ioShare: 0.4, size: [0.2, 0.2] },
+  'r-premium': { drop: 1, chipTier: 0, cams: 0, thick: 0.9, bezel: 1.6, matRank: 1, margin: 0.6, ioShare: 0.7, size: [0.32, 0.32] },
+  'r-note': { drop: 0, chipTier: 1, cams: 0, thick: 0.7, bezel: 1.3, matRank: 2, margin: 0.75, ioShare: 1, size: [0.75, 0.75] },
+  // for a ring, thick is added to the thinnest band the maker can make
+  'ri-fit': { drop: 2, chipTier: 0, cams: 0, thick: 0.5, bezel: 1, matRank: 0, margin: 0.6, ioShare: 0.5, size: [0.45, 0.35] },
+  'ri-health': { drop: 1, chipTier: 1, cams: 0, thick: 0.3, bezel: 1, matRank: 1, margin: 0.8, ioShare: 1, size: [0.45, 0.4] },
+  'ri-lux': { drop: 0, chipTier: 1, cams: 0, thick: 0.2, bezel: 1, matRank: 2, margin: 1.4, ioShare: 0.8, size: [0.45, 0.45] },
+  'a-sport': { drop: 2, chipTier: 0, cams: 1, thick: 4, bezel: 2.2, matRank: 0, margin: 0.4, ioShare: 0.45, size: [0.3, 0.3] },
+  'a-vlog': { drop: 1, chipTier: 1, cams: 1, thick: 3, bezel: 1.5, matRank: 1, margin: 0.5, ioShare: 0.8, size: [0.35, 0.35] },
+  'a-pro': { drop: 0, chipTier: 2, cams: 1, thick: 3, bezel: 1.3, matRank: 1, margin: 0.55, ioShare: 1, size: [0.45, 0.4] },
+  // for a drone, thick is the length of the body past the shortest one
+  'dr-mini': { drop: 2, chipTier: 0, cams: 1, thick: 18, bezel: 1, matRank: 0, margin: 0.3, ioShare: 0.5, size: [0.15, 0.1] },
+  'dr-creator': { drop: 1, chipTier: 1, cams: 1, thick: 48, bezel: 1, matRank: 0, margin: 0.4, ioShare: 0.85, size: [0.4, 0.3] },
+  'dr-pro': { drop: 0, chipTier: 2, cams: 1, thick: 110, bezel: 1, matRank: 1, margin: 0.5, ioShare: 1, size: [0.8, 0.75] },
 }
 
 export const OUTLETS: { name: string; weights: SubScores; value: number }[] = [
@@ -614,20 +730,20 @@ export interface RivalSeed {
 // Parody companies. Names are stored in the save and can be edited in System.
 // Old saves find these by position, so new companies are only ever added at the end.
 export const RIVALS: RivalSeed[] = [
-  { name: 'Pear', color: '#c9ccd1', brand: 0.92, awareness: 0.95, techOffset: 0.4, priceMult: 1.2, software: 0.06, segments: ['flagship', 'mainstream', 't-main', 't-pro', 'w-smart', 'w-lux', 'l-ultra', 'l-pro', 'd-home', 'd-studio', 'e-anc', 'v-pro', 's-hifi'], layout: 1, palette: ['#3b3d42', '#e8e4dc', '#5b6470', '#c8b89a'], series: { flagship: 'pPhone Pro', mainstream: 'pPhone', 't-main': 'pPad', 't-pro': 'pPad Pro', 'w-smart': 'pWatch', 'w-lux': 'pWatch Edition', 'l-ultra': 'PearBook Air', 'l-pro': 'PearBook Pro', 'd-home': 'pMac', 'd-studio': 'pMac Studio', 'e-anc': 'pPods Pro', 'v-pro': 'Reverie', 's-hifi': 'Chorale' }, counter: 18 },
-  { name: 'Samsong', color: '#3d7be0', brand: 0.82, awareness: 0.95, techOffset: 0.3, priceMult: 1.05, software: 0.01, segments: ['budget', 'mainstream', 'flagship', 'camera', 't-budget', 't-main', 'w-smart', 'l-ultra', 'tv-budget', 'tv-home', 'tv-cinema', 'e-anc', 'f-value', 'f-flag', 'v-mixed'], layout: 4, palette: ['#1c1f26', '#b9c7d8', '#d9d3e6', '#2e4a3c'], series: { budget: 'Cosmos A', mainstream: 'Cosmos FE', flagship: 'Cosmos S', camera: 'Cosmos Ultra', 't-budget': 'Cosmos Tab A', 't-main': 'Cosmos Tab S', 'w-smart': 'Cosmos Watch', 'l-ultra': 'Cosmos Book', 'tv-budget': 'Cosmos Crystal', 'tv-home': 'Cosmos Vision', 'tv-cinema': 'Cosmos Neo', 'e-anc': 'Cosmos Buds', 'f-value': 'Twinleaf', 'f-flag': 'Diptych', 'v-mixed': 'Farsight' }, counter: 26 },
-  { name: 'Xiaomy', color: '#f0802a', brand: 0.6, awareness: 0.8, techOffset: 0, priceMult: 0.85, software: -0.01, segments: ['budget', 'mainstream', 'gamer', 't-budget', 'w-fit', 'tv-budget', 'e-budget', 'f-value', 's-mini'], layout: 2, palette: ['#14161a', '#3a5f8a', '#e9e9e9', '#2a6e58'], series: { budget: 'Redmo', mainstream: 'Mi Note', gamer: 'Poko F', 't-budget': 'Redmo Pad', 'w-fit': 'Mi Band', 'tv-budget': 'Mi Vision', 'e-budget': 'Redmo Buds', 'f-value': 'Twofold', 's-mini': 'Murmur' }, counter: 15 },
+  { name: 'Pear', color: '#c9ccd1', brand: 0.92, awareness: 0.95, techOffset: 0.4, priceMult: 1.2, software: 0.06, segments: ['flagship', 'mainstream', 't-main', 't-pro', 'w-smart', 'w-lux', 'l-ultra', 'l-pro', 'd-home', 'd-studio', 'e-anc', 'v-pro', 's-hifi', 'ri-lux'], layout: 1, palette: ['#3b3d42', '#e8e4dc', '#5b6470', '#c8b89a'], series: { flagship: 'pPhone Pro', mainstream: 'pPhone', 't-main': 'pPad', 't-pro': 'pPad Pro', 'w-smart': 'pWatch', 'w-lux': 'pWatch Edition', 'l-ultra': 'PearBook Air', 'l-pro': 'PearBook Pro', 'd-home': 'pMac', 'd-studio': 'pMac Studio', 'e-anc': 'pPods Pro', 'v-pro': 'Reverie', 's-hifi': 'Chorale', 'ri-lux': 'pRing' }, counter: 18 },
+  { name: 'Samsong', color: '#3d7be0', brand: 0.82, awareness: 0.95, techOffset: 0.3, priceMult: 1.05, software: 0.01, segments: ['budget', 'mainstream', 'flagship', 'camera', 't-budget', 't-main', 'w-smart', 'l-ultra', 'tv-budget', 'tv-home', 'tv-cinema', 'e-anc', 'f-value', 'f-flag', 'v-mixed', 'ri-health'], layout: 4, palette: ['#1c1f26', '#b9c7d8', '#d9d3e6', '#2e4a3c'], series: { budget: 'Cosmos A', mainstream: 'Cosmos FE', flagship: 'Cosmos S', camera: 'Cosmos Ultra', 't-budget': 'Cosmos Tab A', 't-main': 'Cosmos Tab S', 'w-smart': 'Cosmos Watch', 'l-ultra': 'Cosmos Book', 'tv-budget': 'Cosmos Crystal', 'tv-home': 'Cosmos Vision', 'tv-cinema': 'Cosmos Neo', 'e-anc': 'Cosmos Buds', 'f-value': 'Twinleaf', 'f-flag': 'Diptych', 'v-mixed': 'Farsight', 'ri-health': 'Cosmos Ring' }, counter: 26 },
+  { name: 'Xiaomy', color: '#f0802a', brand: 0.6, awareness: 0.8, techOffset: 0, priceMult: 0.85, software: -0.01, segments: ['budget', 'mainstream', 'gamer', 't-budget', 'w-fit', 'tv-budget', 'e-budget', 'f-value', 's-mini', 'r-basic', 'ri-fit', 'a-sport', 'dr-mini'], layout: 2, palette: ['#14161a', '#3a5f8a', '#e9e9e9', '#2a6e58'], series: { budget: 'Redmo', mainstream: 'Mi Note', gamer: 'Poko F', 't-budget': 'Redmo Pad', 'w-fit': 'Mi Band', 'tv-budget': 'Mi Vision', 'e-budget': 'Redmo Buds', 'f-value': 'Twofold', 's-mini': 'Murmur', 'r-basic': 'Mi Reader', 'ri-fit': 'Mi Ring', 'a-sport': 'Yi Action', 'dr-mini': 'Mi Drone' }, counter: 15 },
   { name: 'Gooble', color: '#35b06a', brand: 0.75, awareness: 0.7, techOffset: 0.2, priceMult: 1, software: 0.04, segments: ['camera', 'mainstream', 't-main', 'w-smart', 'e-anc', 'f-flag', 'v-mixed', 's-mini', 's-screen'], layout: 3, palette: ['#e6e1d6', '#22262b', '#9fb6a5', '#d9a7a0'], series: { camera: 'Pixl Pro', mainstream: 'Pixl a', 't-main': 'Pixl Tablet', 'w-smart': 'Pixl Watch', 'e-anc': 'Pixl Buds', 'f-flag': 'Gatefold', 'v-mixed': 'Overlook', 's-mini': 'Lantern Mini', 's-screen': 'Lantern View' }, counter: 11 },
   { name: 'OnePlum', color: '#e0403c', brand: 0.65, awareness: 0.55, techOffset: 0, priceMult: 0.9, software: 0.01, segments: ['mainstream', 'gamer', 'e-budget', 'f-value'], layout: 2, palette: ['#16181c', '#2c5a4a', '#c9c9cc'], series: { mainstream: 'Nord', gamer: 'Plum R', 'e-budget': 'Plum Buds', 'f-value': 'Unfurl' }, counter: 14 },
-  { name: 'Nokai', color: '#2f5fb5', brand: 0.55, awareness: 0.7, techOffset: -0.8, priceMult: 0.9, software: 0, segments: ['budget', 'business', 't-budget'], layout: 0, palette: ['#20242b', '#39506b', '#6b7078'], series: { budget: 'Brick G', business: 'Brick X', 't-budget': 'Brick Tab' }, counter: 40 },
-  { name: 'Sonny', color: '#8a8f98', brand: 0.7, awareness: 0.6, techOffset: 0, priceMult: 1.15, software: 0, segments: ['camera', 'flagship', 'c-core', 'c-elite', 'tv-home', 'tv-cinema', 'e-hifi', 'v-play', 's-hifi'], layout: 0, palette: ['#111214', '#3d4a3f', '#bfc2c7'], series: { camera: 'Xperion Pro', flagship: 'Xperion 1 Mk', 'c-core': 'PlayStadium', 'c-elite': 'PlayStadium Pro', 'tv-home': 'Braviato', 'tv-cinema': 'Braviato Master', 'e-hifi': 'WF Mk', 'v-play': 'Arcadia', 's-hifi': 'Timbre' }, counter: 7 },
+  { name: 'Nokai', color: '#2f5fb5', brand: 0.55, awareness: 0.7, techOffset: -0.8, priceMult: 0.9, software: 0, segments: ['budget', 'business', 't-budget', 'r-basic'], layout: 0, palette: ['#20242b', '#39506b', '#6b7078'], series: { budget: 'Brick G', business: 'Brick X', 't-budget': 'Brick Tab', 'r-basic': 'Brick Read' }, counter: 40 },
+  { name: 'Sonny', color: '#8a8f98', brand: 0.7, awareness: 0.6, techOffset: 0, priceMult: 1.15, software: 0, segments: ['camera', 'flagship', 'c-core', 'c-elite', 'tv-home', 'tv-cinema', 'e-hifi', 'v-play', 's-hifi', 'a-vlog', 'a-pro', 'dr-pro'], layout: 0, palette: ['#111214', '#3d4a3f', '#bfc2c7'], series: { camera: 'Xperion Pro', flagship: 'Xperion 1 Mk', 'c-core': 'PlayStadium', 'c-elite': 'PlayStadium Pro', 'tv-home': 'Braviato', 'tv-cinema': 'Braviato Master', 'e-hifi': 'WF Mk', 'v-play': 'Arcadia', 's-hifi': 'Timbre', 'a-vlog': 'Vlog ZV', 'a-pro': 'Action Mk', 'dr-pro': 'Airpique' }, counter: 7 },
   { name: 'Azus', color: '#d43a5a', brand: 0.62, awareness: 0.5, techOffset: 0.1, priceMult: 1, software: 0, segments: ['gamer', 'l-game', 'l-budget', 'c-elite', 'v-play', 'h-pc', 'h-elite'], layout: 3, palette: ['#0f1012', '#2a2d33', '#e6e6e8'], series: { gamer: 'ROC Phone', 'l-game': 'ROC Strike', 'l-budget': 'VivoBuk', 'c-elite': 'ROC Station', 'v-play': 'Squall', 'h-pc': 'Warden', 'h-elite': 'Warden X' }, counter: 10 },
   { name: 'BlockBerry', color: '#6c7a89', brand: 0.6, awareness: 0.5, techOffset: -0.4, priceMult: 1.05, software: 0.02, segments: ['business', 'f-work'], layout: 0, palette: ['#101114', '#2b2f36', '#4a3b2c'], series: { business: 'Key', 'f-work': 'Dossier' }, counter: 4 },
-  { name: 'Lenova', color: '#c8553d', brand: 0.68, awareness: 0.75, techOffset: 0, priceMult: 0.95, software: 0, segments: ['l-budget', 'l-ultra', 'l-pro', 't-budget', 'd-home', 'd-office', 'f-work', 'v-mixed', 's-screen', 'h-pc'], layout: 0, palette: ['#17181b', '#3a3d42', '#9da2a8'], series: { 'l-budget': 'IdeaPod', 'l-ultra': 'ThinkPod X', 'l-pro': 'ThinkPod P', 't-budget': 'Tab M', 'd-home': 'IdeaCentro', 'd-office': 'ThinkCentro', 'f-work': 'Docket', 'v-mixed': 'Wideview', 's-screen': 'Mantel', 'h-pc': 'Stride' }, counter: 9 },
+  { name: 'Lenova', color: '#c8553d', brand: 0.68, awareness: 0.75, techOffset: 0, priceMult: 0.95, software: 0, segments: ['l-budget', 'l-ultra', 'l-pro', 't-budget', 'd-home', 'd-office', 'f-work', 'v-mixed', 's-screen', 'h-pc', 'r-premium', 'r-note'], layout: 0, palette: ['#17181b', '#3a3d42', '#9da2a8'], series: { 'l-budget': 'IdeaPod', 'l-ultra': 'ThinkPod X', 'l-pro': 'ThinkPod P', 't-budget': 'Tab M', 'd-home': 'IdeaCentro', 'd-office': 'ThinkCentro', 'f-work': 'Docket', 'v-mixed': 'Wideview', 's-screen': 'Mantel', 'h-pc': 'Stride', 'r-premium': 'Pagebook', 'r-note': 'Inkpad' }, counter: 9 },
   { name: 'Dull', color: '#4a90c2', brand: 0.66, awareness: 0.75, techOffset: 0, priceMult: 1, software: 0, segments: ['l-budget', 'l-ultra', 'l-game', 'd-office', 'd-studio', 'h-pc'], layout: 0, palette: ['#c9ccd1', '#1b1d21', '#4b5563'], series: { 'l-budget': 'Inspira', 'l-ultra': 'XPZ', 'l-game': 'Alienwear', 'd-office': 'OptiPlux', 'd-studio': 'XPZ Studio', 'h-pc': 'Gridline' }, counter: 15 },
   { name: 'HB', color: '#5b8def', brand: 0.62, awareness: 0.72, techOffset: -0.2, priceMult: 0.95, software: 0, segments: ['l-budget', 'l-ultra', 'l-pro', 'd-home', 'd-office', 'f-work'], layout: 0, palette: ['#d5d7da', '#2a2c30', '#8a6a4a'], series: { 'l-budget': 'Pavilon', 'l-ultra': 'Spectra', 'l-pro': 'ZBuk', 'd-home': 'Pavilon One', 'd-office': 'EliteUno', 'f-work': 'Briefcase' }, counter: 16 },
-  { name: 'Fitbyte', color: '#2bb3a3', brand: 0.62, awareness: 0.6, techOffset: -0.3, priceMult: 0.9, software: 0, segments: ['w-fit', 'w-smart'], layout: 0, palette: ['#17191d', '#d8d8dc', '#3f5870', '#c98a8a'], series: { 'w-fit': 'Charge', 'w-smart': 'Versa' }, counter: 7 },
-  { name: 'Garmon', color: '#7a8c3a', brand: 0.74, awareness: 0.5, techOffset: 0, priceMult: 1.15, software: 0.01, segments: ['w-fit', 'w-lux'], layout: 0, palette: ['#121314', '#4a4f3a', '#8c8f94'], series: { 'w-fit': 'Venu', 'w-lux': 'Fenyx' }, counter: 8 },
+  { name: 'Fitbyte', color: '#2bb3a3', brand: 0.62, awareness: 0.6, techOffset: -0.3, priceMult: 0.9, software: 0, segments: ['w-fit', 'w-smart', 'ri-fit'], layout: 0, palette: ['#17191d', '#d8d8dc', '#3f5870', '#c98a8a'], series: { 'w-fit': 'Charge', 'w-smart': 'Versa', 'ri-fit': 'Charge Ring' }, counter: 7 },
+  { name: 'Garmon', color: '#7a8c3a', brand: 0.74, awareness: 0.5, techOffset: 0, priceMult: 1.15, software: 0.01, segments: ['w-fit', 'w-lux', 'ri-health', 'ri-lux', 'a-sport'], layout: 0, palette: ['#121314', '#4a4f3a', '#8c8f94'], series: { 'w-fit': 'Venu', 'w-lux': 'Fenyx', 'ri-health': 'Index Ring', 'ri-lux': 'Fenyx Ring', 'a-sport': 'Virbo' }, counter: 8 },
   { name: 'Microsoff', color: '#6fae2e', brand: 0.8, awareness: 0.9, techOffset: 0.2, priceMult: 1, software: 0.03, segments: ['c-family', 'c-core', 'c-elite', 'd-studio', 'v-pro', 'h-elite'], layout: 0, palette: ['#101113', '#e4e5e7', '#1f3d2b'], series: { 'c-family': 'Xbocks S', 'c-core': 'Xbocks', 'c-elite': 'Xbocks Elite', 'd-studio': 'Surfboard Studio', 'v-pro': 'Trellis', 'h-elite': 'Vanguard' }, counter: 5 },
   { name: 'Nintendont', color: '#d8262c', brand: 0.88, awareness: 0.9, techOffset: -0.7, priceMult: 1, software: 0.06, segments: ['c-family', 'h-pocket'], layout: 0, palette: ['#e6e6e6', '#c9302c', '#2a5fb0'], series: { 'c-family': 'Swap', 'h-pocket': 'Pocketeer' }, counter: 2 },
   { name: 'Segga', color: '#2a6fd6', brand: 0.55, awareness: 0.5, techOffset: -0.2, priceMult: 0.9, software: 0, segments: ['c-family', 'c-core', 'h-pocket'], layout: 0, palette: ['#16181c', '#d9dadc', '#24447a'], series: { 'c-family': 'Dreamcatch', 'c-core': 'Saturnine', 'h-pocket': 'Rambler' }, counter: 3 },
@@ -642,4 +758,10 @@ export const RIVALS: RivalSeed[] = [
   { name: 'Orrery', color: '#3fa7a0', brand: 0.62, awareness: 0.45, techOffset: 0.3, priceMult: 1.05, software: 0.03, segments: ['v-play', 'v-mixed', 'v-pro'], layout: 0, palette: ['#e6e4de', '#1c1e22', '#5b6470'], series: { 'v-play': 'Orbit', 'v-mixed': 'Equinox', 'v-pro': 'Solstice' }, counter: 2 },
   { name: 'Marram', color: '#b7a57a', brand: 0.62, awareness: 0.55, techOffset: 0, priceMult: 0.95, software: 0.02, segments: ['s-mini', 's-screen', 's-hifi'], layout: 0, palette: ['#8a8f8a', '#2a2d31', '#c9bfae', '#5a6b7a'], series: { 's-mini': 'Shore Mini', 's-screen': 'Shore View', 's-hifi': 'Shore Tower' }, counter: 4 },
   { name: 'Tarnwick', color: '#c4583c', brand: 0.6, awareness: 0.5, techOffset: 0.1, priceMult: 0.95, software: 0.02, segments: ['h-pocket', 'h-pc', 'h-elite'], layout: 0, palette: ['#17191d', '#e4e5e7', '#34506e'], series: { 'h-pocket': 'Kite', 'h-pc': 'Harrier', 'h-elite': 'Harrier Max' }, counter: 3 },
+  // specialists in e-readers, smart rings, action cameras and drones. The names of these five and of their lines are invented.
+  { name: 'Folio', color: '#d2a24c', brand: 0.74, awareness: 0.65, techOffset: 0.1, priceMult: 0.95, software: 0.04, segments: ['r-basic', 'r-premium', 'r-note'], layout: 0, palette: ['#1d1f23', '#e6e1d6', '#3c4a5a', '#5b4636'], series: { 'r-basic': 'Leaf', 'r-premium': 'Leaf Prime', 'r-note': 'Leaf Scribe' }, counter: 6 },
+  { name: 'Signet', color: '#9a8fbf', brand: 0.64, awareness: 0.45, techOffset: 0.2, priceMult: 1.05, software: 0.03, segments: ['ri-fit', 'ri-health', 'ri-lux'], layout: 0, palette: ['#2a2c30', '#bfc3c8', '#c9a86a', '#8a8f96'], series: { 'ri-fit': 'Band', 'ri-health': 'Vital', 'ri-lux': 'Aurum' }, counter: 3 },
+  { name: 'Talus', color: '#3d9be0', brand: 0.72, awareness: 0.6, techOffset: 0.1, priceMult: 1, software: 0.02, segments: ['a-sport', 'a-vlog', 'a-pro', 'dr-creator'], layout: 0, palette: ['#17191c', '#2b2e33', '#d9dadc'], series: { 'a-sport': 'Scree', 'a-vlog': 'Scree Vlog', 'a-pro': 'Scree Black', 'dr-creator': 'Gull' }, counter: 9 },
+  { name: 'Kestrel', color: '#d06a3a', brand: 0.6, awareness: 0.45, techOffset: 0, priceMult: 0.9, software: 0.01, segments: ['dr-mini', 'dr-creator', 'dr-pro'], layout: 0, palette: ['#4b5056', '#e4e5e7', '#2a2d31'], series: { 'dr-mini': 'Wisp', 'dr-creator': 'Hover', 'dr-pro': 'Stoop' }, counter: 4 },
+  { name: 'Skyloft', color: '#8fa3b8', brand: 0.82, awareness: 0.7, techOffset: 0.3, priceMult: 1.05, software: 0.03, segments: ['dr-mini', 'dr-creator', 'dr-pro', 'a-vlog', 'a-pro'], layout: 0, palette: ['#5d6268', '#d4d6d9', '#2a2c30'], series: { 'dr-mini': 'Mote', 'dr-creator': 'Aloft', 'dr-pro': 'Zenith', 'a-vlog': 'Pocketcam', 'a-pro': 'Rugged' }, counter: 5 },
 ]

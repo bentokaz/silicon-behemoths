@@ -1,8 +1,8 @@
 // Turns a DeviceDesign into raw sub-scores, a design report derived from the
 // physical model, and a unit cost. No randomness: same design, same result.
 import { CHARGE_W, EXTRAS, LENSES, MIN_BEZEL, MIN_THICKNESS, PANEL_NAMES, REFRESH, batteryDensity, chipInfo, featuresAtLevels, idealRam, idealStorage, materialInfo, panelInfo, refScore, sensorInfo } from '../data/catalog'
-import { ANC, COOLERS, DRIVERS, FLIP, GPUS, HEADSET_PANELS, HINGES, MIC_ARRAYS, OPTICS, SPEAKERS, SPEAKER_DRIVERS, STRAPS, TYPES, VIDEO_OUT, headStrap, inputOptions, ioInfo, standInfo } from '../data/devices'
-import { contains, coverScreen, isCoverCam, isEdge, isFlip, isRing, rectsOverlap, screenRect, speakerShape, speakerSockets, standMount } from './geometry'
+import { ANC, COOLERS, DRIVERS, FLIP, GPUS, HEADSET_PANELS, HINGES, MIC_ARRAYS, OPTICS, SPEAKERS, SPEAKER_DRIVERS, STRAPS, TYPES, VIDEO_OUT, EINK_PANELS, VIDEO_LINKS, headStrap, inputOptions, ioInfo, standInfo } from '../data/devices'
+import { contains, coverScreen, isCoverCam, isEdge, isFlip, isRing, notchStyle, rectsOverlap, screenRect, speakerShape, speakerSockets, standMount } from './geometry'
 import { clamp } from './rng'
 import type { Body, CostParts, CustomChip, DeviceDesign, DeviceType, Evaluation, Issue, Levels, PlacedPart, Specs } from './types'
 
@@ -23,7 +23,8 @@ export function minThickness(type: DeviceType, designLevel: number, specs?: Spec
   const T = TYPES[type]
   // a graphics card needs room behind the board, and a headset's lenses need their focal length in front of the eye
   const extra = (T.gpu ? GPUS[specs?.gpu ?? 0].thick : 0) + (type === 'headset' ? (OPTICS[specs?.optics ?? 0] ?? OPTICS[0]).depth : 0)
-  return Math.max(3.5, MIN_THICKNESS[designLevel] * (T.thickScale ?? 1) + T.thickBase) + extra
+  // a ring's band is the one body thinner than a phone's thinnest
+  return Math.max(type === 'ring' ? 1.4 : 3.5, MIN_THICKNESS[designLevel] * (T.thickScale ?? 1) + T.thickBase) + extra
 }
 
 /** A foldable shut: both halves and the gap its hinge leaves between them, mm. */
@@ -35,19 +36,31 @@ export function maxBattery(b: Body, batteryLevel: number, type: DeviceType = 'ph
   const m = type === 'foldable' && isFlip(b) ? { ...TYPES[type].batt, mx: 8, my: 34 } : TYPES[type].batt
   // a headset with a battery on the back of its band has half as much room again
   const room = type === 'headset' && b.strap === 'pack' ? 1.5 : 1
-  const vol = (Math.max(0, b.width - m.mx) * Math.max(0, b.height - m.my) * Math.max(0, b.thickness - m.mt) * room) / 1000
-  const cap = Math.floor((vol * m.fill * batteryDensity(batteryLevel)) / 50) * 50
+  // a ring's cell is curved round inside its band, the length of the band's middle circle
+  const vol = type === 'ring' ? (Math.PI * Math.max(0, b.width - b.thickness) * b.thickness * b.height) / 1000 : (Math.max(0, b.width - m.mx) * Math.max(0, b.height - m.my) * Math.max(0, b.thickness - m.mt) * room) / 1000
+  const step = batteryStep(type)
+  const cap = Math.floor((vol * m.fill * batteryDensity(batteryLevel)) / step) * step
   // laptops stop at about 100 Wh, the most that may be carried on a flight
   return type === 'laptop' ? Math.min(cap, LAPTOP_BATTERY_CAP) : cap
 }
 export const LAPTOP_BATTERY_CAP = 26000
+/** What a battery's life is called for the device type, and how it reads: a drone's in minutes of flight, a ring's in days. */
+export function lifeLabel(type: DeviceType, hours: number): { name: string; value: string } {
+  if (type === 'drone') return { name: 'Flight time', value: `${Math.round(hours * 60)} min` }
+  if (type === 'ring') return { name: 'Battery life', value: `${(hours / 24).toFixed(1)} days` }
+  if (type === 'ereader') return { name: 'Reading time', value: `${Math.round(hours)} h, about ${Math.round(hours / 7)} weeks` }
+  if (type === 'actioncam') return { name: 'Recording time', value: `${Math.round(hours * 60)} min` }
+  return { name: type === 'earbuds' ? 'Listening, with case' : 'Battery life', value: `${hours.toFixed(1)} h` }
+}
+/** The steps a battery's capacity is chosen in: a ring's cell holds a few dozen mAh. */
+export const batteryStep = (type: DeviceType) => (type === 'ring' ? 1 : 50)
 
 /** Battery capacity the way it is quoted for the device type. */
 export const batteryLabel = (type: DeviceType, mah: number) => (type === 'laptop' ? `${Math.round((mah * 3.85) / 1000)} Wh` : `${mah} mAh`)
 /** Charging power in watts. An earbud case charges at a tenth of what a phone does. */
-export const chargeWatts = (type: DeviceType, level: number) => (type === 'earbuds' ? CHARGE_W[level] / 10 : CHARGE_W[level])
+export const chargeWatts = (type: DeviceType, level: number) => (type === 'earbuds' ? CHARGE_W[level] / 10 : type === 'ring' ? CHARGE_W[level] / 20 : CHARGE_W[level])
 /** Name of a display level: a panel, or for a console what its video output can drive. */
-export const panelName = (type: DeviceType, level: number) => (type === 'console' ? VIDEO_OUT[level] : PANEL_NAMES[level])
+export const panelName = (type: DeviceType, level: number) => (type === 'console' ? VIDEO_OUT[level] : type === 'ereader' ? EINK_PANELS[level] : type === 'drone' ? VIDEO_LINKS[level] : PANEL_NAMES[level])
 
 /** Screen-to-body ratio a top design at this level is expected to reach. */
 function targetSbr(type: DeviceType, level: number): number {
@@ -112,10 +125,14 @@ export function deviceWeight(d: DeviceDesign): number {
   if (d.type === 'foldable') w += (HINGES[d.specs.hinge ?? 0] ?? HINGES[0]).weight
   if (d.type === 'headset') w += (OPTICS[d.specs.optics ?? 0] ?? OPTICS[0]).weight + headStrap(b.strap).weight
   if (d.type === 'speaker') w += (SPEAKER_DRIVERS[d.specs.driver ?? 0] ?? SPEAKER_DRIVERS[0]).weight
+  if (d.type === 'drone') w += droneMotors(b)
   return w
 }
 
-export type WeightKey = 'battery' | 'frame' | 'back' | 'display' | 'works' | 'gpu' | 'stand' | 'buds' | 'hinge' | 'optics' | 'strap' | 'driver'
+/** Grams of a drone's four arms, motors and propellers, which grow with the length of its body. */
+export const droneMotors = (b: Body) => 4 * (3 + 0.035 * b.thickness + 0.0002 * b.thickness * b.thickness)
+
+export type WeightKey = 'battery' | 'frame' | 'back' | 'display' | 'works' | 'gpu' | 'stand' | 'buds' | 'hinge' | 'optics' | 'strap' | 'driver' | 'motors'
 
 /**
  * The same sum as deviceWeight(), term by term: what the cells, the frame, the back, the display and everything
@@ -140,6 +157,7 @@ export function weightParts(d: DeviceDesign): { key: WeightKey; label: string; g
   if (d.type === 'foldable') out.push({ key: 'hinge', label: 'Hinge', grams: (HINGES[d.specs.hinge ?? 0] ?? HINGES[0]).weight })
   if (d.type === 'headset') out.push({ key: 'optics', label: 'Lenses', grams: (OPTICS[d.specs.optics ?? 0] ?? OPTICS[0]).weight }, { key: 'strap', label: 'Head strap', grams: headStrap(b.strap).weight })
   if (d.type === 'speaker') out.push({ key: 'driver', label: 'Drivers', grams: (SPEAKER_DRIVERS[d.specs.driver ?? 0] ?? SPEAKER_DRIVERS[0]).weight })
+  if (d.type === 'drone') out.push({ key: 'motors', label: 'Arms, motors and propellers', grams: droneMotors(b) })
   return out
 }
 
@@ -194,9 +212,10 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
   const areaCm2 = hasScreen ? (scr.w * scr.h + (cover ? cover.w * cover.h : 0)) / 100 : type === 'headset' ? HEADSET_PANELS : spk?.screen ? (spk.screen.w * spk.screen.h * (spk.form === 'orb' ? Math.PI / 4 : 1)) / 100 : 0
   const diag = hasScreen ? Math.hypot(scr.w, scr.h) / 25.4 : spk?.screen ? (spk.form === 'orb' ? spk.screen.w : Math.hypot(spk.screen.w, spk.screen.h)) / 25.4 : 0
   // a display level only matters to a device that shows a picture
-  const shows = type !== 'earbuds' && (type !== 'speaker' || !!spk?.screen)
+  const shows = type !== 'earbuds' && type !== 'ring' && (type !== 'speaker' || !!spk?.screen)
   const panel = panelInfo(s.panel)
-  const rf = REFRESH.find((r) => r.hz === s.refresh) ?? REFRESH[0]
+  // e-ink, a drone's video link and a ring have no refresh rate to choose
+  const rf = type === 'ereader' || type === 'drone' || type === 'ring' ? REFRESH[0] : (REFRESH.find((r) => r.hz === s.refresh) ?? REFRESH[0])
   const chip = chipFor(s, chips)
   const frame = materialInfo(b.frameMat)
   const back = materialInfo(b.backMat)
@@ -207,7 +226,7 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
 
   // ---- tech locks and physical limits
   if (s.customChip && !chip.custom) err('The chosen in-house chip is not ready')
-  if (s.panel > lv.display && (shows || type === 'earbuds')) err(type === 'console' ? `${VIDEO_OUT[s.panel]} output needs Display level ${s.panel}` : shows ? `${panel.name} ${type === 'headset' ? 'displays need' : 'panel needs'} Display level ${s.panel}` : `This design needs Display level ${s.panel}`)
+  if (s.panel > lv.display && (shows || type === 'earbuds')) err(type === 'console' ? `${VIDEO_OUT[s.panel]} output needs Display level ${s.panel}` : shows ? `${panelName(type, s.panel)} ${type === 'headset' ? 'displays need' : type === 'drone' ? 'needs' : 'panel needs'} Display level ${s.panel}` : `This design needs Display level ${s.panel}`)
   if (rf.feat && !owned.has(rf.feat) && shows) err(`${rf.hz} Hz refresh is not researched yet`)
   if (!chip.custom && s.chipGen > lv.chipset) err(`${chip.name} needs Chipset level ${s.chipGen}`)
   if (s.charging > lv.charging) err(`${chargeWatts(type, s.charging)} W charging needs Charging level ${s.charging}`)
@@ -216,6 +235,8 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
   for (const id of s.extras) {
     const ex = EXTRAS.find((e) => e.id === id)
     if (ex && !owned.has(ex.id)) err(`${ex.name} is not researched yet`)
+    if (ex?.needs && !s.extras.includes(ex.needs)) err(`${ex.name} needs ${EXTRAS.find((e) => e.id === ex.needs)?.name ?? ex.needs}`)
+    if (ex?.group && s.extras.some((o) => o !== id && EXTRAS.find((e) => e.id === o)?.group === ex.group) && s.extras.indexOf(id) === s.extras.findIndex((o) => EXTRAS.find((e) => e.id === o)?.group === ex.group)) warn('Only one water resistance grade counts: keep the one you want')
   }
   const minBez = minBezel(type, lv.design)
   if (hasScreen && Math.min(b.bezelSide - flank, b.bezelTop, b.bezelBottom) < minBez - 1e-6) err(flank && b.bezelSide < flank ? `The controls need ${flank} mm either side of the screen` : `Bezels below ${minBez} mm need better Industrial design`)
@@ -244,7 +265,8 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
     if ((p.sensor ?? 0) > lv.camera) err(`${sn.name} sensor needs Camera level ${p.sensor}`, p.id)
     if (p.lens === 'periscope' && !owned.has('periscope')) err('The periscope lens is not researched yet', p.id)
     const dia = Math.min(p.w, p.h)
-    const need = p.face === 'front' || isCoverCam(d, p) ? selfieMinDia(p.sensor ?? 0) : sn.minDia
+    // a drone's gimbal camera is at its front, and is its main camera
+    const need = (p.face === 'front' && type !== 'drone') || isCoverCam(d, p) ? selfieMinDia(p.sensor ?? 0) : sn.minDia
     if (dia < need - 0.05) warn(`Lens is too small for the ${sn.name} sensor (needs ${need} mm)`, p.id)
     return sn.quality * clamp(dia / need, 0.4, 1)
   }
@@ -266,6 +288,7 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
   }
   for (const p of d.parts) {
     if (p.kind === 'fingerprint' && p.face === 'front' && !owned.has('fpdisplay')) err('Under-display fingerprint is not researched yet', p.id)
+    if (p.kind === 'notch' && hasScreen && !owned.has('punch') && notchStyle(b, p) === 'pill') err('A pill cut-out clear of the screen edge needs Punch-hole camera research', p.id)
   }
   const buttons = d.parts.filter((p) => p.kind === 'button')
   const sockets = d.parts.filter((p) => p.kind === 'port' || p.kind === 'slot')
@@ -294,13 +317,36 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
   let special = 0
   if (T.special === 'camera') {
     const main = wide > 0 ? wide : 0.7 * Math.max(uw, tele, macro)
-    special = 0.6 * main + 0.15 * uw + 0.2 * tele + 0.02 * macro + 0.08 * selfieQ
-    if (!d.parts.some((p) => p.kind === 'flash' && p.face === 'back')) special *= 0.97
-    if (rear.length === 0 && (type === 'phone' || type === 'foldable')) warn('No rear camera')
-    if (selfie.length === 0) warn('No front camera')
+    if (type === 'actioncam') {
+      // one big wide lens does the work; stabilisation, slow motion and the rest of the features do the remainder
+      special = 0.68 * main + 0.32 * ref * 1.1 * Math.min(1, ioValue / 4.6)
+      if (rear.length === 0) err('An action camera needs its main lens')
+    } else {
+      special = 0.6 * main + 0.15 * uw + 0.2 * tele + 0.02 * macro + 0.08 * selfieQ
+      if (!d.parts.some((p) => p.kind === 'flash' && p.face === 'back')) special *= 0.97
+      if (rear.length === 0 && (type === 'phone' || type === 'foldable')) warn('No rear camera')
+      if (selfie.length === 0) warn('No front camera')
+    }
     if (!d.parts.some((p) => p.kind === 'port') && !has('wireless')) err('No charging port and no wireless charging')
     if (buttons.length === 0) warn('No buttons: there is no way to power it on')
-    if (!d.parts.some((p) => p.kind === 'grille')) warn('No speaker grille')
+    if (!d.parts.some((p) => p.kind === 'grille')) warn(type === 'actioncam' ? 'No microphone grille' : 'No speaker grille')
+  } else if (T.special === 'reading') {
+    special = ioValue
+    if (!io.includes('light')) warn('No front light: it cannot be read in the dark')
+    if (!d.parts.some((p) => p.kind === 'port') && !has('wireless')) err('No charging port and no wireless charging')
+    if (buttons.length === 0) warn('No power button')
+  } else if (T.special === 'flight') {
+    // the gimbal camera at the nose, then what keeps the drone safe and steady in the air
+    const cam = best(selfie)
+    special = 0.62 * cam + 0.38 * ref * 1.1 * Math.min(1, ioValue / 5)
+    if (selfie.length === 0) err('A drone needs its camera at the front')
+    if (!d.parts.some((p) => p.kind === 'port')) err('No charging port')
+    if (!io.includes('gps')) warn('No GPS: it cannot find its way home')
+    if (buttons.length === 0) warn('No power button')
+  } else if (type === 'ring') {
+    special = ioValue
+    if (io.length === 0) warn('No health sensors')
+    if (io.length > 0 && !d.parts.some((p) => p.kind === 'island')) warn('Health sensors need a sensor window on the inside of the band')
   } else if (T.special === 'sensors') {
     special = ioValue
     if (io.length === 0) warn('No health sensors')
@@ -412,11 +458,19 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
     perf = (0.72 * refScore(woofer.tech) + 0.28 * chip.perf) * fit
     // the assistant is as good as what it hears and how fast it thinks, and a screen lets it show its answers
     display = (0.5 * refScore(mics.tech) + 0.5 * chip.perf) * (spk.screen ? 0.84 + 0.3 * Math.min(1, panel.quality / ref) : 0.84)
+  } else if (type === 'ring') {
+    // a ring is worn day and night: what matters in place of a screen is how thin and light it is on the finger
+    display = ref * 1.1 * (0.3 + 0.4 * (1 - lerp01(b.thickness, minThickness(type, 8), 3.8)) + 0.3 * (1 - lerp01(deviceWeight(d), T.weight[0], T.weight[1])))
+  } else if (type === 'drone') {
+    // the video link: how sharp and how far the picture reaches the pilot
+    display = panel.quality * 0.96
   } else {
     // a flip is judged as the tall phone it opens into, not as a small tablet
     const want = type === 'foldable' && isFlip(b) ? FLIP.diag : T.diag
     const sizeF = diag < want[0] ? 1 - Math.min(0.15, ((want[0] - diag) / want[0]) * 0.6) : diag <= want[1] ? 1 : 0.93
     display = panel.quality * (0.8 + rf.bonus) * sizeF * (type === 'foldable' ? hinge.crease : 1)
+    // an action camera with a second screen beside its lens frames a selfie shot properly
+    if (type === 'actioncam') display *= io.includes('front') ? 1.04 : 0.96
   }
 
   // ---- battery, or for mains devices cooling and sound
@@ -451,7 +505,10 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
     const rfPower = s.panel >= 3 ? 1 + (rf.power - 1) / 2 : rf.power
     // a foldable lights one screen at a time, mostly the big one
     const lit = cover ? (scr.w * scr.h * 0.8 + cover.w * cover.h * 0.2) / 100 : areaCm2
-    const drain = lit * panel.power * rfPower * 0.9 + T.drainBase + gpu.drain + chip.watts * (T.chipDrain ?? 0)
+    // e-ink draws power only to change the page; a drone spends most of its power holding its own weight up; every
+    // sensor in a ring samples all day
+    const screenDrain = lit * panel.power * rfPower * 0.9 * (type === 'ereader' ? 0.03 : 1)
+    const drain = screenDrain + T.drainBase * (type === 'ring' ? 1 + 0.06 * io.length : 1) + gpu.drain + chip.watts * (T.chipDrain ?? 0) + (type === 'drone' ? deviceWeight(d) * 0.25 : 0)
     life = (s.battery * chip.eff) / drain
     lifeHours = life * T.lifeHours
     battery = life * T.lifeScore + 12 + 3.5 * s.charging + (has('wireless') ? 4 : 0)
@@ -468,7 +525,7 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
   const bumpArea = islands.reduce((a, p) => a + p.w * p.h, 0) + looseCams.reduce((a, p) => a + p.w * p.h, 0)
 
   // symmetry and alignment of everything on the face that is judged: the back, or the front of a box
-  const judged = type === 'console' || type === 'earbuds' || type === 'headset' ? 'front' : type === 'speaker' ? 'top' : 'back'
+  const judged = type === 'console' || type === 'earbuds' || type === 'headset' || type === 'ring' ? 'front' : type === 'speaker' || type === 'drone' ? 'top' : 'back'
   const backParts = d.parts.filter((p) => p.face === judged)
   // a foldable's back is judged about the middle of the half that is not a screen
   const mid = type === 'foldable' && !isFlip(b) ? -b.width / 4 : 0
@@ -477,7 +534,7 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
     const centred = Math.abs(p.x - mid) < 0.75
     const mirrored = backParts.some((q) => q !== p && q.kind === p.kind && Math.abs(q.x + p.x - 2 * mid) < 0.75 && Math.abs(q.y - p.y) < 0.75)
     const aligned = backParts.some((q) => q !== p && q.kind !== 'island' && (Math.abs(q.x - p.x) < 0.6 || Math.abs(q.y - p.y) < 0.6))
-    if (p.kind === 'island' && slab) {
+    if (p.kind === 'island' && (slab || type === 'actioncam')) {
       const inside = rear.filter((c) => contains(p, c))
       const cx = inside.reduce((a, c) => a + c.x, 0) / (inside.length || 1)
       const cy = inside.reduce((a, c) => a + c.y, 0) / (inside.length || 1)
@@ -506,6 +563,12 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
     ergo = 0.5 * Math.min(1, buttons.filter((p) => p.face === 'top').length / 3) + 0.5 * (lights.length ? 1 : 0)
   } else if (type === 'tablet') {
     ergo = 0.6 * (1 - lerp01(weight, 520, 820)) + 0.4 * (buttons.length ? 1 : 0)
+  } else if (type === 'ereader') {
+    // held up in one hand for an hour at a time
+    ergo = 0.6 * (1 - lerp01(weight, 175, 320)) + 0.2 * (buttons.length ? 1 : 0) + 0.2 * (io.includes('pages') ? 1 : 0)
+  } else if (type === 'actioncam') {
+    // a shutter you can find with a glove on, and a light that says it is recording
+    ergo = 0.5 * (buttons.some((p) => p.face === 'top') ? 1 : buttons.length ? 0.5 : 0) + 0.3 * (lights.length ? 1 : 0) + 0.2 * (io.includes('mount') ? 1 : 0)
   } else if (type === 'watch') {
     ergo = 0.6 * (1 - lerp01(b.height, 47, 56)) + 0.4 * (buttons.some((p) => p.crown) ? 1 : buttons.length ? 0.6 : 0)
   } else if (type === 'laptop') {
@@ -523,7 +586,8 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
 
   const finish = b.backFinish === 'matte' && back.id === 'plastic' ? -0.05 : 0
   const materials = clamp((frame.premium + back.premium) / 2 + finish, 0, 1)
-  const notchPenalty = notches.length > 0 && dl >= 1.5 ? 0.5 : 1
+  // a notch costs more of the screen than a waterdrop, and a pill standing clear of the edge least of all
+  const notchPenalty = dl >= 1.5 ? notches.reduce((k, p) => Math.min(k, { notch: 0.5, drop: 0.72, pill: 0.85 }[notchStyle(b, p)]), 1) : 1
   const strap = STRAPS.find((x) => x.id === b.strap) ?? STRAPS[0]
   const onStand = type === 'desktop' || type === 'tv'
   const stand = standInfo(type === 'tv' ? 'tv' : 'desktop', b.stand)
@@ -572,6 +636,25 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
       { key: 'screen', label: 'Screen', max: 8, score: spk.screen ? 8 * lerp01(diag, 2.2, 7) : 0 },
       { key: 'mat', label: 'Fabric and trim', max: 22, score: 22 * materials },
     ]
+  } else if (type === 'ring') {
+    breakdown = [
+      { key: 'thin', label: 'Slim band', max: 24, score: 24 * (1 - lerp01(b.thickness, idealThick, idealThick + T.thin[1])) },
+      weightRow(16),
+      { key: 'narrow', label: 'Narrow band', max: 12, score: 12 * (1 - lerp01(b.height, 7, 10.5)) },
+      { key: 'sym', label: 'Symmetry and alignment', max: 12, score: 12 * symmetry },
+      { key: 'mat', label: 'Materials and finish', max: 36, score: 36 * materials },
+    ]
+  } else if (type === 'drone') {
+    // under 250 g a drone needs no licence in most places, so weight is most of how it is judged
+    const litres = (b.width * b.height * b.thickness) / 1e6
+    breakdown = [
+      { key: 'weight', label: 'Take-off weight', max: 26, score: 26 * (1 - lerp01(weight, T.weight[0], T.weight[1])) },
+      { key: 'compact', label: 'Folded size', max: 16, score: 16 * (1 - lerp01(litres, 0.3, 1.8)) },
+      { key: 'arms', label: 'Arms and propellers', max: 12, score: 12 * (io.includes('fold') ? 1 : 0.35) },
+      { key: 'sym', label: 'Symmetry and alignment', max: 14, score: 14 * symmetry },
+      { key: 'ergo', label: 'Lights and buttons', max: 12, score: 12 * (0.5 * (lights.length ? 1 : 0) + 0.5 * (buttons.length ? 1 : 0)) },
+      { key: 'mat', label: 'Materials', max: 20, score: 20 * materials },
+    ]
   } else {
     const fourth =
       type === 'watch'
@@ -584,7 +667,11 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
               ? { key: 'hinge', label: 'Hinge and crease', max: 10, score: 10 * hinge.premium }
               : type === 'handheld'
                 ? { key: 'grip', label: 'Controls in the hand', max: 10, score: 10 * (0.25 + 0.75 * ((s.keyboard ?? 0) / 3)) }
-                : { key: 'bump', label: 'Camera housing', max: 10, score: 10 * (1 - lerp01(bumpArea / backArea, 0.14, 0.45)) }
+                : type === 'ereader'
+                  ? { key: 'hold', label: 'One-handed hold', max: 10, score: 10 * (1 - lerp01(b.width, 120, 168)) }
+                  : type === 'actioncam'
+                    ? { key: 'rugged', label: 'Rugged housing', max: 10, score: 10 * (has('ip68') ? 1 : 0.35) }
+                    : { key: 'bump', label: 'Camera housing', max: 10, score: 10 * (1 - lerp01(bumpArea / backArea, 0.14, 0.45)) }
     breakdown = [
       { key: 'sbr', label: type === 'handheld' ? 'Screen between the controls' : 'Screen-to-body', max: 28, score: 28 * lerp01(sbr, T.sbrFloor, targetSbr(type, dl)) * notchPenalty },
       { key: 'thin', label: 'Thinness', max: 12, score: 12 * (1 - lerp01(b.thickness, idealThick, idealThick + T.thin[1])) },
@@ -595,7 +682,7 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
       { key: 'mat', label: 'Materials', max: 15, score: 15 * materials },
     ]
   }
-  const clipping = Math.min(20, overlaps * 4) + (buttons.length === 0 && type !== 'laptop' && type !== 'earbuds' ? 5 : 0)
+  const clipping = Math.min(20, overlaps * 4) + (buttons.length === 0 && type !== 'laptop' && type !== 'earbuds' && type !== 'ring' ? 5 : 0)
   if (clipping > 0) breakdown.push({ key: 'clip', label: 'Clipping penalties', max: 0, score: -clipping })
   const pct = clamp(breakdown.reduce((a, x) => a + x.score, 0), 0, 100)
   const design = (pct / 100) * refScore(dl) * 1.06
@@ -606,7 +693,7 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
   const cost: CostParts = { semis: 0, displays: 0, memory: 0, batteries: 0, materials: 0, other: T.assembly }
   cost.semis = chip.cost * T.chipCost + gpu.cost * (T.gpuCost ?? 1) * Math.pow(1.1, chip.gen)
   for (const p of rear) cost.semis += sensorInfo(p.sensor ?? 0).cost * LENSES[p.lens ?? 'wide'].cost
-  for (const p of selfie) cost.semis += sensorInfo(p.sensor ?? 0).cost * 0.6 * (p.underDisplay ? 1.5 : 1)
+  for (const p of selfie) cost.semis += sensorInfo(p.sensor ?? 0).cost * (type === 'drone' ? 1 : 0.6) * (p.underDisplay ? 1.5 : 1)
   cost.displays = areaCm2 * panel.costPerCm2 * (1 + rf.bonus) * T.panelCost
   cost.memory = T.memory > 0 ? s.ram * 2.5 + s.storage * 0.08 : type === 'earbuds' ? 1 : 4
   cost.batteries = T.mains ? 0 : s.battery * 0.0022 * (1 + 0.1 * lv.battery) + 1 + 0.04 * chargeWatts(type, s.charging)
@@ -624,10 +711,15 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
   cost.other += d.parts.filter((p) => p.kind !== 'camera').length * 0.5
   if (d.parts.some((p) => p.kind === 'fingerprint' && !isEdge(p.face, type) && p.face === 'front')) cost.other += 4
   // sensors and radio features are chips; sockets and drives are not
-  if (type === 'watch' || type === 'earbuds') cost.semis += ioCost
+  if (type === 'watch' || type === 'earbuds' || type === 'ring') cost.semis += ioCost
   else cost.other += ioCost
   if (input) cost.other += input.cost
   if (type === 'console') cost.semis += 3 + 2 * s.panel * (1 + rf.bonus)
+  if (type === 'drone') {
+    // the radio that carries the picture, and the four motors with their controllers
+    cost.semis += 4 + 3 * s.panel
+    cost.other += 10 + droneMotors(b) * 0.25
+  }
   if (type === 'earbuds') {
     cost.semis += anc.cost
     cost.other += driver.cost
@@ -651,7 +743,7 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
     unitCost: Math.round(unitCost * 100) / 100,
     costParts: cost,
     costScale,
-    // extras, plus a little for offering a choice of colours
-    featureBonus: Math.min(0.08, s.extras.length * 0.015) + Math.min(0.03, (d.colors?.length ?? 0) * 0.01),
+    // extras (each segment also weighs the ones it cares about: extrasAppeal), plus a little for offering a choice of colours
+    featureBonus: Math.min(0.05, s.extras.length * 0.012) + Math.min(0.03, (d.colors?.length ?? 0) * 0.01),
   }
 }

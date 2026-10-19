@@ -3,7 +3,9 @@
 // device type gets its own kind of interface: a phone home screen, a watch
 // face, a desktop with windows, a TV's streaming wall.
 import * as THREE from 'three'
-import type { DeviceType } from '../sim/types'
+import { drawActioncam, drawEreader } from './screensMore'
+import type { DeviceType, OsLook } from '../sim/types'
+import { paintOsLook } from './osLook'
 
 /** Wallpaper palettes: deep tone, mid tone, highlight. */
 const WALLPAPERS: [string, string, string][] = [
@@ -25,7 +27,9 @@ type Ctx = CanvasRenderingContext2D
 type Palette = [string, string, string]
 
 /** Long side of the canvas for each type, in pixels: enough to stay sharp when the camera is close. */
-const RESOLUTION: Partial<Record<DeviceType, number>> = { phone: 1280, tablet: 1536, watch: 640, laptop: 1920, desktop: 2048, tv: 2048, foldable: 1536, handheld: 1536, speaker: 768, headset: 256 }
+/** The types whose screen shows the operating system's home screen when it has a look of its own. */
+const OS_SCREENS: DeviceType[] = ['phone', 'tablet', 'foldable']
+const RESOLUTION: Partial<Record<DeviceType, number>> = { phone: 1280, tablet: 1536, watch: 640, laptop: 1920, desktop: 2048, tv: 2048, foldable: 1536, handheld: 1536, speaker: 768, headset: 256, ereader: 1536, actioncam: 768 }
 const GAMES = ['Ember Rally', 'Skyforge', 'Deep Lantern', 'Marrow Keep', 'Glasswing', 'Salt Road']
 
 const cache = new Map<string, THREE.CanvasTexture>()
@@ -35,17 +39,37 @@ export interface ScreenInfo {
   name: string
   hz: number
   lcd: boolean
+  /** The panel's level (0 = LCD): how fine its pixels are, how deep its blacks and how rich its colour. */
+  level?: number
+}
+
+/**
+ * What a panel of a given level does to the picture. Low levels have coarse pixels (shown as blocks with the dark
+ * gaps between them), washed-out colour and lifted blacks; each level up is finer, richer and deeper.
+ */
+export function panelLook(level: number, lcd: boolean) {
+  const lv = Math.max(0, Math.min(8, level))
+  return {
+    /** Pixels across the artwork, as a share of the full-resolution canvas. */
+    density: [0.38, 0.52, 0.68, 0.84, 1, 1, 1, 1, 1][lv],
+    saturate: lcd ? 0.78 : 0.96 + 0.04 * lv,
+    contrast: lcd ? 0.84 : 1 + 0.025 * lv,
+    /** Grey added over everything: the backlight showing through black. */
+    lift: lcd ? 0.12 : 0,
+  }
 }
 
 /**
  * Texture for a screen of the given size (any unit; only the ratio matters).
  * `detail` below 1 gives a smaller canvas for thumbnails.
  */
-export function screenTexture(type: DeviceType, wallpaper: number, width: number, height: number, detail = 1, panel?: ScreenInfo): THREE.CanvasTexture {
+export function screenTexture(type: DeviceType, wallpaper: number, width: number, height: number, detail = 1, panel?: ScreenInfo, look?: OsLook): THREE.CanvasTexture {
   const index = ((wallpaper % WALLPAPERS.length) + WALLPAPERS.length) % WALLPAPERS.length
   // aspect in 3% steps: close enough that nothing looks stretched, coarse enough to cache
   const step = Math.round(Math.log(width / height) / 0.03)
-  const key = `${type}|${index}|${step}|${detail < 1 ? 's' : 'l'}|${panel ? `${panel.name}@${panel.hz}` : ''}`
+  // an operating system's look replaces the home screen of the devices that show one
+  const os = look && OS_SCREENS.includes(type) ? look : undefined
+  const key = `${type}|${index}|${step}|${detail < 1 ? 's' : 'l'}|${panel ? `${panel.name}@${panel.hz}:${panel.level ?? ''}` : ''}|${os ? JSON.stringify(os) : ''}`
   const hit = cache.get(key)
   if (hit) {
     // keep the most recently used at the end
@@ -62,22 +86,28 @@ export function screenTexture(type: DeviceType, wallpaper: number, width: number
   const pal = WALLPAPERS[index]
   // what the interface says about its own panel, e.g. "OLED 120 Hz"
   const tag = panel ? (type === 'watch' ? panel.name : `${panel.name}  ${panel.hz} Hz`) : ''
-  if (type === 'watch') drawWatch(g, c.width, c.height, pal, tag)
+  if (os) {
+    paintOsLook(g, os, c.width, c.height)
+    if (tag) {
+      // the interface still names its panel, on a chip under the status bar
+      const u = Math.min(c.width, c.height * 0.6) / 100
+      g.font = `600 ${2.6 * u}px ${FONT}`
+      const tw = g.measureText(tag).width + 5 * u
+      box(g, c.width / 2 - tw / 2, 9.5 * u, tw, 4.4 * u, 2.2 * u, '#000000', 0.38)
+      text(g, tag, c.width / 2, 11.7 * u, 2.6 * u, { weight: 600, align: 'center', alpha: 0.92 })
+    }
+  } else if (type === 'watch') drawWatch(g, c.width, c.height, pal, tag)
   else if (type === 'tv') drawTv(g, c.width, c.height, pal, index, tag)
   else if (type === 'laptop' || type === 'desktop') drawDesktop(g, c.width, c.height, pal, index, type === 'laptop', tag)
   else if (type === 'tablet' || type === 'foldable') drawTablet(g, c.width, c.height, pal, index, tag)
   else if (type === 'handheld') drawHandheld(g, c.width, c.height, pal, index, tag)
   else if (type === 'speaker') drawSpeaker(g, c.width, c.height, pal, index, tag)
   else if (type === 'headset') drawLens(g, c.width, c.height, pal, index)
+  else if (type === 'ereader') drawEreader(g, c.width, c.height, index, tag)
+  else if (type === 'actioncam') drawActioncam(g, c.width, c.height, pal, index, tag)
   else drawPhone(g, c.width, c.height, pal, index, tag)
-  if (panel?.lcd) {
-    // a backlit panel cannot switch its pixels off: blacks are lifted and the edges glow a little
-    g.fillStyle = 'rgba(132,140,156,0.13)'
-    g.fillRect(0, 0, c.width, c.height)
-    g.strokeStyle = 'rgba(190,200,220,0.10)'
-    g.lineWidth = Math.max(c.width, c.height) * 0.02
-    g.strokeRect(0, 0, c.width, c.height)
-  }
+  // e-ink is paper, not a lit panel: it has its own look
+  if (panel && type !== 'ereader') showPanel(c, panelLook(panel.level ?? (panel.lcd ? 0 : 3), panel.lcd), detail < 1)
   const t = new THREE.CanvasTexture(c)
   t.colorSpace = THREE.SRGBColorSpace
   t.anisotropy = 8
@@ -88,6 +118,63 @@ export function screenTexture(type: DeviceType, wallpaper: number, width: number
     cache.delete(oldest)
   }
   return t
+}
+
+/**
+ * Passes the finished artwork through the panel: its colour and contrast, its pixels (coarse ones drawn as blocks
+ * with dark gaps between, so a cheap screen looks it from up close) and, for a backlit LCD, greyed blacks and light
+ * bleeding in at the edges. A thumbnail only gets the colour.
+ */
+function showPanel(c: HTMLCanvasElement, p: ReturnType<typeof panelLook>, small: boolean) {
+  const w = c.width
+  const h = c.height
+  const src = document.createElement('canvas')
+  src.width = w
+  src.height = h
+  src.getContext('2d')!.drawImage(c, 0, 0)
+  const g = c.getContext('2d')!
+  const tone = `saturate(${p.saturate}) contrast(${p.contrast})`
+  g.clearRect(0, 0, w, h)
+  if (!small && p.density < 1) {
+    const pw = Math.max(16, Math.round(w * p.density))
+    const ph = Math.max(16, Math.round(h * p.density))
+    const low = document.createElement('canvas')
+    low.width = pw
+    low.height = ph
+    const lg = low.getContext('2d')!
+    lg.filter = tone
+    lg.drawImage(src, 0, 0, pw, ph)
+    g.imageSmoothingEnabled = false
+    g.drawImage(low, 0, 0, w, h)
+    g.imageSmoothingEnabled = true
+    const cx = w / pw
+    const cy = h / ph
+    if (Math.min(cx, cy) >= 2.4) {
+      // the black matrix between the pixels
+      g.fillStyle = 'rgba(0,0,0,0.22)'
+      const lx = Math.max(1, cx * 0.16)
+      const ly = Math.max(1, cy * 0.16)
+      for (let i = 1; i < pw; i++) g.fillRect(Math.round(i * cx - lx / 2), 0, lx, h)
+      for (let j = 1; j < ph; j++) g.fillRect(0, Math.round(j * cy - ly / 2), w, ly)
+    }
+  } else {
+    g.filter = tone
+    g.drawImage(src, 0, 0)
+    g.filter = 'none'
+  }
+  if (p.lift > 0) {
+    // a backlight cannot be switched off pixel by pixel: black is a glowing grey, brighter where the light enters at the edges
+    g.fillStyle = `rgba(140,150,168,${p.lift})`
+    g.fillRect(0, 0, w, h)
+    const m = Math.min(w, h)
+    for (const [x, y] of [[0, h], [w, h], [w / 2, h], [0, 0], [w, 0]]) {
+      const bleed = g.createRadialGradient(x, y, 0, x, y, m * 0.45)
+      bleed.addColorStop(0, 'rgba(200,210,230,0.16)')
+      bleed.addColorStop(1, 'rgba(200,210,230,0)')
+      g.fillStyle = bleed
+      g.fillRect(0, 0, w, h)
+    }
+  }
 }
 
 // ---------------------------------------------------------------- shared drawing

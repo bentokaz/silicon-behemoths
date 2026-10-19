@@ -198,6 +198,8 @@ describe('devices, launches and orders', () => {
   it('pays a bulk order for the units that ship, not the units that were asked for', () => {
     const { s, p } = selling()
     p.stock = 9000
+    // whatever came up in the first months is out of the way
+    s.incidents = []
     s.incidents.push({ id: 'i1', kind: 'bulk', day: s.day, done: false, productId: p.id, amount: 8000 })
     // most of the stock sells before the answer is given
     p.stock = 500

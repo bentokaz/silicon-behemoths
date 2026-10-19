@@ -50,6 +50,7 @@ import { bestSegment, utility } from './market'
 import { pendingUnits, supplyPrice } from './ops'
 import { type LayoutOptions, VARIANTS, deriveVariant, fitInside, fitSpeaker, layoutParts, speakerSockets, syncSockets } from './rivals'
 import { budWeight, evaluate, foldedThickness, maxBattery, minThickness, thermal } from './scoring'
+import { layoutInternals } from './internals'
 import { bayStands, curveAt, curveTiles, geomOf, polyArea } from './curves'
 import { areaTiles, builtTiles, canPlace, curveFor, faceId, gridAt, hiredVenue, isBoundary, lineStats, newSite, openRooms, roomTiles, sealedRooms, storeStats, venueStats } from './sites'
 import { GOALS } from './goals'
@@ -84,7 +85,7 @@ describe('core simulation', () => {
       expect(errors, `${p.name} (${p.type})`).toEqual([])
       expect(p.price * 0.85, p.name).toBeGreaterThan(p.unitCost)
       expect(p.reviewAvg, p.name).toBeGreaterThan(3)
-      expect(p.weight, p.name).toBeGreaterThan(10)
+      expect(p.weight, p.name).toBeGreaterThan(p.type === 'ring' ? 2 : 10)
     }
   })
 
@@ -1372,6 +1373,87 @@ describe('foldables, headsets, speakers and handhelds', () => {
     const cool = structuredClone(d)
     cool.specs.chipTier = 0
     expect(evaluate(hot, s.levels, 4, s.features).report.lifeHours).toBeLessThan(evaluate(cool, s.levels, 4, s.features).report.lifeHours)
+  })
+})
+
+describe('e-readers, smart rings, action cameras and drones', () => {
+  const NEW: DeviceType[] = ['ereader', 'ring', 'actioncam', 'drone']
+
+  it('launches rivals into every new segment at sensible prices', () => {
+    const s = tick(fresh(), 6 * 360)
+    for (const type of NEW) {
+      for (const seg of segmentsOf(type)) {
+        const made = s.products.filter((p) => p.segment === seg.id && p.companyId !== 'player')
+        const fresh = made.filter((p) => p.launchDay > 360)
+        expect(fresh.length, `${seg.id} launches`).toBeGreaterThanOrEqual(3)
+        expect(made.filter((p) => p.status === 'sale').length, `${seg.id} on sale`).toBeGreaterThanOrEqual(2)
+        for (const p of fresh) {
+          const errors = evaluate(p.design, maxLevels, marketLevel(p.launchDay)).report.issues.filter((i) => i.level === 'error')
+          expect(errors, `${p.name} (${seg.id})`).toEqual([])
+          expect(p.reviewAvg, p.name).toBeGreaterThan(4)
+          if (p.history.length > 2) continue
+          expect(p.price, `${p.name} (${seg.id})`).toBeGreaterThan(seg.priceRef * 0.35)
+          expect(p.price, `${p.name} (${seg.id})`).toBeLessThan(seg.priceRef * 1.9)
+        }
+        expect(made.reduce((a, p) => a + p.unitsSold, 0), `${seg.id} units`).toBeGreaterThan(seg.size * 0.7 * typeDemand(seg.type))
+      }
+    }
+  })
+
+  it('gives a starter design of each new type a fair review, real sales and no monopoly', () => {
+    for (const type of NEW) {
+      const s = rich()
+      const design = starterDesign(s, type)
+      const ev = evaluate(design, s.levels, marketLevel(0), s.features, s.chips)
+      const seg = bestSegment({ raw: ev.raw, featureBonus: ev.featureBonus, price: 0, type }, player(s), 0).seg
+      const price = Math.round(Math.max(seg.priceRef * 0.9, (ev.unitCost * 1.25) / 0.85))
+      expect(startProduct(s, order(s, { design, price, quantity: 2e6, marketing: 2e6 })), type).toBeNull()
+      tick(s, 540)
+      const p = mine(s)[0]
+      expect(p.reviewAvg, `${type} review`).toBeGreaterThan(4.5)
+      expect(p.reviewAvg, `${type} review`).toBeLessThan(9.6)
+      expect(p.unitsSold, `${type} units`).toBeGreaterThan(1000)
+      expect(p.price * 0.85, `${type} margin`).toBeGreaterThan(p.unitCost)
+      const all = s.products.filter((x) => x.type === type).reduce((a, x) => a + x.unitsSold, 0)
+      expect(p.unitsSold / all, `${type} share`).toBeLessThan(0.45)
+    }
+  })
+
+  it('builds each one the way it is meant to be', () => {
+    const s = rich()
+    // a ring's cell holds a few dozen mAh, and is chosen by the mAh
+    const ring = starterDesign(s, 'ring')
+    expect(ring.specs.battery).toBeGreaterThan(8)
+    expect(ring.specs.battery).toBeLessThan(80)
+    expect(evaluate(ring, s.levels, 3, s.features).report.lifeHours).toBeGreaterThan(48)
+    // e-ink sips power: an e-reader lasts for weeks of evenings
+    const reader = starterDesign(s, 'ereader')
+    expect(evaluate(reader, s.levels, 3, s.features).report.lifeHours).toBeGreaterThan(40)
+    const dim = structuredClone(reader)
+    dim.specs.io = (dim.specs.io ?? []).filter((id) => id !== 'light')
+    expect(evaluate(dim, s.levels, 3, s.features).raw.camera).toBeLessThan(evaluate(reader, s.levels, 3, s.features).raw.camera)
+    // a drone under 250 g scores its full weight marks, and a heavier one does not
+    const drone = starterDesign(s, 'drone')
+    const light = evaluate(drone, s.levels, 3, s.features)
+    expect(light.report.weight).toBeLessThan(250)
+    const big = structuredClone(drone)
+    Object.assign(big.body, { width: 110, height: 70, thickness: 230 })
+    expect(evaluate(big, s.levels, 3, s.features).report.breakdown.find((x) => x.key === 'weight')!.score).toBeLessThan(light.report.breakdown.find((x) => x.key === 'weight')!.score)
+    // every component inside is turned by a rotation, never a mirror image
+    const vec = (d: number) => [Math.abs(d) === 1 ? Math.sign(d) : 0, Math.abs(d) === 2 ? Math.sign(d) : 0, Math.abs(d) === 3 ? Math.sign(d) : 0]
+    for (const type of NEW) {
+      for (const c of layoutInternals(starterDesign(s, type), s.levels).comps) {
+        const [u, v, w] = c.ax.map(vec)
+        const cross = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]].map((x) => x + 0)
+        expect(cross, `${type} ${c.id}`).toEqual(w)
+      }
+    }
+    // without its camera a drone or an action camera cannot be sold
+    for (const type of ['drone', 'actioncam'] as const) {
+      const d = starterDesign(s, type)
+      d.parts = d.parts.filter((p) => p.kind !== 'camera')
+      expect(evaluate(d, s.levels, 3, s.features).report.issues.some((i) => i.level === 'error'), type).toBe(true)
+    }
   })
 })
 

@@ -12,7 +12,7 @@ import { TYPES } from '../data/devices'
 import { sizeLimits } from '../data/devices'
 import { type Carrier, carrierBody, clampPart, faceBasis, faceLabel, faceSize, facesFor, isEdge, isFlip, kindsFor, mountOf, onKeyboard, partLabel } from '../sim/geometry'
 import { type Comp, cameraCost, layoutInternals } from '../sim/internals'
-import type { Body, CustomChip, DeviceDesign, DeviceType, Face, Levels, PartKind, PlacedPart } from '../sim/types'
+import type { Body, CustomChip, DeviceDesign, DeviceType, Face, Levels, OsLook, PartKind, PlacedPart } from '../sim/types'
 import { useStore } from '../store/game'
 import { themeColor } from '../store/theme'
 import { buildDevice, deviceFrame, disposeDevice, layerScaleOf, placeOnFace, pointToFace, setFold } from './buildDevice'
@@ -46,6 +46,8 @@ interface Props {
   onPick?: (partId: string | null) => void
   logo?: string
   colorIndex?: number
+  /** The look of the operating system shown on the screen. */
+  osLook?: OsLook
   /** Size of the device relative to a phone. */
   scale: number
   /** True when parts and the body can be worked on directly (the advanced editor). */
@@ -293,9 +295,9 @@ function onPlaneOf(obj: THREE.Object3D, ray: THREE.Ray): THREE.Vector3 | null {
   return t > 0 ? local.at(t, new THREE.Vector3()) : null
 }
 
-export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, scale, editable, hints, tear, home }: Props) {
+export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, osLook, scale, editable, hints, tear, home }: Props) {
   const shown = useEased(design)
-  const group = useMemo(() => buildDevice(shown, null, logo, colorIndex), [shown, logo, colorIndex])
+  const group = useMemo(() => buildDevice(shown, null, logo, colorIndex, 1, osLook), [shown, logo, colorIndex, osLook])
   useEffect(() => () => disposeDevice(group), [group])
   const guides = useStudio((s) => s.guides)
   const folded = useStudio((s) => s.folded)

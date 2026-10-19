@@ -6,7 +6,7 @@
 // printed labels) is made once and marked so that disposing of a model leaves it alone.
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
-import { caseShape, isFlip, speakerShape, standMount } from '../sim/geometry'
+import { caseShape, droneShape, isFlip, speakerShape, standMount } from '../sim/geometry'
 import type { Box, Comp, Dir, Internals, V3, Zone } from '../sim/internals'
 import type { DeviceDesign, Face, PlacedPart } from '../sim/types'
 import { themeColor } from '../store/theme'
@@ -1208,6 +1208,10 @@ function partHosts(d: DeviceDesign): { cover: Face[]; screen: Face[] } {
       return { cover: [d.body.height > d.body.width ? 'right' : 'top'], screen: [] }
     case 'headset':
       return { cover: ['front'], screen: [] }
+    case 'ring':
+      return { cover: [], screen: [] }
+    case 'drone':
+      return { cover: ['top'], screen: [] }
     case 'speaker':
       return { cover: ['front', 'back', 'left', 'right', 'top', 'bottom'], screen: [] }
     default:
@@ -1217,7 +1221,7 @@ function partHosts(d: DeviceDesign): { cover: Face[]; screen: Face[] } {
 
 /** The face that has to look at the camera while the device is open, where it matters. */
 export function openFace(d: DeviceDesign): Face | undefined {
-  return d.type === 'phone' || d.type === 'tablet' || d.type === 'watch' || d.type === 'foldable' || d.type === 'handheld' || d.type === 'desktop' || d.type === 'tv' ? 'back' : undefined
+  return d.type === 'phone' || d.type === 'tablet' || d.type === 'watch' || d.type === 'foldable' || d.type === 'handheld' || d.type === 'ereader' || d.type === 'actioncam' || d.type === 'desktop' || d.type === 'tv' ? 'back' : undefined
 }
 
 /** A lid on a hinge: it lifts a little, then swings about an edge. */
@@ -1235,6 +1239,7 @@ function outlineOf(d: DeviceDesign, z: Zone): { w: number; h: number; r: number 
   const ax = zoneAxes(z.up)
   const [zu, zv] = localSize(ax, z.box.s)
   if (z.anchor === 'pack') return { w: 92, h: 52, r: 15, cu: 0, cv: 0 }
+  if (d.type === 'drone') return { w: b.width, h: b.thickness, r: droneShape(b).plan, cu: 0, cv: 0 }
   if (d.type === 'console') return { w: zu + 2 * z.wall + (b.height > b.width ? 3 : 0), h: zv + 2 * z.wall + (b.height > b.width ? 0 : 3), r: 1.5, cu: 0, cv: 0 }
   if (d.type === 'foldable') {
     const flip = isFlip(b)
@@ -1419,6 +1424,9 @@ export function rigTeardown(model: THREE.Object3D, d: DeviceDesign, n: Internals
     } else if (d.type === 'console') {
       const tower = b.height > b.width
       move = tower ? hinged(new THREE.Vector3(z.cut.at, 0, -b.thickness / 2), yaw, 1.83, up, 6) : hinged(new THREE.Vector3(0, z.cut.at, -b.thickness / 2), pitch, -1.75, up, 6)
+    } else if (d.type === 'drone') {
+      // a drone's top shell lifts straight up off the body
+      move = (k, pos, quat) => (pos.set(0, b.height * 1.6 * smooth(k), 0), quat.identity())
     } else if (d.type === 'headset') {
       // the front plate stays on its hinge when the rest is pulled apart: what comes out then leaves by the face
       move = hinged(new THREE.Vector3(0, b.height / 2, z.cut.at), pitch, -1.9, up, 5)

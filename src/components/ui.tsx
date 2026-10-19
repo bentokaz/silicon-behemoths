@@ -1,12 +1,13 @@
 // Shared dashboard primitives: panels, buttons, sliders, readouts.
-import { type ButtonHTMLAttributes, type InputHTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject, type ThHTMLAttributes, isValidElement, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { type ButtonHTMLAttributes, type InputHTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject, type ThHTMLAttributes, isValidElement, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { keepView, keptView, viewKept } from '../store/focus'
-import { readNumber } from './format'
+import { editText, fitValue, inferField, parseTyped, placesOf, readField, stepValue } from './numField'
 import { Icon, type IconName } from './icons'
 
 export { int, money, moneyDelta, num, pct, price } from './format'
 export { Table, type Column, type TableGroup } from './Table'
+export { ColorField } from './ColorField'
 
 /** An icon set into a line of text, sitting on the text's own baseline. */
 export function Lead({ icon, size = 11 }: { icon?: IconName; size?: number }) {
@@ -488,18 +489,34 @@ export function Headline({ label, icon, value, sub, tone }: { label: string; ico
   )
 }
 
-export function Slider({ label, icon, value, min, max, step = 1, onChange, format, disabled, hint, locked, onLocked }: { label: string; icon?: IconName; value: number; min: number; max: number; step?: number; onChange: (v: number) => void; format?: (v: number) => string; disabled?: boolean; hint?: string } & LockProps) {
+/**
+ * A slider with its value at the right. The value is also a field: click it (or
+ * Tab to it) and type a figure, "95", "95 mm" or "1.5M"; Enter or leaving the
+ * field sets it, within the slider's range and on its steps, and the arrow keys
+ * step it (ten steps with Shift). How a typed figure maps to the value is read
+ * from `format` ("95.0 mm" is millimetres, "40%" of a fraction is a percentage);
+ * `unit` and `scale` say it outright, and `typed={false}` keeps a readout that
+ * is not the value (a log scale, "Off") as a readout only.
+ */
+export function Slider({ label, icon, value, min, max, step = 1, onChange, format, disabled, hint, locked, onLocked, unit, scale, typed }: { label: string; icon?: IconName; value: number; min: number; max: number; step?: number; onChange: (v: number) => void; format?: (v: number) => string; disabled?: boolean; hint?: string; /** The unit of a typed figure ("mm"), when `format` does not show it plainly. */ unit?: string; /** The typed figure is the value times this: 100 for a fraction shown as a percentage. */ scale?: number; /** false: the readout cannot be typed in. */ typed?: boolean } & LockProps) {
+  const id = useId()
+  const field = typed === false ? null : unit !== undefined || scale !== undefined ? { unit: unit ?? '', scale: scale ?? 1 } : format ? inferField(format, min, max) : { unit: '', scale: 1 }
+  const off = disabled || !!locked
   return (
-    <label className={`block py-1 ${locked ? 'cursor-not-allowed' : ''}`} title={locked || hint} onClick={locked ? (e) => (e.preventDefault(), onLocked?.()) : undefined}>
-      <div className="flex items-baseline justify-between">
-        <span className="text-[11px] text-dim">
+    <div className={`block py-1 ${locked ? 'cursor-not-allowed' : ''}`} title={locked || hint} onClick={locked ? (e) => (e.preventDefault(), onLocked?.()) : undefined}>
+      <div className="flex min-h-[18px] items-center justify-between gap-2">
+        <label htmlFor={id} className="min-w-0 text-[11px] text-dim">
           <Lead icon={locked ? 'lock' : icon} />
           {label}
-        </span>
-        <span className="num text-[11px] text-fg">{format ? format(value) : value}</span>
+        </label>
+        {field && !off ? (
+          <NumInput bare live={false} decimals value={value} min={min} max={max} step={step} unit={field.unit || undefined} scale={field.scale} display={format} onChange={onChange} aria-label={`${label}, typed`} title="Type a value" className="text-[11px]" />
+        ) : (
+          <span className="num text-[11px] text-fg">{format ? format(value) : value}</span>
+        )}
       </div>
-      <input type="range" aria-label={label} aria-valuetext={format ? format(value) : undefined} className={`w-full ${locked ? 'pointer-events-none' : ''}`} min={min} max={max} step={step} value={value} disabled={disabled || !!locked} onChange={(e) => onChange(Number(e.target.value))} />
-    </label>
+      <input id={id} type="range" aria-label={label} aria-valuetext={format ? format(value) : undefined} className={`w-full ${locked ? 'pointer-events-none' : ''}`} min={min} max={max} step={step} value={value} disabled={off} onChange={(e) => onChange(Number(e.target.value))} />
+    </div>
   )
 }
 
@@ -611,26 +628,106 @@ export function NameInput({ value, onChange, ...rest }: FieldProps & { value: st
  * is set, whatever was typed: nothing, a minus, letters, a figure with thirty
  * digits. On leaving the field it shows that value.
  */
-export function NumInput({ value, onChange, className = '', min = 0, max = 1e9, step = 1, decimals = false, onEnter, onKeyDown, ...rest }: FieldProps & { value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number; decimals?: boolean }) {
+export function NumInput({ value, onChange, className = '', min = 0, max = 1e9, step = 1, decimals = false, unit, scale = 1, places, live = true, snap, display, bare = false, onEnter, onKeyDown, onFocus, onBlur, ...rest }: FieldProps & {
+  value: number
+  onChange: (v: number) => void
+  min?: number
+  max?: number
+  step?: number
+  decimals?: boolean
+  /** A unit shown after the figure ("mm", "deg", "%"). Typing it in is allowed as well. */
+  unit?: string
+  /** The figure shown is the value times this: 100 shows a fraction as a percentage. */
+  scale?: number
+  /** Decimals shown while editing; by default as many as the step needs (none when whole). */
+  places?: number
+  /** true (the default): the value is handed on at every keystroke. false: only on Enter, on leaving the field and on the arrow keys, and Esc puts back what it held. */
+  live?: boolean
+  /** Snap a committed value to the step. On by default when not live. */
+  snap?: boolean
+  /** What the field says while it does not have focus: a slider's readout. */
+  display?: (v: number) => string
+  /** The compact look of a slider's readout: no box until hovered or focused. */
+  bare?: boolean
+}) {
   const [text, setText] = useState<string | null>(null)
+  const [focused, setFocused] = useState(false)
+  const box = useRef<HTMLInputElement>(null)
   const safe = Number.isFinite(value) ? value : 0
-  return (
+  const whole = !decimals && scale === 1
+  const dp = places ?? (whole ? 0 : placesOf(step * scale))
+  const rule = { min, max, step, snap: snap ?? !live, whole }
+  const shown = text ?? (!focused && display ? display(safe) : editText(safe * scale, dp))
+  // a readout that turns into a figure as it is focused has the whole figure selected, ready to be typed over
+  useEffect(() => {
+    if (focused && display) requestAnimationFrame(() => box.current === document.activeElement && box.current?.select())
+  }, [focused, display])
+  const commit = () => {
+    if (text === null) return
+    setText(null)
+    if (live) return
+    const v = readField(text, { ...rule, scale })
+    if (v !== null && v !== safe) onChange(v)
+  }
+  const input = (
     <input
-      type="number"
-      inputMode={decimals ? 'decimal' : 'numeric'}
+      ref={box}
+      type="text"
+      role="spinbutton"
+      aria-valuenow={safe}
+      aria-valuemin={min}
+      aria-valuemax={max}
+      aria-valuetext={display ? display(safe) : unit ? `${editText(safe * scale, dp)} ${unit}` : undefined}
+      inputMode={whole ? 'numeric' : 'decimal'}
+      spellCheck={false}
+      autoComplete="off"
       {...rest}
-      min={min}
-      max={max}
-      step={step}
-      value={text ?? String(safe)}
+      value={shown}
       onChange={(e) => {
-        setText(e.target.value)
-        onChange(readNumber(e.target.value, { min, max, whole: !decimals }))
+        const raw = e.target.value
+        setText(raw)
+        if (!live) return
+        const n = parseTyped(raw)
+        onChange(fitValue(n === null ? NaN : n / scale, { min, max, whole }))
       }}
-      onBlur={(e) => (setText(null), rest.onBlur?.(e))}
-      onKeyDown={(e) => (onKeyDown?.(e), e.key === 'Enter' && (setText(null), onEnter && (e.preventDefault(), onEnter())))}
-      className={`num h-7 rounded-none border border-line2 bg-raise px-2 text-xs outline-none focus:border-accent ${className}`}
+      onFocus={(e) => (setFocused(true), onFocus?.(e))}
+      onBlur={(e) => (setFocused(false), commit(), onBlur?.(e))}
+      onKeyDown={(e) => {
+        onKeyDown?.(e)
+        if (e.key === 'Enter') {
+          commit()
+          if (onEnter) e.preventDefault(), onEnter()
+        } else if (e.key === 'Escape' && !live && text !== null) {
+          setText(null)
+        } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+          e.preventDefault()
+          const from = text === null ? safe : (readField(text, { ...rule, scale, snap: false }) ?? safe)
+          setText(null)
+          onChange(stepValue(from, e.key === 'ArrowUp' ? 1 : -1, { ...rule, big: e.shiftKey }))
+        }
+      }}
+      className={
+        unit || bare
+          ? `num h-full min-w-0 bg-transparent outline-none ${bare ? 'px-1 text-right' : 'flex-1 px-2'}`
+          : `num h-7 rounded-none border border-line2 bg-raise px-2 text-xs outline-none focus:border-accent ${className}`
+      }
+      style={bare ? { width: `${Math.max(3, shown.length) + 1}ch`, ...rest.style } : { textAlign: unit ? 'inherit' : undefined, ...rest.style }}
     />
+  )
+  if (!unit && !bare) return input
+  // the unit sits inside the box, after the figure; a readout shows its own until it is focused
+  return (
+    <span
+      className={
+        bare
+          ? `num inline-flex h-[18px] shrink-0 items-center rounded-none border border-transparent text-fg hover:border-line2 focus-within:border-accent focus-within:bg-raise ${className}`
+          : `num inline-flex h-7 items-center rounded-none border border-line2 bg-raise text-xs focus-within:border-accent ${className}`
+      }
+      onClick={() => box.current?.focus()}
+    >
+      {input}
+      {unit && (!display || focused) && !(text !== null && /[a-z%°]\s*$/i.test(text)) && <span className={`shrink-0 text-faint ${bare ? 'pr-1' : 'pr-2'}`}>{unit}</span>}
+    </span>
   )
 }
 

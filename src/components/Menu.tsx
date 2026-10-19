@@ -14,7 +14,7 @@ import { ImportButton, SaveList, loadSlot, savedAgo } from './System'
 import { FeedbackLinks } from './Safety'
 import { KeysPanel, SettingsPanel } from './Settings'
 import { Icon, type IconName, trackIcon, typeIcon } from './icons'
-import { Btn, Choice, Fold, Head, NumInput, Panel, Row, Slider, Tabs, TextInput, money, pct, useLayer } from './ui'
+import { Btn, Choice, ColorField, Fold, Head, NumInput, Panel, Row, Slider, Tabs, TextInput, money, pct, useLayer } from './ui'
 
 function Wordmark() {
   return (
@@ -176,7 +176,7 @@ export function NewGame() {
                   <TextInput autoFocus aria-label="Company name" value={cfg.companyName} maxLength={18} onChange={(v) => up({ companyName: v })} onEnter={found} className={`min-w-0 flex-1 ${name ? '' : '!border-warn'}`} placeholder="Name your company" />
                 </Field>
                 <Field label="Brand colour">
-                  <input type="color" aria-label="Brand colour" value={cfg.color} onChange={(e) => up({ color: e.target.value })} />
+                  <ColorField label="Brand colour" showHex value={cfg.color} onChange={(color) => up({ color })} />
                 </Field>
               </Panel>
               <Panel title="How the company grows" icon="branch" bodyClass="grid grid-cols-2 gap-2 p-3">

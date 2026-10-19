@@ -5,8 +5,8 @@ export type Track = 'display' | 'chipset' | 'camera' | 'battery' | 'charging' | 
 export const TRACKS: Track[] = ['display', 'chipset', 'camera', 'battery', 'charging', 'materials', 'design']
 export type Levels = Record<Track, number>
 
-export type DeviceType = 'phone' | 'tablet' | 'watch' | 'laptop' | 'desktop' | 'console' | 'earbuds' | 'tv' | 'foldable' | 'headset' | 'speaker' | 'handheld'
-export const DEVICE_TYPES: DeviceType[] = ['phone', 'tablet', 'watch', 'laptop', 'desktop', 'console', 'earbuds', 'tv', 'foldable', 'headset', 'speaker', 'handheld']
+export type DeviceType = 'phone' | 'tablet' | 'watch' | 'laptop' | 'desktop' | 'console' | 'earbuds' | 'tv' | 'foldable' | 'headset' | 'speaker' | 'handheld' | 'ereader' | 'ring' | 'actioncam' | 'drone'
+export const DEVICE_TYPES: DeviceType[] = ['phone', 'tablet', 'watch', 'laptop', 'desktop', 'console', 'earbuds', 'tv', 'foldable', 'headset', 'speaker', 'handheld', 'ereader', 'ring', 'actioncam', 'drone']
 
 export type Face = 'front' | 'back' | 'left' | 'right' | 'top' | 'bottom'
 export type PartKind = 'camera' | 'island' | 'flash' | 'notch' | 'button' | 'port' | 'grille' | 'fingerprint' | 'logo' | 'vent' | 'slot' | 'light'
@@ -573,6 +573,20 @@ export interface OsState {
   /** Next version in development. */
   project?: { daysLeft: number; total: number; features: string[]; first: boolean }
   servicesIncome: number
+  /** How the company's own operating system looks on its devices' screens. Missing means the default look. */
+  look?: OsLook
+}
+
+/** The look of an operating system's home screen, as painted on device screens (see src/3d/osLook.ts). */
+export interface OsLook {
+  /** Wallpaper colour, a CSS hex colour. */
+  wallpaper: string
+  /** Accent colour for highlights and the clock, a CSS hex colour. */
+  accent: string
+  iconShape: 'circle' | 'squircle' | 'square'
+  layout: 'grid' | 'list' | 'tiles'
+  font: 'sans' | 'mono' | 'serif'
+  dark: boolean
 }
 
 export type Difficulty = 'relaxed' | 'normal' | 'tough'

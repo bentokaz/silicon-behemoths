@@ -103,8 +103,8 @@ export function unlockBlocked(s: GameState, type: DeviceType): string | null {
   return null
 }
 /** The kinds a new company can choose to start with. */
-// a new company can begin with anything but the two kinds that need years of research behind them
-export const START_TYPES = DEVICE_TYPES.filter((t) => t !== 'foldable' && t !== 'headset')
+// a new company can begin with anything but the three kinds that need years of research behind them
+export const START_TYPES = DEVICE_TYPES.filter((t) => t !== 'foldable' && t !== 'headset' && t !== 'drone')
 
 // ---------------------------------------------------------------- incidents
 

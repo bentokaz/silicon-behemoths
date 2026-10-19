@@ -174,6 +174,10 @@ export function tearDir(d: DeviceDesign, explode: number): THREE.Vector3 {
             ? [[0.42, 0.4, 0.82], [0.46, 0.38, 0.8]]
             : d.type === 'headset'
               ? [[0.5, 0.36, 0.79], [-0.52, 0.44, -0.73]]
+              : d.type === 'drone'
+                ? [[0.4, 0.74, 0.54], [0.46, 0.66, 0.6]]
+                : d.type === 'ring'
+                ? [[0.3, 0.72, 0.62], [0.36, 0.6, 0.71]]
               : d.type === 'speaker'
                 ? [[0.3, 0.3, 0.9], [0.34, 0.26, 0.9]]
                 : d.body.width > d.body.height * 1.15 && d.type !== 'foldable'
@@ -229,6 +233,10 @@ const STOPS: Record<DeviceType, (string | [string, number, [number, number, numb
   foldable: ['hinge', 'battery', 'batteryb', 'chip', 'cam:', 'fold0', ['display', 1]],
   speaker: ['woofer', 'tweeter', 'tweeters', 'chamber', 'amp', 'psu', 'mics', 'ledring'],
   handheld: ['battery', 'chip', 'fan0', 'stickL', 'triggerL', ['display', 1]],
+  ereader: ['battery', 'chip', 'board', ['frontlight', 1], ['display', 1]],
+  ring: ['battery', 'sensors', 'chip', 'coil'],
+  actioncam: ['cam:', 'battery', 'chip', 'thermal', ['display', 1]],
+  drone: ['battery', 'cam:', 'board', 'chip', 'gps', 'link'],
 }
 
 export function tourStops(type: DeviceType, comps: Map<string, { c: Comp }>): TourStop[] {
