@@ -10,7 +10,7 @@ import { type Pt, bayRun, bayStands, curveTiles, nearestBay } from '../sim/curve
 import { money, moneyDelta, num, pct } from '../components/format'
 import { EDGE_COST, edgePrice, keepsDoors, partitionRun, roomCost, zonePlan } from '../sim/game'
 import type { FactoryLife, OfficeLife, StoreLife, VenueLife } from '../sim/life'
-import { ITEMS, type LineStats, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, areaOf, areaTiles, canPartition, canPlace, curveFor, cutAt, doorFits, fillError, gridAt, inPlot, isBoundary, hasGround, itemAt, itemTiles, pocketAt, reachable, roomOf, rowSpots, tilesOf, wallAt } from '../sim/sites'
+import { ITEMS, type LineStats, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, areaOf, areaTiles, canPartition, canPlace, ceilingOf, curveFor, cutAt, doorFits, fillError, gridAt, inPlot, isBoundary, hasGround, isStage, itemAt, itemTiles, pocketAt, reachable, roomOf, rowSpots, stageOf, tilesOf, wallAt } from '../sim/sites'
 import { ROLE_INFO, inTraining, jobTitle } from '../sim/staff'
 import type { Employee, Product, Site, SiteItem, SiteKind } from '../sim/types'
 import { QUALITY, type Quality, isHeld, useSettings } from '../store/settings'
@@ -24,6 +24,8 @@ import { BayCursor, CurveOutline } from './site/curved'
 import { Environs, type Mood, isIndoor, moodOf } from './site/env'
 import { FactoryItem } from './site/factory'
 import { FactoryCrowd } from './site/factorycrowd'
+import { Director, type Shot } from './site/director'
+import { FactoryFlow } from './site/factoryflow'
 import { FactoryFloor, shippingDocks } from './site/factorylife'
 import { Jacks } from './site/jacks'
 import { Doors, Dropping, Sparks, SparksView, WallFx, type WallPiece, snapshot, wallChanges, wallHeight } from './site/fx'
@@ -182,6 +184,10 @@ export interface SiteViewProps {
   show?: ShowState
   /** Slowly circle the site instead of waiting for the mouse. */
   autoRotate?: boolean
+  /** A keynote's camera script, read every frame: where the camera is and what it looks at; null leaves the view to the player. */
+  director?: () => Shot | null
+  /** A keynote: how far the presenter has walked on from the wings, 0-1, read every frame; null to stand at the lectern. */
+  presenterWalk?: () => number | null
   /** Game speed (0 paused, 1, 2, 4): how fast the site's own clock runs. */
   speed?: number
   /** What the company is doing, shown in the rooms. Without it the site is a still model. */
@@ -233,6 +239,8 @@ const BOARD_ROOMS = new Set(['lab', 'eng', 'studio', 'media', 'support', 'server
 
 interface ItemCtx {
   glow: number
+  /** Venue: clear height of the hall the item stands in; missing in the open air. */
+  ceiling?: number
   company: string
   logo?: string
   color: string
@@ -273,7 +281,7 @@ function ItemKind({ kind, item, c }: { kind: SiteKind; item: string; c: ItemCtx 
   if (kind === 'office') return <OfficeItem kind={item} c={{ who: c.who, glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, devices: c.devices, on: c.on, live: c.live, progress: c.progress, busy: c.busy }} />
   if (kind === 'factory') return <FactoryItem kind={item} c={{ running: !!c.running, flow: c.flow, glow: c.glow, seed: c.seed, fill: c.fill, away: c.away, live: c.live }} />
   if (kind === 'store') return <StoreItem kind={item} c={{ products: c.products, glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, soldOut: c.soldOut }} />
-  return <VenueItem kind={item} c={{ glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, crowd: c.show?.crowd ?? 0, cheer: c.show?.cheer ?? false, show: !!c.show, screen: c.show?.screen, products: c.products, aisles: c.aisles, live: c.live }} />
+  return <VenueItem kind={item} c={{ glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, crowd: c.show?.crowd ?? 0, cheer: c.show?.cheer ?? false, show: !!c.show, screen: c.show?.screen, products: c.products, aisles: c.aisles, live: c.live, ceiling: c.ceiling }} />
 }
 
 /** One block of furniture, merged into a few meshes. Only looked at again when its signature changes. */
@@ -821,7 +829,7 @@ const PLATE_TEXT = { accent: 'text-fg', pos: 'text-pos', warn: 'text-warn', neg:
 const researchOn = (o: OfficeLife, given?: ResearchNow[]): ResearchNow[] => given ?? o.research
 const fmtHour = (h: number) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`
 
-export function SiteScene({ site, mode: chosen, mood, tool, company, color, logo, selectedRoom, sealed, onTile, onRow, onEdges, onSell, onRun, onArea, onPreview, seated = [], idle = [], applicants, onPerson, day = 0, line, producing = false, products = [], busy = 0, show, autoRotate, speed = 0, life, card, onCutOff, budget = Infinity, onOff, clear, month, research, onDrawn, walk = false, onWalkEnd }: SiteViewProps) {
+export function SiteScene({ site, mode: chosen, mood, tool, company, color, logo, selectedRoom, sealed, onTile, onRow, onEdges, onSell, onRun, onArea, onPreview, seated = [], idle = [], applicants, onPerson, day = 0, line, producing = false, products = [], busy = 0, show, autoRotate, director, presenterWalk, speed = 0, life, card, onCutOff, budget = Infinity, onOff, clear, month, research, onDrawn, walk = false, onWalkEnd }: SiteViewProps) {
   /** The camera is the walker's: from the glide down to eye height until the glide back up. */
   const [walking, setWalking] = useState(false)
   // low cut walls are no use to someone walking about: the walls stand full height, under a roof if the outside was being shown
@@ -1170,12 +1178,13 @@ export function SiteScene({ site, mode: chosen, mood, tool, company, color, logo
       busy: item.kind === 'bench' && office ? researching : undefined,
       products,
       soldOut,
-      running: !!item.id && (line?.linked.has(item.id) ?? false) && running,
+      running: !!item.id && ((line?.live ?? line?.linked)?.has(item.id) ?? false) && running,
       flow,
       show: staged,
       fill: Math.round(busy * 5) / 5,
       away: !!item.id && yard.managed.has(item.id),
       aisles: site.kind === 'venue' && 'x' in item ? seatAisles(site, item as SiteItem) : 0,
+      ceiling: site.kind === 'venue' && 'x' in item && gridAt(site, (item as SiteItem).x, (item as SiteItem).y) > 0 ? ceilingOf(site) : undefined,
       sparing,
       fit: item.kind === 'otree' || item.kind === 'bamboo' ? fitOf(item) : undefined,
     }
@@ -1187,7 +1196,7 @@ export function SiteScene({ site, mode: chosen, mood, tool, company, color, logo
         const on = shown.get(item.id)
         return `${item.id}:${item.x},${item.y},${item.rot}:${who ? who.look + who.color : liveSeats.has(item.id) ? 'L' : ''}:${line?.linked.has(item.id) ? 1 : 0}${line?.flow.get(item.id)?.join('') ?? ''}${on ? on.devices.map((p) => p.id).join('') + (on.progress ?? '') : ''}${yard.managed.has(item.id) ? 'A' : ''}${site.kind === 'venue' ? seatAisles(site, item) || '' : ''}${item.kind === 'otree' || item.kind === 'bamboo' ? `f${fitOf(item)?.map((v) => v.toFixed(2)).join('/')}` : ''}`
       })
-      .join('|') + `#${Math.round(glow * 10)}${running ? 'r' : ''}${site.kind === 'factory' ? `${Math.round(busy * 5)}${crowdOn ? 'w' : ''}` : ''}${company}${logo?.length ?? 0}${color}${productKey}${soldKey}${liveKinds ? 'v' : ''}${crowdOn ? 'c' : ''}${researching ? 'R' : ''}${showcaseList[0]?.id ?? ''}${staged ? `s${staged.screen?.uuid ?? ''}` : ''}${sparing ? 'S' : ''}`
+      .join('|') + `#${Math.round(glow * 10)}${running ? 'r' : ''}${site.kind === 'factory' ? `${Math.round(busy * 5)}${crowdOn ? 'w' : ''}` : ''}${company}${logo?.length ?? 0}${color}${productKey}${soldKey}${liveKinds ? 'v' : ''}${crowdOn ? 'c' : ''}${researching ? 'R' : ''}${showcaseList[0]?.id ?? ''}${staged ? `s${staged.screen?.uuid ?? ''}` : ''}${sparing ? 'S' : ''}${site.kind === 'venue' ? `F${site.floors}` : ''}`
 
   const place = (item: SiteItem): [number, number, number] => {
     const def = ITEMS[site.kind][item.kind]
@@ -1639,7 +1648,7 @@ export function SiteScene({ site, mode: chosen, mood, tool, company, color, logo
         const def = ITEMS.venue[item.kind]
         const tall = VENUE_TALL[item.kind]
         if (!def || !tall) continue
-        const hint = def.crowd ? `${def.crowd} seats of ${v.stats.seats}` : item.kind === 'stage' ? when : def.show ? `Production +${def.show}` : when
+        const hint = def.crowd ? `${def.crowd} seats of ${v.stats.seats}` : isStage(item.kind) ? when : def.show ? `Production +${def.show}` : when
         const t = itemTarget(site, item, 'venue', def.name, hint, item.kind)
         t.box[4] = tall
         t.anchor[1] = Math.min(tall, 2.6) + 0.1
@@ -1745,7 +1754,8 @@ export function SiteScene({ site, mode: chosen, mood, tool, company, color, logo
     }
   }, [hot, tool])
 
-  const venueStage = site.kind === 'venue' ? site.items.find((i) => i.kind === 'stage') : undefined
+  const venueStage = site.kind === 'venue' ? stageOf(site) : undefined
+  const presenterAt = useRef<[number, number] | null>(null)
   // a show in a hall: the hall's own lights go down for it, whatever the hour outside. Seen with the roof off, that
   // means less of the daylight too
   const houseDown = !!staged && !!venueStage && gridAt(site, venueStage.x, venueStage.y) > 0 && !dark
@@ -1783,7 +1793,7 @@ export function SiteScene({ site, mode: chosen, mood, tool, company, color, logo
         shadow-camera-far={span * 5 + 60}
       />
       {/* a venue has a wash on its stage and house lights over the seats, which go down for a show */}
-      {site.kind === 'venue' && <StageLights site={site} mood={mood} show={!!staged} down={houseDown} />}
+      {site.kind === 'venue' && <StageLights site={site} mood={mood} show={!!staged} down={houseDown} follow={director && stage ? () => presenterAt.current : undefined} />}
       <Environment resolution={128} frames={1} environmentIntensity={dark ? 0.12 : houseDown ? 0.16 : 0.4}>
         <color attach="background" args={[sky]} />
         <Lightformer form="rect" intensity={3} color="#fff1e0" position={[0, 8, 0]} rotation-x={Math.PI / 2} scale={[14, 14, 1]} />
@@ -1894,8 +1904,9 @@ export function SiteScene({ site, mode: chosen, mood, tool, company, color, logo
         {/* after dark the rooms are lit from within, the ones with people in them brightest */}
         <RoomLights site={site} crowd={crowd} mood={indoor && mood === 'night' ? 'dusk' : mood} lamps={site.kind === 'venue' ? 0 : ROOM_LAMPS[prefs.quality]} gain={site.kind === 'venue' ? (staged ? 0.05 : 0.15) : indoor ? 0.5 : 1} busy={lively && site.kind === 'factory' && !crowd ? () => running : undefined} onDark={mode === 'cut' ? undefined : setDarkRooms} />
         {site.kind === 'venue' && <Audience site={site} state={houseState} filled={crowd ? filledSeat : undefined} />}
-        {stage && !crowd && <Presenter site={site} cheer={!!show?.cheer} />}
+        {stage && !crowd && <Presenter site={site} cheer={!!show?.cheer} walk={presenterWalk} at={presenterAt} />}
         <SparksView sparks={sparks} />
+        {site.kind === 'factory' && line && mode !== 'full' && <FactoryFlow site={site} line={line} running={running} />}
         {site.items.map((item, index) =>
           dropping.has(item.id) && ITEMS[site.kind][item.kind] ? (
             <group key={item.id} position={place(item)} rotation-y={(-item.rot * Math.PI) / 2}>
@@ -2004,11 +2015,12 @@ export function SiteScene({ site, mode: chosen, mood, tool, company, color, logo
         </EffectComposer>
       )}
       <Drawn on={onUp} />
-      {!autoRotate && !walking && <CameraKeys span={span} home={home} aim={aim} />}
+      {!autoRotate && !walking && !director && <CameraKeys span={span} home={home} aim={aim} />}
       <Walk nav={nav} on={walk} onActive={setWalking} onLeave={endWalk} />
-      {autoRotate && <AutoTurn speed={3} />}
+      {autoRotate && !director && <AutoTurn speed={3} />}
+      {director && <Director shot={director} />}
       <CameraFence span={span} top={height + 6} />
-      <OrbitControls makeDefault enabled={!walking} target={aim} minDistance={near * 6} maxDistance={span * 3 + 40} maxPolarAngle={Math.PI * 0.485} enablePan screenSpacePanning={false} panSpeed={1.3 * prefs.cameraSpeed} rotateSpeed={0.9 * prefs.cameraSpeed} zoomSpeed={1.2 * prefs.cameraSpeed} zoomToCursor={prefs.zoomToPointer} enableDamping dampingFactor={0.2} mouseButtons={mouseButtons} touches={touches} />
+      <OrbitControls makeDefault enabled={!walking && !director} target={aim} minDistance={near * 6} maxDistance={span * 3 + 40} maxPolarAngle={Math.PI * 0.485} enablePan screenSpacePanning={false} panSpeed={1.3 * prefs.cameraSpeed} rotateSpeed={0.9 * prefs.cameraSpeed} zoomSpeed={1.2 * prefs.cameraSpeed} zoomToCursor={prefs.zoomToPointer} enableDamping dampingFactor={0.2} mouseButtons={mouseButtons} touches={touches} />
     </SafeCanvas>
   )
 }

@@ -21,15 +21,17 @@ import { cleanRule, defaultReorder, reorderLocked, reordersDue } from './reorder
 import { ACCESSORY, footfall, storeBuyers } from './retail'
 import { contractBlocked, offerContracts, stepContracts } from './contracts'
 import { bayStands, curveAt, curveTiles, onCurve } from './curves'
-import { FACADES, FLOOR_COST, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, SHORT_WALL, UNKNOWN_ITEM, areaOf, areaTiles, autoDoor, builtTiles, canPartition, canPlace, courtyardFor, curveFor, defaultGround, doorFits, fillError, gridAt, groundsFor, hasGround, inPlot, isBoundary, itemAllowed, itemAt, itemTiles, mergeRooms, newSite, openRooms, pocketAt, roomOf, rowSpots, shapeCuts, starterLine, storeStats, tidy, tierOf, touching, upkeep, partAt, venueStats, wallAt, zone } from './sites'
+import { fixLayout, lineStats } from './factoryline'
+import { FACADES, FLOOR_COST, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, VENUE_PRESETS, type VenuePreset, rigFloors, venueLayout, type Shape, type ShapeOpts, SHORT_WALL, UNKNOWN_ITEM, areaOf, areaTiles, autoDoor, builtTiles, canPartition, canPlace, courtyardFor, curveFor, defaultGround, doorFits, fillError, gridAt, groundsFor, hasGround, inPlot, isBoundary, itemAllowed, itemAt, itemTiles, mergeRooms, newSite, openRooms, pocketAt, roomOf, rowSpots, shapeCuts, starterLine, storeStats, tidy, tierOf, touching, upkeep, partAt, venueStats, wallAt, zone } from './sites'
 import { capOfChannel, locked, refreshExecs, siteLocked, stepProgress } from './progress'
 import { EXECS, HEADHUNT_COST, HOURS, TEAM_SPAN, dropFromTeams, execFx, inTraining, monthlySalaries, monthlyStaff, newPolicy, perksCost, refreshCandidates, staffEffects, stepStaff, trainingCost } from './staff'
 import { CHIP_BUDGET, OS_FEATURES, OS_TYPES, chipAdoption, cleanLook, licenceBlocked, licenceInfo, licenceSwitchCost, osRoyalty, chipBlocked, chipProjectCost, chipProjectDays, finishChip, newOs, osBlocked, osProjectCost, osProjectDays, osShipQuality, servicesPerMonth, softwareBonus } from './tech'
 import { stockOf, type ChannelId, type Company, type Corner, type CostKey, type DeviceDesign, type DeviceType, type Difficulty, type EventType, type GameConfig, type GameState, type Levels, type MonthReport, type NewsItem, type OsLook, type Product, type ProductionOrder, type ReorderRule, type SegmentId, type Site, type SiteKind, type StaffPolicy, type StorageTier, SUPPLY_CATS, type SupplyCat, TRACKS, type Track, dollars, hasStock, millions, monthCosts, thousands, wasReleased } from './types'
 
 // 7: site walls may be partitions inside a room (SiteWall.part, kind 'wall'); older saves have none and load as they are
-// 8: plots of the office grew (old ones are widened, see growPlot); products may reorder by themselves, OSes are licensed, contracts
-export const SAVE_VERSION = 8
+// 8: factory blocks have input and output faces; a floor laid before then is turned to match where it can be
+// 9: plots of the office grew (old ones are widened, see growPlot); products may reorder by themselves, OSes are licensed, contracts
+export const SAVE_VERSION = 9
 export const RETAIL_CUT = 0.15
 
 // ---------------------------------------------------------------- what an action will take
@@ -1521,6 +1523,12 @@ export function buildFactory(s: GameState): string | null {
   return null
 }
 
+/** Turn the factory's line blocks so outputs face inputs, where that makes more of the line run. Free: nothing moves. */
+export function fixFactoryLayout(s: GameState): string | null {
+  if (!s.factory) return 'Buy a factory site first'
+  return fixLayout(s.factory) ? null : 'Turning blocks would not make more of the line run: move or add blocks instead'
+}
+
 /** Build a production hall with a standard line in it. */
 export function autoLine(s: GameState): string | null {
   const site = s.factory
@@ -1637,6 +1645,52 @@ export function buildVenue(s: GameState): string | null {
   s.venue = s.venue ? movePlot(s.venue) : newSite('venue', 0)
   news(s, 'finance', `${tier ? 'Your venue moved to a bigger site' : 'The company bought land for a venue of its own'}: ${def.name}.`)
   return null
+}
+
+/** A ready-made venue on the plot as it stands, with the building's own cladding and roof and enough storeys for the rig. */
+function presetPlan(s: GameState, preset: VenuePreset) {
+  const none = { error: 'Buy a venue site first', needs: [0, 0] as [number, number], build: 0, resale: 0, cost: 0, same: false, site: null }
+  const lock = locked(s, 'venue')
+  if (lock) return { ...none, error: lock }
+  const to = s.venue
+  if (!to) return none
+  const def = VENUE_PRESETS[preset]
+  if (!def) return { ...none, error: 'There is no such layout' }
+  if (to.tier < def.tier) return { ...none, error: `The ${def.name.toLowerCase()} needs at least the ${SITE_TIERS.venue[def.tier].name.toLowerCase()}` }
+  const from = venueLayout(preset, to.tier)
+  from.facade = to.facade
+  from.roof = to.roof
+  from.floors = Math.max(from.floors, to.floors)
+  return layoutPlan(s, from, to)
+}
+
+/** What laying out a ready-made venue here would cost: the build, less what the fittings now standing sell for. */
+export function venuePresetQuote(s: GameState, preset: VenuePreset): LayoutQuote {
+  const { site: _site, ...quote } = presetPlan(s, preset)
+  return quote
+}
+
+/** Clear the venue plot and build a ready-made venue on it: small hall, theatre or arena. */
+export function applyVenuePreset(s: GameState, preset: VenuePreset): string | null {
+  const plan = presetPlan(s, preset)
+  if (plan.error || !plan.site || !s.venue) return plan.error ?? 'That layout cannot be built here'
+  if (plan.same) return 'The venue already stands exactly so'
+  spend(s, plan.build, 'facilities')
+  s.cash += plan.resale
+  s.cur.facilities -= plan.resale
+  reissue(s, plan.site)
+  plan.site.rev = s.venue.rev + 1
+  s.venue = plan.site
+  news(s, 'event', `Your venue was rebuilt as ${preset === 'arena' ? 'an' : 'a'} ${VENUE_PRESETS[preset].name.toLowerCase()} with ${venueStats(s.venue).seats.toLocaleString('en-US')} seats.`)
+  return null
+}
+
+/** Raise a venue's roof to the storeys its rigging needs to stand at full height. */
+export function raiseVenueRoof(s: GameState): string | null {
+  if (!s.venue) return 'Buy a venue site first'
+  const want = rigFloors(s.venue)
+  if (!want) return 'The rigging already fits under the roof'
+  return setLook(s, 'venue', { floors: Math.min(MAX_FLOORS, want) })
 }
 
 /** A simple open-air stage with seating, for players who want a working venue quickly. */
@@ -2694,9 +2748,11 @@ export function migrate(input: GameState): GameState {
     }
     news(s, 'finance', `Prices across the market have settled: now that technology has matured, devices no longer get dearer every year. Every list price, yours and your rivals', was brought down by ${Math.round((1 - k) * 100)}% together, so each device is as attractive as it was.`)
   }
-  // ---- version 8: office plots grew. Every plot smaller than its kind now is widened to the new size, with what
+  // factory blocks gained input and output faces: a floor laid before then is turned to match where turning is enough
+  if (from < 8 && s.factory && !lineStats(s.factory).running && fixLayout(s.factory)) news(s, 'alert', 'Factory machines now take parts in at one face and send them out at another. Your line was turned to match.')
+  // ---- version 9: office plots grew. Every plot smaller than its kind now is widened to the new size, with what
   // stands on it moved to the middle, as an upgrade to the next size does: nothing is lost or rebuilt
-  if (from < 8) {
+  if (from < 9) {
     if (s.office) s.office = growPlot(s.office)
     if (s.factory) s.factory = growPlot(s.factory)
     if (s.venue) s.venue = growPlot(s.venue)

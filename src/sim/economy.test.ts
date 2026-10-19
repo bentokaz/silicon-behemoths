@@ -150,7 +150,7 @@ describe('bigger plots', () => {
     const s = game()
     const old = SITE_TIERS.office[0]
     const small = { ...s.office, w: 14, h: 10, grid: s.office.grid.filter((_, i) => i % s.office.w < 14 && Math.floor(i / s.office.w) < 10) }
-    const save = JSON.parse(JSON.stringify({ ...s, version: 7, office: small }))
+    const save = JSON.parse(JSON.stringify({ ...s, version: 8, office: small }))
     const s2 = migrate(save)
     expect([s2.office.w, s2.office.h]).toEqual([old.w, old.h])
     expect(s2.office.items).toHaveLength(small.items.length)

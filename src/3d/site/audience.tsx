@@ -5,11 +5,12 @@
 // of the crowd; these are everyone else. The keynote replay uses it too.
 import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
+import { ITEMS, stageOf } from '../../sim/sites'
 import type { Site } from '../../sim/types'
 import { Body, Kind, Mode } from './crowd'
 import { HAIR, SKIN, hash } from './kit'
 import { People } from './People'
-import { Pose, STAGE_H, frameOf, frameX, frameZ, seatPlaces, seatRank } from './spots'
+import { Pose, STAGE_H, frameOf, frameX, frameZ, seatPlaces, seatRank, stageMarks } from './spots'
 import { useTick } from './tick'
 
 const SHIRTS = ['#c9553d', '#31506b', '#e9e4da', '#3f7d4d', '#d6a24f', '#6a5a7a', '#2c3036', '#8a5a44', '#4f8fd6', '#7a8f9c']
@@ -197,11 +198,13 @@ export function Audience({ site, state, skip, filled }: Props) {
 }
 
 /**
- * The presenter of a keynote replay: on stage at the lectern, talking to the
- * house, arms up when it cheers. Drawn the same way as everyone in a crowd.
+ * The presenter of a keynote replay: on stage, talking to the house, arms up
+ * when it cheers. With `walk` they come on from the wings at stage left and
+ * cross to the middle as it goes from 0 to 1; without it they stand at the
+ * lectern. Drawn the same way as everyone in a crowd.
  */
-export function Presenter({ site, cheer }: { site: Site; cheer: boolean }) {
-  const stage = useMemo(() => site.items.find((i) => i.kind === 'stage'), [site, site.rev]) // eslint-disable-line react-hooks/exhaustive-deps
+export function Presenter({ site, cheer, walk, at }: { site: Site; cheer: boolean; /** Read every frame: 0 in the wings, 1 at the middle mark; null to stand at the lectern. */ walk?: () => number | null; /** Told where the presenter stands each frame, in world metres, for a follow spot. */ at?: { current: [number, number] | null } }) {
+  const stage = useMemo(() => stageOf(site), [site, site.rev]) // eslint-disable-line react-hooks/exhaustive-deps
   const cast = useMemo(() => {
     const b = new Body()
     b.id = 'presenter'
@@ -214,16 +217,39 @@ export function Presenter({ site, cheer }: { site: Site; cheer: boolean }) {
     return { bodies: [b], version: 0 }
   }, [])
   const b = cast.bodies[0]
-  if (stage) {
+  const marks = stage ? stageMarks(ITEMS.venue[stage.kind]?.w ?? 6, ITEMS.venue[stage.kind]?.h ?? 4) : null
+  const place = (k: number | null) => {
+    if (!stage || !marks) return
     const f = frameOf(site, stage)
-    b.x = frameX(f, 2.0, 0.3)
-    b.z = frameZ(f, 2.0, 0.3)
+    const [lx, lz] = k === null ? marks.lectern : [marks.wings[0] + (marks.centre[0] - 0.45 - marks.wings[0]) * k, marks.wings[1] + (marks.centre[1] - marks.wings[1]) * k]
+    const x = frameX(f, lx, lz)
+    const z = frameZ(f, lx, lz)
+    const moved = Math.hypot(x - b.x, z - b.z)
+    b.x = x
+    b.z = z
     b.y = STAGE_H + 0.012
-    b.yaw = f.a + Math.PI
+    const walking = k !== null && k < 1 && moved > 0.0005
+    b.mode = walking ? Mode.Walk : Mode.Do
+    b.striding = walking
+    b.speed = walking ? 1.3 : 0
+    // across the stage toward the house's left while walking on, then turned to face the house
+    want.current = walking ? f.a - Math.PI / 2 - 0.3 : f.a + Math.PI
+    if (at) at.current = [x, z]
+    return moved
+  }
+  const want = useRef(0)
+  if (b.x === 0 && b.z === 0) {
+    place(walk ? walk() : null)
+    b.yaw = want.current
   }
   b.cheer = cheer
   useTick((dt) => {
-    b.cycle += dt
+    const moved = place(walk ? walk() : null) ?? 0
+    b.cycle += b.striding ? (moved * Math.PI) / Math.max(0.3, b.stride) : dt
+    // turned toward the house on arriving, not snapped round
+    let diff = want.current - b.yaw
+    diff -= Math.round(diff / (Math.PI * 2)) * Math.PI * 2
+    b.yaw += diff * Math.min(1, dt * 5)
   }, 4)
   if (!stage) return null
   return <People crowd={cast} cap={1} neg="#ff4d4f" markers={false} />
