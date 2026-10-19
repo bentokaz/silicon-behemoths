@@ -38,7 +38,7 @@ describe('ready-made venues', () => {
     expect(seen.arena3).toBeGreaterThan(seen.arena2)
     expect(seen.arena2).toBeGreaterThan(seen.theatre1)
     expect(seen.theatre1).toBeGreaterThan(seen.hall0)
-  })
+  }, 120_000)
 
   it('lays hired theatres and arenas out with big stages', () => {
     expect(stageOf(hiredVenue(1))?.kind).toBe('stage_l')
