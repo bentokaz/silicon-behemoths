@@ -449,3 +449,23 @@ table.grid-table .r {
   font-weight: 600;
   color: var(--color-fg);
 }
+
+/* A keynote's lower third and end card: in from the left, quickly, like a broadcast caption. */
+@keyframes sb-lower-in {
+  from {
+    transform: translateX(-24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.sb-lower {
+  animation: sb-lower-in 0.35s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sb-lower {
+    animation: none;
+  }
+}

@@ -80,17 +80,17 @@ function SeatBlock({ h, c }: { h: number; c: VenueCtx }) {
 }
 
 /** A beam of light swinging from a lamp. Live: never baked. */
-function Beam({ p, color, phase, day, len = 9 }: { p: [number, number, number]; color: string; phase: number; day: boolean; len?: number }) {
+function Beam({ p, color, phase, day, len = 9, tilt = 0.9, soft = 1 }: { p: [number, number, number]; color: string; phase: number; day: boolean; len?: number; tilt?: number; soft?: number }) {
   const ref = useRef<THREE.Group>(null)
   // light added to a bright sky does not show: by day the beam is a pale haze in the air instead
   const material = useMemo(
-    () => new THREE.MeshBasicMaterial({ color: day ? '#fffaf0' : color, transparent: true, opacity: day ? 0.2 : 0.1, depthWrite: false, blending: day ? THREE.NormalBlending : THREE.AdditiveBlending, side: THREE.DoubleSide }),
-    [color, day],
+    () => new THREE.MeshBasicMaterial({ color: day ? '#fffaf0' : color, transparent: true, opacity: (day ? 0.2 : 0.1) * soft, depthWrite: false, blending: day ? THREE.NormalBlending : THREE.AdditiveBlending, side: THREE.DoubleSide }),
+    [color, day, soft],
   )
   useFrame(({ clock }) => {
     if (!ref.current) return
     const t = clock.elapsedTime * 0.6 + phase
-    ref.current.rotation.set(0.9 + Math.sin(t) * 0.25, 0, Math.sin(t * 0.7) * 0.5)
+    ref.current.rotation.set(tilt + Math.sin(t) * 0.25, 0, Math.sin(t * 0.7) * 0.5)
   })
   return (
     <group ref={ref} position={p}>
@@ -153,7 +153,7 @@ function Stage({ W, D, c, rig }: { W: number; D: number; c: VenueCtx; rig?: numb
               <group key={i}>
                 <B p={[x, top - 0.3, front - 0.3]} s={[0.22, 0.26, 0.22]} c="#15171a" r={0.03} cast={false} />
                 <C p={[x, top - 0.45, front - 0.24]} r={[0.08, 0.08]} h={0.03} c="#ffffff" glow={color} glowPower={(c.show ? 3 : 0.5) * (0.5 + c.glow)} seg={10} rot={[0.5, 0, 0]} cast={false} />
-                {c.show && i % 2 === 0 && <Beam p={[x, top - 0.45, front - 0.24]} color={color} phase={c.seed + i * 1.7} day={c.glow < 1} len={top + 1} />}
+                {c.show && i % 2 === 0 && <Beam p={[x, top - 0.45, front - 0.24]} color={color} phase={c.seed + i * 1.7} day={c.glow < 1} len={top + 1} tilt={-0.7} soft={0.7} />}
               </group>
             )
           })}

@@ -1330,6 +1330,8 @@ export function hiredVenue(kind: number): Site {
     put('camera', cx + 2, 10)
     put('lights', cx - 7, 8)
     put('lights', cx + 6, 8)
+    // a studio's roof stands high enough for its screen
+    site.floors = 2
     return site
   }
   put('camera', cx - 1, site.h - 6)

@@ -24,6 +24,7 @@ import { BayCursor, CurveOutline } from './site/curved'
 import { Environs, type Mood, isIndoor, moodOf } from './site/env'
 import { FactoryItem } from './site/factory'
 import { FactoryCrowd } from './site/factorycrowd'
+import { Director, type Shot } from './site/director'
 import { FactoryFlow } from './site/factoryflow'
 import { FactoryFloor, shippingDocks } from './site/factorylife'
 import { Jacks } from './site/jacks'
@@ -182,6 +183,10 @@ export interface SiteViewProps {
   show?: ShowState
   /** Slowly circle the site instead of waiting for the mouse. */
   autoRotate?: boolean
+  /** A keynote's camera script, read every frame: where the camera is and what it looks at; null leaves the view to the player. */
+  director?: () => Shot | null
+  /** A keynote: how far the presenter has walked on from the wings, 0-1, read every frame; null to stand at the lectern. */
+  presenterWalk?: () => number | null
   /** Game speed (0 paused, 1, 2, 4): how fast the site's own clock runs. */
   speed?: number
   /** What the company is doing, shown in the rooms. Without it the site is a still model. */
@@ -813,7 +818,7 @@ const PLATE_TEXT = { accent: 'text-fg', pos: 'text-pos', warn: 'text-warn', neg:
 const researchOn = (o: OfficeLife, given?: ResearchNow[]): ResearchNow[] => given ?? o.research
 const fmtHour = (h: number) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`
 
-export function SiteScene({ site, mode, mood, tool, company, color, logo, selectedRoom, sealed, onTile, onRow, onEdges, onSell, onRun, onArea, onPreview, seated = [], idle = [], applicants, onPerson, day = 0, line, producing = false, products = [], busy = 0, show, autoRotate, speed = 0, life, card, onCutOff, budget = Infinity, onOff, clear, month, research, onDrawn }: SiteViewProps) {
+export function SiteScene({ site, mode, mood, tool, company, color, logo, selectedRoom, sealed, onTile, onRow, onEdges, onSell, onRun, onArea, onPreview, seated = [], idle = [], applicants, onPerson, day = 0, line, producing = false, products = [], busy = 0, show, autoRotate, director, presenterWalk, speed = 0, life, card, onCutOff, budget = Infinity, onOff, clear, month, research, onDrawn }: SiteViewProps) {
   const prefs = useSettings((s) => s.settings)
   const Q = QUALITY[prefs.quality]
   const shading = useShadingRelease()
@@ -1673,6 +1678,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
   }, [hot, tool])
 
   const venueStage = site.kind === 'venue' ? stageOf(site) : undefined
+  const presenterAt = useRef<[number, number] | null>(null)
   // a show in a hall: the hall's own lights go down for it, whatever the hour outside. Seen with the roof off, that
   // means less of the daylight too
   const houseDown = !!staged && !!venueStage && gridAt(site, venueStage.x, venueStage.y) > 0 && !dark
@@ -1710,7 +1716,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
         shadow-camera-far={span * 5 + 60}
       />
       {/* a venue has a wash on its stage and house lights over the seats, which go down for a show */}
-      {site.kind === 'venue' && <StageLights site={site} mood={mood} show={!!staged} down={houseDown} />}
+      {site.kind === 'venue' && <StageLights site={site} mood={mood} show={!!staged} down={houseDown} follow={director && stage ? () => presenterAt.current : undefined} />}
       <Environment resolution={128} frames={1} environmentIntensity={dark ? 0.12 : houseDown ? 0.16 : 0.4}>
         <color attach="background" args={[sky]} />
         <Lightformer form="rect" intensity={3} color="#fff1e0" position={[0, 8, 0]} rotation-x={Math.PI / 2} scale={[14, 14, 1]} />
@@ -1808,7 +1814,7 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
         {/* after dark the rooms are lit from within, the ones with people in them brightest */}
         <RoomLights site={site} crowd={crowd} mood={indoor && mood === 'night' ? 'dusk' : mood} lamps={site.kind === 'venue' ? 0 : ROOM_LAMPS[prefs.quality]} gain={site.kind === 'venue' ? (staged ? 0.05 : 0.15) : indoor ? 0.5 : 1} busy={lively && site.kind === 'factory' && !crowd ? () => running : undefined} onDark={mode === 'cut' ? undefined : setDarkRooms} />
         {site.kind === 'venue' && <Audience site={site} state={houseState} filled={crowd ? filledSeat : undefined} />}
-        {stage && !crowd && <Presenter site={site} cheer={!!show?.cheer} />}
+        {stage && !crowd && <Presenter site={site} cheer={!!show?.cheer} walk={presenterWalk} at={presenterAt} />}
         <SparksView sparks={sparks} />
         {site.kind === 'factory' && line && mode !== 'full' && <FactoryFlow site={site} line={line} running={running} />}
         {site.items.map((item, index) =>
@@ -1916,10 +1922,11 @@ export function SiteScene({ site, mode, mood, tool, company, color, logo, select
         </EffectComposer>
       )}
       <Drawn on={onUp} />
-      {!autoRotate && <CameraKeys span={span} home={home} aim={aim} />}
-      {autoRotate && <AutoTurn speed={3} />}
+      {!autoRotate && !director && <CameraKeys span={span} home={home} aim={aim} />}
+      {autoRotate && !director && <AutoTurn speed={3} />}
+      {director && <Director shot={director} />}
       <CameraFence span={span} top={height + 6} />
-      <OrbitControls makeDefault target={aim} minDistance={near * 6} maxDistance={span * 3 + 40} maxPolarAngle={Math.PI * 0.485} enablePan screenSpacePanning={false} panSpeed={1.3 * prefs.cameraSpeed} rotateSpeed={0.9 * prefs.cameraSpeed} zoomSpeed={1.2 * prefs.cameraSpeed} zoomToCursor={prefs.zoomToPointer} enableDamping dampingFactor={0.2} mouseButtons={mouseButtons} touches={touches} />
+      <OrbitControls makeDefault enabled={!director} target={aim} minDistance={near * 6} maxDistance={span * 3 + 40} maxPolarAngle={Math.PI * 0.485} enablePan screenSpacePanning={false} panSpeed={1.3 * prefs.cameraSpeed} rotateSpeed={0.9 * prefs.cameraSpeed} zoomSpeed={1.2 * prefs.cameraSpeed} zoomToCursor={prefs.zoomToPointer} enableDamping dampingFactor={0.2} mouseButtons={mouseButtons} touches={touches} />
     </SafeCanvas>
   )
 }

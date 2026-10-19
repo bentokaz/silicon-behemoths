@@ -203,7 +203,7 @@ export function Audience({ site, state, skip, filled }: Props) {
  * cross to the middle as it goes from 0 to 1; without it they stand at the
  * lectern. Drawn the same way as everyone in a crowd.
  */
-export function Presenter({ site, cheer, walk }: { site: Site; cheer: boolean; /** Read every frame: 0 in the wings, 1 at the middle mark; null to stand at the lectern. */ walk?: () => number | null }) {
+export function Presenter({ site, cheer, walk, at }: { site: Site; cheer: boolean; /** Read every frame: 0 in the wings, 1 at the middle mark; null to stand at the lectern. */ walk?: () => number | null; /** Told where the presenter stands each frame, in world metres, for a follow spot. */ at?: { current: [number, number] | null } }) {
   const stage = useMemo(() => stageOf(site), [site, site.rev]) // eslint-disable-line react-hooks/exhaustive-deps
   const cast = useMemo(() => {
     const b = new Body()
@@ -221,7 +221,7 @@ export function Presenter({ site, cheer, walk }: { site: Site; cheer: boolean; /
   const place = (k: number | null) => {
     if (!stage || !marks) return
     const f = frameOf(site, stage)
-    const [lx, lz] = k === null ? marks.lectern : [marks.wings[0] + (marks.centre[0] + 0.75 - marks.wings[0]) * k, marks.wings[1] + (marks.centre[1] - marks.wings[1]) * k]
+    const [lx, lz] = k === null ? marks.lectern : [marks.wings[0] + (marks.centre[0] - 0.45 - marks.wings[0]) * k, marks.wings[1] + (marks.centre[1] - marks.wings[1]) * k]
     const x = frameX(f, lx, lz)
     const z = frameZ(f, lx, lz)
     const moved = Math.hypot(x - b.x, z - b.z)
@@ -233,14 +233,23 @@ export function Presenter({ site, cheer, walk }: { site: Site; cheer: boolean; /
     b.striding = walking
     b.speed = walking ? 1.3 : 0
     // across the stage toward the house's left while walking on, then turned to face the house
-    b.yaw = walking ? f.a + Math.PI / 2 + 0.25 : f.a + Math.PI
+    want.current = walking ? f.a - Math.PI / 2 - 0.3 : f.a + Math.PI
+    if (at) at.current = [x, z]
     return moved
   }
-  if (b.x === 0 && b.z === 0) place(walk ? walk() : null)
+  const want = useRef(0)
+  if (b.x === 0 && b.z === 0) {
+    place(walk ? walk() : null)
+    b.yaw = want.current
+  }
   b.cheer = cheer
   useTick((dt) => {
     const moved = place(walk ? walk() : null) ?? 0
     b.cycle += b.striding ? (moved * Math.PI) / Math.max(0.3, b.stride) : dt
+    // turned toward the house on arriving, not snapped round
+    let diff = want.current - b.yaw
+    diff -= Math.round(diff / (Math.PI * 2)) * Math.PI * 2
+    b.yaw += diff * Math.min(1, dt * 5)
   }, 4)
   if (!stage) return null
   return <People crowd={cast} cap={1} neg="#ff4d4f" markers={false} />
