@@ -10,6 +10,7 @@ const FRAME: Record<string, Params> = {
   titanium: { metalness: 0.85, roughness: 0.46, anisotropy: 0.6 },
   liquidmetal: { metalness: 1, roughness: 0.26, clearcoat: 0.3, clearcoatRoughness: 0.15 },
   graphene: { metalness: 0.45, roughness: 0.5, sheen: 0.6, sheenRoughness: 0.4 },
+  wood: { metalness: 0, roughness: 0.7, clearcoat: 0.12, clearcoatRoughness: 0.6 },
 }
 
 const BACK: Record<string, Params> = {
@@ -19,6 +20,7 @@ const BACK: Record<string, Params> = {
   ceramic: { metalness: 0.05, roughness: 0.22, clearcoat: 0.6, clearcoatRoughness: 0.14, reflectivity: 0.5 },
   sapphire: { metalness: 0, roughness: 0.1, clearcoat: 0.8, clearcoatRoughness: 0.06, ior: 1.77, reflectivity: 0.6 },
   graphene: { metalness: 0.45, roughness: 0.5, sheen: 0.6, sheenRoughness: 0.4 },
+  wood: { metalness: 0, roughness: 0.7, clearcoat: 0.12, clearcoatRoughness: 0.6 },
 }
 
 /** Linear luminance of a CSS colour, 0 (black) to 1 (white). */

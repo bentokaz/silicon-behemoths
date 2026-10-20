@@ -174,6 +174,8 @@ interface Store {
   openPerson(id: string | null): void
 
   designing: boolean
+  /** The contract the designer is working to: its requirements are listed beside the design. */
+  brief: string | null
   editorMode: EditorMode
   simple: SimpleLayout
   draft: DeviceDesign | null
@@ -338,6 +340,7 @@ export const useStore = create<Store>((set, get) => {
     editorMode: saved('sb-editor', 'simple') === 'advanced' ? 'advanced' : 'simple',
     simple: { layout: 1, cams: 3, sensor: 0, front: 'notch', fingerprint: 'side', flash: true, logo: '' },
     draft: null,
+    brief: null,
     meta: { family: '', variant: '' },
     selectedPart: null,
     past: [],
@@ -527,7 +530,7 @@ export const useStore = create<Store>((set, get) => {
     },
     closeDesigner(discard = false) {
       const keep = !discard && worthKeeping()
-      set({ designing: false, selectedPart: null, kept: keep })
+      set({ designing: false, selectedPart: null, kept: keep, brief: null })
       if (keep) get().say('Your design is set aside. New device picks it up again.')
     },
 
