@@ -79,7 +79,9 @@ function meshSheet(w: number, h: number, r: number, color: string, pitch = 5, ki
   const tex = holes(kind).clone()
   tex.repeat.set(w / (pitch * 2), h / (pitch * 2))
   tex.needsUpdate = true
-  const m = new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.6, alphaMap: tex, alphaTest: 0.5, side: THREE.DoubleSide })
+  const m = new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.6, alphaMap: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide })
+  // no alpha test: the holes blend, so that from across the room a sheet reads as fine mesh (a steel sheet you can half
+  // see through) and not as a missing panel, and close up they open out
   const geo = plate(w, h, r)
   // a shape's UVs are in its own units: bring them to 0..1 so that the repeat counts holes
   const uv = geo.attributes.uv
@@ -192,8 +194,8 @@ export function buildTower(d: DeviceDesign, c: Ctx): THREE.Group {
       inside.add(o)
       return o
     }
-    lamp('#fff4e8', 1.1, flat ? 0 : W * 0.22, flat ? H * 0.3 : H / 2 - Math.min(40, H * 0.1), D * 0.12)
-    lamp('#dfe8f5', 0.45, flat ? 0 : W * 0.2, flat ? -H * 0.2 : -H * 0.15, D * 0.3)
+    lamp('#fff4e8', 0.8, flat ? 0 : W * 0.22, flat ? H * 0.3 : H / 2 - Math.min(40, H * 0.1), D * 0.12)
+    lamp('#dfe8f5', 0.55, flat ? 0 : W * 0.2, flat ? -H * 0.2 : -H * 0.15, D * 0.3)
     if (lit) lamp(rgb.color, 0.9, flat ? 0 : W * 0.15, flat ? -H * 0.3 : -H / 2 + Math.min(60, H * 0.15), 0).userData.rgbLight = true
   }
   root.add(inside)
@@ -481,13 +483,12 @@ export function buildMouse(d: DeviceDesign, c: Ctx): THREE.Group {
   const lit = rgbOn(b)
   const rgb = rgbOf(b)
   const io = d.specs.io ?? []
-  // the shell in three mouldings: the top cover in the body colour, the side skirts in the frame colour, a dark base
+  // the shell in mouldings: the top cover and the buttons in the shell colour, the side skirts and the base in the underside colour
   const SKIRT = 0.62
-  const top = mesh(shellPart(sh, Math.PI - SKIRT, SKIRT, 64, 0, 0, 0.56), c.m.back)
-  const skirtL = mesh(shellPart(sh, Math.PI, Math.PI - SKIRT, 14), c.m.frame)
-  const skirtR = mesh(shellPart(sh, SKIRT, 0, 14), c.m.frame)
-  const baseMat = new THREE.MeshStandardMaterial({ color: '#141518', roughness: 0.8, metalness: 0.1 })
-  const base = mesh(baseGeometry(sh), baseMat, false)
+  const top = mesh(shellPart(sh, Math.PI - SKIRT, SKIRT, 64, 0, 0, 0.56), c.m.frame)
+  const skirtL = mesh(shellPart(sh, Math.PI, Math.PI - SKIRT, 14), c.m.back)
+  const skirtR = mesh(shellPart(sh, SKIRT, 0, 14), c.m.back)
+  const base = mesh(baseGeometry(sh), c.m.back, false)
   for (const o of [top, skirtL, skirtR, base]) {
     o.userData.body = true
     o.userData.carrier = 'body'
@@ -498,8 +499,8 @@ export function buildMouse(d: DeviceDesign, c: Ctx): THREE.Group {
   const zAt = (t: number) => -sh.L / 2 + t * sh.L
   // the two main buttons: separate mouldings over the front of the top, split down the middle, a hair proud of it
   const split = 0.05
-  const buttonL = mesh(shellPart(sh, Math.PI - SKIRT, Math.PI / 2 + split, 30, 0, 0.56, 1), c.m.back)
-  const buttonR = mesh(shellPart(sh, Math.PI / 2 - split, SKIRT, 30, 0, 0.56, 1), c.m.back)
+  const buttonL = mesh(shellPart(sh, Math.PI - SKIRT, Math.PI / 2 + split, 30, 0, 0.56, 1), c.m.frame)
+  const buttonR = mesh(shellPart(sh, Math.PI / 2 - split, SKIRT, 30, 0, 0.56, 1), c.m.frame)
   root.add(buttonL, buttonR)
   // the shadow lines round them: down the middle (broken by the wheel), and across behind them
   const wheelT = 0.74
