@@ -2089,7 +2089,7 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
         {site.kind === 'venue' && <Audience site={site} state={houseState} filled={crowd ? filledSeat : undefined} />}
         {stage && !crowd && <Presenter site={site} cheer={!!show?.cheer} walk={presenterWalk} at={presenterAt} />}
         <SparksView sparks={sparks} />
-        {site.kind === 'factory' && line && mode !== 'full' && <FactoryFlow site={site} line={line} running={running} />}
+        {site.kind === 'factory' && line && mode !== 'full' && <FactoryFlow site={site} line={line} running={running} speed={speed} />}
         {site.items.map((item, index) =>
           dropping.has(item.id) && ITEMS[site.kind][item.kind] ? (
             <group key={item.id} position={place(item)} rotation-y={(-item.rot * Math.PI) / 2}>
