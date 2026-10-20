@@ -59,9 +59,12 @@ export function storeyMeshes(ground: Site, from: number, to: number) {
     }
     // rails round the stairwells on this floor
     const wells = wellsOn(ground, f)
-    const stair = (x: number, y: number) => wells.get(y * ground.w + x)?.kind === 'stairs'
+    const stair = (x: number, y: number) => {
+      const k = x >= 0 && x < ground.w ? wells.get(y * ground.w + x)?.kind : undefined
+      return !!k && k !== 'lift'
+    }
     for (const [i, w] of wells) {
-      if (w.kind !== 'stairs') continue
+      if (w.kind === 'lift') continue
       const x = i % ground.w
       const y = Math.floor(i / ground.w)
       const rail = (px: number, pz: number, sx: number, sz: number) => {
@@ -80,7 +83,7 @@ export function storeyMeshes(ground: Site, from: number, to: number) {
 /** The tiles of a storey left open for the stairs coming up from the floor below. */
 export function holesOn(ground: Site, floor: number): Set<number> {
   const out = new Set<number>()
-  for (const [i, w] of wellsOn(ground, floor)) if (w.kind === 'stairs') out.add(i)
+  for (const [i, w] of wellsOn(ground, floor)) if (w.kind !== 'lift') out.add(i)
   return out
 }
 
@@ -92,6 +95,59 @@ export function Storeys({ ground, from, to, sig }: { ground: Site; from: number;
       {meshes.map((m) => (
         <primitive key={m.uuid} object={m} />
       ))}
+    </>
+  )
+}
+
+/**
+ * A staircase, a lift or an escalator, as it stands on the floor it rises
+ * from, laid out as its item is: a flight climbing north to the floor above,
+ * a glass lift car, or a moving stair between glass sides.
+ */
+export function Climb({ kind }: { kind: string }) {
+  if (kind === 'lift')
+    return (
+      <>
+        <mesh position={[0, 1.45, 0]} castShadow receiveShadow>
+          <boxGeometry args={[1.76, 2.9, 1.76]} />
+          <meshStandardMaterial color="#5a6068" roughness={0.35} />
+        </mesh>
+        <mesh position={[0, 1.2, 0.885]}>
+          <boxGeometry args={[1.0, 2.2, 0.02]} />
+          <meshStandardMaterial color="#c9ced3" roughness={0.25} />
+        </mesh>
+      </>
+    )
+  const esc = kind === 'escalator'
+  const long = esc ? 4 : 3
+  const wide = esc ? 1.7 : 0.86
+  const steps = esc ? 14 : 10
+  const run = long / steps
+  return (
+    <>
+      {Array.from({ length: steps }, (_, i) => {
+        const top = ((i + 1) / steps) * STOREY - 0.1
+        return (
+          <mesh key={i} position={[0, top / 2, long / 2 - (i + 0.5) * run]} castShadow receiveShadow>
+            <boxGeometry args={[esc ? wide - 0.3 : wide, top, run]} />
+            <meshStandardMaterial color={esc ? (i % 2 ? '#3a3d42' : '#45484e') : i % 2 ? '#8d9095' : '#979a9e'} roughness={0.7} />
+          </mesh>
+        )
+      })}
+      {[-wide / 2, wide / 2].map((x) =>
+        esc ? (
+          // glass sides rising with the stair to the north
+          <mesh key={x} position={[x * 0.92, STOREY / 2 + 0.3, 0]} rotation-x={-Math.atan2(STOREY, long)}>
+            <boxGeometry args={[0.06, 0.9, Math.hypot(STOREY, long)]} />
+            <meshStandardMaterial color="#cfe3ec" transparent opacity={0.35} roughness={0.1} />
+          </mesh>
+        ) : (
+          <mesh key={x} position={[x, 2.0, 0]}>
+            <boxGeometry args={[0.04, 0.05, long + 0.1]} />
+            <meshStandardMaterial color="#2a2d31" roughness={0.4} />
+          </mesh>
+        ),
+      )}
     </>
   )
 }

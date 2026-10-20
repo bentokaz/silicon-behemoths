@@ -14,7 +14,7 @@ import { MIN_THICK } from '../sim/curves'
 import { DIFFICULTY, EDGE_COST, PART_COST, clearZone, fillRoom, lookCost, paintArea, placeItems, player, removeItems, removeRoom, roomCost, rotateItem, setEdges, setLook, setRoomStyle, siteOf, zoneRoom } from '../sim/game'
 import { factoryLife, officeLife, storeLife, venueLife } from '../sim/life'
 import { type CapId, capOf, has, lockTip } from '../sim/progress'
-import { FACADES, GROUNDS, ITEMS, type ItemDef, type LineStats, MAX_FLOORS, OUT, ROOFS, ROOMS, blankLevel, builtTiles, gridAt, groundsFor, itemAllowed, linkedLevels, needsOf, roomNames, roomOf, sealedOn, sealedRooms, upkeep } from '../sim/sites'
+import { FACADES, GROUNDS, ITEMS, type ItemDef, type LineStats, MAX_FLOORS, OUT, ROOFS, ROOMS, GROUND_ONLY, GROUND_ROOMS, blankLevel, builtTiles, gridAt, groundsFor, itemAllowed, linkedLevels, needsOf, roomNames, roomOf, sealedOn, sealedRooms, upkeep } from '../sim/sites'
 import type { Employee, GameState, Product, Site, SiteItem } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { actionFor, keyName, keysFor } from '../store/settings'
@@ -177,7 +177,7 @@ export function SiteBuilder({ siteRef, site: ground, status, children, tools, se
   const [floorPick, setFloor] = useState(0)
   const storeys = (ground.upper?.length ?? 0) + 1
   /** The highest floor that can be picked: one over the top, where building a room puts a new floor up. */
-  const topPick = ground.kind === 'office' ? Math.min(MAX_FLOORS - 1, storeys) : 0
+  const topPick = Math.min(MAX_FLOORS - 1, storeys)
   const floor = Math.min(floorPick, topPick)
   /** Picked the floor over the top one: nothing is built there yet. */
   const fresh = floor > 0 && floor >= storeys
@@ -591,7 +591,7 @@ export function SiteBuilder({ siteRef, site: ground, status, children, tools, se
 
   const tiles = builtTiles(site)
   // furniture that only goes in rooms the company cannot build yet stays off the list until it can
-  const offered = Object.entries(defs).filter(([kind]) => itemAllowed(site, kind) && (!needsOf(site.kind, 'item', kind) || has(g, needsOf(site.kind, 'item', kind) as CapId)))
+  const offered = Object.entries(defs).filter(([kind]) => itemAllowed(site, kind) && !(floor && GROUND_ONLY[site.kind].has(kind)) && (!needsOf(site.kind, 'item', kind) || has(g, needsOf(site.kind, 'item', kind) as CapId)))
   // where the furniture is for: the room type in hand
   const typeName = (t: string) => (t === OUT ? 'open ground' : (rooms[t]?.name.toLowerCase() ?? 'room'))
   const place: { type: string; name: string } | null = roomType && (roomType === OUT || rooms[roomType]) ? { type: roomType, name: typeName(roomType) } : null
@@ -684,7 +684,7 @@ export function SiteBuilder({ siteRef, site: ground, status, children, tools, se
             <IconBtn icon="redo" title={redoable ? `Redo: ${redoable} (Ctrl+Shift+Z)` : 'Nothing to redo'} disabled={!redoable} className="-ml-px" onClick={redoStep} />
           </div>
           <SiteMenu label="View" value={mode} options={VIEWS} onChange={setMode} />
-          {ground.kind === 'office' && (
+          {(
             <div className="sb-float flex items-center" role="group" aria-label="Floor">
               <IconBtn icon="arrowDown" title={floor ? `Down to ${floorName(floor - 1).toLowerCase()} (Page Down)` : 'This is the ground floor'} disabled={!floor} onClick={() => toFloor(floor - 1)} />
               <span
@@ -865,7 +865,7 @@ export function SiteBuilder({ siteRef, site: ground, status, children, tools, se
               </div>
             )}
             {tab === 'Rooms' &&
-              Object.entries(rooms).map(([id, r]) => {
+              Object.entries(rooms).filter(([id]) => !(floor && GROUND_ROOMS[site.kind].has(id))).map(([id, r]) => {
                 const on = roomType === id
                 // a room that comes with a part of the company not open yet says what opens it
                 const need = needsOf(site.kind, 'room', id) as CapId | undefined
@@ -941,7 +941,7 @@ export function SiteBuilder({ siteRef, site: ground, status, children, tools, se
                 {FACADES.map((f, i) => lookRow(f.name, f.color, site.facade === i, lookCost(site, { facade: i }), () => look(`${f.name} cladding`, { facade: i })))}
                 <div className="border-b border-line px-2 pb-1 pt-2 text-[11px] text-dim">Roof</div>
                 {ROOFS.map((r, i) => lookRow(r.name, r.color, site.roof === i, lookCost(site, { roof: i }), () => look(`${r.name} roof`, { roof: i })))}
-                {site.kind !== 'office' && (
+                {site.kind === 'venue' && (
                 <div className="flex items-center justify-between gap-2 px-2 py-2">
                   <span className="text-[11px] text-dim" title="Each upper floor is a floor of its own to build on: pick it with the floor switcher (Page Up, Page Down). Upper floors add prestige and upkeep, and make new ground-floor rooms cost more.">
                     Storeys <span className="num text-fg">{site.floors}</span>
@@ -956,7 +956,7 @@ export function SiteBuilder({ siteRef, site: ground, status, children, tools, se
                   </span>
                 </div>
                 )}
-                {site.kind === 'office' && (
+                {site.kind !== 'venue' && (
                   <div className="px-2 py-2 text-[11px] text-dim">
                     Storeys <span className="num text-fg">{site.floors}</span>. To add one, go up a floor with the floor switcher (Page Up) and mark out a room there.
                   </div>

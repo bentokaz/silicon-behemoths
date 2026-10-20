@@ -22,7 +22,7 @@ import { ACCESSORY, footfall, storeBuyers } from './retail'
 import { contractBlocked, offerContracts, stepContracts } from './contracts'
 import { bayStands, curveAt, curveTiles, onCurve } from './curves'
 import { fixLayout, lineStats } from './factoryline'
-import { FACADES, FLOOR_COST, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, VENUE_PRESETS, type VenuePreset, rigFloors, venueLayout, RIG_TOP, STOREY_M, tilesOf, blankLevel, climbBlocked, wellsOn, linkedLevels, CLIMB, cutAt, type Shape, type ShapeOpts, SHORT_WALL, UNKNOWN_ITEM, areaOf, areaTiles, autoDoor, builtTiles, canPartition, canPlace, courtyardFor, curveFor, defaultGround, doorFits, fillError, gridAt, groundsFor, hasGround, inPlot, isBoundary, itemAllowed, itemAt, itemTiles, mergeRooms, newSite, openRooms, pocketAt, roomOf, rowSpots, shapeCuts, starterLine, storeStats, syncLevels, tidy, tierOf, touching, upkeep, partAt, venueStats, wallAt, zone } from './sites'
+import { FACADES, FLOOR_COST, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, VENUE_PRESETS, type VenuePreset, rigFloors, venueLayout, RIG_TOP, STOREY_M, tilesOf, climbBlocked, wellsOn, rigNeed, GROUND_ROOMS, linkedLevels, CLIMB, cutAt, type Shape, type ShapeOpts, SHORT_WALL, UNKNOWN_ITEM, areaOf, areaTiles, autoDoor, builtTiles, canPartition, canPlace, courtyardFor, curveFor, defaultGround, doorFits, fillError, gridAt, groundsFor, hasGround, inPlot, isBoundary, itemAllowed, itemAt, itemTiles, mergeRooms, newSite, openRooms, pocketAt, roomOf, rowSpots, shapeCuts, starterLine, storeStats, syncLevels, tidy, tierOf, touching, upkeep, partAt, venueStats, wallAt, zone } from './sites'
 import { capOfChannel, locked, refreshExecs, siteLocked, stepProgress } from './progress'
 import { EXECS, HEADHUNT_COST, HOURS, TEAM_SPAN, dropFromTeams, execFx, inTraining, monthlySalaries, monthlyStaff, newPolicy, perksCost, refreshCandidates, staffEffects, stepStaff, trainingCost } from './staff'
 import { CHIP_BUDGET, OS_FEATURES, OS_TYPES, chipAdoption, cleanLook, licenceBlocked, licenceInfo, licenceSwitchCost, osRoyalty, osRunCost, releaseNameFor, chipBlocked, chipProjectCost, chipProjectDays, finishChip, newOs, osBlocked, osProjectCost, osProjectDays, osShipQuality, servicesPerMonth, softwareBonus } from './tech'
@@ -31,7 +31,7 @@ import { stockOf, type ChannelId, type Company, type Corner, type CostKey, type 
 // 7: site walls may be partitions inside a room (SiteWall.part, kind 'wall'); older saves have none and load as they are
 // 8: factory blocks have input and output faces; a floor laid before then is turned to match where it can be
 // 9: plots of the office grew (old ones are widened, see growPlot); products may reorder by themselves, OSes are licensed, contracts
-export const SAVE_VERSION = 13
+export const SAVE_VERSION = 15
 export const RETAIL_CUT = 0.15
 
 // ---------------------------------------------------------------- what an action will take
@@ -778,21 +778,34 @@ export function headhunt(s: GameState): string | null {
 // A site reference is 'office', 'factory', 'venue' or 'store:' + store id.
 
 export function siteOf(s: GameState, ref: string): Site | null {
-  if (ref === 'office') return s.office
-  // an upper floor of the head office: "office@1" is the first floor
-  if (typeof ref === 'string' && ref.startsWith('office@')) {
-    const f = Number(ref.slice(7))
-    return Number.isInteger(f) && f > 0 ? (s.office.upper?.[f - 1] ?? null) : null
+  if (typeof ref !== 'string') return null
+  // an upper floor: "office@1" is the head office's first floor, "store:s3@2" a store's second
+  const at = ref.lastIndexOf('@')
+  if (at > 0) {
+    const f = Number(ref.slice(at + 1))
+    const base = siteOf(s, ref.slice(0, at))
+    return base && Number.isInteger(f) && f > 0 ? (base.upper?.[f - 1] ?? null) : null
   }
-  if (ref === 'factory') return s.factory
-  if (ref === 'venue') return s.venue
+  if (ref === 'office') return s.office
+  if (ref === 'factory') return s.factory ?? null
+  if (ref === 'venue') return s.venue ?? null
   return s.stores.find((st) => `store:${st.id}` === ref)?.site ?? null
 }
 const siteBucket = (site: Site): CostKey => (site.kind === 'office' ? 'overhead' : 'facilities')
-/** Which storey of the head office a reference names: 0 for the ground floor (or any other site), 1 for "office@1". */
-export const floorOfRef = (ref: string): number => (typeof ref === 'string' && ref.startsWith('office@') ? Number(ref.slice(7)) || 0 : 0)
+/** Which storey a reference names: 0 for a ground floor, 1 for "office@1" or "venue@1". */
+export const floorOfRef = (ref: string): number => (typeof ref === 'string' && ref.lastIndexOf('@') > 0 ? Number(ref.slice(ref.lastIndexOf('@') + 1)) || 0 : 0)
+/** The building a reference is a storey of: its ground floor. */
+export const groundOf = (s: GameState, ref: string): Site | null => siteOf(s, typeof ref === 'string' && ref.lastIndexOf('@') > 0 ? ref.slice(0, ref.lastIndexOf('@')) : ref)
 /** The stairwells and lift shafts coming up through the storey a reference names. */
-const wellsFor = (s: GameState, ref: string) => (floorOfRef(ref) > 0 ? wellsOn(s.office, floorOfRef(ref)) : undefined)
+const wellsFor = (s: GameState, ref: string) => {
+  const g = floorOfRef(ref) > 0 ? groundOf(s, ref) : null
+  return g ? wellsOn(g, floorOfRef(ref)) : undefined
+}
+/** Whether stairs or a lift put down here would come up through something standing on the floors above. */
+const climbFor = (s: GameState, ref: string, kind: string, tiles: [number, number][]) => {
+  const g = groundOf(s, ref)
+  return g ? climbBlocked(g, floorOfRef(ref), kind, tiles) : null
+}
 /**
  * The storey a room is being built on, putting a new one on top of the
  * building when the reference is the floor just over its top floor: going
@@ -802,18 +815,23 @@ function buildOn(s: GameState, ref: string): Site | null {
   const site = siteOf(s, ref)
   if (site) return site
   const f = floorOfRef(ref)
-  const o = s.office
-  if (!Number.isInteger(f) || f < 1 || f !== (o.upper?.length ?? 0) + 1 || f >= MAX_FLOORS || o.floors !== f) return null
-  o.floors = f + 1
-  ;(o.upper ??= []).push(blankLevel(o, f))
+  const o = groundOf(s, ref)
+  if (!o || !Number.isInteger(f) || f < 1 || f !== (o.upper?.length ?? 0) + 1 || f >= MAX_FLOORS || o.floors < f) return null
+  o.floors = Math.max(o.floors, f + 1)
+  syncLevels(o)
   o.rev++
-  return o.upper[f - 1]
+  return o.upper![f - 1]
 }
-/** Storeys at the top of the head office with nothing on them come off: a floor is only there while something is built on it. */
-export function trimLevels(o: Site) {
-  if (o.kind !== 'office' || !o.upper) return
+/**
+ * Storeys at the top of a building with nothing on them come off: a floor is
+ * only there while something is built on it. A venue keeps the height its
+ * rigging needs, the empty storeys over its hall.
+ */
+export function trimLevels(o: Site | null) {
+  if (!o?.upper) return
+  const keep = o.kind === 'venue' ? rigNeed(o) - 1 : 0
   let cut = false
-  while (o.upper.length && !o.upper[o.upper.length - 1].rooms.length && !o.upper[o.upper.length - 1].items.length) (o.upper.pop(), (cut = true))
+  while (o.upper.length > keep && !o.upper[o.upper.length - 1].rooms.length && !o.upper[o.upper.length - 1].items.length) (o.upper.pop(), (cut = true))
   if (!cut) return
   o.floors = o.upper.length + 1
   if (!o.upper.length) delete o.upper
@@ -915,11 +933,12 @@ export function zoneRoom(s: GameState, ref: string, type: string, x0: number, y0
   const site = buildOn(s, ref)
   if (!site) return NO_SITE
   const err = zoneOn(s, site, type, x0, y0, x1, y1, shape, into, opts, apart)
-  if (err && site.level) trimLevels(s.office)
+  if (err && site.level) trimLevels(groundOf(s, ref))
   return err
 }
 function zoneOn(s: GameState, site: Site, type: string, x0: number, y0: number, x1: number, y1: number, shape: Shape, into?: number, opts?: ShapeOpts, apart = false): string | null {
   if (!lists(ROOMS[site.kind], type)) return 'There is no such kind of room for this plot'
+  if (site.level && GROUND_ROOMS[site.kind].has(type)) return `A ${ROOMS[site.kind][type].name.toLowerCase()} stands on the ground floor, where it can carry the line`
   if (!SHAPES.includes(shape)) return 'A room is drawn as a box, a round, a ring or a diagonal'
   if (!near(site, x0, y0, x1, y1)) return OFF_PLOT
   const lock = siteLocked(s, site.kind, 'room', type)
@@ -979,7 +998,7 @@ export function clearZone(s: GameState, ref: string, x0: number, y0: number, x1:
   s.cur[siteBucket(site)] -= back
   tidy(site)
   site.rev++
-  if (site.level) trimLevels(s.office)
+  if (site.level) trimLevels(groundOf(s, ref))
 }
 
 /** Knock down one whole room. */
@@ -997,7 +1016,7 @@ export function removeRoom(s: GameState, ref: string, room: number) {
   s.cur[siteBucket(site)] -= back
   tidy(site)
   site.rev++
-  if (site.level) trimLevels(s.office)
+  if (site.level) trimLevels(groundOf(s, ref))
 }
 
 export function setRoomStyle(s: GameState, ref: string, room: number, style: number) {
@@ -1207,7 +1226,7 @@ export function placeItem(s: GameState, ref: string, kind: string, x: number, y:
   const site = siteOf(s, ref)
   if (!site) return NO_SITE
   const turn = quarterTurns(rot)
-  const err = canPlace(site, kind, x, y, turn, wellsFor(s, ref)) ?? siteLocked(s, site.kind, 'item', kind) ?? climbBlocked(s.office, floorOfRef(ref), site.kind === 'office' ? kind : '', tilesOf(ITEMS[site.kind][kind], x, y, turn))
+  const err = canPlace(site, kind, x, y, turn, wellsFor(s, ref)) ?? siteLocked(s, site.kind, 'item', kind) ?? climbFor(s, ref, kind, tilesOf(ITEMS[site.kind][kind], x, y, turn))
   if (err) return err
   const cost = ITEMS[site.kind][kind].cost
   const roof = roofFor(site, kind)
@@ -1235,6 +1254,7 @@ function raiseFor(s: GameState, site: Site) {
   const cost = lookCost(site, { floors: want })
   spend(s, cost, siteBucket(site))
   site.floors = want
+  syncLevels(site)
 }
 
 /**
@@ -1256,7 +1276,7 @@ export function placeItems(s: GameState, ref: string, kind: string, x0: number, 
   let why: string | null = null
   const wells = wellsFor(s, ref)
   for (const [x, y] of rowSpots(def, x0, y0, x1, y1, turn)) {
-    const err = canPlace(site, kind, x, y, turn, wells) ?? climbBlocked(s.office, floorOfRef(ref), site.kind === 'office' ? kind : '', tilesOf(def, x, y, turn))
+    const err = canPlace(site, kind, x, y, turn, wells) ?? climbFor(s, ref, kind, tilesOf(def, x, y, turn))
     if (err) {
       why ??= err
       out.skipped++
@@ -1808,6 +1828,29 @@ export function applyVenuePreset(s: GameState, preset: VenuePreset): string | nu
   s.venue = plan.site
   news(s, 'event', `Your venue was rebuilt as ${preset === 'arena' ? 'an' : 'a'} ${VENUE_PRESETS[preset].name.toLowerCase()} with ${venueStats(s.venue).seats.toLocaleString('en-US')} seats.`)
   return null
+}
+
+/**
+ * Save version 15: every kind of building has storeys of its own to build on.
+ * A factory's or a store's extra height was an empty shell: it comes off, and
+ * what was paid for it is returned. A venue keeps the height over its rigging.
+ */
+function storeyAll(s: GameState) {
+  const sites = [s.factory, s.venue, ...(s.stores ?? []).map((st) => st.site)].filter((x): x is Site => !!x)
+  let back = 0
+  for (const site of sites) {
+    if (site.upper?.length || site.floors <= 1) continue
+    const was = site.floors
+    syncLevels(site)
+    trimLevels(site)
+    back += (was - site.floors) * builtTiles(site) * FLOOR_COST
+    site.rev++
+  }
+  if (back > 0) {
+    s.cash += back
+    s.cur.facilities -= back
+    news(s, 'event', `Empty upper storeys came off your other buildings and ${dollars(back)} was refunded. Every building now has floors of its own: go up a floor in its builder and mark out a room.`)
+  }
 }
 
 /**
@@ -2936,6 +2979,7 @@ export function migrate(input: GameState): GameState {
   // version 10: the head office's upper storeys became floors of their own to build on, bare to begin with
   if (from < 10 && s.office) syncLevels(s.office)
   if (from < 13) restorey(s)
+  if (from < 15) storeyAll(s)
   s.unlocks = s.unlocks ?? {}
   s.execSeats = s.execSeats ?? {}
   s.execPool = s.execPool ?? []

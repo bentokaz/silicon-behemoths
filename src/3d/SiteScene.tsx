@@ -10,7 +10,7 @@ import { type Pt, bayRun, bayStands, curveTiles, nearestBay } from '../sim/curve
 import { money, moneyDelta, num, pct } from '../components/format'
 import { EDGE_COST, edgePrice, keepsDoors, partitionRun, roomCost, zonePlan } from '../sim/game'
 import type { FactoryLife, OfficeLife, StoreLife, VenueLife } from '../sim/life'
-import { type Well, blankLevel, storeysOf, wellsOn, ITEMS, type LineStats, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, areaOf, areaTiles, canPartition, canPlace, ceilingOf, curveFor, cutAt, doorFits, fillError, gridAt, inPlot, isBoundary, hasGround, isStage, itemAt, itemTiles, pocketAt, reachable, roomOf, rowSpots, stageOf, tilesOf, wallAt } from '../sim/sites'
+import { type Well, blankLevel, ceilingAt, storeysOf, wellsOn, ITEMS, type LineStats, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, areaOf, areaTiles, canPartition, canPlace, ceilingOf, curveFor, cutAt, doorFits, fillError, gridAt, inPlot, isBoundary, hasGround, isStage, itemAt, itemTiles, pocketAt, reachable, roomOf, rowSpots, stageOf, tilesOf, wallAt } from '../sim/sites'
 import { ROLE_INFO, inTraining, jobTitle } from '../sim/staff'
 import type { Employee, Product, Site, SiteItem, SiteKind } from '../sim/types'
 import { QUALITY, type Quality, isHeld, useSettings } from '../store/settings'
@@ -38,7 +38,7 @@ import { seatOwners } from './site/seats'
 import { buildSpots, seatAisles } from './site/spots'
 import { Shoppers, StoreItem } from './site/store'
 import { Batch, CUT_H, Ground, STOREY, Structure, type ViewMode, WALL_T, wallTop } from './site/structure'
-import { Storeys, holesOn } from './site/storeys'
+import { Climb, Storeys, holesOn } from './site/storeys'
 import { planKey } from './site/plankey'
 import { Walk } from './site/walk'
 import { Heartbeat, type Pulse, useTick } from './site/tick'
@@ -284,6 +284,8 @@ function ItemKind({ kind, item, c }: { kind: SiteKind; item: string; c: ItemCtx 
   // plants that grow the same on every kind of site, and keep clear of the walls beside them
   if (item === 'otree') return <Tree seed={c.seed} fit={c.fit} />
   if (item === 'bamboo') return <Bamboo seed={c.seed} fit={c.fit} />
+  // stairs, lifts and escalators look the same in every kind of building
+  if (kind !== 'office' && (item === 'stairs' || item === 'lift' || item === 'escalator')) return <Climb kind={item} />
   if (kind === 'office') return <OfficeItem kind={item} c={{ who: c.who, glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, devices: c.devices, on: c.on, live: c.live, progress: c.progress, busy: c.busy }} />
   if (kind === 'factory') return <FactoryItem kind={item} c={{ running: !!c.running, flow: c.flow, glow: c.glow, seed: c.seed, fill: c.fill, away: c.away, live: c.live }} />
   if (kind === 'store') return <StoreItem kind={item} c={{ products: c.products, glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, soldOut: c.soldOut }} />
@@ -852,7 +854,7 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
   // a venue's hall is walked under its own roof, raised over the rigging; upstairs the outside is the floor's own walls, with no roof over them to hide the rooms
   const mode: ViewMode = walking && ground.kind === 'venue' ? 'full' : (walking && (chosen === 'cut' || chosen === 'down')) || (level && chosen === 'full') ? 'walls' : chosen
   /** An office of several storeys seen from outside: each floor is drawn as built, the ground floor one storey high, each with its roof over what is not built on above. */
-  const stacked = mode === 'full' && !level && !!ground.upper?.length
+  const stacked = mode === 'full' && !level && !!ground.upper?.some((l) => l.rooms.length)
   const endWalk = useCallback(() => onWalkEnd?.(), [onWalkEnd])
   const prefs = useSettings((s) => s.settings)
   const Q = QUALITY[prefs.quality]
@@ -934,7 +936,7 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
   const owners = useMemo(() => seatOwners(ground, seated), [ground, site, site.rev, ground.rev, seatedKey]) // eslint-disable-line react-hooks/exhaustive-deps
   // what each person is called: an executive goes by the seat they hold, not their desk job
   const titles = useMemo(() => new Map([...seated, ...idle].map((e) => [String(e.id), jobTitle(e)])), [seatedKey, idle.length]) // eslint-disable-line react-hooks/exhaustive-deps
-  const crowdOn = lively && prefs.walkers && (site.kind !== 'factory' || !!life?.factory)
+  const crowdOn = lively && prefs.walkers && (site.kind !== 'factory' || !!life?.factory) && !(level && (site.kind === 'venue' || site.kind === 'factory'))
   const crowd = useMemo(() => (crowdOn ? (site.kind === 'venue' ? new VenueCrowd() : site.kind === 'factory' ? new FactoryCrowd() : new Crowd()) : null), [crowdOn, site.kind])
   /** Whether the site is in its working day, and where a venue is in its programme: told by the clock when either turns over. */
   const [turn, setTurn] = useState<{ working: boolean; phase: Phase }>({ working: true, phase: 'closed' })
@@ -1128,7 +1130,8 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
   const snap = useMemo(() => {
     const shot = snapshot(site)
     // with storeys of their own over it, the ground floor stands one storey high
-    if (stacked) shot.floors = 1
+    // (a venue's hall keeps its full height, its balconies inside it)
+    if (stacked && site.kind !== 'venue') shot.floors = 1
     return shot
   }, [site, plan, stacked]) // eslint-disable-line react-hooks/exhaustive-deps
   const [standing, setStanding] = useState(snap)
@@ -1224,7 +1227,7 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
       fill: Math.round(busy * 5) / 5,
       away: !!item.id && yard.managed.has(item.id),
       aisles: site.kind === 'venue' && 'x' in item ? seatAisles(site, item as SiteItem) : 0,
-      ceiling: site.kind === 'venue' && 'x' in item && gridAt(site, (item as SiteItem).x, (item as SiteItem).y) > 0 ? ceilingOf(site) : undefined,
+      ceiling: site.kind === 'venue' && 'x' in item && gridAt(site, (item as SiteItem).x, (item as SiteItem).y) > 0 ? ceilingAt(site, (item as SiteItem).x, (item as SiteItem).y) : undefined,
       sparing,
       fit: item.kind === 'otree' || item.kind === 'bamboo' ? fitOf(item) : undefined,
     }
