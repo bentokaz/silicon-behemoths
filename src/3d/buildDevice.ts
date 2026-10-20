@@ -655,8 +655,8 @@ function materials(d: DeviceDesign, colorIndex: number): Mats {
   const b = d.body
   const alt = colorIndex >= 0 ? d.colors?.[colorIndex] : undefined
   return {
-    frame: frameMaterial(b.frameMat, alt?.frame ?? b.frameColor),
-    back: backMaterial(b.backMat, alt?.back ?? b.backColor, b.backFinish),
+    frame: frameMaterial(b.frameMat, alt?.frame ?? b.frameColor, b.camo),
+    back: backMaterial(b.backMat, alt?.back ?? b.backColor, b.backFinish, b.camo),
     glass: blackGlass(),
     lens: lensGlass(),
     core: lensCore(),

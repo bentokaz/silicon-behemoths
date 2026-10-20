@@ -1,5 +1,6 @@
 // Physically based materials for device bodies and parts.
 import * as THREE from 'three'
+import type { Body } from '../sim/types'
 
 type Params = THREE.MeshPhysicalMaterialParameters
 
@@ -53,11 +54,126 @@ export function colourTrue(p: Params, color: string): Params {
   return out
 }
 
-export function frameMaterial(mat: string, color: string): THREE.MeshPhysicalMaterial {
-  return new THREE.MeshPhysicalMaterial({ color, ...colourTrue(FRAME[mat] ?? FRAME.aluminium, color) })
+let woodTex: THREE.CanvasTexture | null = null
+/** Light, neutral wood: growth rings, fine grain and pores, so a colour multiplied over it reads as stained timber. */
+function woodTexture(): THREE.CanvasTexture {
+  if (woodTex) return woodTex
+  const S = 256
+  const c = document.createElement('canvas')
+  c.width = c.height = S
+  const g = c.getContext('2d')!
+  g.fillStyle = '#e6e6e6'
+  g.fillRect(0, 0, S, S)
+  // wavy ring bands running along x, tileable in both directions
+  for (let y = 0; y < S; y++) {
+    const ring = Math.sin((y / S) * Math.PI * 2 * 7 + Math.sin((y / S) * Math.PI * 2 * 3) * 1.6)
+    const v = 200 + ring * 26
+    g.fillStyle = `rgb(${v},${v},${v})`
+    g.fillRect(0, y, S, 1)
+  }
+  let seed = 7
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
+  for (let i = 0; i < 420; i++) {
+    const y = rnd() * S
+    const x = rnd() * S
+    const l = 30 + rnd() * 120
+    const dark = rnd() < 0.7
+    g.strokeStyle = dark ? `rgba(70,70,70,${0.08 + rnd() * 0.18})` : `rgba(255,255,255,${0.1 + rnd() * 0.2})`
+    g.lineWidth = 0.5 + rnd() * 0.9
+    const dy = (rnd() - 0.5) * 2
+    for (const dx of [0, -S]) {
+      g.beginPath()
+      g.moveTo(x + dx, y)
+      g.lineTo(x + dx + l, y + dy)
+      g.stroke()
+    }
+  }
+  for (let i = 0; i < 160; i++) {
+    g.fillStyle = 'rgba(60,60,60,0.25)'
+    g.fillRect(rnd() * S, rnd() * S, 2 + rnd() * 5, 0.8)
+  }
+  woodTex = new THREE.CanvasTexture(c)
+  woodTex.wrapS = woodTex.wrapT = THREE.RepeatWrapping
+  woodTex.colorSpace = THREE.SRGBColorSpace
+  woodTex.anisotropy = 8
+  return woodTex
 }
 
-export function backMaterial(mat: string, color: string, finish: 'gloss' | 'matte'): THREE.MeshPhysicalMaterial {
+type CamoKind = NonNullable<Body['camo']>
+const CAMO: Record<CamoKind, string[]> = {
+  woodland: ['#4b5a2e', '#2c3a1d', '#6b5a35', '#161b10'],
+  desert: ['#c8a870', '#a98756', '#8a6b43', '#d9c394'],
+  urban: ['#8a8d90', '#5c6064', '#3a3d41', '#b4b6b8'],
+  arctic: ['#f0f3f5', '#c9d0d6', '#9ba5ae', '#e1e6ea'],
+}
+const camoTex = new Map<string, THREE.CanvasTexture>()
+/** Irregular overlapping blotches in four tones, tileable. */
+function camoTexture(kind: CamoKind): THREE.CanvasTexture {
+  const hit = camoTex.get(kind)
+  if (hit) return hit
+  const S = 256
+  const cols = CAMO[kind] ?? CAMO.woodland
+  const c = document.createElement('canvas')
+  c.width = c.height = S
+  const g = c.getContext('2d')!
+  g.fillStyle = cols[0]
+  g.fillRect(0, 0, S, S)
+  let seed = 11 + kind.length
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
+  for (let layer = 1; layer < cols.length; layer++) {
+    g.fillStyle = cols[layer]
+    for (let i = 0; i < 22; i++) {
+      const x = rnd() * S
+      const y = rnd() * S
+      const r = 14 + rnd() * 30
+      const jit = Array.from({ length: 10 }, () => rnd() * 0.15)
+      for (const dx of [0, -S, S]) {
+        for (const dy of [0, -S, S]) {
+          g.beginPath()
+          if (kind === 'urban') g.rect(x + dx - r, y + dy - r * 0.6, r * 2, r * 1.2)
+          else {
+            for (let k = 0; k <= 9; k++) {
+              const a = (k / 9) * Math.PI * 2
+              const rr = r * (0.55 + 0.6 * Math.sin(a * 3 + i) * Math.cos(a * 2 + layer) + jit[k])
+              const px = x + dx + Math.cos(a) * rr * 1.3
+              const py = y + dy + Math.sin(a) * rr * 0.8
+              if (k === 0) g.moveTo(px, py)
+              else g.lineTo(px, py)
+            }
+          }
+          g.fill()
+        }
+      }
+    }
+  }
+  const t = new THREE.CanvasTexture(c)
+  t.wrapS = t.wrapT = THREE.RepeatWrapping
+  t.colorSpace = THREE.SRGBColorSpace
+  t.anisotropy = 8
+  camoTex.set(kind, t)
+  return t
+}
+
+/** Adds the wood grain or camouflage skin to a material that asked for one. */
+function skin(m: THREE.MeshPhysicalMaterial, wood: boolean, camo?: CamoKind): THREE.MeshPhysicalMaterial {
+  if (camo) {
+    m.map = camoTexture(camo)
+    m.color.set('#ffffff')
+    m.metalness = Math.min(m.metalness, 0.1)
+    m.roughness = Math.max(m.roughness, 0.7)
+    m.clearcoat = 0
+  } else if (wood) {
+    m.map = woodTexture()
+    m.roughness = 0.62
+  }
+  return m
+}
+
+export function frameMaterial(mat: string, color: string, camo?: CamoKind): THREE.MeshPhysicalMaterial {
+  return skin(new THREE.MeshPhysicalMaterial({ color, ...colourTrue(FRAME[mat] ?? FRAME.aluminium, color) }), mat === 'wood', camo)
+}
+
+export function backMaterial(mat: string, color: string, finish: 'gloss' | 'matte', camo?: CamoKind): THREE.MeshPhysicalMaterial {
   const p = { ...(BACK[mat] ?? FRAME[mat] ?? BACK.glass) }
   if (finish === 'matte') {
     // frosted / bead-blasted variant of the same material
@@ -66,7 +182,7 @@ export function backMaterial(mat: string, color: string, finish: 'gloss' | 'matt
     p.sheen = 0.4
     p.sheenRoughness = 0.5
   }
-  return new THREE.MeshPhysicalMaterial({ color, ...colourTrue(p, color) })
+  return skin(new THREE.MeshPhysicalMaterial({ color, ...colourTrue(p, color) }), mat === 'wood', camo)
 }
 
 export const blackGlass = () => new THREE.MeshPhysicalMaterial({ color: '#040506', metalness: 0, roughness: 0.12, clearcoat: 0.7, clearcoatRoughness: 0.08, reflectivity: 0.5 })
