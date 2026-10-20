@@ -6,6 +6,7 @@ import { type RefObject, useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { extraInfo } from '../data/catalog'
 import { type Comp, FEATURE_MODELS } from '../sim/internals'
+import { PART_NOTES } from '../data/featureParts'
 import type { DeviceDesign, DeviceType } from '../sim/types'
 import type { Picked } from './studio'
 import type { Rig } from './teardown'
@@ -14,7 +15,7 @@ import type { Rig } from './teardown'
 export const TEAR_LAMP = 0.85
 
 /** What a component is for: its own sentence, its model's, or the note of the extra it stands for. */
-const aboutOf = (c: Comp) => c.about ?? (c.model ? FEATURE_MODELS[c.model] : undefined) ?? c.specs.map((k) => (k.startsWith('extra:') ? extraInfo(k.slice(6))?.note : undefined)).find(Boolean)
+const aboutOf = (c: Comp) => c.about ?? (c.model ? FEATURE_MODELS[c.model] ?? PART_NOTES[c.model] : undefined) ?? c.specs.map((k) => (k.startsWith('extra:') ? extraInfo(k.slice(6))?.note : undefined)).find(Boolean)
 export const pickedOf = (c: Comp): Picked => ({ id: c.id, label: c.label, figure: c.figure ?? '', specs: c.specs, partId: c.partId, note: c.note, kind: c.kind, about: aboutOf(c) })
 
 const usd = (v: number) => (v >= 100 ? `$${Math.round(v)}` : `$${v.toFixed(2)}`)

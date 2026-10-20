@@ -84,6 +84,11 @@ const M = {
   dotLens: std('#5a1d24', 0.25, 0.1, { emissive: '#ff2a3a', emissiveIntensity: 0.18 }),
   penBody: std('#e7e8e4', 0.45, 0.05),
   tungsten: std('#43464c', 0.5, 0.8),
+  redLed: std('#ff3a3a', 0.4, 0, { emissive: '#ff2a2a', emissiveIntensity: 0.9 }),
+  amberLed: std('#ffb35a', 0.4, 0, { emissive: '#ff9a3a', emissiveIntensity: 0.9 }),
+  acrylic: share(new THREE.MeshPhysicalMaterial({ color: '#cfe6ff', roughness: 0.05, metalness: 0, transparent: true, opacity: 0.35, depthWrite: false })),
+  diffuser: std('#e8ecef', 0.9, 0, { transparent: true, opacity: 0.85 }),
+  titanium: std('#8a8d92', 0.38, 0.85),
 }
 
 /**
@@ -671,7 +676,9 @@ function drawFeature(c: Comp, g: THREE.Group, a: number, b: number, h: number) {
     case 'wheel': {
       const t = turned(g, c.axis, a, b, h)
       const dia = Math.min(t.a, t.b)
-      cy(t.g, dia, t.h * 0.8, M.rubber, 0, 0, 0)
+      cy(t.g, dia, t.h * 0.8, v === 2 ? M.alu : M.rubber, 0, 0, 0)
+      // a tilting wheel rocks on two pins at the ends of its axle
+      if (v === 1) for (const s of [-1, 1]) bx(t.g, dia * 0.2, dia * 0.2, t.h * 0.3, M.gold, 0, 0, s * t.h * 0.75, false)
       const ridges = 24
       for (let i = 0; i < ridges; i++) {
         const an = (i / ridges) * Math.PI * 2
@@ -683,7 +690,10 @@ function drawFeature(c: Comp, g: THREE.Group, a: number, b: number, h: number) {
       break
     }
     case 'weight':
-      cy(g, Math.min(a, b), h, M.tungsten)
+      // a tungsten slug with its screw cap and the slot a coin turns it by
+      cy(g, Math.min(a, b), h * 0.85, M.tungsten, 0, 0, -h * 0.075)
+      cy(g, Math.min(a, b) * 0.8, h * 0.15, M.steel, 0, 0, top - h * 0.075, true)
+      bx(g, Math.min(a, b) * 0.6, Math.min(a, b) * 0.1, h * 0.05, M.black, 0, 0, top, false)
       break
     case 'esim':
       bx(g, a, b, h * 0.7, M.black, 0, 0, -top + h * 0.35)
@@ -691,8 +701,421 @@ function drawFeature(c: Comp, g: THREE.Group, a: number, b: number, h: number) {
       for (let i = 0; i < 4; i++) bx(g, a * 0.12, b * 0.1, h * 0.3, M.gold, (i - 1.5) * a * 0.24, -b / 2, -top + h * 0.15, false)
       break
     default:
-      rb(g, a, b, h, Math.min(a, b, h) * 0.12, M.steel)
+      if (!drawMore(c.model ?? '', g, a, b, h, v, c.glow)) {
+        // nothing knows this model: a plain block, marked so that a test can tell
+        g.userData.generic = true
+        rb(g, a, b, h, Math.min(a, b, h) * 0.12, M.steel)
+      }
   }
+}
+
+/** A chip package on its own: the body, a lid or die, and its pins or balls. `look` tells the kinds apart. */
+function chipPart(g: THREE.Group, a: number, b: number, h: number, look: 'lid' | 'grid' | 'stack' | 'qfn' | 'bga' | 'sim') {
+  const top = h / 2
+  bx(g, a, b, h * 0.7, M.black, 0, 0, -top + h * 0.35)
+  const s = Math.min(a, b)
+  if (look === 'lid') rb(g, a * 0.8, b * 0.8, h * 0.3, s * 0.05, M.steel, 0, 0, top - h * 0.15)
+  if (look === 'grid') for (let i = 0; i < 4; i++) bx(g, a * 0.34, b * 0.34, h * 0.1, M.graphite, (i % 2 ? 1 : -1) * a * 0.2, (i < 2 ? 1 : -1) * b * 0.2, top - h * 0.25, false)
+  if (look === 'stack') for (let i = 0; i < 3; i++) bx(g, a * (0.9 - i * 0.1), b * (0.9 - i * 0.1), h * 0.1, i % 2 ? M.grey : M.black, 0, 0, -top + h * (0.75 + i * 0.1), false)
+  if (look === 'bga') bx(g, a * 0.5, b * 0.5, h * 0.2, M.lensGlass, 0, 0, top - h * 0.2)
+  const pins = look === 'qfn' ? 6 : 4
+  if (look === 'qfn' || look === 'sim')
+    for (let i = 0; i < pins; i++) for (const sy of [-1, 1]) bx(g, a * 0.08, b * 0.12, h * 0.3, M.gold, (i - (pins - 1) / 2) * (a / pins), (sy * b) / 2, -top + h * 0.15, false)
+  else for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++) part(g, BALL, M.zinc, s * 0.08, s * 0.08, h * 0.2, (i - 2) * a * 0.18, (j - 2) * b * 0.18, -top, false)
+}
+
+/** A small board under a part, the colour of the device's boards. */
+const plate = (g: THREE.Group, a: number, b: number, h: number, k = 0.25, i = 0) => bx(g, a, b, h * k, M.pcb[i], 0, 0, -h / 2 + (h * k) / 2)
+
+/**
+ * The models of the features that have no socket outside (health sensors, radios, sheets under the screen, the
+ * mechanical extras of mice and drones): each one is drawn as the part it is. False when the model is not known.
+ */
+function drawMore(model: string, g: THREE.Group, a: number, b: number, h: number, v: number, glow?: string): boolean {
+  const top = h / 2
+  const s = Math.min(a, b)
+  switch (model) {
+    case 'ppg': {
+      // a disc (or a strip, in a ring or a bud) with lamps round photodiodes: green for the pulse, red and infrared for oxygen
+      const round = v === 0 || v === 1
+      if (round) cy(g, s, h * 0.4, M.black, 0, 0, -top + h * 0.2)
+      else rb(g, a, b, h * 0.4, s * 0.2, M.black, 0, 0, -top + h * 0.2)
+      if (round) part(g, DOME, M.lensGlass, s * 0.48, s * 0.48, h * 0.6, 0, 0, -top + h * 0.4)
+      const lamps = v === 1 ? [M.redLed, M.redLed, M.irWindow] : [M.green, M.green]
+      const n = round ? 4 : 2
+      for (let i = 0; i < n; i++) {
+        const an = (i / n) * Math.PI * 2 + 0.4
+        const r = round ? s * 0.3 : a * 0.3
+        bx(g, s * 0.12, s * 0.12, h * 0.3, lamps[i % lamps.length], Math.cos(an) * r, round ? Math.sin(an) * r : 0, -top + h * 0.55, false)
+      }
+      for (const sx of [-1, 1]) bx(g, s * 0.16, s * 0.1, h * 0.2, M.graphite, round ? sx * s * 0.12 : 0, round ? -sx * s * 0.12 : sx * b * 0.25, -top + h * 0.5, false)
+      bx(g, a * 0.14, b * 0.5, h * 0.2, M.flex, a * 0.55, 0, -top + h * 0.1, false)
+      return true
+    }
+    case 'gps': {
+      // a square ceramic patch with its silver top and feed pin, on a ground plane (on a drone, raised on a short mast)
+      const z0 = v === 1 ? -top + h * 0.5 : -top
+      if (v === 1) cy(g, s * 0.12, h * 0.5, M.black, 0, 0, -top + h * 0.25)
+      bx(g, a, b, h * 0.12, M.pcb[0], 0, 0, z0 + h * 0.06)
+      rb(g, s * 0.7, s * 0.7, h * (v === 1 ? 0.3 : 0.6), s * 0.04, M.ceramic, 0, 0, z0 + h * (v === 1 ? 0.27 : 0.42))
+      face(g, s * 0.5, s * 0.5, M.alu, 0, 0, z0 + h * (v === 1 ? 0.43 : 0.73))
+      cy(g, s * 0.08, h * 0.1, M.gold, s * 0.08, s * 0.08, z0 + h * (v === 1 ? 0.45 : 0.75), true)
+      return true
+    }
+    case 'modem': {
+      plate(g, a, b, h, 0.25, 2)
+      rb(g, a * 0.62, b * 0.8, h * 0.6, 0.15, M.steel, -a * 0.12, 0, -top + h * 0.55)
+      for (let i = 0; i < 6; i++) bx(g, a * 0.5, 0.05, 0.05, M.darkSteel, -a * 0.12, (i - 2.5) * b * 0.12, top - h * 0.12, false)
+      for (const sy of [-1, 1]) {
+        cy(g, s * 0.12, h * 0.4, M.gold, a * 0.36, sy * b * 0.3, -top + h * 0.45, true)
+        const lead = part(g, CYL_LOW, M.black, s * 0.06, s * 0.06, a * 0.4, a * 0.56, sy * b * 0.3, -top + h * 0.55, false)
+        lead.rotation.y = Math.PI / 2
+      }
+      return true
+    }
+    case 'electrode': {
+      // titanium rings in the sensor window and the crown's contact, or two pads in a band
+      const t = Math.max(0.3, s * 0.06)
+      if (v === 0) {
+        for (const k of [1, 0.66]) part(g, RING, M.titanium, s * k, s * k, 1, 0, 0, top, false)
+        cy(g, s * 0.64, h * 0.4, M.black, 0, 0, -top + h * 0.3)
+        bx(g, s * 0.2, s * 0.6, h * 0.2, M.flex, s * 0.5, 0, -top + h * 0.1, false)
+      } else for (const sx of [-1, 1]) rb(g, a * 0.4, b * 0.8, h * 0.8, t, M.titanium, sx * a * 0.26, 0, 0)
+      return true
+    }
+    case 'thermistor': {
+      bx(g, a, b * 0.5, h * 0.4, M.flex, 0, 0, -top + h * 0.2, false)
+      rb(g, b * 0.9, b * 0.9, h, b * 0.2, M.copper, -a / 2 + b * 0.5, 0, 0)
+      bx(g, b * 0.3, b * 0.2, h * 0.5, M.black, -a / 2 + b * 0.5, 0, top, false)
+      bx(g, b * 0.5, b * 0.6, h * 0.5, M.gold, a / 2 - b * 0.3, 0, -top + h * 0.3, false)
+      return true
+    }
+    case 'pressure': {
+      // a soft air pad and the pressure sensor in its steel can over it
+      rb(g, a, b, h * 0.5, Math.min(b, h) * 0.24, M.rubber, 0, 0, -top + h * 0.25)
+      cy(g, s * 0.5, h * 0.5, M.steel, 0, 0, -top + h * 0.7, true)
+      cy(g, s * 0.1, h * 0.1, M.black, 0, 0, top, true)
+      bx(g, a * 0.16, b * 0.4, h * 0.2, M.flex, a * 0.55, 0, -top + h * 0.1, false)
+      return true
+    }
+    case 'spectro': {
+      cy(g, s, h * 0.4, M.black, 0, 0, -top + h * 0.2)
+      const cols = [M.redLed, M.amberLed, M.green, M.blue, M.ledOff, M.redLed, M.amberLed, M.green]
+      cols.forEach((m, i) => {
+        const an = (i / cols.length) * Math.PI * 2
+        bx(g, s * 0.1, s * 0.1, h * 0.3, m, Math.cos(an) * s * 0.38, Math.sin(an) * s * 0.38, -top + h * 0.55, false)
+      })
+      for (let i = 0; i < 9; i++) bx(g, s * 0.12, s * 0.12, h * 0.2, M.graphite, ((i % 3) - 1) * s * 0.15, (Math.floor(i / 3) - 1) * s * 0.15, -top + h * 0.5, false)
+      part(g, DOME, M.lensGlass, s * 0.5, s * 0.5, h * 0.5, 0, 0, -top + h * 0.4)
+      return true
+    }
+    case 'imu': {
+      // a MEMS package with its lid cut away: the proof mass on its springs and the comb fingers that read it
+      bx(g, a, b, h * 0.3, M.black, 0, 0, -top + h * 0.15)
+      const t = s * 0.08
+      for (const sx of [-1, 1]) bx(g, t, b * 0.9, h * 0.6, M.grey, (sx * (a - t)) / 2, 0, -top + h * 0.5, false)
+      for (const sy of [-1, 1]) bx(g, a * 0.9, t, h * 0.6, M.grey, 0, (sy * (b - t)) / 2, -top + h * 0.5, false)
+      bx(g, a * 0.44, b * 0.44, h * 0.4, M.alu, 0, 0, -top + h * 0.5)
+      for (let i = 0; i < 5; i++) for (const sx of [-1, 1]) bx(g, a * 0.14, s * 0.03, h * 0.25, M.steel, sx * a * 0.31, (i - 2) * b * 0.08, -top + h * 0.5, false)
+      if (v >= 2) cy(g, s * 0.25, h * 0.3, M.copper, 0, 0, top - h * 0.1, true)
+      if (v === 3) rb(g, a * 1.1, b * 1.1, h * 0.2, 0.1, M.rubber, 0, 0, -top - h * 0.05)
+      return true
+    }
+    case 'eda': {
+      bx(g, a, b, h * 0.4, M.flex, 0, 0, -top + h * 0.2, false)
+      for (const sx of [-1, 1]) for (let i = 0; i < 3; i++) bx(g, a * 0.3, b * 0.08, h * 0.4, M.gold, sx * a * 0.25, (i - 1) * b * 0.25, top - h * 0.2, false)
+      bx(g, a * 0.12, b * 0.6, h * 0.5, M.titanium, 0, 0, top - h * 0.2, false)
+      return true
+    }
+    case 'wifimod': {
+      // an M.2 card: gold edge fingers, the radio under its shield, two aerial sockets with their leads
+      bx(g, a, b, h * 0.25, M.pcb[v === 1 ? 2 : 1], 0, 0, -top + h * 0.12)
+      for (let i = 0; i < 9; i++) bx(g, a * 0.06, b * 0.08, h * 0.27, M.gold, (i - 4) * a * 0.1, -b / 2 + b * 0.04, -top + h * 0.12, false)
+      rb(g, a * 0.7, b * 0.5, h * 0.45, 0.15, M.steel, 0, b * 0.05, -top + h * 0.47)
+      for (const sx of [-1, 1]) {
+        cy(g, s * 0.12, h * 0.3, M.gold, sx * a * 0.25, b * 0.4, -top + h * 0.4, true)
+        bx(g, s * 0.05, b * 0.6, s * 0.05, sx < 0 ? M.black : M.pale, sx * a * 0.25, b * 0.72, -top + h * 0.55, false)
+      }
+      if (v === 2) bx(g, a * 0.06, b * 1.05, h * 1.6, M.steel, a / 2, 0, 0)
+      return true
+    }
+    case 'touchpad': {
+      bx(g, a, b, h * 0.5, M.flex, 0, 0, -top + h * 0.25, false)
+      for (let i = 0; i < 6; i++) {
+        bx(g, a * 0.86, s * 0.04, h * 0.3, M.copper, 0, (i - 2.5) * b * 0.15, top - h * 0.15, false)
+        bx(g, s * 0.04, b * 0.86, h * 0.3, M.copper, (i - 2.5) * a * 0.15, 0, top - h * 0.15, false)
+      }
+      bx(g, a * 0.2, b * 0.7, h * 0.5, M.flex, a * 0.6, 0, -top + h * 0.25, false)
+      return true
+    }
+    case 'prox': {
+      bx(g, a, b, h * 0.6, M.black, 0, 0, -top + h * 0.3)
+      for (const sx of [-1, 1]) part(g, DOME, sx < 0 ? M.irWindow : M.lensGlass, a * 0.3, a * 0.3, h * 0.5, sx * a * 0.22, 0, -top + h * 0.6)
+      return true
+    }
+    case 'btradio': {
+      plate(g, a, b, h, 0.3, v === 1 ? 2 : 0)
+      rb(g, a * 0.55, b * 0.7, h * 0.5, 0.1, M.steel, -a * 0.15, 0, -top + h * 0.55)
+      // the folded chip aerial: a ceramic block with its meander line
+      bx(g, a * 0.24, b * 0.5, h * 0.4, M.ceramic, a * 0.34, 0, -top + h * 0.5)
+      for (let i = 0; i < 4; i++) bx(g, a * 0.2, b * 0.04, h * 0.05, M.alu, a * 0.34, (i - 1.5) * b * 0.1, -top + h * 0.72, false)
+      return true
+    }
+    case 'mic': {
+      cy(g, s, h * 0.7, M.steel, 0, 0, -top + h * 0.35)
+      part(g, DISC, M.darkSteel, s * 0.8, s * 0.8, 1, 0, 0, -top + h * 0.71, false)
+      for (let i = 0; i < 5; i++) bx(g, s * 0.7, s * 0.03, 0.04, M.black, 0, (i - 2) * s * 0.13, -top + h * 0.73, false)
+      part(g, RING, M.rubber, s * 1.1, s * 1.1, 1, 0, 0, top, false)
+      return true
+    }
+    case 'micarray': {
+      bx(g, a, b, h * 0.3, M.pcb[v === 1 ? 0 : 1], 0, 0, -top + h * 0.15)
+      const n = v === 1 ? 3 : 4
+      for (let i = 0; i < n; i++) {
+        const x = (i - (n - 1) / 2) * (a / n)
+        cy(g, b * 0.42, h * 0.5, M.steel, x, 0, -top + h * 0.55, true)
+        part(g, RING, M.rubber, b * 0.5, b * 0.5, 1, x, 0, -top + h * 0.82, false)
+      }
+      return true
+    }
+    case 'lightsensor': {
+      bx(g, a, b, h * 0.2, M.pcb[1], 0, 0, -top + h * 0.1)
+      bx(g, s * 0.3, s * 0.3, h * 0.2, M.black, 0, 0, -top + h * 0.3)
+      part(g, DOME, M.diffuser, s * 0.9, s * 0.9, h * 0.75, 0, 0, -top + h * 0.25)
+      return true
+    }
+    case 'lightguide': {
+      // a clear sheet over the page, lit from a row of lamps along one edge
+      bx(g, a, b, h * 0.7, M.acrylic, 0, 0, 0, false)
+      bx(g, a, Math.max(1, b * 0.03), h, M.flex, 0, -b / 2 - b * 0.015, 0, false)
+      const n = 12
+      for (let i = 0; i < n; i++) bx(g, a * 0.03, Math.max(0.8, b * 0.02), h, i % 2 ? M.ledOff : M.amberLed, (i - (n - 1) / 2) * (a / n), -b / 2 + b * 0.01, 0, false)
+      return true
+    }
+    case 'ledstrip': {
+      bx(g, a, b, h * 0.4, M.flex, 0, 0, -top + h * 0.2, false)
+      const n = 12
+      for (let i = 0; i < n; i++) bx(g, (a / n) * 0.45, b * 0.7, h * 0.6, i % 2 ? M.amberLed : M.ledOff, (i - (n - 1) / 2) * (a / n), 0, -top + h * 0.7, false)
+      return true
+    }
+    case 'pagekeys': {
+      bx(g, a * 0.4, b, h * 0.2, M.flex, -a * 0.2, 0, -top + h * 0.1, false)
+      for (const sy of [-1, 1]) {
+        bx(g, a * 0.5, b * 0.18, h * 0.4, M.steel, 0, sy * b * 0.25, -top + h * 0.35)
+        rb(g, a * 0.9, b * 0.4, h * 0.45, Math.min(a, b) * 0.15, M.graphite, a * 0.05, sy * b * 0.25, top - h * 0.22)
+      }
+      return true
+    }
+    case 'digitiser': {
+      // a sheet of fine copper loops, the grid the pen's coil is found on
+      bx(g, a, b, h * 0.5, M.film, 0, 0, -top + h * 0.25, false)
+      const n = 14
+      for (let i = 0; i < n; i++) {
+        bx(g, a * 0.96, Math.max(0.3, b * 0.004), h * 0.4, M.copper, 0, (i - (n - 1) / 2) * (b / n), top - h * 0.2, false)
+        bx(g, Math.max(0.3, a * 0.004), b * 0.96, h * 0.4, M.copper, (i - (n - 1) / 2) * (a / n), 0, top - h * 0.2, false)
+      }
+      return true
+    }
+    case 'colourfilter': {
+      const n = 10
+      const cols = [M.redLed, M.green, M.blue]
+      for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) bx(g, (a / n) * 0.96, (b / n) * 0.96, h, cols[(i + j) % 3], (i - (n - 1) / 2) * (a / n), (j - (n - 1) / 2) * (b / n), 0, false)
+      return true
+    }
+    case 'selfiescreen': {
+      rb(g, a, b, h * 0.6, s * 0.05, M.black, 0, 0, -top + h * 0.3)
+      face(g, a * 0.9, b * 0.9, M.eyeGlass, 0, 0, -top + h * 0.6 + 0.02)
+      bx(g, a * 0.5, b * 0.2, h * 0.3, M.flex, 0, -b * 0.6, -top + h * 0.15, false)
+      return true
+    }
+    case 'mountfingers': {
+      for (const sx of [-1, 1]) {
+        bx(g, a * 0.18, b, h * 0.9, M.black, sx * a * 0.18, 0, 0)
+        cy(g, b * 0.5, a * 0.2, M.steel, sx * a * 0.18, 0, top - h * 0.2, true).rotation.y = Math.PI / 2
+      }
+      bx(g, a * 0.9, b * 0.3, h * 0.2, M.darkSteel, 0, 0, -top + h * 0.1)
+      return true
+    }
+    case 'imagesensor': {
+      bx(g, a, b, h * 0.4, M.ceramic, 0, 0, -top + h * 0.2)
+      bx(g, a * 0.7, b * 0.6, h * 0.2, M.irWindow, 0, 0, -top + h * 0.5)
+      bx(g, a * 0.8, b * 0.7, h * 0.15, M.lensGlass, 0, 0, top - h * 0.1, false)
+      for (let i = 0; i < 8; i++) bx(g, a * 0.05, b * 0.08, h * 0.2, M.gold, (i - 3.5) * a * 0.11, -b / 2 + b * 0.04, -top + h * 0.3, false)
+      return true
+    }
+    case 'lensmount': {
+      cy(g, s, h * 0.5, M.steel, 0, 0, -top + h * 0.25)
+      part(g, DISC, M.black, s * 0.7, s * 0.7, 1, 0, 0, -top + h * 0.51, false)
+      for (let i = 0; i < 3; i++) {
+        const an = (i / 3) * Math.PI * 2
+        bx(g, s * 0.22, s * 0.08, h * 0.4, M.alu, Math.cos(an) * s * 0.42, Math.sin(an) * s * 0.42, -top + h * 0.7, false).rotation.z = an + Math.PI / 2
+      }
+      part(g, DISC, M.glass, s * 0.5, s * 0.5, 1, 0, 0, -top + h * 0.53, false)
+      return true
+    }
+    case 'arm': {
+      // a carbon arm on its hinge, the motor and a folded propeller at the far end
+      rb(g, a * 0.6, b * 0.85, h * 0.5, a * 0.15, M.graphite, 0, -b * 0.05, -top + h * 0.3)
+      cy(g, a * 0.9, h * 0.6, M.steel, 0, -b / 2 + a * 0.45, -top + h * 0.3, true)
+      cy(g, a, h * 0.6, M.darkSteel, 0, b / 2 - a * 0.5, -top + h * 0.5)
+      bx(g, a * 0.3, b * 0.5, h * 0.08, M.black, 0, b * 0.15, top - h * 0.04, false)
+      return true
+    }
+    case 'stereocam': {
+      const pairs = v === 1 ? 2 : 1
+      for (let p = 0; p < pairs; p++) {
+        const y = pairs === 1 ? 0 : (p ? 1 : -1) * b * 0.25
+        bx(g, a, b / pairs * 0.8, h * 0.4, M.black, 0, y, -top + h * 0.2)
+        for (const sx of [-1, 1]) {
+          cy(g, Math.min(b / pairs, a) * 0.5, h * 0.6, M.darkSteel, sx * a * 0.36, y, -top + h * 0.6, true)
+          part(g, DISC, M.glass, Math.min(b / pairs, a) * 0.36, Math.min(b / pairs, a) * 0.36, 1, sx * a * 0.36, y, top + 0.02, false)
+        }
+      }
+      return true
+    }
+    case 'gimbal': {
+      // three motors at right angles, and the camera they hold level
+      cy(g, s * 0.3, h * 0.2, M.darkSteel, 0, 0, top - h * 0.1)
+      bx(g, s * 0.1, s * 0.1, h * 0.4, M.black, 0, 0, top - h * 0.4)
+      bx(g, a * 0.8, s * 0.1, s * 0.1, M.black, 0, 0, 0)
+      for (const sx of [-1, 1]) cy(g, s * 0.24, s * 0.12, M.darkSteel, sx * a * 0.42, 0, 0).rotation.y = Math.PI / 2
+      rb(g, a * 0.5, b * 0.5, h * 0.4, s * 0.06, M.graphite, 0, 0, -top + h * 0.25)
+      cy(g, s * 0.3, b * 0.3, M.black, 0, -b * 0.3, -top + h * 0.25).rotation.x = Math.PI / 2
+      part(g, DISC, M.glass, s * 0.22, s * 0.22, 1, 0, -b * 0.46, -top + h * 0.25, false).rotation.x = Math.PI / 2
+      return true
+    }
+    case 'antennas': {
+      for (const sx of [-1, 1]) {
+        cy(g, a * 0.4, b * 0.95, sx < 0 ? M.white : M.black, sx * a * 0.25, 0, 0).rotation.x = Math.PI / 2
+        bx(g, a * 0.5, b * 0.05, h * 0.6, M.gold, sx * a * 0.25, -b / 2, 0, false)
+      }
+      return true
+    }
+    case 'packcell': {
+      rb(g, a, b, h, Math.min(a, h) * 0.12, M.graphite, 0, 0, 0)
+      for (const sx of [-1, 1]) bx(g, a * 0.04, b * 0.9, h * 0.2, M.steel, sx * a * 0.5, 0, 0, false)
+      for (let i = 0; i < 4; i++) bx(g, a * 0.08, b * 0.02, h * 0.1, i < 3 ? M.green : M.ledOff, (i - 1.5) * a * 0.14, b / 2, top - h * 0.2, false)
+      for (let i = 0; i < 4; i++) bx(g, a * 0.1, b * 0.04, h * 0.3, M.gold, (i - 1.5) * a * 0.16, -b / 2, 0, false)
+      return true
+    }
+    case 'lidar': {
+      cy(g, s, h * 0.3, M.black, 0, 0, -top + h * 0.15)
+      cy(g, s * 0.8, h * 0.55, M.irWindow, 0, 0, -top + h * 0.6)
+      cy(g, s * 0.84, h * 0.08, M.steel, 0, 0, top - h * 0.04, true)
+      bx(g, s * 0.2, s * 0.06, h * 0.3, M.redLed, s * 0.3, 0, -top + h * 0.6, false)
+      return true
+    }
+    case 'drivebay': {
+      // a caddy on rails: its tray, the drive in it, the latch at the front
+      bx(g, a, b, h * 0.15, M.zinc, 0, 0, -top + h * 0.075)
+      for (const sx of [-1, 1]) bx(g, a * 0.05, b, h * 0.8, M.zinc, sx * a * 0.475, 0, 0)
+      rb(g, a * 0.86, b * 0.9, h * 0.6, 1, M.alu, 0, -b * 0.02, -top + h * 0.45)
+      bx(g, a, b * 0.04, h, M.black, 0, b / 2, 0)
+      bx(g, a * 0.3, b * 0.02, h * 0.3, M.blue, a * 0.3, b / 2 + b * 0.02, 0, false)
+      return true
+    }
+    case 'colorimeter': {
+      // the factory's measuring puck on the panel, its cable trailing away
+      cy(g, s, h * 0.6, M.graphite, 0, 0, -top + h * 0.3)
+      part(g, DISC, M.lensGlass, s * 0.4, s * 0.4, 1, 0, 0, -top - 0.02, false)
+      cy(g, s * 0.7, h * 0.3, M.white, 0, 0, top - h * 0.25)
+      cy(g, s * 0.06, s * 0.6, M.black, s * 0.6, 0, top - h * 0.2).rotation.y = Math.PI / 2
+      return true
+    }
+    case 'backlight': {
+      // a board of mini lamps in zones
+      bx(g, a, b, h * 0.4, M.white, 0, 0, -top + h * 0.2)
+      const nx = 16
+      const ny = 10
+      const lamps = new THREE.InstancedMesh(BOX, M.ledOff, nx * ny)
+      const m4 = new THREE.Matrix4()
+      for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) lamps.setMatrixAt(i * ny + j, m4.makeScale((a / nx) * 0.3, (b / ny) * 0.3, h * 0.4).setPosition((i - (nx - 1) / 2) * (a / nx), (j - (ny - 1) / 2) * (b / ny), -top + h * 0.6))
+      g.add(lamps)
+      return true
+    }
+    case 'kvm': {
+      plate(g, a, b, h, 0.2, 1)
+      for (const sx of [-1, 1]) rb(g, a * 0.24, b * 0.4, h * 0.6, 0.3, M.steel, sx * a * 0.3, b * 0.25, -top + h * 0.5)
+      bx(g, a * 0.2, b * 0.25, h * 0.5, M.black, 0, -b * 0.25, -top + h * 0.45)
+      bx(g, a * 0.06, b * 0.12, h * 0.4, M.red, 0, -b * 0.25, top - h * 0.2, false)
+      chipPart(subGroup(g, -a * 0.3, -b * 0.25, -top + h * 0.3), a * 0.2, a * 0.2, h * 0.2, 'qfn')
+      return true
+    }
+    case 'dongle': {
+      rb(g, a * 0.9, b * 0.5, h, Math.min(a, h) * 0.2, M.black, 0, b * 0.25, 0)
+      bx(g, a * 0.85, b * 0.5, h * 0.5, M.steel, 0, -b * 0.25, 0)
+      for (const sx of [-1, 1]) bx(g, a * 0.15, b * 0.1, h * 0.1, M.black, sx * a * 0.2, -b * 0.3, h * 0.26, false)
+      return true
+    }
+    case 'thumbbuttons': {
+      bx(g, a * 0.2, b, h, M.pcb[1], -a * 0.4, 0, 0)
+      for (const sy of [-1, 1]) {
+        bx(g, a * 0.4, b * 0.2, h * 0.5, M.black, -a * 0.1, sy * b * 0.24, 0)
+        rb(g, a * 0.4, b * 0.44, h * 0.8, Math.min(b, h) * 0.08, glow ? glowMat(glow) : M.graphite, a * 0.3, sy * b * 0.26, 0)
+      }
+      return true
+    }
+    case 'dpibutton': {
+      bx(g, a, b, h * 0.4, M.black, 0, 0, -top + h * 0.2)
+      rb(g, a * 0.7, b * 0.8, h * 0.5, Math.min(a, b) * 0.2, M.graphite, 0, 0, top - h * 0.25)
+      for (let i = 0; i < 3; i++) bx(g, a * 0.12, b * 0.1, h * 0.1, M.green, a * 0.45, (i - 1) * b * 0.25, -top + h * 0.5, false)
+      return true
+    }
+    case 'chargedock': {
+      rb(g, a, b, h * 0.7, h * 0.3, M.black, 0, 0, -top + h * 0.35)
+      part(g, RING, glow ? glowMat(glow) : M.green, s * 0.9, s * 0.9, 1, 0, 0, -top + h * 0.72, false)
+      for (const sx of [-1, 1]) bx(g, s * 0.05, s * 0.1, h * 0.4, M.gold, sx * s * 0.06, 0, top - h * 0.1, false)
+      return true
+    }
+    case 'jack': {
+      // the barrel the plug goes into, along b, and the spring contacts down its side
+      rb(g, a, b, h, Math.min(a, h) * 0.15, M.black, 0, 0, 0)
+      cy(g, Math.min(a, h) * 0.6, b * 0.1, M.steel, 0, -b / 2, 0).rotation.x = Math.PI / 2
+      part(g, DISC, M.rubber, Math.min(a, h) * 0.4, Math.min(a, h) * 0.4, 1, 0, -b / 2 - b * 0.051, 0, false).rotation.x = Math.PI / 2
+      for (let i = 0; i < 4; i++) bx(g, a * 0.2, b * 0.06, h * 0.5, M.gold, a / 2 + a * 0.05, (i - 1.5) * b * 0.2, -h * 0.2, false)
+      return true
+    }
+    case 'cardslot': {
+      // the steel cage, the card half in it, and the contacts it lands on
+      bx(g, a, b, h * 0.15, M.steel, 0, 0, top - h * 0.075)
+      bx(g, a, b, h * 0.15, M.steel, 0, 0, -top + h * 0.075)
+      bx(g, a * 0.86, b * 0.95, h * 0.5, M.blueCap, 0, -b * 0.12, 0)
+      for (let i = 0; i < 8; i++) bx(g, a * 0.06, b * 0.12, h * 0.1, M.gold, (i - 3.5) * a * 0.1, b * 0.3, -h * 0.2, false)
+      return true
+    }
+    case 'vapour': {
+      // a flat copper chamber over the chips: its edge seam and the wick columns showing through
+      rb(g, a, b, h, Math.min(a, b) * 0.06, M.copper, 0, 0, 0)
+      loop(g, a * 0.94, b * 0.96, Math.max(0.4, s * 0.02), top, M.darkSteel)
+      for (let i = 0; i < 6; i++) for (let j = 0; j < 10; j++) part(g, DISC, M.flex, s * 0.04, s * 0.04, 1, (i - 2.5) * a * 0.14, (j - 4.5) * b * 0.09, top + 0.02, false)
+      return true
+    }
+    case 'asic':
+      chipPart(g, a, b, h, v === 1 ? 'qfn' : 'lid')
+      return true
+    case 'npu':
+      chipPart(g, a, b, h, 'grid')
+      return true
+    case 'flash':
+      chipPart(g, a, b, h, 'stack')
+      return true
+    case 'mcu':
+      chipPart(g, a, b, h, 'qfn')
+      return true
+    case 'scaler':
+      chipPart(g, a, b, h, 'bga')
+      return true
+    default:
+      return false
+  }
+}
+
+/** A group set at a point within another, for drawing a part at an offset. */
+function subGroup(g: THREE.Group, x: number, y: number, z: number): THREE.Group {
+  const o = new THREE.Group()
+  o.position.set(x, y, z)
+  g.add(o)
+  return o
 }
 
 /** A main board: the black board, the heat sinks over its power stages, the cover over its rear ports, the socket, the memory and card slots and the chipset. */

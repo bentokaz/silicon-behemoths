@@ -4,7 +4,7 @@ import { yearAt } from '../data/eras'
 import { clamp, range } from './rng'
 import { OWN_SILICON, chipFor } from './scoring'
 import { staffEffects } from './staff'
-import { type CustomChip, DEVICE_TYPES, type DeviceType, type GameState, type OsLook, type OsState } from './types'
+import { type CustomChip, DEVICE_TYPES, type DeviceType, type GameState, type OsLook, type OsScreenKind, type OsState } from './types'
 
 // ---------------------------------------------------------------- chips
 
@@ -137,6 +137,10 @@ export const DEFAULT_OS_LOOK: Required<OsLook> = {
   lockNotes: true,
   motion: 'normal',
   corners: 'soft',
+  watchFace: 'digital',
+  tvRow: 'wide',
+  taskbar: 'full',
+  kinds: {},
 }
 /** Widgets the home screen can carry. */
 export const OS_WIDGETS = [
@@ -190,7 +194,9 @@ export function licenceBlocked(s: GameState, id: string): string | null {
 export const newOs = (): OsState => ({ own: false, licence: FREE_OS, name: STOCK_OS, version: 0, quality: 0, features: [], servicesIncome: 0, releases: [] })
 
 const HEX = /^#[0-9a-f]{6}$/i
-type Choosable = 'iconShape' | 'layout' | 'font' | 'wallStyle' | 'iconSize' | 'iconStyle' | 'dock' | 'weight' | 'lock' | 'motion' | 'corners'
+type Choosable = 'iconShape' | 'layout' | 'font' | 'wallStyle' | 'iconSize' | 'iconStyle' | 'dock' | 'weight' | 'lock' | 'motion' | 'corners' | 'watchFace' | 'tvRow' | 'taskbar'
+/** The kinds of screen a look can be set apart for. */
+export const OS_KINDS: OsScreenKind[] = ['phone', 'tablet', 'desktop', 'watch', 'tv', 'console', 'handheld', 'ereader', 'display']
 export const OS_LOOK_CHOICES = {
   iconShape: ['circle', 'squircle', 'square', 'hexagon', 'leaf'],
   layout: ['grid', 'list', 'tiles'],
@@ -203,14 +209,43 @@ export const OS_LOOK_CHOICES = {
   lock: ['big', 'stacked', 'analog', 'minimal'],
   motion: ['off', 'calm', 'normal', 'brisk'],
   corners: ['sharp', 'soft', 'round'],
+  watchFace: ['digital', 'analog', 'rings', 'modular'],
+  tvRow: ['wide', 'posters', 'icons'],
+  taskbar: ['full', 'floating', 'centred'],
 } as const satisfies { [K in Choosable]: readonly NonNullable<OsLook[K]>[] }
+
+/** The parts of a patch that are valid, and nothing else: what a kind of screen sets apart from the shared look. */
+function cleanPart(patch: unknown): Partial<Omit<OsLook, 'kinds'>> {
+  if (!patch || typeof patch !== 'object') return {}
+  const full = cleanLook(patch, DEFAULT_OS_LOOK)
+  const p = patch as Record<string, unknown>
+  const out: Record<string, unknown> = {}
+  for (const k of Object.keys(p)) if (k !== 'kinds' && k in DEFAULT_OS_LOOK && p[k] !== undefined && JSON.stringify(p[k]) === JSON.stringify((full as Record<string, unknown>)[k])) out[k] = (full as Record<string, unknown>)[k]
+  return out
+}
+
+/** The look as one kind of screen shows it: the shared look with what that kind sets apart over it. */
+export function lookFor(look: OsLook | undefined, kind: OsScreenKind): Required<OsLook> {
+  const base = cleanLook(look)
+  const own = base.kinds[kind]
+  return own ? { ...cleanLook(own, base), kinds: base.kinds } : base
+}
 /**
  * A look with every part checked: colours must be '#rrggbb' and choices on the list; anything else keeps what
  * `base` has. Every field is filled in, so a look saved before a field existed reads as the default for it.
  */
 export function cleanLook(patch: unknown, base: OsLook = DEFAULT_OS_LOOK): Required<OsLook> {
-  const out: Required<OsLook> = { ...DEFAULT_OS_LOOK, ...base, widgets: [...(base.widgets ?? DEFAULT_OS_LOOK.widgets)] }
+  const out: Required<OsLook> = { ...DEFAULT_OS_LOOK, ...base, widgets: [...(base.widgets ?? DEFAULT_OS_LOOK.widgets)], kinds: { ...(base.kinds ?? {}) } }
   if (!patch || typeof patch !== 'object') return out
+  const kinds = (patch as Record<string, unknown>).kinds
+  if (kinds && typeof kinds === 'object') {
+    // a kind given as null or empty goes back to the shared look
+    out.kinds = {}
+    for (const k of OS_KINDS) {
+      const part = cleanPart((kinds as Record<string, unknown>)[k])
+      if (Object.keys(part).length) out.kinds[k] = part
+    }
+  }
   const p = patch as Record<string, unknown>
   if (typeof p.dark === 'boolean') out.dark = p.dark
   if (typeof p.lockNotes === 'boolean') out.lockNotes = p.lockNotes

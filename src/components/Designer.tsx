@@ -9,7 +9,7 @@ import { useStudio } from '../3d/studio'
 import { CHARGE_W, CHIP_TIERS, EXTRAS, LENSES, MATERIALS, PANEL_NAMES, RAM_OPTIONS, REFRESH, SENSOR_NAMES, STORAGE_OPTIONS, chipInfo, marketLevel, sensorInfo, toggleExtra } from '../data/catalog'
 import { CASE_FEET, CASE_FRONTS, CASE_SIDES, PSUS, RGB_EFFECTS, TOWER_FORM_NAMES, caseOf, coolersFor, maxFans, rgbOf, rgbZones, towerForm, ANC, COOLERS, DRIVERS, FLIP, FLIP_COVERS, GPUS, HEAD_STRAPS, HINGES, INPUT_NAMES, MIC_ARRAYS, OPTICS, SPEAKERS, SPEAKER_DRIVERS, STRAPS, TYPES, headStrap, inputOptions, ioOptions, segmentsOf, sizeLimits, standInfo, standsFor, subLabel } from '../data/devices'
 import { devPlan, isVariantOf, player, productName } from '../sim/game'
-import { faceLabel, facesFor, faceSize, isCoverCam, isEdge, isFlip, kindsFor, partLabel, speakerShape } from '../sim/geometry'
+import { canTurn, faceLabel, facesFor, faceSize, isCoverCam, isEdge, isFlip, kindsFor, partLabel, speakerShape } from '../sim/geometry'
 import { layoutInternals, specShares, weightShares } from '../sim/internals'
 import { unitCostParts } from '../sim/insight'
 import { lockTip } from '../sim/progress'
@@ -17,10 +17,13 @@ import { appeal, bestSegment, normalised } from '../sim/market'
 import { costNow, factoryLine } from '../sim/ops'
 import { type FingerprintStyle, type FrontStyle, LAYOUT_NAMES, NO_REFRESH } from '../sim/rivals'
 import { batteryLabel, chargeWatts, evaluate, foldedThickness, lifeLabel, minBezel, minThickness, panelName, selfieMinDia, thermal } from '../sim/scoring'
-import { type Colorway, DEVICE_TYPES, type DeviceType, type Face, type Lens, type PlacedPart, SUBS } from '../sim/types'
+import { type Colorway, DEVICE_TYPES, type DeviceType, type Face, type Lens, type PlacedPart, SUBS, type Track } from '../sim/types'
 import { hasType } from '../sim/world'
 import { useGame, useStore } from '../store/game'
 import { LaunchPlan, type LaunchState, MarginRow } from './DesignerPlan'
+import { FeatureList } from './FeatureList'
+import { DEVICE_PALETTE, colourName, houseColours } from '../data/palette'
+import { PART_NOTES, featurePart } from '../data/featureParts'
 import { MAX_PRICE } from './format'
 import { Icon, typeIcon } from './icons'
 import { Btn, Choice, ColorField, ConfirmBtn,IconBtn, Key, Legend, Meter, Mini, NumInput, Row, Slider, Tabs, Tag, TextInput, modalOpen, money, pct, pressable, price, useKept, useLayer } from './ui'
@@ -32,7 +35,7 @@ const mm = (v: number) => `${v.toFixed(1)} mm`
 const mmFor = (type: DeviceType) => (type === 'tv' || type === 'desktop' || type === 'monitor' || type === 'tower' || type === 'console' || type === 'headset' || type === 'speaker' || type === 'drone' ? (v: number) => `${Math.round(v)} mm` : mm)
 const grams = (g: number) => (g >= 2000 ? `${(g / 1000).toFixed(1)} kg` : `${Math.round(g)} g`)
 /** What the two body materials are called on each device type: [frame, back]. */
-const SHELL_NAMES: Partial<Record<DeviceType, [string, string]>> = { tower: ['Chassis', 'Front panel'], monitor: ['Frame and stand', 'Back'], mouse: ['Shell', 'Underside'], laptop: ['Shell', 'Lid'], desktop: ['Shell and stand', 'Back and chin'], console: ['Shell', 'Front panel'], tv: ['Frame and stand', 'Back'], earbuds: ['Hinge and trim', 'Case and buds'], headset: ['Shell and band', 'Front plate'], speaker: ['Top and trim', 'Fabric'], handheld: ['Shell', 'Front plate'], ring: ['Band', 'Inner sleeve'], actioncam: ['Housing', 'Lens side'], drone: ['Body and arms', 'Top shell'] }
+const SHELL_NAMES: Partial<Record<DeviceType, [string, string]>> = { tower: ['Chassis', 'Panels'], monitor: ['Frame and stand', 'Back'], mouse: ['Shell and buttons', 'Sides and underside'], laptop: ['Shell', 'Lid'], desktop: ['Shell and stand', 'Back and chin'], console: ['Shell', 'Front panel'], tv: ['Frame and stand', 'Back'], earbuds: ['Hinge and trim', 'Case and buds'], headset: ['Shell and band', 'Front plate'], speaker: ['Top and trim', 'Fabric'], handheld: ['Shell', 'Front plate'], ring: ['Band', 'Inner sleeve'], actioncam: ['Housing', 'Lens side'], drone: ['Body and arms', 'Top shell'] }
 /** Where the simple editor puts the logo. */
 const LOGO_PLACE: Partial<Record<DeviceType, string>> = { tower: 'front panel', monitor: 'back, and below the screen if the bezel has room', mouse: 'palm rest', laptop: 'lid', desktop: 'back, and on the chin if there is one', console: 'top, or the side of a tower', tv: 'back, and below the screen if the bezel allows', earbuds: 'front of the case', foldable: 'back, beside the cameras', headset: 'front of the visor', speaker: 'panel at the back', handheld: 'back, between the grips', ereader: 'back', ring: 'outside of the band, engraved', actioncam: 'left side', drone: 'top' }
 /** What the body is called in the editor, where "chassis" does not fit. */
@@ -55,9 +58,20 @@ const storageLabel = (gb: number) => (gb >= 1024 ? `${gb / 1024} TB` : `${gb} GB
 /** The label of an option that is stored in lower case. */
 const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1)
 
+/** The device colours to choose from: the company's own, most recent first, then the named palette in its families. */
+function useDevicePalette() {
+  const products = useGame().products
+  return useMemo(() => {
+    const house = houseColours(products)
+    const named = (hex: string) => ({ hex, name: colourName(hex) })
+    return { house, palette: [{ title: 'Your colours', colours: house.map(named) }, ...DEVICE_PALETTE] }
+  }, [products])
+}
+
 /** A colour: a chip of what is chosen, which opens the swatches and the free picker in place. Once opened it stays open. */
 function ColorPick({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   const [open, setOpen] = useKept<boolean>(`designer:colour:${label}`, false)
+  const { house, palette } = useDevicePalette()
   return (
     <div className="py-1">
       <div className="flex items-center justify-between gap-2">
@@ -68,12 +82,22 @@ function ColorPick({ label, value, onChange }: { label: string; value: string; o
         </button>
       </div>
       {open && (
-        <div className="mt-1 flex items-center gap-[3px]">
-          {SWATCHES.map((c) => (
-            <button key={c} type="button" title={c} aria-label={`${label}: ${c}`} aria-pressed={value === c} onClick={() => onChange(c)} className={`h-6 flex-1 border ${value === c ? 'border-accent' : 'border-line2 hover:border-fg'}`} style={{ background: c }} />
-          ))}
-          <ColorField label={`${label}: any colour`} value={value} onChange={onChange} presets={SWATCHES} className="ml-1" />
-        </div>
+        <>
+          <div className="mt-1 flex items-center gap-[3px]">
+            {SWATCHES.map((c) => (
+              <button key={c} type="button" title={colourName(c) ? `${colourName(c)} ${c}` : c} aria-label={`${label}: ${colourName(c) ?? c}`} aria-pressed={value === c} onClick={() => onChange(c)} className={`h-6 flex-1 border ${value === c ? 'border-accent' : 'border-line2 hover:border-fg'}`} style={{ background: c }} />
+            ))}
+            <ColorField label={`${label}: any colour`} value={value} onChange={onChange} groups={palette} className="ml-1" />
+          </div>
+          {house.length > 0 && (
+            <div className="mt-1 flex items-center gap-[3px]">
+              <span className="w-20 shrink-0 text-[11px] text-faint">Your colours</span>
+              {house.slice(0, 8).map((c) => (
+                <button key={c} type="button" title={`Used on your devices: ${colourName(c) ?? c}`} aria-label={`${label}: your colour ${c}`} aria-pressed={value === c} onClick={() => onChange(c)} className={`h-5 min-w-0 flex-1 border ${value === c ? 'border-accent' : 'border-line2 hover:border-fg'}`} style={{ background: c, maxWidth: 26 }} />
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   )
@@ -507,23 +531,8 @@ function Spec({ k, children }: { k: string; children: React.ReactNode }) {
   )
 }
 
-function Checks({ items, selected, onToggle, spec }: { items: { id: string; name: string; cost: number; locked: boolean; why?: string }[]; selected: string[]; onToggle: (id: string) => void; spec: string }) {
-  return (
-    <>
-      {items.map((e) => (
-        <Spec key={e.id} k={`${spec}:${e.id}`}>
-          <label className={`flex items-center justify-between py-[3px] text-[11px] ${e.locked ? 'cursor-not-allowed text-faint' : 'text-fg'}`} title={e.why}>
-            <span>
-              <input type="checkbox" className="mr-2 accent-accent" disabled={e.locked} checked={selected.includes(e.id)} onChange={() => onToggle(e.id)} />
-              {e.name}
-            </span>
-            {e.locked ? <Icon name="lock" size={11} className="shrink-0 text-faint" /> : <span className="num text-dim">+{money(e.cost)}</span>}
-          </label>
-        </Spec>
-      ))}
-    </>
-  )
-}
+/** The headings extras are listed under, by the research track they come from. */
+const EXTRA_GROUPS: Partial<Record<Track, string>> = { chipset: 'Radios and connectivity', design: 'Sound, touch and input', materials: 'Durability and cooling', charging: 'Charging', camera: 'Sensing' }
 
 function InternalsPanel({ maxBattery }: { maxBattery: number }) {
   const g = useGame()
@@ -644,12 +653,12 @@ function InternalsPanel({ maxBattery }: { maxBattery: number }) {
       {(T.input || ioOptions(type).length > 0) && (
         <Group title={T.input === 'keyboard' ? `Keyboard and ${(T.ioLabel ?? 'ports').toLowerCase()}` : T.input === 'controller' ? 'Controller, drive and ports' : T.input === 'wands' ? 'Controllers and sensing' : T.input === 'controls' ? 'Controls, ports and features' : (T.ioLabel ?? 'Features')}>
           <Spec k="input">{T.input && <Choice label={INPUT_NAMES[T.input]} value={s.keyboard ?? 0} options={inputOptions(type).map((k, i) => ({ value: i, label: `${k.name} (${money(k.cost)})`, locked: k.level > lv.design }))} onChange={(v) => setSpecs({ keyboard: v })} />}</Spec>
-          <Checks items={ioOptions(type).map((p) => ({ id: p.id, name: p.name, cost: p.cost, locked: p.level > lv.chipset, why: p.level > lv.chipset ? `${p.name} needs Chipset level ${p.level}: research it under Research, Technology` : undefined }))} selected={io} onToggle={(id) => setSpecs({ io: flip(io, id) })} spec="io" />
+          <FeatureList label="features" wrap={(id, row) => <Spec key={id} k={`io:${id}`}>{row}</Spec>} items={ioOptions(type).map((p) => ({ id: p.id, name: p.name, cost: p.cost, locked: p.level > lv.chipset, group: p.size ? 'Ports and sockets' : 'Built in', note: PART_NOTES[featurePart(type, `io:${p.id}`)?.model ?? ''], score: p.value ? `+${p.value.toFixed(1)} pts` : undefined, why: p.level > lv.chipset ? `${p.name} needs Chipset level ${p.level}: research it under Research, Technology` : undefined }))} selected={io} onToggle={(id) => setSpecs({ io: flip(io, id) })} />
         </Group>
       )}
       {T.extras.length > 0 && (
         <Group title="Extras">
-          <Checks items={EXTRAS.filter((e) => T.extras.includes(e.id)).map((e) => { const fans = segmentsOf(type).filter((sg) => (e.likes[sg.id] ?? 0) > 0).map((sg) => sg.name); return { id: e.id, name: e.name, cost: e.cost, locked: !g.features.includes(e.id), why: g.features.includes(e.id) ? `${e.note}${fans.length ? ` Wanted most by: ${fans.join(', ')}.` : ''}${e.needs ? ` Needs ${EXTRAS.find((x) => x.id === e.needs)?.name}.` : ''}${e.group ? ' One water resistance grade at a time.' : ''}` : `${e.name} is not researched yet: find it under Research, Technology` } })} selected={s.extras} onToggle={(id) => setSpecs({ extras: toggleExtra(s.extras, id) })} spec="extra" />
+          <FeatureList label="extras" wrap={(id, row) => <Spec key={id} k={`extra:${id}`}>{row}</Spec>} items={EXTRAS.filter((e) => T.extras.includes(e.id)).map((e) => { const fans = segmentsOf(type).filter((sg) => (e.likes[sg.id] ?? 0) > 0); const best = Math.max(0, ...fans.map((sg) => e.likes[sg.id] ?? 0)); return { id: e.id, name: e.name, cost: e.cost, locked: !g.features.includes(e.id), group: EXTRA_GROUPS[e.track] ?? 'Other', note: e.note, score: best ? `up to +${(best * 100).toFixed(1)}%` : undefined, why: g.features.includes(e.id) ? `${e.note}${fans.length ? ` Wanted most by: ${fans.map((sg) => sg.name).join(', ')}.` : ''}${e.needs ? ` Needs ${EXTRAS.find((x) => x.id === e.needs)?.name}.` : ''}${e.group ? ' One water resistance grade at a time.' : ''}` : `${e.name} is not researched yet: find it under Research, Technology` } })} selected={s.extras} onToggle={(id) => setSpecs({ extras: toggleExtra(s.extras, id) })} />
         </Group>
       )}
     </div>
@@ -659,6 +668,7 @@ function InternalsPanel({ maxBattery }: { maxBattery: number }) {
 // ---------------------------------------------------------------- colours
 
 function ColoursPanel({ preview, setPreview }: { preview: number; setPreview: (i: number) => void }) {
+  const { palette } = useDevicePalette()
   const d = useStore((s) => s.draft!)
   const { setDraft } = useStore.getState()
   const colors = d.colors ?? []
@@ -680,10 +690,10 @@ function ColoursPanel({ preview, setPreview }: { preview: number; setPreview: (i
             </div>
             <div className="mt-1 grid grid-cols-2 gap-2">
               <label className="flex items-center justify-between text-[11px] text-dim">
-                Body <ColorField label={`${c.name || 'Colour'}: body`} value={c.back} presets={SWATCHES} onChange={(v) => (update(i, { back: v }), setPreview(i))} />
+                Body <ColorField label={`${c.name || 'Colour'}: body`} value={c.back} groups={palette} presets={SWATCHES} onChange={(v) => (update(i, { back: v }), setPreview(i))} />
               </label>
               <label className="flex items-center justify-between text-[11px] text-dim">
-                Frame <ColorField label={`${c.name || 'Colour'}: frame`} value={c.frame} presets={SWATCHES} onChange={(v) => (update(i, { frame: v }), setPreview(i))} />
+                Frame <ColorField label={`${c.name || 'Colour'}: frame`} value={c.frame} groups={palette} presets={SWATCHES} onChange={(v) => (update(i, { frame: v }), setPreview(i))} />
               </label>
             </div>
           </div>
@@ -734,7 +744,7 @@ function PartInspector({ part }: { part: PlacedPart }) {
           <>
             <Slider label="Width" value={part.w} min={1} max={edge ? Math.min(fs.w, 200) : Math.max(fs.w, fs.h)} step={0.25} format={mm} onChange={(v) => set({ w: v })} />
             <Slider label="Height" value={part.h} min={0.8} max={edge ? fs.h : Math.min(fs.h, Math.max(120, fs.h * 0.6))} step={0.1} format={mm} onChange={(v) => set({ h: v })} />
-            {!edge && <Slider label="Rotation" value={part.rot} min={0} max={345} step={15} format={(v) => `${v} deg`} onChange={(v) => set({ rot: v })} />}
+            {canTurn(part, d.type) && <Slider label="Rotation" value={part.rot} min={0} max={345} step={15} format={(v) => `${v} deg`} onChange={(v) => set({ rot: v })} />}
           </>
         )}
         {(part.kind === 'island' || part.kind === 'notch') && <Slider label="Corner radius" value={part.r ?? 0} min={0} max={Math.min(part.w, part.h) / 2} step={0.25} format={mm} onChange={(v) => set({ r: v })} />}

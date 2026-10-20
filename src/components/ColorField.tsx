@@ -28,8 +28,8 @@ const SQ_W = 196
 const SQ_H = 120
 const POP_W = 214
 
-function Chip({ color, label, on, onPick }: { color: string; label: string; on: boolean; onPick: () => void }) {
-  return <button type="button" title={color} aria-label={`${label} ${color}`} aria-pressed={on} onClick={onPick} className={`h-5 min-w-0 flex-1 border ${on ? 'border-accent' : 'border-line2 hover:border-fg'}`} style={{ background: color, maxWidth: 24 }} />
+function Chip({ color, label, on, onPick, name }: { color: string; label: string; on: boolean; onPick: () => void; name?: string }) {
+  return <button type="button" title={name ? `${name} ${color}` : color} aria-label={`${label} ${name ?? color}`} aria-pressed={on} onClick={onPick} className={`h-5 min-w-0 flex-1 border ${on ? 'border-accent' : 'border-line2 hover:border-fg'}`} style={{ background: color, maxWidth: 24 }} />
 }
 
 type Channel = 'r' | 'g' | 'b'
@@ -84,7 +84,7 @@ function RgbFields({ hex, onPick }: { hex: string; onPick: (hex: string) => void
  * colour has been settled on (the mouse comes up, Enter in the hex field, a
  * swatch). `showHex` puts the hex code beside the swatch.
  */
-export function ColorField({ value, onChange, onCommit, label, presets, showHex = false, className = '', disabled }: { value: string; onChange: (hex: string) => void; onCommit?: (hex: string) => void; /** What the colour is, for the tooltip and screen readers. */ label: string; presets?: readonly string[]; showHex?: boolean; className?: string; disabled?: boolean }) {
+export function ColorField({ value, onChange, onCommit, label, presets, groups, showHex = false, className = '', disabled }: { value: string; onChange: (hex: string) => void; onCommit?: (hex: string) => void; /** What the colour is, for the tooltip and screen readers. */ label: string; presets?: readonly string[]; /** Named colours in families, each with a heading: the device palette, the company's own colours. */ groups?: readonly { title: string; colours: readonly { hex: string; name?: string }[] }[]; showHex?: boolean; className?: string; disabled?: boolean }) {
   const [open, setOpen] = useState(false)
   const btn = useRef<HTMLButtonElement>(null)
   const pop = useRef<HTMLDivElement>(null)
@@ -228,7 +228,7 @@ export function ColorField({ value, onChange, onCommit, label, presets, showHex 
             ref={pop}
             role="dialog"
             aria-label={label}
-            className="fixed z-[80] border border-line2 bg-panel p-2 text-xs"
+            className="fixed z-[80] max-h-[calc(100vh-16px)] overflow-y-auto border border-line2 bg-panel p-2 text-xs"
             style={{ width: POP_W, left: pos?.left ?? -9999, top: pos?.top ?? -9999 }}
             onKeyDown={(e) => e.stopPropagation()}
           >
@@ -293,6 +293,16 @@ export function ColorField({ value, onChange, onCommit, label, presets, showHex 
               />
             </div>
             <RgbFields hex={current} onPick={pick} />
+            {groups?.filter((f) => f.colours.length > 0).map((f) => (
+              <div key={f.title} className="mt-2">
+                <div className="mb-1 text-[11px] text-faint">{f.title}</div>
+                <div className="flex flex-wrap gap-[3px]">
+                  {f.colours.map((c) => (
+                    <Chip key={c.hex} color={c.hex} name={c.name} label={f.title} on={parseHex(c.hex) === current} onPick={() => pick(c.hex)} />
+                  ))}
+                </div>
+              </div>
+            ))}
             {presets && presets.length > 0 && (
               <div className="mt-2">
                 <div className="mb-1 text-[11px] text-faint">Presets</div>

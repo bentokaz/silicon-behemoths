@@ -5,7 +5,7 @@
 // home screen, a computer's desktop with its taskbar and windows, a television's rows of tiles, a console's shelf
 // of games, a watch face, an e-reader's library. Pure canvas drawing, sized from the canvas, so a look reads alike
 // at any size. Gradients are allowed here: they are the system's artwork, not the game's own interface.
-import { DEFAULT_OS_LOOK, cleanLook } from '../sim/tech'
+import { DEFAULT_OS_LOOK, cleanLook, lookFor } from '../sim/tech'
 import type { Company, DeviceType, GameState, OsLook } from '../sim/types'
 
 export { DEFAULT_OS_LOOK }
@@ -561,7 +561,23 @@ function statusBar(p: Painter, y: number, size: number, pad: number) {
 /** The dock: a panel of icons along one edge. Returns the area left for the rest of the screen. */
 function dock(p: Painter, area: { x: number; y: number; w: number; h: number }, size: number, count: number) {
   const L = p.L
-  if (L.dock === 'none') return area
+  if (L.dock === 'none') {
+    // floating: a short pill of icons that stands clear of every edge, over the wallpaper, with its own shadow
+    const pad = size * 0.3
+    const len = Math.min(area.w * 0.8, count * (size + pad) + pad)
+    const thick = size + pad * 2
+    const x = area.x + (area.w - len) / 2
+    const y = area.y + area.h - thick - size * 0.9
+    p.g.save()
+    p.g.shadowColor = 'rgba(0,0,0,0.45)'
+    p.g.shadowBlur = size * 0.6
+    p.g.shadowOffsetY = size * 0.15
+    p.card(x, y, len, thick, thick * 0.5)
+    p.g.restore()
+    const fit = Math.max(1, Math.floor((len - pad) / (size + pad)))
+    for (let i = 0; i < Math.min(count, fit); i++) appIcon(p, x + pad + size / 2 + i * (size + pad), y + thick / 2, size, i + 10)
+    return { ...area, h: area.h - thick - size * 1.3 }
+  }
   const pad = size * 0.32
   const thick = size + pad * 2
   const along = L.dock === 'left' || L.dock === 'right'
@@ -851,17 +867,30 @@ function desktopHome(p: Painter) {
     for (let i = 0; i < n; i++) appIcon(p, (w - len) / 2 + u + size / 2 + i * (size + u), h - 2 * u - size / 2, size, i + 10)
     area.h -= size + 3 * u
   } else {
-    // a taskbar along one edge: the start button in the accent, pinned apps, and the clock at the far end
-    const x = L.dock === 'right' ? w - bar : 0
-    const y = L.dock === 'bottom' ? h - bar : 0
-    const bw = side ? bar : w
-    const bh = side ? h : bar
-    g.fillStyle = L.dark ? alpha(mix(L.surface, '#000000', 0.3), 0.9) : alpha(mix(L.surface, '#ffffff', 0.85), 0.9)
-    g.fillRect(x, y, bw, bh)
+    // a taskbar along one edge: the start button in the accent, pinned apps, and the clock at the far end; edge to
+    // edge with the apps from the start, the same with them centred, or a floating bar held clear of the edges
+    const float = L.taskbar === 'floating'
+    const m = float ? 1.4 * u : 0
+    const x = L.dock === 'right' ? w - bar - m : m
+    const y = L.dock === 'bottom' ? h - bar - m : m
+    const bw = side ? bar : w - 2 * m
+    const bh = side ? h - 2 * m : bar
+    const barFill = L.dark ? alpha(mix(L.surface, '#000000', 0.3), 0.9) : alpha(mix(L.surface, '#ffffff', 0.85), 0.9)
+    if (float) {
+      g.save()
+      g.shadowColor = 'rgba(0,0,0,0.4)'
+      g.shadowBlur = 1.6 * u
+      p.card(x, y, bw, bh, bar * 0.45, barFill)
+      g.restore()
+    } else {
+      g.fillStyle = barFill
+      g.fillRect(x, y, bw, bh)
+    }
     const size = bar * 0.68 * Math.min(1.1, p.iconK)
     const step = size * 1.35
     const n = 8
-    const start = side ? h * 0.5 - (n * step) / 2 : w * 0.5 - (n * step) / 2
+    const centred = L.taskbar !== 'full'
+    const start = side ? (centred ? h * 0.5 - (n * step) / 2 : y + 1.2 * u) : centred ? w * 0.5 - (n * step) / 2 : x + 1.2 * u
     for (let i = 0; i < n; i++) {
       const at = start + step * (i + 0.5)
       const cx = side ? x + bar / 2 : at
@@ -885,10 +914,11 @@ function desktopHome(p: Painter) {
       p.say('09:41', w - 2 * u, y + bar * 0.36, 1.4 * u, { align: 'right', color: ink, weight: 600 })
       p.say('10/10', w - 2 * u, y + bar * 0.7, 1.2 * u, { align: 'right', color: ink, alpha: 0.7 })
     }
-    if (L.dock === 'bottom') area.h -= bar
-    else if (L.dock === 'top') (area.y += bar), (area.h -= bar)
-    else if (L.dock === 'left') (area.x += bar), (area.w -= bar)
-    else area.w -= bar
+    const used = bar + 2 * m
+    if (L.dock === 'bottom') area.h -= used
+    else if (L.dock === 'top') (area.y += used), (area.h -= used)
+    else if (L.dock === 'left') (area.x += used), (area.w -= used)
+    else area.w -= used
   }
   // icons down the left of the desktop
   const ds = 4.4 * u * p.iconK
@@ -956,56 +986,113 @@ function tvHome(p: Painter, console: boolean) {
     g.arc(w - 13 * u, 3.9 * u, 1.7 * u, 0, Math.PI * 2)
     g.fill()
   }
-  // the hero: the featured show or game over the wallpaper
-  p.say(console ? GAMES[1] : 'Tonight', 5 * u, h * 0.3, 6 * u, { heading: true })
-  p.say(console ? 'Continue: chapter 4, 62% complete' : 'The Long Coast, episode 3', 5 * u, h * 0.3 + 5 * u, 2 * u, { alpha: 0.85 })
-  p.card(5 * u, h * 0.3 + 8.5 * u, 14 * u, 4 * u, 2 * u, L.accent)
-  p.say(console ? 'Play' : 'Watch', 12 * u, h * 0.3 + 10.5 * u, 1.9 * u, { align: 'center', weight: 700, color: lum(L.accent) > 0.45 ? '#15171b' : '#ffffff' })
-  // a row of tiles: wide for programmes, square for games, the first one in focus
-  const n = console ? 7 : 6
+  // the row of tiles is the television's dock: it sits along the edge the look puts the dock on, or floats on a
+  // panel of its own; the look's layout makes it one row, two rows or a mosaic, and the home-row style shapes the tiles
+  const side = L.dock === 'left' || L.dock === 'right'
+  const rowShape = L.tvRow
+  const count = (console ? 7 : 6) + ({ small: 2, medium: 0, large: -1 } as const)[L.iconSize]
   const gap = 1.6 * u
-  const tw = console ? (w - 10 * u - gap * (n - 1)) / n : (w - 10 * u - gap * (n - 1)) / n
-  const th = console ? tw : tw * 0.58
-  const ty = h - th - (console ? 7 : 9) * u
-  p.say(console ? 'Your games' : 'Apps', 5 * u, ty - 2.4 * u, 2 * u, { weight: 700 })
-  for (let i = 0; i < n; i++) {
-    const x = 5 * u + i * (tw + gap)
+  const colW = side ? Math.min(w * 0.24, 30 * u) : 0
+  // the hero: the featured show or game over the wallpaper, clear of the row
+  const hx = L.dock === 'left' ? 5 * u + colW + 4 * u : 5 * u
+  const hy = L.dock === 'top' ? h * 0.68 : h * 0.3
+  p.say(console ? GAMES[1] : 'Tonight', hx, hy, 6 * u, { heading: true })
+  p.say(console ? 'Continue: chapter 4, 62% complete' : 'The Long Coast, episode 3', hx, hy + 5 * u, 2 * u, { alpha: 0.85 })
+  p.card(hx, hy + 8.5 * u, 14 * u, 4 * u, 2 * u, L.accent)
+  p.say(console ? 'Play' : 'Watch', hx + 7 * u, hy + 10.5 * u, 1.9 * u, { align: 'center', weight: 700, color: lum(L.accent) > 0.45 ? '#15171b' : '#ffffff' })
+  const rows = L.layout === 'list' ? 2 : 1
+  const tile = (i: number, x: number, y: number, tw: number, th: number) => {
     const c = TINTS[(i * 3 + 2) % TINTS.length]
-    const gr = g.createLinearGradient(x, ty, x + tw, ty + th)
+    if (rowShape === 'icons') {
+      // round app icons with their names under them
+      const r = Math.min(tw, th) * 0.42
+      g.fillStyle = c
+      g.beginPath()
+      g.arc(x + tw / 2, y + r, r, 0, Math.PI * 2)
+      g.fill()
+      g.fillStyle = '#ffffff'
+      g.strokeStyle = '#ffffff'
+      g.lineWidth = r * 0.12
+      glyph(g, i, x + tw / 2, y + r, r * 0.38)
+      p.say(console ? GAMES[i % GAMES.length] : APPS[(i + 13) % APPS.length], x + tw / 2, y + 2 * r + 1.6 * u, Math.min(1.6 * u, tw * 0.14), { align: 'center', max: tw })
+      if (i === 0) {
+        g.strokeStyle = '#ffffff'
+        g.lineWidth = 0.5 * u
+        g.beginPath()
+        g.arc(x + tw / 2, y + r, r + 0.7 * u, 0, Math.PI * 2)
+        g.stroke()
+      }
+      return
+    }
+    const gr = g.createLinearGradient(x, y, x + tw, y + th)
     gr.addColorStop(0, mix(c, '#ffffff', 0.1))
     gr.addColorStop(1, mix(c, '#000000', 0.35))
     g.fillStyle = gr
-    rounded(g, x, ty, tw, th, tw * 0.06 * p.round)
+    rounded(g, x, y, tw, th, tw * 0.06 * p.round)
     g.fill()
     if (i === 0) {
       g.strokeStyle = '#ffffff'
       g.lineWidth = 0.5 * u
-      rounded(g, x - 0.6 * u, ty - 0.6 * u, tw + 1.2 * u, th + 1.2 * u, tw * 0.07 * p.round)
+      rounded(g, x - 0.6 * u, y - 0.6 * u, tw + 1.2 * u, th + 1.2 * u, tw * 0.07 * p.round)
       g.stroke()
     }
-    if (console) p.say(GAMES[i % GAMES.length], x + tw * 0.08, ty + th * 0.86, tw * 0.1, { color: '#ffffff', weight: 700, max: tw * 0.86 })
+    if (console || rowShape === 'posters') p.say(console ? GAMES[i % GAMES.length] : BOOKS[i % BOOKS.length], x + tw * 0.08, y + th * 0.88, Math.min(tw * 0.1, 1.8 * u), { color: '#ffffff', weight: 700, max: tw * 0.86 })
     else {
       g.fillStyle = '#ffffff'
       g.strokeStyle = '#ffffff'
       g.lineWidth = th * 0.04
-      glyph(g, i, x + tw / 2, ty + th / 2, th * 0.16)
+      glyph(g, i, x + tw / 2, y + th / 2, th * 0.16)
     }
   }
-  if (!console && L.widgets.length) widgetRow(p, w - 5 * u - 44 * u, 8 * u, 44 * u, 11 * u, 2, 1.6 * u)
+  const aspect = rowShape === 'posters' ? 1.45 : rowShape === 'icons' ? 1.25 : console ? 1 : 0.58
+  if (side) {
+    // a column of tiles down one side
+    const x0 = L.dock === 'left' ? 5 * u : w - 5 * u - colW
+    const tw = colW
+    const th = Math.min(tw * aspect, (h - 14 * u - gap * 3) / 4)
+    p.say(console ? 'Your games' : 'Apps', x0, 9 * u, 2 * u, { weight: 700 })
+    for (let i = 0; i < 4; i++) tile(i, x0, 11.5 * u + i * (th + gap), tw, th)
+  } else {
+    const floating = L.dock === 'none'
+    const inset = floating ? 4 * u : 0
+    const span = w - 10 * u - 2 * inset
+    const n = Math.max(3, Math.round(count / rows))
+    const tw = (span - gap * (n - 1)) / n
+    const th = Math.min(tw * aspect, (h * (L.dock === 'top' ? 0.5 : 0.42)) / rows - gap)
+    const block = rows * th + (rows - 1) * gap
+    const ty = L.dock === 'top' ? 10 * u : floating ? h - block - 12 * u : h - block - (console ? 7 : 9) * u
+    if (floating) {
+      g.save()
+      g.shadowColor = 'rgba(0,0,0,0.45)'
+      g.shadowBlur = 2 * u
+      p.card(5 * u, ty - 5 * u, w - 10 * u, block + 8 * u, 2.4 * u)
+      g.restore()
+    }
+    p.say(console ? 'Your games' : 'Apps', 5 * u + inset, ty - 2.4 * u, 2 * u, { weight: 700 })
+    let i = 0
+    for (let r = 0; r < rows; r++) {
+      let x = 5 * u + inset
+      for (let c = 0; c < n && x < 5 * u + inset + span - 1; c++) {
+        // a mosaic: the first tile of each row takes two places
+        const wide = L.layout === 'tiles' && c === 0
+        const ww = wide ? tw * 2 + gap : tw
+        tile(i, x, ty + r * (th + gap), ww, th)
+        x += ww + gap
+        if (wide) c++
+        i++
+      }
+    }
+  }
+  if (!console && L.widgets.length && L.dock !== 'right') widgetRow(p, w - 5 * u - 44 * u, L.dock === 'top' ? h * 0.66 : 8 * u, 44 * u, 11 * u, 2, 1.6 * u)
 }
 
 function handheldHome(p: Painter) {
   const { u, w, h, g, L } = p
   statusBar(p, 3 * u, 2 * u, 3 * u)
-  // a shelf of game covers, the one in focus larger, with its name beneath
-  const n = 5
-  const cw = w * 0.17
-  const gap = w * 0.02
-  const big = cw * 1.25
-  let x = w * 0.06
-  for (let i = 0; i < n; i++) {
-    const s = i === 0 ? big : cw
-    const y = h * 0.44 - s / 2
+  // the quick buttons are the handheld's dock, on whichever edge the look puts it (or floating)
+  const size = 6 * u * p.iconK
+  const area = dock(p, { x: 0, y: 6 * u, w, h: h - 6 * u }, size, 6)
+  const cover = (i: number, x: number, y: number, s: number, focus: boolean) => {
     const c = TINTS[(i * 5 + 1) % TINTS.length]
     const gr = g.createLinearGradient(x, y, x, y + s)
     gr.addColorStop(0, c)
@@ -1013,19 +1100,71 @@ function handheldHome(p: Painter) {
     g.fillStyle = gr
     rounded(g, x, y, s, s, s * 0.08 * p.round)
     g.fill()
-    if (i === 0) {
+    if (focus) {
       g.strokeStyle = L.accent
       g.lineWidth = 0.7 * u
       rounded(g, x - u, y - u, s + 2 * u, s + 2 * u, s * 0.09 * p.round)
       g.stroke()
+    }
+  }
+  if (L.layout === 'list') {
+    // the library as a list: a cover, the name and the time played, one game a row
+    const rowH = Math.min(11 * u, (area.h - 4 * u) / 4)
+    p.card(area.x + 3 * u, area.y + u, area.w - 6 * u, rowH * 4 + u, 2 * u)
+    for (let i = 0; i < 4; i++) {
+      const y = area.y + 1.5 * u + i * rowH
+      cover(i, area.x + 5 * u, y + rowH * 0.1, rowH * 0.8, i === 0)
+      p.say(GAMES[(i + 2) % GAMES.length], area.x + 7 * u + rowH, y + rowH * 0.36, 2.4 * u, { color: p.panelInk, weight: 700 })
+      p.say(['Played 2 hours ago', 'Yesterday', 'Last week', 'New'][i], area.x + 7 * u + rowH, y + rowH * 0.7, 1.8 * u, { color: p.panelInk, alpha: 0.7 })
+    }
+    return
+  }
+  if (L.layout === 'tiles') {
+    // a grid of covers, two rows
+    const cols = 4
+    const gap = 2 * u
+    const s = Math.min((area.w - 8 * u - gap * (cols - 1)) / cols, (area.h - 6 * u - gap) / 2)
+    const x0 = area.x + (area.w - cols * s - (cols - 1) * gap) / 2
+    for (let i = 0; i < cols * 2; i++) cover(i, x0 + (i % cols) * (s + gap), area.y + 2 * u + Math.floor(i / cols) * (s + gap), s, i === 0)
+    return
+  }
+  // a shelf of game covers, the one in focus larger, with its name beneath
+  const n = 5
+  const cw = area.w * 0.17
+  const gap = area.w * 0.02
+  const big = Math.min(cw * 1.25, area.h * 0.55)
+  let x = area.x + area.w * 0.06
+  const mid = area.y + area.h * 0.42
+  for (let i = 0; i < n; i++) {
+    const s = i === 0 ? big : Math.min(cw, big * 0.8)
+    const y = mid - s / 2
+    cover(i, x, y, s, i === 0)
+    if (i === 0) {
       p.say(GAMES[2], x, y + s + 4 * u, 3 * u, { weight: 700 })
       p.say('Played 2 hours ago', x, y + s + 7.5 * u, 2 * u, { alpha: 0.7 })
     }
     x += s + gap
   }
-  // the quick buttons along the foot
-  const size = 6 * u * p.iconK
-  for (let i = 0; i < 6; i++) appIcon(p, w * 0.5 + (i - 2.5) * size * 1.6, h - size * 0.9, size, i + 6)
+}
+
+/** A complication on a watch face: its ring of progress in a shape that follows the look's corners. */
+function complication(p: Painter, id: string, i: number, x: number, y: number, r: number) {
+  const { g, L } = p
+  g.fillStyle = alpha(L.dark ? '#ffffff' : '#000000', 0.12)
+  if (L.corners === 'round') {
+    g.beginPath()
+    g.arc(x, y, r, 0, Math.PI * 2)
+  } else rounded(g, x - r, y - r, 2 * r, 2 * r, L.corners === 'soft' ? r * 0.45 : r * 0.08)
+  g.fill()
+  g.lineWidth = r * 0.18
+  g.strokeStyle = [L.accent, '#34c77b', '#2f9bf0', '#f0484e'][i % 4]
+  const k = [0.7, 0.45, 0.85, 0.3][i % 4]
+  if (L.corners === 'round') {
+    g.beginPath()
+    g.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k)
+    g.stroke()
+  } else g.fillRect(x - r * 0.7, y + r * 0.55, r * 1.4 * k, r * 0.16)
+  p.say({ weather: '21°', calendar: '10', music: 'II', battery: '82', photos: 'P', steps: '6k' }[id] ?? '', x, y - (L.corners === 'round' ? 0 : r * 0.1), r * 0.6, { align: 'center', weight: 700 })
 }
 
 function watchHome(p: Painter, lock: boolean) {
@@ -1034,27 +1173,41 @@ function watchHome(p: Painter, lock: boolean) {
   const cx = w / 2
   const cy = h / 2
   if (lock || L.layout === 'list') {
-    // the watch face: the time, and the widgets as complications round it
-    if (L.lock === 'analog') analogClock(p, cx, cy, s * 0.4)
-    else {
+    // the watch face: the time in the face's style, and the widgets as complications round it
+    const comps = L.widgets.slice(0, 4)
+    if (L.watchFace === 'rings') {
+      // activity rings filling the face, the time small in the middle
+      ;[L.accent, '#34c77b', '#2f9bf0'].forEach((c, i) => {
+        const r = s * (0.42 - i * 0.09)
+        g.lineWidth = s * 0.07
+        g.strokeStyle = alpha(c, 0.25)
+        g.beginPath()
+        g.arc(cx, cy, r, 0, Math.PI * 2)
+        g.stroke()
+        g.strokeStyle = c
+        g.beginPath()
+        g.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * [0.78, 0.55, 0.9][i])
+        g.stroke()
+      })
+      p.say('09:41', cx, cy, s * 0.11, { align: 'center', heading: true })
+      return
+    }
+    if (L.watchFace === 'modular') {
+      // the time across the top and a grid of complications below
+      p.say('09:41', s * 0.12 + (w - s) / 2, cy - s * 0.3, s * 0.17, { color: L.accent, heading: true })
+      const all = comps.length ? comps : ['weather', 'steps']
+      all.forEach((id, i) => complication(p, id, i, cx + (i % 2 ? 0.2 : -0.2) * s, cy + (i < 2 ? 0.02 : 0.27) * s, s * 0.11))
+      return
+    }
+    if (L.watchFace === 'analog' || L.lock === 'analog') analogClock(p, cx, cy, s * 0.4)
+    else if (L.lock === 'stacked') {
       p.say('09', cx, cy - s * 0.12, s * 0.3, { align: 'center', color: L.accent, heading: true })
       p.say('41', cx, cy + s * 0.17, s * 0.3, { align: 'center', heading: true })
-    }
-    const comps = L.widgets.slice(0, 4)
+    } else if (L.lock === 'minimal') p.say('09:41', cx, cy - s * 0.3, s * 0.12, { align: 'center', heading: true, alpha: 0.9 })
+    else p.say('09:41', cx, cy, s * 0.24, { align: 'center', color: L.accent, heading: true })
     comps.forEach((id, i) => {
       const at = [[-0.33, -0.33], [0.33, -0.33], [-0.33, 0.33], [0.33, 0.33]][i]
-      const x = cx + at[0] * s
-      const y = cy + at[1] * s
-      g.fillStyle = alpha(p.L.dark ? '#ffffff' : '#000000', 0.12)
-      g.beginPath()
-      g.arc(x, y, s * 0.1, 0, Math.PI * 2)
-      g.fill()
-      g.lineWidth = s * 0.018
-      g.strokeStyle = [L.accent, '#34c77b', '#2f9bf0', '#f0484e'][i]
-      g.beginPath()
-      g.arc(x, y, s * 0.1, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * [0.7, 0.45, 0.85, 0.3][i])
-      g.stroke()
-      p.say({ weather: '21°', calendar: '10', music: 'II', battery: '82', photos: 'P', steps: '6k' }[id] ?? '', x, y, s * 0.06, { align: 'center', weight: 700 })
+      complication(p, id, i, cx + at[0] * s, cy + at[1] * s, s * 0.1)
     })
     return
   }
@@ -1088,42 +1241,76 @@ function watchHome(p: Painter, lock: boolean) {
   }
 }
 
-function ereaderHome(p: Painter) {
-  const { u, w, h, g } = p
-  // paper: the wallpaper plays no part, only the type and the covers
+function ereaderHome(p: Painter, lock: boolean) {
+  const { w, h, g, L } = p
+  // paper: the wallpaper plays no part, only the type, the covers and the toolbar
   g.fillStyle = '#f2f1ec'
   g.fillRect(0, 0, w, h)
   const ink = '#1d1d1f'
   const ru = w / 100
-  p.say('Library', 6 * ru, 9 * ru, 6 * ru, { color: ink, heading: true })
-  p.say('09:41', w - 6 * ru, 4 * ru, 3 * ru, { color: ink, align: 'right' })
-  g.fillStyle = ink
-  g.fillRect(6 * ru, 14 * ru, w - 12 * ru, Math.max(1, ru * 0.3))
-  // the book being read, then a grid of covers
-  const cw = 26 * ru
-  const ch = cw * 1.45
-  g.fillStyle = mix(p.L.accent, '#000000', 0.2)
-  g.fillRect(6 * ru, 19 * ru, cw, ch)
-  p.say(BOOKS[0], 6 * ru + cw + 5 * ru, 23 * ru, 4.2 * ru, { color: ink, heading: true, max: w - cw - 18 * ru })
-  p.say('Chapter 7 of 18', 6 * ru + cw + 5 * ru, 29 * ru, 3 * ru, { color: ink, alpha: 0.7 })
-  g.fillStyle = '#c9c8c2'
-  g.fillRect(6 * ru + cw + 5 * ru, 34 * ru, w - cw - 22 * ru, 1.2 * ru)
-  g.fillStyle = ink
-  g.fillRect(6 * ru + cw + 5 * ru, 34 * ru, (w - cw - 22 * ru) * 0.38, 1.2 * ru)
-  const cols = 3
-  const gw = (w - 12 * ru - 2 * 4 * ru) / cols
-  const gh = gw * 1.45
-  for (let i = 0; i < 6; i++) {
-    const x = 6 * ru + (i % cols) * (gw + 4 * ru)
-    const y = 19 * ru + ch + 8 * ru + Math.floor(i / cols) * (gh + 9 * ru)
-    if (y + gh > h - 4 * ru) break
-    g.fillStyle = mix(TINTS[(i * 3 + 1) % TINTS.length], '#000000', 0.25)
-    g.fillRect(x, y, gw, gh)
-    g.fillStyle = 'rgba(255,255,255,0.8)'
-    g.fillRect(x + gw * 0.12, y + gh * 0.18, gw * 0.76, Math.max(1, ru * 0.4))
-    p.say(BOOKS[(i + 1) % BOOKS.length], x, y + gh + 3 * ru, 2.6 * ru, { color: ink, max: gw })
+  if (lock) {
+    // the sleep screen: the clock in the look's style over a page of the book
+    if (L.lock === 'analog') analogClock(p, w / 2, h * 0.36, w * 0.3)
+    else if (L.lock === 'stacked') {
+      p.say('09', w / 2, h * 0.28, 22 * ru, { align: 'center', color: ink, heading: true })
+      p.say('41', w / 2, h * 0.44, 22 * ru, { align: 'center', color: ink, heading: true })
+    } else p.say('09:41', w / 2, h * 0.36, (L.lock === 'minimal' ? 9 : 18) * ru, { align: 'center', color: ink, heading: L.lock !== 'minimal' })
+    p.say(BOOKS[0], w / 2, h * 0.62, 4 * ru, { align: 'center', color: ink, heading: true })
+    p.say('Sleeping. Press the button to read on.', w / 2, h * 0.68, 2.6 * ru, { align: 'center', color: ink, alpha: 0.7 })
+  } else {
+    // the toolbar is the reader's dock, and the library fits into what it leaves
+    const area = dock(p, { x: 0, y: 0, w, h }, 7 * ru * p.iconK, 4)
+    g.save()
+    const k = Math.min(area.w / w, area.h / h)
+    g.translate(area.x + (area.w - w * k) / 2, area.y)
+    g.scale(k, k)
+    p.say('Library', 6 * ru, 9 * ru, 6 * ru, { color: ink, heading: true })
+    p.say('09:41', w - 6 * ru, 4 * ru, 3 * ru, { color: ink, align: 'right' })
+    g.fillStyle = ink
+    g.fillRect(6 * ru, 14 * ru, w - 12 * ru, Math.max(1, ru * 0.3))
+    const coverAt = (i: number, x: number, y: number, cw: number, ch: number) => {
+      g.fillStyle = i < 0 ? mix(L.accent, '#000000', 0.2) : mix(TINTS[(i * 3 + 1) % TINTS.length], '#000000', 0.25)
+      rounded(g, x, y, cw, ch, cw * 0.05 * p.round)
+      g.fill()
+      g.fillStyle = 'rgba(255,255,255,0.8)'
+      g.fillRect(x + cw * 0.12, y + ch * 0.18, cw * 0.76, Math.max(1, ru * 0.4))
+    }
+    if (L.layout === 'list') {
+      // a list: a small cover, the title and how far through, one book a row
+      for (let i = 0; i < 7; i++) {
+        const y = 18 * ru + i * 17 * ru
+        if (y + 15 * ru > h) break
+        coverAt(i - 1, 6 * ru, y, 10 * ru, 14.5 * ru)
+        p.say(BOOKS[i % BOOKS.length], 20 * ru, y + 4 * ru, 3.6 * ru, { color: ink, heading: true, max: w - 26 * ru })
+        g.fillStyle = '#c9c8c2'
+        g.fillRect(20 * ru, y + 9 * ru, w - 26 * ru, ru)
+        g.fillStyle = ink
+        g.fillRect(20 * ru, y + 9 * ru, (w - 26 * ru) * [0.38, 0.9, 0.12, 1, 0.5, 0.05, 0.7][i], ru)
+      }
+    } else {
+      // the book being read, then the covers: three across, or two large ones
+      const cw = 26 * ru
+      const ch = cw * 1.45
+      coverAt(-1, 6 * ru, 19 * ru, cw, ch)
+      p.say(BOOKS[0], 6 * ru + cw + 5 * ru, 23 * ru, 4.2 * ru, { color: ink, heading: true, max: w - cw - 18 * ru })
+      p.say('Chapter 7 of 18', 6 * ru + cw + 5 * ru, 29 * ru, 3 * ru, { color: ink, alpha: 0.7 })
+      g.fillStyle = '#c9c8c2'
+      g.fillRect(6 * ru + cw + 5 * ru, 34 * ru, w - cw - 22 * ru, 1.2 * ru)
+      g.fillStyle = ink
+      g.fillRect(6 * ru + cw + 5 * ru, 34 * ru, (w - cw - 22 * ru) * 0.38, 1.2 * ru)
+      const cols = L.layout === 'tiles' ? 2 : 3
+      const gw = (w - 12 * ru - (cols - 1) * 4 * ru) / cols
+      const gh = gw * (L.layout === 'tiles' ? 1.2 : 1.45)
+      for (let i = 0; i < 6; i++) {
+        const x = 6 * ru + (i % cols) * (gw + 4 * ru)
+        const y = 19 * ru + ch + 8 * ru + Math.floor(i / cols) * (gh + 9 * ru)
+        if (y + gh > h - 4 * ru) break
+        coverAt(i, x, y, gw, gh)
+        p.say(BOOKS[(i + 1) % BOOKS.length], x, y + gh + 3 * ru, 2.6 * ru, { color: ink, max: gw })
+      }
+    }
+    g.restore()
   }
-  void u
   // e-ink shows no colour: the whole page in greys
   try {
     const img = g.getImageData(0, 0, w, h)
@@ -1139,14 +1326,37 @@ function ereaderHome(p: Painter) {
 }
 
 function displayHome(p: Painter) {
-  const { u, w, h } = p
+  const { w, h, L } = p
   const su = h / 60
-  bigClock(p, 8 * su, 6 * su, 16 * su, 'left')
-  const list = p.L.widgets.length ? p.L.widgets.slice(0, 2) : ['weather', 'music']
-  list.forEach((id, i) => widget(p, id, w * 0.52, (5 + i * 21) * su, w * 0.44, 19 * su))
+  // the row of apps is the display's dock; the clock and the widgets take what it leaves
   const size = 7 * su * p.iconK
-  for (let i = 0; i < 5; i++) appIcon(p, 8 * su + size / 2 + i * size * 1.7, h - size, size, i + 11)
-  void u
+  const a = dock(p, { x: 0, y: 0, w, h }, size, 5)
+  const list = L.widgets.length ? L.widgets.slice(0, 3) : ['weather', 'music']
+  if (L.layout === 'list') {
+    // a list of cards down the screen, the time small above them
+    p.say('09:41', a.x + 6 * su, a.y + 5 * su, 5 * su, { heading: true })
+    list.forEach((id, i) => widget(p, id, a.x + 6 * su, a.y + (10 + i * 15) * su, a.w - 12 * su, 13 * su))
+    return
+  }
+  if (L.layout === 'tiles') {
+    // the time beside a block of four app tiles
+    bigClock(p, a.x + 6 * su, a.y + 6 * su, 11 * su, 'left')
+    const t = Math.min((a.w * 0.48 - 3 * su) / 2, (a.h - 12 * su) / 2)
+    for (let i = 0; i < 4; i++) {
+      const x = a.x + a.w - 6 * su - 2 * t - 2 * su + (i % 2) * (t + 2 * su)
+      const y = a.y + 6 * su + Math.floor(i / 2) * (t + 2 * su)
+      p.g.fillStyle = i === 0 ? L.accent : TINTS[(i * 3) % TINTS.length]
+      rounded(p.g, x, y, t, t, t * 0.12 * p.round)
+      p.g.fill()
+      p.g.fillStyle = '#ffffff'
+      p.g.strokeStyle = '#ffffff'
+      p.g.lineWidth = t * 0.05
+      glyph(p.g, i + 3, x + t / 2, y + t / 2, t * 0.16)
+    }
+    return
+  }
+  bigClock(p, a.x + 8 * su, a.y + 6 * su, 16 * su, 'left')
+  list.slice(0, 2).forEach((id, i) => widget(p, id, a.x + a.w * 0.52, a.y + (5 + i * 21) * su, a.w * 0.44, 19 * su))
 }
 
 /**
@@ -1157,7 +1367,7 @@ export function paintOsLook(ctx: CanvasRenderingContext2D, look: OsLook, w: numb
   // the size unit: a hundredth of a phone's width, or of the height of anything wider than tall
   const wideScreen = kind === 'desktop' || kind === 'tv' || kind === 'console' || kind === 'handheld' || kind === 'display'
   const u = wideScreen ? h / 60 : Math.min(w, h * 0.6) / 100
-  const p = new Painter(ctx, look, w, h, u, t)
+  const p = new Painter(ctx, lookFor(look, kind), w, h, u, t)
   if (kind !== 'ereader') wallpaper(p)
   if (kind === 'watch') {
     // a watch shows black round its face, whatever the wallpaper
@@ -1167,7 +1377,7 @@ export function paintOsLook(ctx: CanvasRenderingContext2D, look: OsLook, w: numb
     }
     return watchHome(p, screen === 'lock')
   }
-  if (kind === 'ereader') return ereaderHome(p)
+  if (kind === 'ereader') return ereaderHome(p, screen === 'lock')
   if (screen === 'lock') {
     if (kind === 'desktop' || kind === 'tv' || kind === 'console' || kind === 'display') return desktopLock(p)
     return phoneLock(p, kind !== 'phone')

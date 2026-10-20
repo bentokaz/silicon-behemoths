@@ -5,7 +5,8 @@ import { sfx } from '../audio/sfx'
 import { DAYS_PER_MONTH } from '../data/catalog'
 import { setEra, startYear } from '../data/eras'
 import { TYPES } from '../data/devices'
-import { clampPart, isCoverCam, newPart, nextPartId, notchStyle } from '../sim/geometry'
+import { inHouseColours } from '../data/palette'
+import { clampPart, isCoverCam, newPart, nextPartId, notchStyle, turnPart } from '../sim/geometry'
 import { migrate, newGame, player, starterDesign, tick } from '../sim/game'
 import { type CapId, type Where, capOf, capOfTab, has, isNear, locked, stepProgress } from '../sim/progress'
 import { monthCosts } from '../sim/types'
@@ -516,7 +517,7 @@ export const useStore = create<Store>((set, get) => {
         meta = opts.variant === 'next' ? { family: freeFamily(g, m ? `${m[1]}${Number(m[2]) + 1}` : `${from.family} 2`, from.variant), variant: from.variant } : { family: freeFamily(g, `${from.family} copy`), variant: "" }
       } else {
         const type = opts.type ?? 'phone'
-        draft = starterDesign(g, type)
+        draft = inHouseColours(starterDesign(g, type), g.products, type)
         const base = player(g).name.split(' ')[0]
         const count = own.filter((p) => p.type === type && !p.variant).length + 1
         meta = { family: freeFamily(g, defaultName(base, type, count)), variant: '' }
@@ -534,7 +535,7 @@ export const useStore = create<Store>((set, get) => {
       const g = get().game
       if (!g || get().draft?.type === type) return
       if (!hasType(g, type)) return get().say(`Your company does not make ${TYPES[type].plural.toLowerCase()} yet. Open that line under Research.`, 'bad')
-      const draft = starterDesign(g, type)
+      const draft = inHouseColours(starterDesign(g, type), g.products, type)
       const base = player(g).name.split(' ')[0]
       const count = g.products.filter((p) => p.companyId === 'player' && p.type === type && !p.variant).length + 1
       set({ draft, simple: readLayout(draft, g), selectedPart: null, past: [], future: [], meta: { family: freeFamily(g, defaultName(base, type, count)), variant: '' } })
@@ -589,7 +590,13 @@ export const useStore = create<Store>((set, get) => {
     patchPart(id, patch) {
       const d = get().draft
       if (!d) return
-      edit({ ...d, parts: d.parts.map((p) => (p.id === id ? clampPart(d.body, { ...p, ...patch }, d.type) : p)) })
+      const p = d.parts.find((q) => q.id === id)
+      if (!p) return
+      // a turn on its own never shrinks the part to make it fit: it stops where the part still fits
+      const turnOnly = patch.rot !== undefined && Object.keys(patch).every((k) => k === 'rot')
+      const next = turnOnly ? turnPart(d.body, p, patch.rot!, d.type) : clampPart(d.body, { ...p, ...patch }, d.type)
+      if (!next) return
+      edit({ ...d, parts: d.parts.map((q) => (q.id === id ? next : q)) })
     },
     removePart(id) {
       const d = get().draft

@@ -701,7 +701,22 @@ export interface OsLook {
   motion?: 'off' | 'calm' | 'normal' | 'brisk'
   /** How round panels, the dock and widgets are. */
   corners?: 'sharp' | 'soft' | 'round'
+  /** A watch's face: a digital time, hands, activity rings or a grid of complications. */
+  watchFace?: 'digital' | 'analog' | 'rings' | 'modular'
+  /** A television's or console's home row: wide programme cards, tall posters or round app icons. */
+  tvRow?: 'wide' | 'posters' | 'icons'
+  /** A computer's taskbar: edge to edge, a floating bar clear of the edge, or the apps centred on it. */
+  taskbar?: 'full' | 'floating' | 'centred'
+  /**
+   * The look on one kind of screen where it differs from the system's own: the shared look is used everywhere,
+   * and whatever is set here for a kind (a watch's face, a TV's row, a laptop's taskbar, or any colour or choice)
+   * replaces it on that kind only.
+   */
+  kinds?: Partial<Record<OsScreenKind, Partial<Omit<OsLook, 'kinds'>>>>
 }
+
+/** The kinds of screen an operating system draws differently (see src/3d/osLook.ts). */
+export type OsScreenKind = 'phone' | 'tablet' | 'desktop' | 'watch' | 'tv' | 'console' | 'handheld' | 'ereader' | 'display'
 
 export type Difficulty = 'relaxed' | 'normal' | 'tough'
 
