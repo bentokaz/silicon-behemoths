@@ -38,6 +38,41 @@ export function tableJoins(site: Site): Map<string, [boolean, boolean]> {
   return out
 }
 
+/**
+ * The meeting tables grouped into chains: tables joined end to end are one long table
+ * with one team seated along it. Ordered by first table in the site's item list.
+ */
+export function meetingChains(site: Site): SiteItem[][] {
+  const joins = tableJoins(site)
+  const tables = site.items.filter((i) => i.kind === 'meeting')
+  const at = new Map(tables.map((t) => [`${t.x},${t.y}`, t]))
+  const seen = new Set<string>()
+  const out: SiteItem[][] = []
+  for (const t of tables) {
+    if (seen.has(t.id)) continue
+    const chain: SiteItem[] = []
+    const stack = [t]
+    seen.add(t.id)
+    while (stack.length) {
+      const c = stack.pop()!
+      chain.push(c)
+      const j = joins.get(c.id)
+      if (!j) continue
+      const [dx, dy] = ALONG[c.rot % 4]
+      for (const k of [-1, 1]) {
+        if (!j[k < 0 ? 0 : 1]) continue
+        const o = at.get(`${c.x + dx * 2 * k},${c.y + dy * 2 * k}`)
+        if (o && !seen.has(o.id)) {
+          seen.add(o.id)
+          stack.push(o)
+        }
+      }
+    }
+    out.push(chain)
+  }
+  return out
+}
+
 /** What a meeting is about, and whether what is said in it stays in the room. */
 export interface Topic {
   text: string
@@ -53,21 +88,30 @@ const pick = <T,>(list: T[], n: number): T | undefined => (list.length ? list[((
  * campaign, the devices on sale or the support queue. The same team keeps
  * its subject through a day and moves on to another the next.
  */
-export function meetingTopic(office: OfficeLife | undefined, team: number, day: number): Topic {
+export function meetingTopic(office: OfficeLife | undefined, team: number, day: number, block = 0, room = 0): Topic {
   if (!office) return { text: 'Weekly planning', secret: false }
-  const n = team * 7 + day * 3
+  // varies by team and room, moves on every few hours and every day
+  const n = team + room * 5 + day * 3 + block
+  const v = (k: number) => n + k * 7
   const options: Topic[] = []
+  const teamName = office.teams?.length ? office.teams[team % office.teams.length]?.name : undefined
   for (const d of office.dev) {
     const name = d.product.name
-    options.push({ text: pick([`${name}: battery tests`, `${name}: design review`, `${name}: launch plan`, `${name}: bill of materials`], n) ?? name, secret: true })
+    options.push({ text: pick([`${name}: battery tests`, `${name}: design review`, `${name}: launch plan`, `${name}: bill of materials`, `${name}: ${d.daysLeft} days to ship`, `${name}: ${Math.round(d.progress * 100)}% built, what is slipping`], v(1)) ?? name, secret: true })
   }
-  for (const r of office.research) options.push({ text: `Research review: ${r.name}`, secret: true })
-  if (office.os.own) options.push(office.os.project ? { text: `Sprint planning for ${office.os.name} ${office.os.version + 1}`, secret: true } : { text: `${office.os.name} ${office.os.version}: bug triage`, secret: false })
-  if (office.chip) options.push({ text: `${office.chip.name} tape-out review`, secret: true })
-  for (const c of office.campaigns) options.push({ text: `Campaign check-in: ${c.target}`, secret: false })
-  const sale = office.onSale[0]
-  if (sale) options.push({ text: `${sale.name}: sales numbers`, secret: false })
+  for (const r of office.research) options.push({ text: pick([`Research review: ${r.name}`, `${r.name}: next milestone`, `Research budget: ${r.name}`], v(2)) ?? r.name, secret: true })
+  if (office.os.own) {
+    const os = `${office.os.name} ${office.os.version}`
+    options.push(office.os.project ? { text: pick([`Sprint planning for ${office.os.name} ${office.os.version + 1}`, `${office.os.name} ${office.os.version + 1}: ${office.os.project.daysLeft} days to release`], v(3)) ?? os, secret: true } : { text: pick([`${os}: bug triage`, `${os}: quality ${Math.round(office.os.quality)}, what to fix`, `${os}: app store and services`], v(3)) ?? os, secret: false })
+  }
+  if (office.chip) options.push({ text: pick([`${office.chip.name} tape-out review`, `${office.chip.name}: ${office.chip.daysLeft} days to silicon`], v(4)) ?? office.chip.name, secret: true })
+  for (const c of office.campaigns) options.push({ text: pick([`Campaign check-in: ${c.target}`, `${c.channel}: ${c.target}, spend so far`], v(5)) ?? c.target, secret: false })
+  for (const sale of office.onSale.slice(0, 3)) options.push({ text: pick([`${sale.name}: sales numbers`, `${sale.name}: price and margin`, `${sale.name}: returns and reviews`], v(6)) ?? sale.name, secret: false })
   if (office.support.tickets >= 1) options.push({ text: `Support queue: ${Math.round(office.support.tickets).toLocaleString('en-US')} open tickets`, secret: false })
+  if (office.support.load > 1) options.push({ text: 'Support is over capacity: hiring or tooling?', secret: false })
+  if (office.applicants > 0) options.push({ text: `Hiring: ${office.applicants} applicants to review`, secret: false })
+  if (office.budget > 0) options.push({ text: `Budget review: research at $${Math.round(office.budget).toLocaleString('en-US')} a month`, secret: false })
+  if (teamName) options.push({ text: `${teamName} team: weekly sync`, secret: false })
   return pick(options, n) ?? { text: 'Weekly planning', secret: false }
 }
 

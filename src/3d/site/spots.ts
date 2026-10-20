@@ -81,7 +81,7 @@ const s = (use: number, x: number, z: number, face: number, pose: Pose, ax: numb
 const U = USE
 const HALF = Math.PI / 2
 
-const meeting: SpotDef[] = [-0.5, 0, 0.5].flatMap((x) => [s(U.meet, x, 0.72, 0, Pose.Meet, x < 0 ? -0.5 : 0.5, 1.5, { hip: 0.5 }), s(U.meet, x, -0.72, Math.PI, Pose.Meet, x > 0 ? 0.5 : -0.5, -1.5, { hip: 0.5 })])
+const meeting: SpotDef[] = [-0.5, 0, 0.5].flatMap((x) => [s(U.meet, x, 0.8, 0, Pose.Meet, x < 0 ? -0.5 : 0.5, 1.5, { hip: 0.5 }), s(U.meet, x, -0.8, Math.PI, Pose.Meet, x > 0 ? 0.5 : -0.5, -1.5, { hip: 0.5 })])
 
 /** Height of the stage floor, shared with the stage's model. */
 export const STAGE_H = 0.9

@@ -306,8 +306,8 @@ export function OfficeItem({ kind, c }: { kind: string; c: OfficeCtx }) {
           <C p={[0, 0.795, 0]} r={[0.07, 0.11]} h={0.05} c={DARK} seg={3} cast={false} />
           {[-0.5, 0, 0.5].map((x) => (
             <group key={x}>
-              <Chair x={x} z={0.72} />
-              <Chair x={x} z={-0.72} rotY={Math.PI} />
+              <Chair x={x} z={0.8} />
+              <Chair x={x} z={-0.8} rotY={Math.PI} />
             </group>
           ))}
         </>

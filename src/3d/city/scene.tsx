@@ -8,6 +8,7 @@ import { ITEMS, gridAt, isScreen } from '../../sim/sites'
 import { type GameState, SUPPLY_CATS, type Site, type SupplyCat } from '../../sim/types'
 import { Sign, Trees, hash } from '../site/kit'
 import { Batch, Ground, STOREY, Structure, surface } from '../site/structure'
+import { Storeys, holesOn } from '../site/storeys'
 import { BAYS, BOARD_SLOTS, type Bay, CRANES, type District, HOME, ISLAND, ISLAND_STREETS, LOTS, PIER, type Place, QUAY_SLOT, QUAY_SLOTS, ROADS, SHED, TRUCK_SLOTS, fillers, portBays, portTrucks, shortages, towerFloors } from './plan'
 
 const PAVE = '#a7a399'
@@ -498,7 +499,14 @@ export const SiteModel = memo(function SiteModel({ site, x, z, lights, scale = 1
     <group position={[x, PLOT_Y, z]} scale={scale}>
       {kerb}
       <Ground site={site} dim={1} />
-      <Structure site={site} mode="full" glow={lights ? 0.6 : 0} />
+      <Structure site={site} mode="full" glow={lights ? 0.6 : 0} above={site.upper?.[0]} />
+      {(site.upper ?? []).map((plan, i) => (
+        <group key={`upper${i}`} position-y={(i + 1) * STOREY}>
+          <Ground site={plan} dim={1} upper holes={holesOn(site, i + 1)} />
+          <Structure site={plan} mode="full" glow={lights ? 0.6 : 0} leaves={false} above={site.upper?.[i + 1]} />
+        </group>
+      ))}
+      {!!site.upper?.length && <Storeys ground={site} from={1} to={site.upper.length} sig={`${site.rev}|${site.upper.length}`} />}
       {outdoors.meshes.map((m) => (
         <primitive key={m.uuid} object={m} />
       ))}

@@ -13,6 +13,7 @@ import { ROLE_INFO } from '../../sim/staff'
 import type { Employee, Role, Site } from '../../sim/types'
 import { dayOf, hourOf } from './clock'
 import { type Nav, PATH_MAX } from './nav'
+import { meetingChains } from './meetings'
 import { Pose, type Spot, USE } from './spots'
 
 export const Act = { None: -1, Home: 0, Desk: 1, Station: 2, Meet: 3, Lunch: 4, Coffee: 5, Gym: 6, Wander: 7, Away: 8, Quit: 9, Visit: 10, Shop: 11, Watch: 12, Crew: 13, Host: 14 } as const
@@ -411,14 +412,20 @@ export class Crowd {
     }
     if (!this.wanderTiles.length) for (let i = 0; i < nav.reach.length; i++) if (nav.reach[i] && !this.keepClear[i]) this.wanderTiles.push(i)
     if (!this.wanderTiles.length) for (let i = 0; i < nav.reach.length; i++) if (nav.reach[i]) this.wanderTiles.push(i)
-    const tables = new Map<string, Spot[]>()
+    // tables joined end to end are one long table: its seats are numbered along it, one person to a chair
+    const chains = meetingChains(site)
+    const chainOf = new Map<string, number>()
+    chains.forEach((c, i) => c.forEach((t) => chainOf.set(t.id, i)))
+    const tables: Spot[][] = chains.map(() => [])
     for (const s of spots) {
       if (!(s.use & USE.meet)) continue
-      let list = tables.get(s.item.id)
-      if (!list) tables.set(s.item.id, (list = []))
-      list.push(s)
+      tables[chainOf.get(s.item.id) ?? 0]?.push(s)
     }
-    this.tables = [...tables.values()]
+    for (const list of tables) {
+      const alongX = (list[0]?.item.rot ?? 0) % 2 === 0
+      list.sort((a, b) => (alongX ? a.x - b.x || a.z - b.z : a.z - b.z || a.x - b.x))
+    }
+    this.tables = tables
     this.podiums = spots.filter((s) => s.use & USE.present && s.access >= 0)
     this.fronts = spots.filter((s) => s.use & USE.front && s.access >= 0).slice(0, 2)
     this.claims.clear()
