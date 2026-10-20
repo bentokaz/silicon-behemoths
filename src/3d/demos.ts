@@ -5,14 +5,16 @@
 // works the same for a slider, a list, undo and redo.
 import * as THREE from 'three'
 import { EXTRAS, RAM_OPTIONS, STORAGE_OPTIONS, chipInfo } from '../data/catalog'
-import { ANC, COOLERS, GPUS, HINGES, MIC_ARRAYS, OPTICS, SPEAKERS, TYPES, driverOptions, inputOptions, ioInfo } from '../data/devices'
+import { ANC, COOLERS, coolersFor, GPUS, HINGES, MIC_ARRAYS, OPTICS, SPEAKERS, TYPES, driverOptions, inputOptions, ioInfo } from '../data/devices'
 import { type Carrier, carrierBody, handheldControls, isFlip, laptopDeck, mountOf, screenRect, speakerShape, standLift } from '../sim/geometry'
 import { batteryLabel, chargeWatts, panelName } from '../sim/scoring'
 import type { Body, DeviceDesign, Face, PlacedPart } from '../sim/types'
 import { themeColor } from '../store/theme'
 import { looseBudAt, placeOnFace } from './buildDevice'
+import { layoutInternals } from '../sim/internals'
+import { buildFeature } from './teardown'
 
-export type DemoKind = 'puck' | 'charge' | 'water' | 'nfc' | 'sat' | 'sound' | 'battery' | 'chip' | 'gpu' | 'cells' | 'cooling' | 'anc' | 'panel' | 'refresh' | 'input' | 'feature' | 'socket' | 'gone' | 'fold' | 'lens' | 'rays' | 'voice' | 'rumble' | 'dock'
+export type DemoKind = 'part' | 'puck' | 'charge' | 'water' | 'nfc' | 'sat' | 'sound' | 'battery' | 'chip' | 'gpu' | 'cells' | 'cooling' | 'anc' | 'panel' | 'refresh' | 'input' | 'feature' | 'socket' | 'gone' | 'fold' | 'lens' | 'rays' | 'voice' | 'rumble' | 'dock'
 
 /** One thing that changed, and how to show it. */
 export interface DemoSpec {
@@ -50,7 +52,8 @@ export function diffDesign(a: DeviceDesign, b: DeviceDesign): DemoSpec[] {
     const had = p.extras.includes(e.id)
     const has = s.extras.includes(e.id)
     if (had === has) continue
-    const kind: DemoKind = !has ? 'gone' : e.id === 'wireless' ? 'puck' : e.id === 'ip68' ? 'water' : e.id === 'nfc' ? 'nfc' : e.id === 'sat' ? 'sat' : 'sound'
+    // what a feature is decides how it is shown: the water grades by water, a coil by its charger, the rest as the part itself going in
+    const kind: DemoKind = !has ? 'gone' : e.id === 'wireless' ? 'puck' : e.id === 'ip54' || e.id === 'ip68' || e.id === 'ip69' ? 'water' : e.id === 'nfc' ? 'nfc' : e.id === 'vapor' ? 'cooling' : e.id === 'jack' ? 'sound' : e.id === 'sd' ? 'cells' : 'part'
     add(kind, `extra-${e.id}`, e.name, has ? 'Added' : 'Removed', { id: e.id, to: 1 })
   }
   // a headset's picture is only ever seen through its lenses
@@ -64,7 +67,7 @@ export function diffDesign(a: DeviceDesign, b: DeviceDesign): DemoSpec[] {
   if ((p.gpu ?? 0) !== (s.gpu ?? 0)) add(s.gpu ? 'gpu' : 'chip', 'gpu', GPUS[s.gpu ?? 0].name, 'Graphics', { from: p.gpu ?? 0, to: s.gpu ?? 0 })
   if (T.memory > 0 && p.ram !== s.ram) add('cells', 'ram', `${s.ram} GB`, 'Memory', { from: RAM_OPTIONS.indexOf(p.ram), to: RAM_OPTIONS.indexOf(s.ram), id: 'ram' })
   if (T.memory > 0 && p.storage !== s.storage) add('cells', 'storage', storageLabel(s.storage), 'Storage', { from: STORAGE_OPTIONS.indexOf(p.storage), to: STORAGE_OPTIONS.indexOf(s.storage), id: 'storage' })
-  if ((p.cooling ?? 0) !== (s.cooling ?? 0)) add('cooling', 'cooling', COOLERS[s.cooling ?? 0].name, 'Cooling', { from: p.cooling ?? 0, to: s.cooling ?? 0 })
+  if ((p.cooling ?? 0) !== (s.cooling ?? 0)) add('cooling', 'cooling', coolersFor(type)[s.cooling ?? 0].name, 'Cooling', { from: p.cooling ?? 0, to: s.cooling ?? 0 })
   if ((p.speakers ?? 0) !== (s.speakers ?? 0)) add('sound', 'speakers', SPEAKERS[s.speakers ?? 0].name, 'Speakers', { from: p.speakers ?? 0, to: s.speakers ?? 0, id: 'speakers' })
   if ((p.driver ?? 0) !== (s.driver ?? 0)) add('sound', 'driver', driverOptions(type)[s.driver ?? 0].name, type === 'speaker' ? 'Drivers' : 'Driver in each bud', { from: p.driver ?? 0, to: s.driver ?? 0, id: 'driver' })
   if ((p.anc ?? 0) !== (s.anc ?? 0)) add('anc', 'anc', s.anc ? ANC[s.anc].name : 'No noise cancelling', 'Noise cancelling', { from: p.anc ?? 0, to: s.anc ?? 0 })
@@ -131,7 +134,7 @@ class Kit {
     }
     return g
   }
-  private keep<M extends Fading>(m: M, base: number): M {
+  keep<M extends Fading>(m: M, base: number): M {
     m.userData.base = base
     m.userData.k = 1
     this.mats.push(m)
@@ -144,6 +147,10 @@ class Kit {
   /** A lit, solid object: a charger, a cable, a gamepad. */
   solid(color: string, roughness = 0.6, metalness = 0): THREE.MeshStandardMaterial {
     return this.keep(new THREE.MeshStandardMaterial({ color, roughness, metalness, transparent: true }), 1)
+  }
+  /** A material made elsewhere that should fade with the rest. */
+  adopt<M extends Fading>(m: M): M {
+    return this.keep(m, m.opacity)
   }
   line(color: string, opacity = 1): THREE.LineBasicMaterial {
     return this.keep(new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false, toneMapped: false }), opacity)
@@ -888,6 +895,81 @@ function input(k: Kit, x: Ctx): Built {
   }
 }
 
+/** The colour each feature's demonstration glows in, and which way its signal goes: out of the front, the back or the top. */
+const PART_SIGNAL: Record<string, { color: string; dir: 'front' | 'back' | 'top' | 'none' }> = {
+  sat: { color: BLUE, dir: 'top' },
+  face: { color: RED, dir: 'front' },
+  ir: { color: RED, dir: 'top' },
+  uwb: { color: BLUE, dir: 'back' },
+  mmwave: { color: BLUE, dir: 'top' },
+  stereo: { color: WHITE, dir: 'top' },
+  haptics: { color: WHITE, dir: 'none' },
+  stylus: { color: WHITE, dir: 'none' },
+  reverse: { color: GREEN, dir: 'back' },
+  esim: { color: GREEN, dir: 'none' },
+}
+
+/**
+ * A special feature as the part it is: it is shown large outside the device, then goes in to where it sits while the
+ * shell turns see-through, and once in place does what it does (a beam of infrared, a scan of dots, a ping).
+ */
+function partDemo(k: Kit, x: Ctx): Built | null {
+  const id = x.spec.id ?? ''
+  const comps = layoutInternals(x.d).comps.filter((c) => c.specs.includes(`extra:${id}`) && (c.kind === 'feature' || c.id === 'esim'))
+  const c = comps[0]
+  if (!c) return feature(k, x)
+  const carrier = mainCarrier(x.d)
+  const g = k.on(carrier)
+  const dirOf = (d: number) => new THREE.Vector3(...([0, 1, 2].map((i) => (i === Math.abs(d) - 1 ? Math.sign(d) : 0)) as [number, number, number]))
+  const [ua, ub, uh] = c.ax.map(dirOf)
+  const size = c.ax.map((d) => c.box.s[Math.abs(d) - 1])
+  const model = buildFeature(c.model ?? 'esim', size[0], size[1], size[2], c.v ?? 0)
+  model.traverse((o) => {
+    const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined
+    if (!m) return
+    m.transparent = true
+    k.adopt(m)
+  })
+  const holder = new THREE.Group()
+  holder.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(ua, ub, uh))
+  holder.add(model)
+  const home = new THREE.Vector3(...c.box.c)
+  // it arrives from outside the face it is put in through
+  const s = x.solid(carrier)
+  const out = uh.clone().multiplyScalar(-1)
+  const away = home.clone().addScaledVector(out, Math.max(s.thickness, 6) * 1.6 + Math.max(...size) * 0.9)
+  g.add(holder)
+  // a frame of light round it, and the signal it sends once in place
+  const sig = PART_SIGNAL[c.model ?? id] ?? PART_SIGNAL[id] ?? { color: accent(), dir: 'none' as const }
+  const frame = outline(size[0] * 1.2, size[1] * 1.2, k.line(accent(), 1))
+  frame.position.z = size[2] / 2 + 0.2
+  holder.add(frame)
+  const beam = new THREE.Group()
+  const signalDir = sig.dir === 'front' ? new THREE.Vector3(0, 0, 1) : sig.dir === 'back' ? new THREE.Vector3(0, 0, -1) : new THREE.Vector3(0, 1, 0)
+  beam.position.copy(home).addScaledVector(signalDir, sig.dir === 'top' ? s.height / 2 - home.y + 1 : s.thickness / 2 + x.gap * 3 - Math.abs(home.z))
+  beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), signalDir)
+  g.add(beam)
+  const r0 = Math.max(...size) * 0.5
+  const wave = sig.dir === 'none' ? null : pulses(k, beam, 3, sig.color, r0, r0 * 5 + 10 * x.u, 0.8, sig.dir === 'top' ? undefined : undefined)
+  // a stylus slides out of its silo and back; a motor shakes the whole device
+  const D = 2.8
+  return {
+    duration: D,
+    face: sig.dir === 'front' || c.model === 'face' ? 'front' : 'back',
+    xray: 0.8,
+    pose: c.model === 'haptics' ? (t) => ({ shake: t > 1.5 && t < 2.3 ? Math.sin(t * 90) * 0.5 * x.u : 0 }) : undefined,
+    play: (t) => {
+      const goIn = ramp(t, 0.55, 1.35)
+      holder.position.lerpVectors(away, home, goIn)
+      holder.scale.setScalar(lerp(1.6, 1, goIn) * settle(t / 0.35))
+      model.rotation.z = (1 - goIn) * Math.sin(t * 2) * 0.35
+      if (c.model === 'stylus' && t > 1.6) model.position.y = Math.sin(ramp(t, 1.6, 2.6) * Math.PI) * size[1] * 0.7
+      show(frame.material as THREE.Material, 1 - ramp(t, 1.2, 1.6))
+      wave?.(t - 1.4, ramp(t, 1.4, 1.6) * (1 - ramp(t, D - 0.4, D - 0.05)))
+    },
+  }
+}
+
 function feature(k: Kit, x: Ctx): Built {
   if (x.d.type === 'watch') {
     // health sensors read through the back of the case: green light against the skin
@@ -1170,11 +1252,11 @@ function dock(k: Kit, x: Ctx): Built {
   }
 }
 
-const BUILDERS: Record<DemoKind, (k: Kit, x: Ctx) => Built | null> = { puck, charge, water, nfc, sat: satellite, sound, battery, chip, gpu, cells, cooling, anc, panel, refresh, input, feature, socket, gone, fold, lens, rays, voice, rumble, dock }
+const BUILDERS: Record<DemoKind, (k: Kit, x: Ctx) => Built | null> = { part: partDemo, puck, charge, water, nfc, sat: satellite, sound, battery, chip, gpu, cells, cooling, anc, panel, refresh, input, feature, socket, gone, fold, lens, rays, voice, rumble, dock }
 
 /** Which sound goes with each kind. */
 export const DEMO_SOUND: Record<DemoKind, 'charge' | 'water' | 'ping' | 'thump' | 'scan' | 'air' | 'hush' | 'toggle' | 'drop' | 'remove'> = {
-  puck: 'charge', charge: 'charge', water: 'water', nfc: 'ping', sat: 'ping', sound: 'thump', battery: 'scan', chip: 'scan', gpu: 'scan', cells: 'scan', cooling: 'air', anc: 'hush', panel: 'toggle', refresh: 'toggle', input: 'drop', feature: 'ping', socket: 'ping', gone: 'remove', fold: 'toggle', lens: 'toggle', rays: 'scan', voice: 'ping', rumble: 'thump', dock: 'drop',
+  part: 'drop', puck: 'charge', charge: 'charge', water: 'water', nfc: 'ping', sat: 'ping', sound: 'thump', battery: 'scan', chip: 'scan', gpu: 'scan', cells: 'scan', cooling: 'air', anc: 'hush', panel: 'toggle', refresh: 'toggle', input: 'drop', feature: 'ping', socket: 'ping', gone: 'remove', fold: 'toggle', lens: 'toggle', rays: 'scan', voice: 'ping', rumble: 'thump', dock: 'drop',
 }
 
 /** A demonstration ready to play. Its groups are added to the solids they belong to. */

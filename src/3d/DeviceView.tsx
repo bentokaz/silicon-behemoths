@@ -38,10 +38,14 @@ const DESK_VIEWS: Partial<Record<DeviceType, Views>> = {
   speaker: { back: [-0.42, 0.3, -0.86], front: [0.32, 0.5, 0.8], side: [0.93, 0.3, 0.22], bottom: [0.12, 0.95, 0.3] },
   ring: { back: [-0.36, 0.62, -0.7], front: [0.3, 0.6, 0.74], side: [0.95, 0.3, 0.1], bottom: [0.1, 0.98, 0.15] },
   drone: { back: [-0.5, 0.4, -0.77], front: [0.5, 0.36, 0.79], side: [0.96, 0.26, 0.1], bottom: [0.18, 0.95, 0.25] },
+  // a tower is seen from the front and its glass side; a mouse from behind, as its owner sees it
+  tower: { back: [-0.5, 0.28, -0.82], front: [0.62, 0.26, 0.74], side: [0.97, 0.16, 0.18], bottom: [0.22, 0.92, 0.32] },
+  monitor: { back: [-0.42, 0.2, -0.88], front: [0.3, 0.14, 0.94], side: [0.97, 0.12, 0.2], bottom: [0.18, -0.72, 0.67] },
+  mouse: { back: [0.5, 0.5, 0.71], front: [-0.42, 0.62, -0.66], side: [-0.96, 0.26, 0.1], bottom: [0.2, -0.95, 0.24] },
 }
 const viewDir = (d: DeviceDesign, v: ViewName) => (DESK_VIEWS[d.type] ?? VIEWS)[v]
 /** What the fourth view button shows for a device type. */
-export const fourthView = (type: DeviceType): string => (type === 'laptop' || type === 'console' || type === 'headset' || type === 'speaker' || type === 'ring' || type === 'drone' ? 'top' : type === 'desktop' || type === 'tv' ? 'under' : 'bottom')
+export const fourthView = (type: DeviceType): string => (type === 'laptop' || type === 'console' || type === 'headset' || type === 'speaker' || type === 'ring' || type === 'drone' || type === 'tower' || type === 'mouse' ? 'top' : type === 'desktop' || type === 'tv' || type === 'monitor' ? 'under' : 'bottom')
 /**
  * What the studio spends at each quality setting. One device is little to draw; the cost of this view is the
  * shading laid over it, which on a laptop's built-in graphics is most of a frame.

@@ -40,6 +40,9 @@ const ANGLES: Partial<Record<DeviceType, [number, number, number]>> = {
   ereader: [0.3, 0.16, 0.94],
   ring: [0.34, 0.66, 0.67],
   drone: [0.52, 0.42, 0.74],
+  tower: [0.62, 0.26, 0.74],
+  monitor: [0.34, 0.16, 0.93],
+  mouse: [-0.42, 0.62, -0.66],
 }
 const BACK: [number, number, number] = [-0.36, 0.12, -0.92]
 

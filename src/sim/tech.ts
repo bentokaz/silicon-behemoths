@@ -75,6 +75,8 @@ export interface OsFeature {
   name: string
   note: string
   points: number
+  /** What running it costs for every device sold that runs it: servers, patch testing. */
+  unit?: number
 }
 export const OS_FEATURES: OsFeature[] = [
   { id: 'fluid', name: 'Fluid interface', note: 'Animations and gestures that feel effortless.', points: 6 },
@@ -85,7 +87,16 @@ export const OS_FEATURES: OsFeature[] = [
   { id: 'updates', name: 'Seven-year updates', note: 'Long support makes owners happier.', points: 5 },
   { id: 'store', name: 'App store', note: 'Opens a services income stream from everyone who owns your devices.', points: 4 },
   { id: 'pro', name: 'Pro app suite', note: 'First-party creative and office apps.', points: 5 },
+  { id: 'cloud', name: 'Cloud sync and backup', note: 'Photos, files and settings follow the owner. Servers cost money for every device, and storage plans earn a little from every owner.', points: 5, unit: 1.5 },
+  { id: 'security', name: 'Monthly security patches', note: 'A fix every month: reviewers and businesses trust it. Each device costs a little to keep tested.', points: 4, unit: 0.6 },
+  { id: 'voice', name: 'Voice assistant in the cloud', note: 'Answers anything, in many languages. Each question runs on your servers.', points: 5, unit: 0.9 },
 ]
+/** Release names, one for each version in turn: the first letter steps through the alphabet. */
+export const OS_RELEASE_NAMES = ['Aspen', 'Birch', 'Cedar', 'Delta', 'Ember', 'Fjord', 'Granite', 'Harbor', 'Iris', 'Juniper', 'Kestrel', 'Lagoon', 'Meridian', 'Nimbus', 'Orchid', 'Pinnacle', 'Quartz', 'Redwood', 'Sierra', 'Tundra', 'Umber', 'Vista', 'Willow', 'Xenon', 'Yarrow', 'Zephyr']
+/** The release name a version gets unless it is given one. */
+export const releaseNameFor = (version: number) => OS_RELEASE_NAMES[(Math.max(1, version) - 1) % OS_RELEASE_NAMES.length]
+/** What the company's own system costs to run for each device sold with it. */
+export const osRunCost = (s: GameState) => (s.os.own ? s.os.features.reduce((a, id) => a + (OS_FEATURES.find((f) => f.id === id)?.unit ?? 0), 0) : 0)
 /** New features that can be added in one version. */
 export const OS_FEATURES_PER_VERSION = 2
 export const STOCK_OS = 'Androyd'
@@ -107,10 +118,38 @@ export interface OsLicence {
   note: string
 }
 /** The look of the company's own system before anything is chosen (src/3d/osLook.ts keeps the same). */
-export const DEFAULT_OS_LOOK: OsLook = { wallpaper: '#16324a', accent: '#ff8a3d', iconShape: 'squircle', layout: 'grid', font: 'sans', dark: true }
+export const DEFAULT_OS_LOOK: Required<OsLook> = {
+  wallpaper: '#16324a',
+  accent: '#ff8a3d',
+  iconShape: 'squircle',
+  layout: 'grid',
+  font: 'sans',
+  dark: true,
+  wallpaper2: '#0a1018',
+  wallStyle: 'radial',
+  surface: '#10141b',
+  iconSize: 'medium',
+  iconStyle: 'filled',
+  dock: 'bottom',
+  widgets: ['weather', 'calendar'],
+  weight: 'regular',
+  lock: 'big',
+  lockNotes: true,
+  motion: 'normal',
+  corners: 'soft',
+}
+/** Widgets the home screen can carry. */
+export const OS_WIDGETS = [
+  { id: 'weather', name: 'Weather' },
+  { id: 'calendar', name: 'Calendar' },
+  { id: 'music', name: 'Now playing' },
+  { id: 'battery', name: 'Batteries' },
+  { id: 'photos', name: 'Photos' },
+  { id: 'steps', name: 'Activity' },
+] as const
 export const FREE_OS = 'opencore'
 /** Kinds of device that run the company's operating system, and so pay a licence royalty. Consoles, earbuds and speakers run firmware of their own. */
-export const OS_TYPES: DeviceType[] = ['phone', 'tablet', 'watch', 'foldable', 'laptop', 'desktop', 'headset', 'handheld', 'tv']
+export const OS_TYPES: DeviceType[] = ['phone', 'tablet', 'watch', 'foldable', 'laptop', 'desktop', 'headset', 'handheld', 'tv', 'tower']
 export const OS_LICENCES: OsLicence[] = [
   { id: FREE_OS, name: 'OpenCore', vendor: 'an open-source project', from: 0, quality: -10, royalty: 0, note: 'Free and open, but rough: few apps and a clumsy interface.' },
   { id: 'symbion', name: 'Symbion', vendor: 'a handset consortium', from: 1998, until: 2013, quality: -3, royalty: 5, note: 'The established phone system of its day. Solid, and ageing.' },
@@ -148,21 +187,34 @@ export function licenceBlocked(s: GameState, id: string): string | null {
   return null
 }
 
-export const newOs = (): OsState => ({ own: false, licence: FREE_OS, name: STOCK_OS, version: 0, quality: 0, features: [], servicesIncome: 0 })
+export const newOs = (): OsState => ({ own: false, licence: FREE_OS, name: STOCK_OS, version: 0, quality: 0, features: [], servicesIncome: 0, releases: [] })
 
 const HEX = /^#[0-9a-f]{6}$/i
+type Choosable = 'iconShape' | 'layout' | 'font' | 'wallStyle' | 'iconSize' | 'iconStyle' | 'dock' | 'weight' | 'lock' | 'motion' | 'corners'
 export const OS_LOOK_CHOICES = {
-  iconShape: ['circle', 'squircle', 'square'],
+  iconShape: ['circle', 'squircle', 'square', 'hexagon', 'leaf'],
   layout: ['grid', 'list', 'tiles'],
-  font: ['sans', 'mono', 'serif'],
-} as const satisfies { [K in 'iconShape' | 'layout' | 'font']: readonly OsLook[K][] }
-/** A look with every part checked: colours must be '#rrggbb' and choices on the list; anything else keeps what `base` has. */
-export function cleanLook(patch: unknown, base: OsLook = DEFAULT_OS_LOOK): OsLook {
-  const out = { ...base }
+  font: ['sans', 'mono', 'serif', 'rounded', 'condensed'],
+  wallStyle: ['solid', 'linear', 'radial', 'aurora', 'waves', 'grid', 'dots', 'rings', 'facets'],
+  iconSize: ['small', 'medium', 'large'],
+  iconStyle: ['filled', 'outline', 'glyph', 'duotone'],
+  dock: ['bottom', 'top', 'left', 'right', 'none'],
+  weight: ['light', 'regular', 'bold'],
+  lock: ['big', 'stacked', 'analog', 'minimal'],
+  motion: ['off', 'calm', 'normal', 'brisk'],
+  corners: ['sharp', 'soft', 'round'],
+} as const satisfies { [K in Choosable]: readonly NonNullable<OsLook[K]>[] }
+/**
+ * A look with every part checked: colours must be '#rrggbb' and choices on the list; anything else keeps what
+ * `base` has. Every field is filled in, so a look saved before a field existed reads as the default for it.
+ */
+export function cleanLook(patch: unknown, base: OsLook = DEFAULT_OS_LOOK): Required<OsLook> {
+  const out: Required<OsLook> = { ...DEFAULT_OS_LOOK, ...base, widgets: [...(base.widgets ?? DEFAULT_OS_LOOK.widgets)] }
   if (!patch || typeof patch !== 'object') return out
   const p = patch as Record<string, unknown>
   if (typeof p.dark === 'boolean') out.dark = p.dark
-  for (const k of ['wallpaper', 'accent'] as const) {
+  if (typeof p.lockNotes === 'boolean') out.lockNotes = p.lockNotes
+  for (const k of ['wallpaper', 'accent', 'wallpaper2', 'surface'] as const) {
     const v = p[k]
     if (typeof v === 'string' && HEX.test(v)) out[k] = v.toLowerCase()
   }
@@ -170,6 +222,7 @@ export function cleanLook(patch: unknown, base: OsLook = DEFAULT_OS_LOOK): OsLoo
     const v = p[k]
     if (typeof v === 'string' && (list as readonly string[]).includes(v)) (out as Record<string, unknown>)[k] = v
   }
+  if (Array.isArray(p.widgets)) out.widgets = [...new Set(p.widgets.filter((w): w is string => typeof w === 'string' && OS_WIDGETS.some((x) => x.id === w)))].slice(0, 4)
   return out
 }
 
@@ -208,8 +261,10 @@ export function softwareBonus(s: GameState): number {
 
 /** Monthly services income from an app store. */
 export function servicesPerMonth(s: GameState): number {
-  if (!s.os.own || !s.os.features.includes('store')) return 0
-  return s.owners * 0.35 * clamp(s.os.quality / 70, 0.3, 1.6)
+  if (!s.os.own) return 0
+  const store = s.os.features.includes('store') ? 0.35 : 0
+  const cloud = s.os.features.includes('cloud') ? 0.12 : 0
+  return s.owners * (store + cloud) * clamp(s.os.quality / 70, 0.3, 1.6)
 }
 
 export function osBlocked(s: GameState, features: string[]): string | null {

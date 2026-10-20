@@ -5,7 +5,7 @@ import { chipInfo, refScore } from '../data/catalog'
 import { canAfford, setLicenceFee, startChip, startOs } from '../sim/game'
 import { chipFor } from '../sim/scoring'
 import { staffEffects } from '../sim/staff'
-import { CHIP_BUDGET, OS_FEATURES, OS_FEATURES_PER_VERSION, chipAdoption, chipProjectCost, chipProjectDays, industryOs, osName, osProjectCost, osProjectDays, osQuality, osRoyalty, osShipQuality, servicesPerMonth, softwareBonus } from '../sim/tech'
+import { CHIP_BUDGET, OS_FEATURES, OS_FEATURES_PER_VERSION, chipAdoption, chipProjectCost, chipProjectDays, industryOs, osName, osProjectCost, osProjectDays, osQuality, osRoyalty, osRunCost, osShipQuality, releaseNameFor, servicesPerMonth, softwareBonus } from '../sim/tech'
 import { OsLicences, OsLookDesigner } from './OsDesigner'
 import type { CustomChip, GameState } from '../sim/types'
 import { useGame, useStore } from '../store/game'
@@ -14,7 +14,7 @@ import { timeSpan } from './researchNow'
 import { Btn, type Column, Empty, Filters, Help, Lead, Meter, Mini, Panel, Row, Slider, Strip, Table, Tag, TextInput, int, money, pct, price, useKept } from './ui'
 
 /** The icon for each operating-system feature. */
-const FEATURE_ICON: Record<string, IconName> = { fluid: 'swap', privacy: 'lock', assistant: 'mic', gaming: 'gamepad', continuity: 'social', updates: 'refresh', store: 'bag', pro: 'briefcase' }
+const FEATURE_ICON: Record<string, IconName> = { fluid: 'swap', privacy: 'lock', assistant: 'mic', gaming: 'gamepad', continuity: 'social', updates: 'refresh', store: 'bag', pro: 'briefcase', cloud: 'cloud', security: 'shield', voice: 'mic' }
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
 /** A difference from a reference, as a signed percentage. */
@@ -167,13 +167,44 @@ function Chips() {
   )
 }
 
+/** What a system with these features would cost to run for each device. */
+const all0 = (have: string[], picked: string[]) => [...new Set([...have, ...picked])].reduce((a, id) => a + (OS_FEATURES.find((f) => f.id === id)?.unit ?? 0), 0)
+
+/** Every version of the company's own system that has shipped, newest first. */
+function Releases() {
+  const g = useGame()
+  const list = [...(g.os.releases ?? [])].reverse()
+  if (!g.os.own || !list.length) return null
+  return (
+    <Panel title="Versions shipped" icon="branch" count={list.length} bodyClass="overflow-y-auto">
+      {list.map((r) => (
+        <div key={r.version} className="flex items-center gap-3 border-b border-line px-3 py-[6px] last:border-0">
+          <span className="num w-8 shrink-0 text-xs text-fg">{r.version}</span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-xs text-fg">
+              {g.os.name} {r.version} {r.name}
+            </span>
+            <span className="block truncate text-[11px] text-dim">{r.added.length ? `Added ${r.added.map((id) => OS_FEATURES.find((f) => f.id === id)?.name ?? id).join(', ')}` : 'Brought up to date'}</span>
+          </span>
+          <span className="num shrink-0 text-[11px] text-dim" title="Quality it shipped at">
+            {int(r.quality)}
+          </span>
+        </div>
+      ))}
+    </Panel>
+  )
+}
+
 function Software() {
   const g = useGame()
   const { act, say, go } = useStore.getState()
   const os = g.os
   const [name, setName] = useState('BehemothOS')
   const [picked, setPicked] = useState<string[]>([])
+  const [release, setRelease] = useState('')
   const fx = staffEffects(g)
+  const runCost = osRunCost(g)
+  const nextRun = all0(os.features, picked)
   const industry = industryOs(g.day)
   const fresh = picked.filter((f) => !os.features.includes(f))
   const all = [...new Set([...os.features, ...picked])]
@@ -194,6 +225,7 @@ function Software() {
           { label: 'Your devices run', icon: 'os', value: <span className="font-sans">{osName(g)}</span> },
           { label: 'Quality', value: int(quality), tone: quality >= industry ? ('pos' as const) : ('neg' as const), title: 'Against what buyers expect of a system today' },
           ...(royalty ? [{ label: 'Royalty a device', value: money(royalty), title: 'Paid to the maker of the licensed system for every device sold that runs it' }] : []),
+          ...(runCost ? [{ label: 'Running cost a device', value: price(runCost), title: 'What the cloud features of your system cost to run, for every device sold that runs it' }] : []),
           { label: 'Buyers expect', value: int(industry), title: 'It rises by about two points a year' },
           { label: 'Device appeal', value: `${bonus >= 0 ? '+' : ''}${pct(bonus)}`, tone: bonus > 0 ? ('pos' as const) : bonus < 0 ? ('neg' as const) : undefined, title: 'Applies to everything you sell' },
           ...(os.features.includes('store') ? [{ label: 'Services, a month', value: money(services), title: `From ${int(g.owners)} owners` }] : []),
@@ -202,6 +234,7 @@ function Software() {
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,6fr)_minmax(0,5fr)] gap-2">
         <div className="flex min-h-0 flex-col gap-2">
         {!os.own && <OsLicences />}
+        <Releases />
         <Panel title={`Features for version ${os.version + 1}: pick up to ${OS_FEATURES_PER_VERSION}`} icon="feed" bodyClass="overflow-y-auto">
           {OS_FEATURES.map((f) => {
             const have = os.features.includes(f.id)
@@ -219,6 +252,11 @@ function Software() {
                   </span>
                   <span className="block text-[11px] leading-snug text-dim">{f.note}</span>
                 </span>
+                {f.unit ? (
+                  <span className="num w-16 shrink-0 text-right text-[11px] text-warn" title="What it costs to run, for every device sold">
+                    {price(f.unit)}/unit
+                  </span>
+                ) : null}
                 {have ? (
                   <Tag tone="pos" icon="check">
                     Shipped
@@ -262,7 +300,12 @@ function Software() {
                   <TextInput value={name} onChange={setName} maxLength={16} className="w-44" />
                 </label>
               )}
+              <label className="mb-2 flex items-center justify-between gap-2">
+                <span className="text-[11px] text-dim">Release name</span>
+                <TextInput value={release} onChange={setRelease} maxLength={16} placeholder={releaseNameFor(os.version + 1)} className="w-44" />
+              </label>
               <Row k="Would ship at quality" v={int(ship)} tone={ship >= industry ? 'text-pos' : 'text-neg'} />
+              {nextRun > 0 && <Row k="Running cost a device" v={price(nextRun)} />}
               <Row k="Project cost" v={money(cost)} />
               <Row k="Time with your software team" v={<span className="font-sans">{timeSpan(osProjectDays(g, first))}</span>} />
               {fx.software <= 0 ? (
@@ -283,9 +326,9 @@ function Software() {
                   disabled={!!why}
                   title={why}
                   onClick={() => {
-                    const err = act((s) => startOs(s, name, picked))
+                    const err = act((s) => startOs(s, name, picked, release))
                     if (err) say(err, 'bad')
-                    else (sfx.confirm(), setPicked([]), say(`${first ? name : `Version ${os.version + 1}`} is in development. It cost ${money(cost)}.`))
+                    else (sfx.confirm(), setPicked([]), setRelease(''), say(`${first ? name : `Version ${os.version + 1}`} is in development. It cost ${money(cost)}.`))
                   }}
                 >
                   {first ? `Start building ${name.trim() || 'it'}` : `Start version ${os.version + 1}`}

@@ -4,7 +4,8 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { type RefObject, useEffect, useRef } from 'react'
 import * as THREE from 'three'
-import type { Comp } from '../sim/internals'
+import { extraInfo } from '../data/catalog'
+import { type Comp, FEATURE_MODELS } from '../sim/internals'
 import type { DeviceDesign, DeviceType } from '../sim/types'
 import type { Picked } from './studio'
 import type { Rig } from './teardown'
@@ -12,7 +13,9 @@ import type { Rig } from './teardown'
 /** How bright the lamp at the camera is once a device is fully open: whatever is being looked into is lit. */
 export const TEAR_LAMP = 0.85
 
-export const pickedOf = (c: Comp): Picked => ({ id: c.id, label: c.label, figure: c.figure ?? '', specs: c.specs, partId: c.partId, note: c.note, kind: c.kind })
+/** What a component is for: its own sentence, its model's, or the note of the extra it stands for. */
+const aboutOf = (c: Comp) => c.about ?? (c.model ? FEATURE_MODELS[c.model] : undefined) ?? c.specs.map((k) => (k.startsWith('extra:') ? extraInfo(k.slice(6))?.note : undefined)).find(Boolean)
+export const pickedOf = (c: Comp): Picked => ({ id: c.id, label: c.label, figure: c.figure ?? '', specs: c.specs, partId: c.partId, note: c.note, kind: c.kind, about: aboutOf(c) })
 
 const usd = (v: number) => (v >= 100 ? `$${Math.round(v)}` : `$${v.toFixed(2)}`)
 const weigh = (g: number) => (g >= 1000 ? `${(g / 1000).toFixed(2)} kg` : g >= 10 ? `${Math.round(g)} g` : `${g.toFixed(1)} g`)
@@ -38,6 +41,7 @@ export function CompLabel({ pick, compact, cost = 0, unitCost = 0, grams = 0, we
       <div className="ml-4 mt-3 whitespace-nowrap border border-line2 bg-panel px-[6px] py-[3px]">
         <div className="text-[11px] font-semibold text-fg">{pick.label}</div>
         {pick.figure && <div className="num text-[11px] text-dim">{pick.figure}</div>}
+        {pick.about && <div className="mt-[2px] w-52 whitespace-normal text-[11px] leading-snug text-dim">{pick.about}</div>}
       </div>
     )
   }
@@ -50,6 +54,7 @@ export function CompLabel({ pick, compact, cost = 0, unitCost = 0, grams = 0, we
           <div className="whitespace-nowrap text-[11px] font-semibold text-fg">{pick.label}</div>
           {pick.figure && <div className="num whitespace-nowrap text-[11px] text-dim">{pick.figure}</div>}
           {hot && <div className={`num whitespace-nowrap text-[11px] ${hot.bad ? 'text-neg' : 'text-warn'}`}>{hot.text}</div>}
+          {pick.about && <div className="mt-[2px] w-52 whitespace-normal text-[11px] leading-snug text-dim">{pick.about}</div>}
           {pick.note && <div className="mt-[2px] w-52 whitespace-normal text-[11px] leading-snug text-dim">Not set directly. {pick.note}</div>}
           {(cost > 0 || grams > 0) && (
             <div className="mt-[3px] flex gap-3 whitespace-nowrap border-t border-line pt-[3px] text-[11px] text-dim">
@@ -164,8 +169,14 @@ export function tearDir(d: DeviceDesign, explode: number): THREE.Vector3 {
   const [off, apart]: [number[], number[]] =
     d.type === 'laptop'
       ? [[0.3, 0.78, 0.55], [0.5, 0.7, 0.5]]
-      : d.type === 'desktop' || d.type === 'tv'
+      : d.type === 'desktop' || d.type === 'tv' || d.type === 'monitor'
         ? [[-0.36, 0.2, -0.91], [-0.5, 0.28, -0.82]]
+        : d.type === 'tower'
+          ? d.body.width > d.body.height * 1.5
+            ? [[0.3, 0.8, 0.5], [0.36, 0.72, 0.6]]
+            : [[0.86, 0.22, 0.46], [0.8, 0.3, 0.52]]
+          : d.type === 'mouse'
+            ? [[0.3, 0.8, -0.5], [0.4, 0.7, -0.6]]
         : d.type === 'console'
           ? tower
             ? [[0.78, 0.3, 0.54], [0.74, 0.36, 0.56]]
@@ -237,6 +248,9 @@ const STOPS: Record<DeviceType, (string | [string, number, [number, number, numb
   ring: ['battery', 'sensors', 'chip', 'coil'],
   actioncam: ['cam:', 'battery', 'chip', 'thermal', ['display', 1]],
   drone: ['battery', 'cam:', 'board', 'chip', 'gps', 'link'],
+  tower: ['gpu', 'cooler', 'ram0', 'radiator', 'psu', 'fan0', ['board', 1]],
+  monitor: ['psu', 'board', 'tcon', 'spk0', ['backlight', 1]],
+  mouse: ['sensor', 'wheel', 'switch0', 'battery', 'chip'],
 }
 
 export function tourStops(type: DeviceType, comps: Map<string, { c: Comp }>): TourStop[] {

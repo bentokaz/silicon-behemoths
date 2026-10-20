@@ -1,7 +1,7 @@
 // Procedural device generation, used for AI rivals, for the player's starting
 // templates, for the simple editor and for Pro/Lite style variants.
 import { CHARGE_W, EXTRAS, MATERIALS, RAM_OPTIONS, REFRESH, STORAGE_OPTIONS, idealRam, idealStorage, extraInfo, sensorInfo } from '../data/catalog'
-import { ANC, COOLERS, DRIVERS, HINGES, type IoInfo, MIC_ARRAYS, OPTICS, SPEAKERS, SPEAKER_DRIVERS, STRAPS, TIERS, TYPES, headStrap, inputOptions, ioInfo, ioOptions, segmentInfo, sizeLimits } from '../data/devices'
+import { DEFAULT_CASE, DEFAULT_RGB, PSUS, caseOf, coolersFor, maxFans, towerForm, ANC, COOLERS, DRIVERS, HINGES, type IoInfo, MIC_ARRAYS, OPTICS, SPEAKERS, SPEAKER_DRIVERS, STRAPS, TIERS, TYPES, headStrap, inputOptions, ioInfo, ioOptions, segmentInfo, sizeLimits } from '../data/devices'
 import { GRIP, SHOULDER, caseShape, clampPart, coverScreen, faceSize, facesFor, isFlip, lightRing, screenRect, selfieScreen, speakerShape, speakerSockets } from './geometry'
 export { speakerSockets }
 import { type RngHolder, clamp, int, pick, range } from './rng'
@@ -9,7 +9,7 @@ import { batteryStep, maxBattery, minBezel, minThickness, selfieMinDia, thermal 
 import type { Body, DeviceDesign, DeviceType, Lens, Levels, PlacedPart, SegmentId } from './types'
 
 /** Types whose screen, if any, has no refresh rate to choose: e-ink, a drone's video link, a ring. */
-export const NO_REFRESH: DeviceType[] = ['ereader', 'ring', 'drone']
+export const NO_REFRESH: DeviceType[] = ['ereader', 'ring', 'drone', 'mouse']
 
 export const LAYOUT_NAMES =['Vertical pill', 'Square island', 'Loose column', 'Centre circle', 'Full-width bar']
 export type FrontStyle = 'notch' | 'drop' | 'pill' | 'punch' | 'under'
@@ -51,6 +51,9 @@ export function layoutParts(body: Body, o: LayoutOptions): PlacedPart[] {
   else if (o.type === 'ring') layoutRing(body, o, add)
   else if (o.type === 'actioncam') layoutActioncam(body, o, add)
   else if (o.type === 'drone') layoutDrone(body, o, add)
+  else if (o.type === 'tower') layoutTower(body, o, add)
+  else if (o.type === 'monitor') layoutMonitor(body, o, add)
+  else if (o.type === 'mouse') layoutMouse(body, o, add)
   else layoutSlab(body, o, add)
   return parts
 }
@@ -397,6 +400,84 @@ function layoutConsole(body: Body, o: LayoutOptions, add: Add) {
   }
 }
 
+/** A tower: the power button and the front ports on top at the front, a light strip and the badge on the front, the ports, the card's outputs and the power inlet at the back. */
+function layoutTower(body: Body, o: LayoutOptions, add: Add) {
+  const { width, height, thickness: depth } = body
+  const flat = towerForm(body) === 'htpc'
+  const text = o.logoImage ? undefined : o.logo
+  const top = sockets('tower', o.io, 'top')
+  if (flat) {
+    // lying down, everything is on the front: the button and the ports to the right, the badge to the left
+    add({ kind: 'button', face: 'front', x: width / 2 - 26, y: 0, rot: 0, w: 11, h: 11 })
+    let x = width / 2 - 50
+    for (const { info, id } of top) {
+      add({ kind: 'port', face: 'front', x: x - info.size![0] / 2, y: -height * 0.18, rot: 0, w: info.size![0], h: info.size![1], text: id })
+      x -= info.size![0] + 8
+    }
+    if (o.logoImage) add({ kind: 'logo', face: 'front', x: -width / 2 + 40, y: 0, rot: 0, w: 22, h: 22, text: o.logo, useImage: true })
+    else if (text) add({ kind: 'logo', face: 'front', x: -width / 2 + 50, y: 0, rot: 0, w: Math.min(70, 8 * text.length + 6), h: 9, text })
+    if (o.flash) add({ kind: 'light', face: 'front', x: 0, y: -height / 2 + 12, rot: 0, w: width * 0.6, h: 2.4, color: '#ff6b1a' })
+    add({ kind: 'vent', face: 'top', x: width * 0.12, y: 0, rot: 0, w: width * 0.5, h: depth * 0.6 })
+  } else {
+    add({ kind: 'button', face: 'top', x: width * 0.24, y: -depth / 2 + 24, rot: 0, w: 11, h: 11 })
+    let x = width * 0.24 - 18
+    for (const { info, id } of top) {
+      add({ kind: 'port', face: 'top', x: x - info.size![0] / 2, y: -depth / 2 + 24, rot: 0, w: info.size![0], h: info.size![1], text: id })
+      x -= info.size![0] + 7
+    }
+    if ((o.io ?? []).includes('odd') && Math.max(width, height) >= 160) add({ kind: 'slot', face: 'front', x: 0, y: height / 2 - 30, rot: width < 156 ? 90 : 0, w: 148, h: 12, text: 'odd' })
+    if (o.flash) add({ kind: 'light', face: 'front', x: width / 2 - 12, y: 0, rot: 0, w: 3, h: Math.min(height * 0.7, 300), color: '#ff6b1a' })
+    if (o.logoImage) add({ kind: 'logo', face: 'front', x: 0, y: -height / 2 + 34, rot: 0, w: 24, h: 24, text: o.logo, useImage: true })
+    else if (text) add({ kind: 'logo', face: 'front', x: 0, y: -height / 2 + 34, rot: 0, w: Math.min(width * 0.6, 8 * text.length + 6), h: 9, text })
+    add({ kind: 'vent', face: 'top', x: 0, y: depth * 0.12, rot: 0, w: width * 0.62, h: depth * 0.5 })
+  }
+  // the back: the board's port panel high up beside the far wall, the card's outputs below it, the power inlet low down
+  const rear = [...sockets('tower', o.io, 'back'), { info: { size: [15, 5.2] as [number, number] }, id: 'hdmi' }]
+  const px = flat ? -width / 2 + 60 : width / 2 - 34
+  rear.forEach(({ info, id }, i) => {
+    const [w, h] = info.size!
+    add({ kind: 'port', face: 'back', x: flat ? px + i * 22 : px, y: flat ? height * 0.15 : height / 2 - 30 - i * 15, rot: 0, w, h, text: id })
+  })
+  add({ kind: 'port', face: 'back', x: flat ? width / 2 - 40 : 0, y: flat ? 0 : -height / 2 + 48, rot: 0, w: 20, h: 12, text: 'power' })
+}
+
+/** A monitor: the badge and a power light in the bottom bezel, the inputs in a panel on the back, the menu buttons underneath. */
+function layoutMonitor(body: Body, o: LayoutOptions, add: Add) {
+  const { width, height } = body
+  const by = -height / 2 + body.bezelBottom / 2
+  if (body.bezelBottom >= 7 && !o.logoImage && o.logo) {
+    const h = Math.min(7, body.bezelBottom * 0.5)
+    add({ kind: 'logo', face: 'front', x: 0, y: by, rot: 0, w: Math.min(60, h * 0.75 * o.logo.length + 4), h, text: o.logo })
+  }
+  if (o.flash && body.bezelBottom >= 4) add({ kind: 'light', face: 'front', x: width / 2 - 30, y: by, rot: 0, w: 1.8, h: 1.8, color: '#ffffff' })
+  const list = sockets('monitor', o.io)
+  if (list.length) {
+    const px = width * 0.24
+    const py = -height * 0.22
+    add({ kind: 'island', face: 'back', x: px, y: py, rot: 0, w: Math.min(width * 0.36, list.length * 24 + 24), h: 34, r: 6, finish: 'black' })
+    list.forEach(({ info, id }, i) => {
+      const [w, h] = info.size!
+      add({ kind: 'port', face: 'back', x: px + (i - (list.length - 1) / 2) * 22, y: py, rot: 0, w, h, text: id })
+    })
+  }
+  if (o.logoImage) add({ kind: 'logo', face: 'back', x: 0, y: height * 0.2, rot: 0, w: 50, h: 50, text: o.logo, useImage: true })
+  else if (o.logo) add({ kind: 'logo', face: 'back', x: 0, y: height * 0.2, rot: 0, w: Math.min(160, 16 * o.logo.length + 10), h: 22, text: o.logo })
+  add({ kind: 'vent', face: 'back', x: 0, y: height * 0.38, rot: 0, w: width * 0.5, h: 12 })
+  add({ kind: 'button', face: 'bottom', x: width * 0.4, y: 0, rot: 0, w: 10, h: 4 })
+}
+
+/** A mouse: the DPI button behind the wheel and the badge on the palm, thumb buttons on the thumb side (+X), the port at the nose and the sensor window underneath. */
+function layoutMouse(body: Body, o: LayoutOptions, add: Add) {
+  const L = body.thickness
+  const io = o.io ?? []
+  if (io.includes('dpi')) add({ kind: 'button', face: 'top', x: 0, y: -L * 0.12, rot: 0, w: 5, h: 7 })
+  if (o.logoImage) add({ kind: 'logo', face: 'top', x: 0, y: L * 0.24, rot: 0, w: 9, h: 9, text: o.logo, useImage: true })
+  else if (o.logo) add({ kind: 'logo', face: 'top', x: 0, y: L * 0.24, rot: 0, w: Math.min(body.width * 0.4, 3.4 * o.logo.length + 3), h: 4, text: o.logo })
+  if (io.includes('side')) for (const k of [0, 1]) add({ kind: 'button', face: 'right', x: -L * (0.1 - k * 0.15), y: body.height * 0.08, rot: 0, w: 12, h: 4.5 })
+  add({ kind: 'port', face: 'front', x: 0, y: -body.height * 0.18, rot: 0, w: 8.6, h: 2.8, text: 'usbc' })
+  add({ kind: 'island', face: 'bottom', x: 0, y: L * 0.04, rot: 0, w: 9, h: 12, r: 2, finish: 'black' })
+}
+
 function layoutEarbuds(body: Body, o: LayoutOptions, add: Add) {
   const cs = caseShape(body)
   const flat = body.width - 2 * cs.foot
@@ -631,8 +712,13 @@ export function fitInside(d: DeviceDesign, levels: Levels) {
   const hot = () => (thermal(d)?.headroom ?? 1) < 0.9
   const step = Math.max(0.5, Math.round((T.maxThickness - minThickness(d.type, levels.design, s)) / 40))
   for (let guard = 0; guard < 200 && hot(); guard++) {
-    if (b.thickness + step <= T.maxThickness) b.thickness = Math.round((b.thickness + step) * 10) / 10
-    else if ((s.cooling ?? 0) < COOLERS.length - 1 && COOLERS[(s.cooling ?? 0) + 1].level <= levels.materials) s.cooling = (s.cooling ?? 0) + 1
+    const coolers = coolersFor(d.type)
+    const pc = d.type === 'tower' ? caseOf(b) : null
+    // a tower is cooled by its fans and its cooler before it is made any bigger
+    if (pc && pc.fans < maxFans(b, pc.fanSize)) b.pc = { ...pc, fans: pc.fans + 1 }
+    else if (pc && (s.cooling ?? 0) < coolers.length - 1 && coolers[(s.cooling ?? 0) + 1].level <= levels.materials) s.cooling = (s.cooling ?? 0) + 1
+    else if (b.thickness + step <= T.maxThickness) b.thickness = Math.round((b.thickness + step) * 10) / 10
+    else if ((s.cooling ?? 0) < coolers.length - 1 && coolers[(s.cooling ?? 0) + 1].level <= levels.materials) s.cooling = (s.cooling ?? 0) + 1
     else if ((s.gpu ?? 0) > 0) s.gpu = (s.gpu ?? 0) - 1
     else break
   }
@@ -648,7 +734,7 @@ export function generateDesign(r: RngHolder, o: GenOptions): DeviceDesign {
 
   const frac = t.size ?? [0.4, 0.4]
   // a display on a stand keeps its shape, so both of its sides vary together
-  const together = type === 'desktop' || type === 'tv' ? range(r, -0.05, 0.05) : null
+  const together = type === 'desktop' || type === 'tv' || type === 'monitor' || type === 'tower' ? range(r, -0.04, 0.04) : null
   const dim = (range3: [number, number, number], f: number) => half(clamp(range3[0] + (range3[1] - range3[0]) * (f + (together ?? range(r, -0.08, 0.08))), range3[0], range3[1]))
   // the everyday foldable is a flip for the makers whose house style says so; the dearer ones are books
   const flip = type === 'foldable' && (o.flip ?? (o.segment === 'f-value' && ((o.layout % 3) + 3) % 3 === 1))
@@ -674,6 +760,10 @@ export function generateDesign(r: RngHolder, o: GenOptions): DeviceDesign {
           ? Math.round(range(r, 3, 9))
           : type === 'console'
             ? Math.min(Math.round(range(r, 4, 18)), Math.floor(Math.min(width, height) / 2 - 2))
+            : type === 'tower'
+              ? Math.round(range(r, 2, 9))
+              : type === 'mouse'
+                ? 12
             : type === 'headset' || type === 'speaker'
               ? Math.round(range(r, 18, 30))
               : type === 'handheld'
@@ -703,8 +793,18 @@ export function generateDesign(r: RngHolder, o: GenOptions): DeviceDesign {
     body.strap = byRank(straps).id
     body.strapColor = pick(r, ['#1b1d21', '#3a3f47', '#6b5a48', '#d8d3ca', color])
   }
-  if (type === 'laptop' || type === 'desktop' || type === 'tv') body.backFinish = 'matte'
-  if (type === 'desktop' || type === 'tv') body.stand = t.stand
+  if (type === 'laptop' || type === 'desktop' || type === 'tv' || type === 'monitor' || type === 'mouse') body.backFinish = 'matte'
+  if (type === 'desktop' || type === 'tv' || type === 'monitor') body.stand = t.stand
+  if (type === 'tower') {
+    body.pc = { ...DEFAULT_CASE, ...t.pc }
+    // a glass-sided case is dark inside, whatever colour its shell
+    if (t.rgb) body.rgb = { zones: ['fans', 'ram', 'gpu', 'cooler', 'strip'], color: pick(r, ['#ff3df2', '#3dd6ff', '#ff6b1a', '#7d5cf0']), color2: '#3d7be0', effect: pick(r, ['wave', 'cycle', 'static'] as const) }
+    else body.rgb = { ...DEFAULT_RGB }
+  }
+  if (type === 'mouse') {
+    body.grip = t.grip ?? 'ergo'
+    body.rgb = t.rgb ? { zones: ['wheel', 'logo'], color: pick(r, ['#3dd6ff', '#ff3df2', '#ff6b1a']), color2: '#7d5cf0', effect: 'cycle' } : { ...DEFAULT_RGB }
+  }
   if (type === 'earbuds') body.buds = t.buds ?? 'stem'
   if (type === 'console' || type === 'headset') {
     // a dark glossy front panel set into the shell
@@ -750,7 +850,8 @@ export function generateDesign(r: RngHolder, o: GenOptions): DeviceDesign {
     const known = ioOptions(type).filter((x) => x.level <= o.levels.chipset)
     s.io = known.slice(0, t.ioShare !== undefined ? Math.ceil(known.length * t.ioShare) : (t.io ?? 3)).map((x) => x.id)
   }
-  if (T.mains?.cool) s.cooling = bestOwned(COOLERS, t.cooling ?? 0, o.levels.materials)
+  if (T.mains?.cool) s.cooling = bestOwned(coolersFor(type), t.cooling ?? 0, o.levels.materials)
+  if (type === 'tower') s.psu = bestOwned(PSUS, t.psu ?? 1, o.levels.charging)
   if (T.mains?.sound) s.speakers = bestOwned(SPEAKERS, t.speakers ?? 0, o.levels.design)
   if (type === 'earbuds') {
     s.driver = bestOwned(DRIVERS, t.driver ?? 0, o.levels.materials)
@@ -774,11 +875,13 @@ export function generateDesign(r: RngHolder, o: GenOptions): DeviceDesign {
   if (type === 'earbuds') body.corner = Math.min(body.corner, Math.floor(body.thickness / 2))
   if (type === 'console' && Math.max(width, height) < 132) s.io = s.io?.filter((id) => id !== 'disc')
   if (type === 'earbuds' || type === 'ring') s.panel = 0
+  // a mouse with no radio is wired, and carries no battery
+  const wiredMouse = type === 'mouse' && !(s.io ?? []).includes('wireless') && !(s.io ?? []).includes('bt')
   if (type !== 'watch' && type !== 'earbuds' && !NO_REFRESH.includes(type) && !(type === 'speaker' && !body.screen)) s.refresh = REFRESH.filter((x) => x.level <= s.panel).pop()!.hz
   fitInside(design, o.levels)
   const fill = o.segment === 'gamer' || o.segment === 'business' || type === 'watch' || type === 'ring' ? 0.98 : 0.9
   const bStep = batteryStep(type)
-  s.battery = Math.round((maxBattery(body, o.levels.battery, type) * fill) / bStep) * bStep
+  s.battery = wiredMouse ? 0 : Math.round((maxBattery(body, o.levels.battery, type) * fill) / bStep) * bStep
   const fits = (id: string) => T.extras.includes(id)
   if (t.matRank >= 1 && fits('stereo')) s.extras.push('stereo')
   if (o.levels.materials >= 1 && t.matRank >= 1 && fits('ip68')) s.extras.push('ip68')

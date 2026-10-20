@@ -197,6 +197,9 @@ const PATHS = {
   smartring: 'M4 10a8 4 0 1016 0 8 4 0 10-16 0zM4 10v4a8 4 0 0016 0v-4M8 10a4 2 0 108 0 4 2 0 10-8 0z',
   actioncam: 'M3 7h18v13H3zM16 10a3.500 3.500 0 100 7 3.500 3.500 0 000-7zM6 11h4v4H6zM14 4h4v3',
   drone: 'M9 9h6v6H9zM9 9L5 5M15 9l4-4M9 15l-4 4M15 15l4 4M2 5h6M16 5h6M2 19h6M16 19h6',
+  tower: 'M7 2h10v20H7zM10 5h4M10 8h4M12 15a2 2 0 100 4 2 2 0 000-4z',
+  monitor: 'M2 4h20v12H2zM12 16v4M8 20h8',
+  mouse: 'M7 9a5 5 0 0110 0v6a5 5 0 01-10 0zM12 4v6M7 10h10',
 } as const
 
 export type IconName = keyof typeof PATHS
@@ -265,6 +268,9 @@ export const TYPE_ICON: Record<string, IconName> = {
   ring: 'smartring',
   actioncam: 'actioncam',
   drone: 'drone',
+  tower: 'tower',
+  monitor: 'monitor',
+  mouse: 'mouse',
 }
 export const typeIcon = (type: string): IconName => TYPE_ICON[type] ?? 'devices'
 

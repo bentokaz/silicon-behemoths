@@ -49,6 +49,8 @@ export interface Picked {
   /** Where its size or count comes from, when no row of the Internals panel sets it. */
   note?: string
   kind?: string
+  /** What it is for, in a sentence: said for the special features. */
+  about?: string
 }
 
 export const useStudio = create<Studio>(() => ({ caption: null, guides: [], hint: null, folded: false, internals: false, keepClosed: false, explode: 0, hover: null, pick: null, over: null, tour: -1, tourSteps: 0, pad: [0, 0] }))
