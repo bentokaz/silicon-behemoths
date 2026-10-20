@@ -13,6 +13,7 @@ import { themeColor } from '../store/theme'
 import { looseBudAt, placeOnFace } from './buildDevice'
 import { layoutInternals } from '../sim/internals'
 import { buildFeature } from './teardown'
+import { type FitSpot, type SignalColor, featurePart } from '../data/featureParts'
 
 export type DemoKind = 'part' | 'puck' | 'charge' | 'water' | 'nfc' | 'sat' | 'sound' | 'battery' | 'chip' | 'gpu' | 'cells' | 'cooling' | 'anc' | 'panel' | 'refresh' | 'input' | 'feature' | 'socket' | 'gone' | 'fold' | 'lens' | 'rays' | 'voice' | 'rumble' | 'dock'
 
@@ -87,7 +88,7 @@ export function diffDesign(a: DeviceDesign, b: DeviceDesign): DemoSpec[] {
     // a socket is a part on the body: when one goes, the gap it leaves is plain to see
     if (info.size && !has) continue
     // what a feature does decides how it is shown: a headset senses, a speaker listens, a handheld is held
-    const shown: DemoKind = type === 'headset' ? 'rays' : type === 'speaker' ? 'voice' : type === 'handheld' && id === 'dock' ? 'dock' : type === 'handheld' && (id === 'gyro' || id === 'paddles') ? 'rumble' : 'feature'
+    const shown: DemoKind = type === 'headset' ? 'rays' : type === 'speaker' ? 'voice' : type === 'handheld' && id === 'dock' ? 'dock' : type === 'handheld' && (id === 'gyro' || id === 'paddles') ? 'rumble' : featurePart(type, `io:${id}`) ? 'part' : 'feature'
     add(!has ? 'gone' : info.size ? 'socket' : shown, `io-${id}`, info.name, has ? 'Added' : 'Removed', { id, to: 1 })
   }
   return out
@@ -895,77 +896,164 @@ function input(k: Kit, x: Ctx): Built {
   }
 }
 
-/** The colour each feature's demonstration glows in, and which way its signal goes: out of the front, the back or the top. */
-const PART_SIGNAL: Record<string, { color: string; dir: 'front' | 'back' | 'top' | 'none' }> = {
-  sat: { color: BLUE, dir: 'top' },
-  face: { color: RED, dir: 'front' },
-  ir: { color: RED, dir: 'top' },
-  uwb: { color: BLUE, dir: 'back' },
-  mmwave: { color: BLUE, dir: 'top' },
-  stereo: { color: WHITE, dir: 'top' },
-  haptics: { color: WHITE, dir: 'none' },
-  stylus: { color: WHITE, dir: 'none' },
-  reverse: { color: GREEN, dir: 'back' },
-  esim: { color: GREEN, dir: 'none' },
+const SIGNAL_COLOR: Record<SignalColor, () => string> = { red: () => RED, blue: () => BLUE, green: () => GREEN, white: () => WHITE, accent }
+
+/** Where a part goes in the plane of the insides (see insides), from where the catalogue says it sits. */
+function spotAt(spot: FitSpot, p: { w: number; h: number; d: number }, tall: number): THREE.Vector3 {
+  const z = (k: number) => k * Math.max(0, p.d / 2 - tall / 2)
+  switch (spot) {
+    case 'board': return new THREE.Vector3(p.w * 0.16, p.h * 0.27, 0)
+    case 'top': return new THREE.Vector3(0, p.h * 0.4, 0)
+    case 'bottom': return new THREE.Vector3(0, -p.h * 0.4, 0)
+    case 'edge': return new THREE.Vector3(p.w * 0.38, 0, 0)
+    case 'back': return new THREE.Vector3(0, 0, z(-1))
+    case 'front': return new THREE.Vector3(0, 0, z(1))
+    default: return new THREE.Vector3()
+  }
 }
 
 /**
- * A special feature as the part it is: it is shown large outside the device, then goes in to where it sits while the
- * shell turns see-through, and once in place does what it does (a beam of infrared, a scan of dots, a ping).
+ * A special feature as the part it is: it is shown large outside the device, then goes in the way that part goes in
+ * (a coil winds in, an aerial slides to the edge, a pen drops into its silo, a switch clicks home) while the shell
+ * turns see-through, and once in place does what it does (a beam of infrared, a ping, a buzz).
  */
 function partDemo(k: Kit, x: Ctx): Built | null {
   const id = x.spec.id ?? ''
-  const comps = layoutInternals(x.d).comps.filter((c) => c.specs.includes(`extra:${id}`) && (c.kind === 'feature' || c.id === 'esim'))
-  const c = comps[0]
-  if (!c) return feature(k, x)
-  const carrier = mainCarrier(x.d)
-  const g = k.on(carrier)
-  const dirOf = (d: number) => new THREE.Vector3(...([0, 1, 2].map((i) => (i === Math.abs(d) - 1 ? Math.sign(d) : 0)) as [number, number, number]))
-  const [ua, ub, uh] = c.ax.map(dirOf)
-  const size = c.ax.map((d) => c.box.s[Math.abs(d) - 1])
-  const model = buildFeature(c.model ?? 'esim', size[0], size[1], size[2], c.v ?? 0)
+  const key = x.spec.key.startsWith('io-') ? `io:${id}` : `extra:${id}`
+  const fit = featurePart(x.d.type, key)
+  // the part where the layout put it, when it drew one; otherwise where the catalogue says it sits
+  const c = layoutInternals(x.d).comps.find((c) => c.specs.includes(key) && c.kind === 'feature' && c.model && (!fit || c.model === fit.model))
+  if (!c && !fit) return feature(k, x)
+  const holder = new THREE.Group()
+  let parent: THREE.Object3D
+  let home: THREE.Vector3
+  let size: [number, number, number]
+  let model: THREE.Group
+  // the device's half extents in the parent's axes, for where a signal leaves it
+  let half: THREE.Vector3
+  // which way the part comes from (out of a face), and which way is out to the nearest edge, in the parent's axes
+  let from: THREE.Vector3
+  let edge: THREE.Vector3
+  const motion = fit?.motion ?? 'drop'
+  if (c) {
+    const carrier = mainCarrier(x.d)
+    parent = k.on(carrier)
+    const dirOf = (d: number) => new THREE.Vector3(...([0, 1, 2].map((i) => (i === Math.abs(d) - 1 ? Math.sign(d) : 0)) as [number, number, number]))
+    const [ua, ub, uh] = c.ax.map(dirOf)
+    size = c.ax.map((d) => c.box.s[Math.abs(d) - 1]) as [number, number, number]
+    model = buildFeature(c.model!, size[0], size[1], size[2], c.v ?? 0)
+    holder.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(ua, ub, uh))
+    home = new THREE.Vector3(...c.box.c)
+    const s = x.solid(carrier)
+    half = new THREE.Vector3(s.width / 2, s.height / 2, s.thickness / 2)
+    from = uh.clone().multiplyScalar(-1)
+    edge = Math.abs(home.x) / s.width > Math.abs(home.y) / s.height ? new THREE.Vector3(Math.sign(home.x) || 1, 0, 0) : new THREE.Vector3(0, Math.sign(home.y) || 1, 0)
+  } else {
+    const p = insides(k, x)
+    boardOutline(k, x, p)
+    parent = p.g
+    const [a, b, h] = fit!.size
+    // sheets cover the face they lie under; everything else is shown at a size that reads, whatever the device
+    const sheet = motion === 'unfold' && (fit!.spot === 'centre' || fit!.spot === 'front') && Math.max(a, b) > 30
+    const kk = Math.min(4, Math.max(0.15, (Math.min(p.w, p.h) * 0.3) / Math.max(a, b)))
+    size = sheet ? [p.w * 0.86, p.h * 0.86, Math.max(0.3, h * Math.min(1, kk))] : [a * kk, b * kk, h * kk]
+    model = buildFeature(fit!.model, size[0], size[1], size[2], fit!.v ?? 0)
+    home = spotAt(fit!.spot, p, size[2])
+    half = new THREE.Vector3(p.w / 2, p.h / 2, p.d / 2)
+    from = new THREE.Vector3(0, 0, fit!.spot === 'front' ? 1 : -1)
+    edge = fit!.spot === 'top' ? new THREE.Vector3(0, 1, 0) : fit!.spot === 'bottom' ? new THREE.Vector3(0, -1, 0) : new THREE.Vector3(1, 0, 0)
+  }
   model.traverse((o) => {
     const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined
     if (!m) return
     m.transparent = true
     k.adopt(m)
   })
-  const holder = new THREE.Group()
-  holder.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(ua, ub, uh))
   holder.add(model)
-  const home = new THREE.Vector3(...c.box.c)
-  // it arrives from outside the face it is put in through
-  const s = x.solid(carrier)
-  const out = uh.clone().multiplyScalar(-1)
-  const away = home.clone().addScaledVector(out, Math.max(s.thickness, 6) * 1.6 + Math.max(...size) * 0.9)
-  g.add(holder)
+  parent.add(holder)
+  const big = Math.max(...size)
+  const away = home.clone().addScaledVector(from, Math.max(half.z * 2, 6) * 1.6 + big * 0.9)
+  // a silo is filled along its length, from beyond the end of the device
+  const along = new THREE.Vector3(0, 1, 0).applyQuaternion(holder.quaternion)
+  const siloFrom = home.clone().addScaledVector(along, half.y + size[1] * 0.7)
+  // a part that slides comes in a little inside its place
+  const inside = home.clone().addScaledVector(edge, -big * 0.9)
+  const tiltAxis = new THREE.Vector3(0, 1, 0)
   // a frame of light round it, and the signal it sends once in place
-  const sig = PART_SIGNAL[c.model ?? id] ?? PART_SIGNAL[id] ?? { color: accent(), dir: 'none' as const }
+  const sigInfo = fit?.signal ?? { color: 'accent' as const, dir: 'none' as const }
   const frame = outline(size[0] * 1.2, size[1] * 1.2, k.line(accent(), 1))
   frame.position.z = size[2] / 2 + 0.2
   holder.add(frame)
   const beam = new THREE.Group()
-  const signalDir = sig.dir === 'front' ? new THREE.Vector3(0, 0, 1) : sig.dir === 'back' ? new THREE.Vector3(0, 0, -1) : new THREE.Vector3(0, 1, 0)
-  beam.position.copy(home).addScaledVector(signalDir, sig.dir === 'top' ? s.height / 2 - home.y + 1 : s.thickness / 2 + x.gap * 3 - Math.abs(home.z))
+  const signalDir = sigInfo.dir === 'front' ? new THREE.Vector3(0, 0, 1) : sigInfo.dir === 'back' ? new THREE.Vector3(0, 0, -1) : new THREE.Vector3(0, 1, 0)
+  const reach = Math.abs(signalDir.x) * half.x + Math.abs(signalDir.y) * half.y + Math.abs(signalDir.z) * half.z
+  beam.position.copy(home).addScaledVector(signalDir, reach - home.dot(signalDir) + x.gap * 3)
   beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), signalDir)
-  g.add(beam)
-  const r0 = Math.max(...size) * 0.5
-  const wave = sig.dir === 'none' ? null : pulses(k, beam, 3, sig.color, r0, r0 * 5 + 10 * x.u, 0.8, sig.dir === 'top' ? undefined : undefined)
-  // a stylus slides out of its silo and back; a motor shakes the whole device
-  const D = 2.8
+  parent.add(beam)
+  const r0 = big * 0.5
+  const wave = sigInfo.dir === 'none' ? null : pulses(k, beam, 3, SIGNAL_COLOR[sigInfo.color](), r0, r0 * 5 + 10 * x.u, 0.8)
+  const baseQ = holder.quaternion.clone()
+  const D = 2.9
   return {
     duration: D,
-    face: sig.dir === 'front' || c.model === 'face' ? 'front' : 'back',
+    face: sigInfo.dir === 'front' || fit?.spot === 'front' || c?.model === 'face' ? 'front' : 'back',
     xray: 0.8,
-    pose: c.model === 'haptics' ? (t) => ({ shake: t > 1.5 && t < 2.3 ? Math.sin(t * 90) * 0.5 * x.u : 0 }) : undefined,
+    pose: fit?.shake || c?.model === 'haptics' ? (t) => ({ shake: t > 1.5 && t < 2.3 ? Math.sin(t * 90) * 0.5 * x.u : 0 }) : undefined,
     play: (t) => {
       const goIn = ramp(t, 0.55, 1.35)
-      holder.position.lerpVectors(away, home, goIn)
-      holder.scale.setScalar(lerp(1.6, 1, goIn) * settle(t / 0.35))
-      model.rotation.z = (1 - goIn) * Math.sin(t * 2) * 0.35
-      if (c.model === 'stylus' && t > 1.6) model.position.y = Math.sin(ramp(t, 1.6, 2.6) * Math.PI) * size[1] * 0.7
+      holder.scale.setScalar(lerp(1.5, 1, goIn) * settle(t / 0.35))
+      holder.quaternion.copy(baseQ)
+      model.rotation.set(0, 0, 0)
+      model.position.set(0, 0, 0)
+      model.scale.set(1, 1, 1)
+      switch (motion) {
+        case 'wind':
+          holder.position.lerpVectors(away, home, goIn)
+          model.rotation.z = (1 - goIn) * Math.PI * 3
+          break
+        case 'slide': {
+          holder.position.lerpVectors(away, inside, ramp(t, 0.5, 1.05))
+          holder.position.lerp(home, ramp(t, 1.05, 1.5))
+          break
+        }
+        case 'click': {
+          holder.position.lerpVectors(away, home, goIn)
+          // it lands, sinks a hair past home and springs back: the click
+          const bump = Math.sin(ramp(t, 1.3, 1.6) * Math.PI) * big * 0.06
+          holder.position.addScaledVector(from, -bump)
+          holder.scale.multiplyScalar(1 + 0.05 * Math.sin(ramp(t, 1.3, 1.6) * Math.PI))
+          break
+        }
+        case 'silo':
+          holder.position.lerpVectors(siloFrom, home, ramp(t, 0.5, 1.5))
+          holder.scale.setScalar(settle(t / 0.35))
+          break
+        case 'unfold': {
+          holder.position.lerpVectors(away, home, goIn)
+          const open = ramp(t, 0.7, 1.5)
+          model.scale.y = lerp(0.04, 1, open)
+          model.rotation.x = (1 - open) * 0.9
+          break
+        }
+        case 'plug':
+          holder.position.lerpVectors(away.clone().addScaledVector(edge, big * 0.8), home, goIn)
+          holder.quaternion.copy(baseQ).multiply(new THREE.Quaternion().setFromAxisAngle(tiltAxis, (1 - ramp(t, 0.9, 1.5)) * 0.6))
+          break
+        case 'spin':
+          holder.position.lerpVectors(away, home, goIn)
+          model.rotation.z = ramp(t, 1.4, D - 0.2) * Math.PI * 2
+          break
+        case 'fold':
+          holder.position.lerpVectors(away, home, goIn)
+          model.rotation.z = (1 - ramp(t, 1.35, 2.0)) * Math.PI * 0.5
+          break
+        default:
+          holder.position.lerpVectors(away, home, goIn)
+          model.rotation.z = (1 - goIn) * Math.sin(t * 2) * 0.35
+      }
+      if ((c?.model ?? fit?.model) === 'stylus' && t > 1.6) model.position.y = Math.sin(ramp(t, 1.6, 2.6) * Math.PI) * size[1] * 0.7
       show(frame.material as THREE.Material, 1 - ramp(t, 1.2, 1.6))
-      wave?.(t - 1.4, ramp(t, 1.4, 1.6) * (1 - ramp(t, D - 0.4, D - 0.05)))
+      wave?.(t - 1.5, ramp(t, 1.5, 1.7) * (1 - ramp(t, D - 0.4, D - 0.05)))
     },
   }
 }

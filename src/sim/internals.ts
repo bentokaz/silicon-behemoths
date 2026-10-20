@@ -1911,7 +1911,7 @@ function layoutMouse(g: Gen) {
   put('sensor', 'feature', [0, yb - 2, L * 0.04], [16, 3, 20], { model: 'mousesensor', label: 'Optical sensor', figure: g.d.type === 'mouse' ? panelName('mouse', s.panel) : '', specs: ['panel'], layer: 0 })
   put('chip', 'chip', [b.width * 0.12, yb + 2.2, -L * 0.08], [7, 1.2, 7], { specs: ['chip'], label: g.chip.name, figure: 'Microcontroller', v: s.chipTier, text: g.chip.name })
   for (const sx of [-1, 1]) put(`switch${sx < 0 ? 0 : 1}`, 'feature', [sx * b.width * 0.2, yb + 4.8, L * 0.36], [12, 6, 6], { model: 'switch', label: sx < 0 ? 'Left button switch' : 'Right button switch', specs: io.includes('hot') ? ['io:hot'] : [], v: io.includes('hot') ? 1 : 0 })
-  put('wheel', 'feature', [0, yb + 10.8, L * 0.3], [8, 18, 22], { model: 'wheel', label: io.includes('free') ? 'Free-spinning wheel' : 'Scroll wheel', specs: ['io:tilt', 'io:free'].filter((k) => io.includes(k.slice(3))), glow: glow('wheel'), axis: 0 })
+  put('wheel', 'feature', [0, yb + 10.8, L * 0.3], [8, 18, 22], { model: 'wheel', v: io.includes('free') ? 2 : io.includes('tilt') ? 1 : 0, label: io.includes('free') ? 'Free-spinning wheel' : 'Scroll wheel', specs: ['io:tilt', 'io:free'].filter((k) => io.includes(k.slice(3))), glow: glow('wheel'), axis: 0 })
   if (io.includes('side')) put('sideboard', 'board', [b.width / 2 - 6, yb + b.height * 0.3, L * 0.02], [1.6, 12, 30], { label: 'Thumb button board', specs: ['io:side'], v: 1 })
   const wired = !io.includes('wireless') && !io.includes('bt')
   if (!wired && s.battery > 0) {
