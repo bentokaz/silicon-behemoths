@@ -520,6 +520,30 @@ export function standMount(b: Body, type: DeviceType): { x: number; y: number; w
   return { x: 0, y: -b.height * 0.16, w: Math.max(70, b.width * 0.17), h: 46 }
 }
 
+/**
+ * The turn a part's knob asks for: `startRot` is the part's turn when the knob was taken, and (x, y) is where the
+ * pointer is now in the part's own plane *as it was then*. Measured against that fixed frame, not against the part as
+ * last drawn, the answer does not depend on whether the model has caught up with the last step yet (it used to add
+ * the same angle again from a stale frame, and the part ran off or jittered). In 15 degree steps, 0 to 345.
+ */
+export function knobTurn(startRot: number, x: number, y: number): number {
+  const by = (Math.atan2(-x, y) * 180) / Math.PI
+  return (((Math.round((startRot + by) / 15) * 15) % 360) + 360) % 360
+}
+
+/** Whether a part can be turned at all: not on an edge, not round, and not on a ring's curved band. */
+export const canTurn = (p: PlacedPart, type: DeviceType) => !isEdge(p.face, type) && type !== 'ring'
+
+/**
+ * A part turned to `rot`, or null when it cannot turn that far where it is: when the turned part would no longer fit
+ * its face it would have to be shrunk, and a turn must never quietly shrink a part (turning it back would not grow it again).
+ */
+export function turnPart(b: Body, p: PlacedPart, rot: number, type: DeviceType): PlacedPart | null {
+  if (!canTurn(p, type)) return rot === p.rot ? p : null
+  const q = clampPart(b, { ...p, rot }, type)
+  return q.w < p.w - 1e-6 || q.h < p.h - 1e-6 ? null : q
+}
+
 /** Axis-aligned extent of a part after rotation. */
 export function partExtent(p: PlacedPart): { w: number; h: number } {
   const a = (p.rot * Math.PI) / 180
@@ -549,6 +573,8 @@ export function clampPart(b: Body, p: PlacedPart, type: DeviceType = 'phone'): P
     if (q.kind === 'fingerprint') q.w = Math.max(q.w, 8)
     q.rot = 0
   }
+  // a ring's parts follow the curve of the band, which has no turn to give them
+  if (type === 'ring') q.rot = 0
   const inset = faceInset(b, face, type)
   let e = partExtent(q)
   // a part bigger than the face it sits on is made to fit: it is drawn, scored and paid for at the size it really is

@@ -10,7 +10,7 @@ import { sfx } from '../audio/sfx'
 import { Icon } from '../components/icons'
 import { TYPES } from '../data/devices'
 import { sizeLimits } from '../data/devices'
-import { type Carrier, carrierBody, clampPart, faceBasis, faceLabel, faceSize, facesFor, isEdge, isFlip, kindsFor, mountOf, onKeyboard, partLabel } from '../sim/geometry'
+import { type Carrier, carrierBody, clampPart, faceBasis, faceLabel, faceSize, facesFor, isEdge, isFlip, kindsFor, knobTurn, turnPart, canTurn, mountOf, onKeyboard, partLabel } from '../sim/geometry'
 import { type Comp, cameraCost, layoutInternals } from '../sim/internals'
 import type { Body, CustomChip, DeviceDesign, DeviceType, Face, Levels, OsLook, PartKind, PlacedPart } from '../sim/types'
 import { useStore } from '../store/game'
@@ -200,7 +200,7 @@ function decorate(group: THREE.Object3D, d: DeviceDesign, selectedId: string | n
         box.position.set(sx * w, sy * h, z)
         put(root, box)
       }
-      if (!edge && !isRound(p, d.type)) {
+      if (!edge && !isRound(p, d.type) && canTurn(p, d.type)) {
         // a stalk above the part with a knob to turn it by
         const top = h + 5.5 * ls
         put(root, lineOf([new THREE.Vector3(0, h, z), new THREE.Vector3(0, top, z)], accent))
@@ -287,8 +287,8 @@ function boundsOf(root: THREE.Object3D, out: THREE.Box3): THREE.Box3 {
 }
 
 /** Where a ray meets the z = 0 plane of an object, in that object's own space. Null if it glances along it. */
-function onPlaneOf(obj: THREE.Object3D, ray: THREE.Ray): THREE.Vector3 | null {
-  obj.updateWorldMatrix(true, false)
+function onPlaneOf(obj: THREE.Object3D, ray: THREE.Ray, update = true): THREE.Vector3 | null {
+  if (update) obj.updateWorldMatrix(true, false)
   const local = ray.clone().applyMatrix4(obj.matrixWorld.clone().invert())
   if (Math.abs(local.direction.z) < 0.12) return null
   const t = -local.origin.z / local.direction.z
@@ -828,6 +828,10 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
     if (controls) controls.enabled = false
     const st = useStore.getState()
     const partId = st.selectedPart
+    // a turn is measured against the part as it lay when the knob was taken: its frame within its solid then, and its turn then
+    const grabbed = partId ? partRoots(live.current.group).get(partId) : undefined
+    const turnFrom = data.kind === 'rotate' && grabbed ? { local: (grabbed.updateMatrix(), grabbed.matrix.clone()), rot: st.draft?.parts.find((q) => q.id === partId)?.rot ?? 0 } : null
+    const frame = new THREE.Object3D()
     const move = (ev: PointerEvent) => {
       const rect = three.gl.domElement.getBoundingClientRect()
       ndc.set(((ev.clientX - rect.left) / rect.width) * 2 - 1, -((ev.clientY - rect.top) / rect.height) * 2 + 1)
@@ -853,16 +857,22 @@ export function LiveDevice({ design, selectedId, onPick, logo, colorIndex = -1, 
       }
       const p = d.parts.find((q) => q.id === partId)
       const root = partId ? partRoots(live.current.group).get(partId) : undefined
-      const at = root && onPlaneOf(root, caster.ray)
-      if (!p || !at) return
       if (data.kind === 'rotate') {
-        const by = (Math.atan2(-at.x, at.y) * 180) / Math.PI
-        const rot = (((Math.round((p.rot + by) / 15) * 15) % 360) + 360) % 360
+        // the solid it sits on is found afresh (the model is rebuilt after every step), the part's frame in it is the one it had when taken
+        if (!p || !root?.parent || !turnFrom) return
+        root.parent.updateWorldMatrix(true, false)
+        frame.matrixWorld.multiplyMatrices(root.parent.matrixWorld, turnFrom.local)
+        const at = onPlaneOf(frame, caster.ray, false)
+        if (!at) return
+        const rot = knobTurn(turnFrom.rot, at.x, at.y)
         if (rot === p.rot) return
+        if (!turnPart(d.body, p, rot, d.type)) return studioHint(`The ${partLabel(p, d.type).toLowerCase()} would not fit its face turned that far.`)
         sfx.snap()
         useStore.getState().patchPart(p.id, { rot })
         return
       }
+      const at = root && onPlaneOf(root, caster.ray)
+      if (!p || !at) return
       const step = isBig(d.type) ? 1 : 0.25
       const out = HANDLE_OUT * ls
       const size = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Math.round((2 * (Math.abs(v) - out)) / step) * step))
