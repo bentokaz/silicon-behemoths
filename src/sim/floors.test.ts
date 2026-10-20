@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { buildFactory, buildVenue, clearZone, openStore, defaultConfig, migrate, newGame, placeItem, setEdge, siteOf, upgradeOffice, zoneRoom } from './game'
 import { storeStats, venueStats, WELL_HERE, UPSTAIRS_OPEN, linkedLevels, openRooms, reachable, sealedOn, wellsOn } from './sites'
+import * as G from './game'
 import { checkState } from './testing/invariants'
 import type { GameState } from './types'
 
@@ -174,5 +175,53 @@ describe('floors in every building', () => {
     expect(s.venue!.floors).toBe(2)
     expect(checkState(s)).toEqual([])
     void venueStats
+  })
+})
+
+describe('turning rooms and copying floors', () => {
+  it('turns a room a quarter turn with its door and furniture, for a price, and refuses where it will not fit', () => {
+    const s = office()
+    const o = s.office
+    G.clearZone(s, 'office', 0, 0, o.w, o.h)
+    ok(zoneRoom(s, 'office', 'work', 10, 4, 17, 9))
+    ok(zoneRoom(s, 'office', 'lobby', 12, 10, 15, 12))
+    ok(placeItem(s, 'office', 'desk', 11, 5, 0))
+    const work = o.grid[5 * o.w + 11]
+    const doors = o.walls.filter((w) => w.kind === 'door').length
+    // the lobby next door is in the way
+    expect(G.turnRooms(s, 'office', 10, 4, 10, 4)).toMatch(/another room/)
+    G.clearZone(s, 'office', 12, 10, 15, 12)
+    const plan = G.turnPlan(o, 10, 4, 10, 4)
+    expect(plan.error).toBeNull()
+    expect(plan.cost).toBeGreaterThan(0)
+    const cash = s.cash
+    ok(G.turnRooms(s, 'office', 10, 4, 10, 4))
+    expect(s.cash).toBeLessThan(cash)
+    expect(o.walls.filter((w) => w.kind === 'door').length).toBe(doors)
+    const desk = o.items.find((i) => i.kind === 'desk')!
+    expect(desk.rot).toBe(1)
+    expect(o.grid[desk.y * o.w + desk.x]).toBe(work)
+    expect(o.grid[3 * o.w + 12]).toBe(work)
+    expect(checkState(s)).toEqual([])
+  })
+
+  it('copies a floor onto a new floor above, charged as building it', () => {
+    const s = office()
+    ok(zoneRoom(s, 'office@1', 'work', 8, 2, 17, 9))
+    ok(placeItem(s, 'office@1', 'desk', 10, 4, 0))
+    const q = G.copyFloorQuote(s, 'office', 1, 2)
+    expect(q.error).toBeNull()
+    expect(q.rooms).toBe(1)
+    expect(q.items).toBe(1)
+    const cash = s.cash
+    ok(G.copyFloor(s, 'office', 1, 2))
+    expect(s.office.floors).toBe(3)
+    expect(s.office.upper![1].items).toHaveLength(1)
+    expect(s.office.upper![1].items[0].id).not.toBe(s.office.upper![0].items[0].id)
+    expect(cash - s.cash).toBeCloseTo(q.cost, 0)
+    expect(G.copyFloorQuote(s, 'office', 1, 2).error).toMatch(/already built/)
+    // the ground floor's outdoor things stay behind
+    expect(G.copyFloorQuote(s, 'office', 0, 3).error).toBeNull()
+    expect(checkState(s)).toEqual([])
   })
 })

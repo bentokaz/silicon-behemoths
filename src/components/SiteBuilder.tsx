@@ -11,7 +11,7 @@ import type { Mood } from '../3d/site/env'
 import type { ViewMode } from '../3d/site/structure'
 import { sfx } from '../audio/sfx'
 import { MIN_THICK } from '../sim/curves'
-import { DIFFICULTY, EDGE_COST, PART_COST, clearZone, fillRoom, lookCost, paintArea, placeItems, player, removeItems, removeRoom, roomCost, rotateItem, setEdges, setLook, setRoomStyle, siteOf, zoneRoom } from '../sim/game'
+import { DIFFICULTY, EDGE_COST, PART_COST, clearZone, copyFloor, copyFloorQuote, fillRoom, turnRooms, lookCost, paintArea, placeItems, player, removeItems, removeRoom, roomCost, rotateItem, setEdges, setLook, setRoomStyle, siteOf, zoneRoom } from '../sim/game'
 import { factoryLife, officeLife, storeLife, venueLife } from '../sim/life'
 import { type CapId, capOf, has, lockTip } from '../sim/progress'
 import { FACADES, GROUNDS, ITEMS, type ItemDef, type LineStats, MAX_FLOORS, OUT, ROOFS, ROOMS, GROUND_ONLY, GROUND_ROOMS, blankLevel, builtTiles, gridAt, groundsFor, itemAllowed, linkedLevels, needsOf, roomNames, roomOf, sealedOn, sealedRooms, upkeep } from '../sim/sites'
@@ -291,6 +291,12 @@ export function SiteBuilder({ siteRef, site: ground, status, children, tools, se
     )
     return { out, changed: `${ground.rev}|${site.rev}|${g.cash}` !== before }
   }
+  // ---- copying a floor onto another: a bare one, or a new floor over the top
+  const [copyOpen, setCopyOpen] = useState(false)
+  const copyTargets = useMemo(() => Array.from({ length: topPick }, (_, i) => i + 1).filter((t) => t !== floor && (t >= storeys || !(ground.upper?.[t - 1]?.rooms.length || ground.upper?.[t - 1]?.items.length))), [topPick, floor, storeys, ground, ground.rev]) // eslint-disable-line react-hooks/exhaustive-deps
+  const [copyPick, setCopyTo] = useState(0)
+  const copyTo = copyTargets.includes(copyPick) ? copyPick : (copyTargets[copyTargets.length - 1] ?? 0)
+  const copyQuote = copyOpen && copyTo ? copyFloorQuote(g, siteRef, floor, copyTo) : null
   /** Go up or down a storey. What was picked on the old floor is let go. */
   const toFloor = (f: number) => {
     const next = Math.max(0, Math.min(topPick, f))
@@ -416,6 +422,10 @@ export function SiteBuilder({ siteRef, site: ground, status, children, tools, se
       const { out } = step(rooms[type].name, (s) => (active.shape === 'fill' ? fillRoom(s, ref, type, x0, y0, apart) : zoneRoom(s, ref, type, x0, y0, x1, y1, box, into, opts, apart)))
       if (out) refuse(out)
       else sfx.zone()
+    } else if (active.type === 'turn') {
+      const { out } = step('Rooms turned', (s) => turnRooms(s, ref, x0, y0, x1, y1))
+      if (out) refuse(out)
+      else sfx.zone()
     } else if (active.type === 'clear') {
       const opts = active.opts
       if (step('Demolition', (s) => clearZone(s, ref, x0, y0, x1, y1, box, opts)).changed) sfx.demolish()
@@ -492,6 +502,10 @@ export function SiteBuilder({ siteRef, site: ground, status, children, tools, se
       hintTone = 'live'
       hint = [`${roomTool.name}: ${num(pending)} m² for ${cost}${note.filled ? ', the whole courtyard' : ''}${note.clears ? `, ${things(note.clears, 'thing', 'things')} standing there sold` : ''}. Click the opposite corner`, { key: 'Alt' }, 'keeps it a room of its own', ...key('cancel'), 'cancels']
     } else hint = [`${roomTool.name}, ${money(roomCost(site, tool.room, 1))} a m²: click one corner, then the opposite one`, ...(curvy && sweep < 360 ? [...key('rotate'), `turns the arc (open to the ${OPEN_SIDE[sweep][rot]})`] : []), ...key('cancel'), 'done']
+  } else if (tool?.type === 'turn') {
+    if (note?.error) (hintTone = 'warn'), (hint = [`Turn rooms: ${note.error}`, ...key('cancel'), 'cancels'])
+    else if (note?.anchored) (hintTone = 'live'), (hint = [`Turn these rooms a quarter turn with their walls and furniture, ${money(note.cost ?? 0)}. Click the opposite corner`, ...key('cancel'), 'cancels'])
+    else hint = [`Turn rooms a quarter turn with their walls and furniture: click one corner of a box over them, then the opposite one (the same room twice for one room)`, ...key('cancel'), 'done']
   } else if (tool?.type === 'clear') {
     if (note?.error) (hintTone = 'warn'), (hint = [`Demolish: ${note.error}`, ...key('cancel'), 'cancels'])
     else if (note?.anchored) (hintTone = 'live'), (hint = [`Demolish ${num(pending)} m². What stands inside is sold at half price. Click the opposite corner`, ...key('cancel'), 'cancels'])
@@ -617,8 +631,8 @@ export function SiteBuilder({ siteRef, site: ground, status, children, tools, se
       </PickRow>
     )
   }
-  const toolBtn = (type: 'rotate' | 'remove' | 'clear', label: string, icon: IconName, title: string) => (
-    <Btn small tone="ghost" icon={icon} title={title} className="flex-1" active={tool?.type === type ? true : undefined} onClick={() => pick(tool?.type === type ? null : type === 'clear' ? { type, shape } : { type })}>
+  const toolBtn = (type: 'rotate' | 'remove' | 'clear' | 'turn', label: string, icon: IconName, title: string) => (
+    <Btn small tone="ghost" icon={icon} title={title} className="flex-1" active={tool?.type === type ? true : undefined} onClick={() => pick(tool?.type === type ? null : type === 'clear' ? { type, shape } : type === 'turn' ? { type, shape: 'rect' } : { type })}>
       {label}
     </Btn>
   )
@@ -701,6 +715,43 @@ export function SiteBuilder({ siteRef, site: ground, status, children, tools, se
                 disabled={floor >= topPick}
                 onClick={() => toFloor(floor + 1)}
               />
+              <span className="relative -ml-px">
+                <IconBtn icon="layers" title={fresh ? 'Nothing on this floor to copy' : 'Copy this floor: its rooms, walls and furniture, onto another floor'} disabled={fresh || !site.rooms.length} active={copyOpen || undefined} onClick={() => setCopyOpen((o) => !o)} />
+                {copyOpen && !fresh && (
+                  <div className="sb-float absolute right-0 top-9 z-30 flex w-[260px] flex-col gap-[6px] p-2 text-[11px]">
+                    <label className="flex items-center gap-2">
+                      <span className="shrink-0 text-dim">Copy {floorName(floor).toLowerCase()} to</span>
+                      <select aria-label="Floor to copy onto" className="h-7 min-w-0 flex-1 rounded-none border border-line2 bg-raise px-1 text-fg outline-none focus:border-accent" value={copyTo} onChange={(e) => setCopyTo(Number(e.target.value))}>
+                        {copyTargets.map((t) => (
+                          <option key={t} value={t}>
+                            {t >= storeys ? `A new floor (${floorName(t).toLowerCase()})` : floorName(t)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {copyQuote && (copyQuote.error ? (
+                      <span className="text-warn">{copyQuote.error}</span>
+                    ) : (
+                      <span className="text-dim">
+                        <span className="num text-fg">{copyQuote.rooms}</span> {copyQuote.rooms === 1 ? 'room' : 'rooms'}, <span className="num text-fg">{copyQuote.items}</span> {copyQuote.items === 1 ? 'piece' : 'pieces'} of furniture{copyQuote.skipped ? `; ${copyQuote.skipped} left behind that cannot stand there` : ''}
+                      </span>
+                    ))}
+                    <Btn
+                      small
+                      tone="primary"
+                      disabled={!copyQuote || !!copyQuote.error || copyQuote.cost > budget}
+                      title={copyQuote && copyQuote.cost > budget ? `Not enough cash: ${money(copyQuote.cost)}` : 'Build the copy, charged as building it would be'}
+                      onClick={() => {
+                        const { out } = step('Floor copied', (st) => copyFloor(st, siteRef, floor, copyTo))
+                        if (out) refuse(out)
+                        else (sfx.zone(), setCopyOpen(false), toFloor(copyTo))
+                      }}
+                    >
+                      Copy{copyQuote && !copyQuote.error ? ` for ${money(copyQuote.cost)}` : ''}
+                    </Btn>
+                  </div>
+                )}
+              </span>
             </div>
           )}
           <SiteMenu
@@ -964,9 +1015,10 @@ export function SiteBuilder({ siteRef, site: ground, status, children, tools, se
               </>
             )}
           </div>
-          <div className="flex shrink-0 border-t border-line">
+          <div className="grid shrink-0 grid-cols-2 border-t border-line">
             {toolBtn('rotate', 'Turn', 'turn', 'Turn a piece of furniture a quarter turn')}
             {toolBtn('remove', 'Sell', 'sell', `Sell furniture for half its price${keysFor('sell').length ? ` (${k('sell')})` : ''}`)}
+            {toolBtn('turn', 'Turn room', 'turn', 'Turn a room, or a box of rooms, a quarter turn with its walls, doors and furniture')}
             {toolBtn('clear', 'Demolish', 'demolish', 'Knock down rooms. What stands inside is sold for half its price.')}
           </div>
         </div>

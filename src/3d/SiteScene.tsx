@@ -10,6 +10,7 @@ import { type Pt, bayRun, bayStands, curveTiles, nearestBay } from '../sim/curve
 import { money, moneyDelta, num, pct } from '../components/format'
 import { EDGE_COST, edgePrice, keepsDoors, partitionRun, roomCost, zonePlan } from '../sim/game'
 import type { FactoryLife, OfficeLife, StoreLife, VenueLife } from '../sim/life'
+import { turnPlan } from '../sim/game'
 import { type Well, blankLevel, ceilingAt, storeysOf, wellsOn, ITEMS, type LineStats, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, areaOf, areaTiles, canPartition, canPlace, ceilingOf, curveFor, cutAt, doorFits, fillError, gridAt, inPlot, isBoundary, hasGround, isStage, itemAt, itemTiles, pocketAt, reachable, roomOf, rowSpots, stageOf, tilesOf, wallAt } from '../sim/sites'
 import { ROLE_INFO, inTraining, jobTitle } from '../sim/staff'
 import type { Employee, Product, Site, SiteItem, SiteKind } from '../sim/types'
@@ -55,6 +56,8 @@ export type SiteTool =
   | { type: 'item'; kind: string; rot: number }
   | { type: 'room'; room: string; shape: AreaShape; opts?: ShapeOpts }
   | { type: 'clear'; shape: AreaShape; opts?: ShapeOpts }
+  /** Turn the rooms in a box a quarter turn, with their walls and furniture. */
+  | { type: 'turn'; shape: AreaShape; opts?: ShapeOpts }
   | { type: 'ground'; id: string; shape: AreaShape; opts?: ShapeOpts }
   | { type: 'edge'; kind: 'wall' | 'glass' | 'door' | 'open' }
   | { type: 'rotate' }
@@ -109,6 +112,8 @@ export interface AreaNote {
   anchored?: boolean
   /** Things standing on the ground that building here clears away and sells. */
   clears?: number
+  /** Turning rooms: what it costs. */
+  cost?: number
 }
 
 /** The store's month, projected to its end, for the plate over its tills. */
@@ -897,7 +902,7 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
   const accent = themeColor('accent', '#ff6b1a')
   const neg = themeColor('neg', '#ff4d4f')
   const palette = useMemo<Palette>(() => ({ accent, neg, pos: themeColor('pos', '#5fd08a'), warn: themeColor('warn', '#f2b631') }), [accent, neg])
-  const areaTool = tool?.type === 'room' || tool?.type === 'clear' || tool?.type === 'ground'
+  const areaTool = tool?.type === 'room' || tool?.type === 'clear' || tool?.type === 'ground' || tool?.type === 'turn'
   /** Filling a courtyard is one click on it, and only rooms are built that way: any other area tool draws a box instead. */
   const filling = tool?.type === 'room' && tool.shape === 'fill'
   const shape: Shape = tool && 'shape' in tool && tool.shape !== 'fill' ? tool.shape : 'rect'
@@ -1355,6 +1360,17 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
         return yard(pocket.tiles, live, pocket)
       }
       const from = anchor ?? [hover.x, hover.y]
+      // turning rooms: where they would stand, in the tool's colour, or the rooms themselves in the warning colour where they cannot
+      if (tool.type === 'turn') {
+        const plan = turnPlan(site, from[0], from[1], hover.x, hover.y)
+        const own = new Set(plan.rooms)
+        const mine: [number, number][] = []
+        site.grid.forEach((n, i) => own.has(n) && mine.push([i % w, Math.floor(i / w)]))
+        const error = plan.error ?? (plan.cost > budget ? `Not enough cash: turning them costs ${money(plan.cost)}` : undefined)
+        const note: AreaNote = { anchored: !!anchor, cost: plan.cost, error }
+        if (error) return { good: [] as [number, number][], bad: mine.length ? mine : [[hover.x, hover.y]] as [number, number][], curve: null, area: 0, note }
+        return { good: [...plan.to.keys()].map((k) => k.split(',').map(Number) as [number, number]), bad: [] as [number, number][], curve: null, area: plan.to.size, note }
+      }
       // a box across half or more of a curved courtyard takes the whole of it; one in such a courtyard at all is told so,
       // before the first corner is set as well as after
       const plan = tool.type === 'room' && shape === 'rect' && site.curves?.length ? zonePlan(site, from[0], from[1], hover.x, hover.y, shape, opts) : null

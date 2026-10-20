@@ -22,11 +22,11 @@ import { ACCESSORY, footfall, storeBuyers } from './retail'
 import { contractBlocked, offerContracts, stepContracts } from './contracts'
 import { bayStands, curveAt, curveTiles, onCurve } from './curves'
 import { fixLayout, lineStats } from './factoryline'
-import { FACADES, FLOOR_COST, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, VENUE_PRESETS, type VenuePreset, rigFloors, venueLayout, RIG_TOP, STOREY_M, tilesOf, climbBlocked, wellsOn, rigNeed, GROUND_ROOMS, linkedLevels, CLIMB, cutAt, type Shape, type ShapeOpts, SHORT_WALL, UNKNOWN_ITEM, areaOf, areaTiles, autoDoor, builtTiles, canPartition, canPlace, courtyardFor, curveFor, defaultGround, doorFits, fillError, gridAt, groundsFor, hasGround, inPlot, isBoundary, itemAllowed, itemAt, itemTiles, mergeRooms, newSite, openRooms, pocketAt, roomOf, rowSpots, shapeCuts, starterLine, storeStats, syncLevels, tidy, tierOf, touching, upkeep, partAt, venueStats, wallAt, zone } from './sites'
+import { FACADES, FLOOR_COST, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, VENUE_PRESETS, type VenuePreset, rigFloors, venueLayout, RIG_TOP, STOREY_M, tilesOf, climbBlocked, wellsOn, rigNeed, GROUND_ROOMS, GROUND_ONLY, roomTiles, edgeSides, levelOf, blankLevel, linkedLevels, CLIMB, cutAt, type Shape, type ShapeOpts, SHORT_WALL, UNKNOWN_ITEM, areaOf, areaTiles, autoDoor, builtTiles, canPartition, canPlace, courtyardFor, curveFor, defaultGround, doorFits, fillError, gridAt, groundsFor, hasGround, inPlot, isBoundary, itemAllowed, itemAt, itemTiles, mergeRooms, newSite, openRooms, pocketAt, roomOf, rowSpots, shapeCuts, starterLine, storeStats, syncLevels, tidy, tierOf, touching, upkeep, partAt, venueStats, wallAt, zone } from './sites'
 import { capOfChannel, locked, refreshExecs, siteLocked, stepProgress } from './progress'
 import { EXECS, HEADHUNT_COST, HOURS, TEAM_SPAN, dropFromTeams, execFx, inTraining, monthlySalaries, monthlyStaff, newPolicy, perksCost, refreshCandidates, staffEffects, stepStaff, trainingCost } from './staff'
 import { CHIP_BUDGET, OS_FEATURES, OS_TYPES, chipAdoption, cleanLook, licenceBlocked, licenceInfo, licenceSwitchCost, osRoyalty, osRunCost, releaseNameFor, chipBlocked, chipProjectCost, chipProjectDays, finishChip, newOs, osBlocked, osProjectCost, osProjectDays, osShipQuality, servicesPerMonth, softwareBonus } from './tech'
-import { stockOf, type ChannelId, type Company, type Corner, type CostKey, type DeviceDesign, type DeviceType, type Difficulty, type EventType, type GameConfig, type GameState, type Levels, type MonthReport, type NewsItem, type OsLook, type Product, type ProductionOrder, type ReorderRule, type SegmentId, type Site, type SiteKind, type StaffPolicy, type StorageTier, SUPPLY_CATS, type SupplyCat, TRACKS, type Track, dollars, hasStock, millions, monthCosts, thousands, wasReleased } from './types'
+import { stockOf, type ChannelId, type Company, type Corner, type SiteItem, type SiteWall, type CostKey, type DeviceDesign, type DeviceType, type Difficulty, type EventType, type GameConfig, type GameState, type Levels, type MonthReport, type NewsItem, type OsLook, type Product, type ProductionOrder, type ReorderRule, type SegmentId, type Site, type SiteKind, type StaffPolicy, type StorageTier, SUPPLY_CATS, type SupplyCat, TRACKS, type Track, dollars, hasStock, millions, monthCosts, thousands, wasReleased } from './types'
 
 // 7: site walls may be partitions inside a room (SiteWall.part, kind 'wall'); older saves have none and load as they are
 // 8: factory blocks have input and output faces; a floor laid before then is turned to match where it can be
@@ -1216,6 +1216,239 @@ export function setLook(s: GameState, ref: string, look: { facade?: number; roof
   if (look.floors !== undefined) site.floors = look.floors
   syncLevels(site)
   site.rev++
+  return null
+}
+
+// ---------------------------------------------------------------- turning rooms and copying floors
+
+/** What turning rooms costs: a share of building them again, and of moving what stands in them. */
+export const TURN_SHARE = 0.25
+export const TURN_MOVE = 0.1
+
+/** Rooms turned a quarter turn clockwise about the middle of the box they fill: where every tile, wall and piece of furniture would go, and whether it can. */
+export interface TurnPlan {
+  rooms: number[]
+  /** Tiles the rooms would stand on, keyed "x,y", with where each came from. */
+  to: Map<string, [number, number]>
+  cost: number
+  error: string | null
+}
+
+const CW: Record<Corner, Corner> = { nw: 'ne', ne: 'se', se: 'sw', sw: 'nw' }
+
+/**
+ * Plan a quarter turn clockwise of the rooms with any tile in a box: the
+ * rooms, their walls, doors and partitions and everything standing in them
+ * turn together about the middle of the box their tiles fill.
+ */
+export function turnPlan(site: Site, x0: number, y0: number, x1: number, y1: number): TurnPlan {
+  const out: TurnPlan = { rooms: [], to: new Map(), cost: 0, error: null }
+  if (![x0, y0, x1, y1].every(num)) return { ...out, error: OFF_PLOT }
+  const [ax, bx] = [Math.min(x0, x1), Math.max(x0, x1)]
+  const [ay, by] = [Math.min(y0, y1), Math.max(y0, y1)]
+  const set = new Set<number>()
+  for (let y = ay; y <= by; y++) for (let x = ax; x <= bx; x++) if (gridAt(site, x, y)) set.add(gridAt(site, x, y))
+  out.rooms = [...set]
+  if (!set.size) return { ...out, error: 'Pick a room to turn: there is none there' }
+  if (site.curves?.some((c) => set.has(c.room))) return { ...out, error: 'Round and curved rooms cannot be turned: they are the same every way round, or near enough' }
+  let mx = Infinity
+  let my = Infinity
+  let Mx = -Infinity
+  let My = -Infinity
+  const tiles: [number, number][] = []
+  site.grid.forEach((n, i) => {
+    if (!set.has(n)) return
+    const x = i % site.w
+    const y = Math.floor(i / site.w)
+    tiles.push([x, y])
+    mx = Math.min(mx, x)
+    my = Math.min(my, y)
+    Mx = Math.max(Mx, x + 1)
+    My = Math.max(My, y + 1)
+  })
+  const cx = (mx + Mx) / 2
+  const cy = (my + My) / 2
+  // a point (px, py) goes to (dx - py, dy + px): the same shift for every tile, so the plan stays on the grid
+  const dx = Math.floor(cx + cy)
+  const dy = Math.floor(cy - cx)
+  for (const [x, y] of tiles) {
+    const nx = dx - y - 1
+    const ny = dy + x
+    if (!inPlot(site, nx, ny)) return { ...out, error: 'Turned, the rooms would run off the plot' }
+    const there = gridAt(site, nx, ny)
+    if (there && !set.has(there)) return { ...out, error: 'Turned, the rooms would run into another room' }
+    out.to.set(`${nx},${ny}`, [x, y])
+  }
+  // what stands on open ground where the rooms would go is in the way
+  for (const it of site.items) {
+    if (set.has(gridAt(site, it.x, it.y))) continue
+    if (itemTiles(site, it).some(([x, y]) => out.to.has(`${x},${y}`))) return { ...out, error: `${ITEMS[site.kind][it.kind]?.name ?? 'Something'} stands where the rooms would go` }
+  }
+  for (const n of set) {
+    const r = roomOf(site, n)
+    if (r) out.cost += roomCost(site, r.type, roomTiles(site, n)) * TURN_SHARE
+  }
+  for (const it of site.items) if (set.has(gridAt(site, it.x, it.y))) out.cost += (ITEMS[site.kind][it.kind]?.cost ?? 0) * TURN_MOVE
+  out.cost = Math.round(out.cost)
+  return out
+}
+
+/** Turn the rooms with any tile in a box a quarter turn clockwise, walls, doors and furniture with them. */
+export function turnRooms(s: GameState, ref: string, x0: number, y0: number, x1: number, y1: number): string | null {
+  const site = siteOf(s, ref)
+  if (!site) return NO_SITE
+  const plan = turnPlan(site, x0, y0, x1, y1)
+  if (plan.error) return plan.error
+  if (!canAfford(s, plan.cost)) return `Not enough cash: turning them costs ${dollars(plan.cost)}`
+  const set = new Set(plan.rooms)
+  const from = new Map<string, string>()
+  for (const [k, [x, y]] of plan.to) from.set(`${x},${y}`, k)
+  // the point map, as for the tiles
+  const one = plan.to.entries().next().value!
+  const [nx, ny] = one[0].split(',').map(Number)
+  const [ox, oy] = one[1]
+  const dx = nx + oy + 1
+  const dy = ny - ox
+  const pt = (px: number, py: number): [number, number] => [dx - py, dy + px]
+  const moved = (x: number, y: number) => set.has(gridAt(site, x, y))
+  const turned = structuredClone({ grid: site.grid, cuts: site.cuts ?? {}, walls: site.walls, items: site.items })
+  const grid = site.grid.map((n) => (set.has(n) ? 0 : n))
+  for (const [k, [x, y]] of plan.to) {
+    const [tx, ty] = k.split(',').map(Number)
+    grid[ty * site.w + tx] = site.grid[y * site.w + x]
+  }
+  const cuts: Record<string, Corner> = {}
+  for (const [k, c] of Object.entries(turned.cuts)) {
+    const [x, y] = k.split(',').map(Number)
+    if (moved(x, y)) cuts[from.get(k)!] = CW[c]
+    else if (!plan.to.has(k)) cuts[k] = c
+  }
+  // walls: those on an edge of a turned room turn with it; any left where the rooms now stand go
+  const walls: SiteWall[] = []
+  for (const w of turned.walls) {
+    const [[ax, ay], [bx, by]] = edgeSides(w.x, w.y, w.side)
+    if (moved(ax, ay) || moved(bx, by)) {
+      if (w.side === 'n') {
+        const [px, py] = pt(w.x, w.y)
+        walls.push({ ...w, x: px, y: py, side: 'w' })
+      } else {
+        const [px, py] = pt(w.x, w.y)
+        walls.push({ ...w, x: px - 1, y: py, side: 'n' })
+      }
+    } else if (!plan.to.has(`${ax},${ay}`) && !plan.to.has(`${bx},${by}`)) walls.push(w)
+  }
+  const items: SiteItem[] = []
+  for (const it of turned.items) {
+    if (!moved(it.x, it.y)) {
+      items.push(it)
+      continue
+    }
+    const rot = (it.rot + 1) % 4
+    const t = itemTiles(site, it).map(([x, y]) => [dx - y - 1, dy + x] as [number, number])
+    items.push({ ...it, x: Math.min(...t.map((p) => p[0])), y: Math.min(...t.map((p) => p[1])), rot })
+  }
+  const next = { ...site, grid, cuts, walls, items }
+  // stairs and lifts must not come up through anything on the floors above, nor stand in a well from below
+  const g = groundOf(s, ref)
+  const f = floorOfRef(ref)
+  const wells = g && f ? wellsOn(g, f) : undefined
+  for (const it of items) {
+    if (!moved(it.x, it.y) && !plan.to.has(`${it.x},${it.y}`)) continue
+    if (wells && itemTiles(next, it).some(([x, y]) => wells.has(y * site.w + x))) return 'Turned, something would stand where the stairs from below come up'
+    if (g && CLIMB.has(it.kind) && climbBlocked(g, f, it.kind, itemTiles(next, it))) return 'Turned, the stairs would come up through something on the floor above'
+  }
+  spend(s, plan.cost, siteBucket(site))
+  site.grid = grid
+  if (Object.keys(cuts).length) site.cuts = cuts
+  else delete site.cuts
+  site.walls = walls
+  site.items = items
+  tidy(site)
+  site.rev++
+  if (g && g !== site) g.rev++
+  return null
+}
+
+/** A floor copied onto another: what would be built, what is left behind and why, and what it costs. */
+export interface CopyQuote {
+  rooms: number
+  items: number
+  /** Pieces that cannot go on the floor copied to: outdoor things, heavy machinery upstairs, anything in a stairwell. */
+  skipped: number
+  cost: number
+  error: string | null
+}
+
+/** The plan of a copy of storey `from` onto storey `to` of the building `ref` names (its ground floor). `to` may be the floor over the top one. */
+function copyPlan(s: GameState, ref: string, from: number, to: number) {
+  const g = siteOf(s, ref)
+  const fail = (error: string) => ({ quote: { rooms: 0, items: 0, skipped: 0, cost: 0, error } as CopyQuote, src: null, items: [] as SiteItem[] })
+  if (!g || g.level) return fail(NO_SITE)
+  const storeys = (g.upper?.length ?? 0) + 1
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || from >= storeys) return fail('There is no such floor to copy')
+  if (to < 1 || to > storeys || to >= MAX_FLOORS || to === from) return fail('Copy a floor onto an upper floor, or onto a new floor over the top one')
+  const src = levelOf(g, from)!
+  const dst = levelOf(g, to)
+  if (dst?.rooms.length || dst?.items.length) return fail('That floor is already built on: clear it first, or copy onto the floor over the top one')
+  const probe = dst ?? blankLevel(g, to)
+  const wells = wellsOn(g, to)
+  const items: SiteItem[] = []
+  let skipped = 0
+  let cost = 0
+  for (const r of src.rooms) {
+    if (GROUND_ROOMS[g.kind].has(r.type)) continue
+    cost += roomCost(probe, r.type, roomTiles(src, r.n))
+  }
+  for (const it of src.items) {
+    const def = ITEMS[g.kind][it.kind]
+    const n = gridAt(src, it.x, it.y)
+    const room = roomOf(src, n)
+    if (!def || !n || !room || GROUND_ONLY[g.kind].has(it.kind) || GROUND_ROOMS[g.kind].has(room.type) || itemTiles(src, it).some(([x, y]) => wells.has(y * g.w + x)) || climbBlocked(g, to, it.kind, itemTiles(src, it))) {
+      skipped++
+      continue
+    }
+    items.push(it)
+    cost += def.cost
+  }
+  const rooms = src.rooms.filter((r) => !GROUND_ROOMS[g.kind].has(r.type)).length
+  if (!rooms) return fail('There is nothing on that floor that can stand upstairs')
+  return { quote: { rooms, items: items.length, skipped, cost: Math.round(cost), error: null } as CopyQuote, src, items }
+}
+
+/** What copying storey `from` of a building onto storey `to` would build and cost. */
+export const copyFloorQuote = (s: GameState, ref: string, from: number, to: number): CopyQuote => copyPlan(s, ref, from, to).quote
+
+/**
+ * Copy a whole storey's layout, its rooms, walls, doors, partitions and
+ * furniture, onto another floor of the same building: a bare one, or a new
+ * floor over the top one. Charged as building it all would be. What cannot
+ * stand upstairs is left out.
+ */
+export function copyFloor(s: GameState, ref: string, from: number, to: number): string | null {
+  const plan = copyPlan(s, ref, from, to)
+  const q = plan.quote
+  if (q.error || !plan.src) return q.error ?? NO_SITE
+  if (!canAfford(s, q.cost)) return `Not enough cash: the copy costs ${dollars(q.cost)}`
+  const g = siteOf(s, ref)!
+  const dst = to > (g.upper?.length ?? 0) ? buildOn(s, `${ref}@${to}`) : levelOf(g, to)
+  if (!dst) return NO_SITE
+  const src = plan.src
+  const keep = new Set(src.rooms.filter((r) => !GROUND_ROOMS[g.kind].has(r.type)).map((r) => r.n))
+  spend(s, q.cost, siteBucket(g))
+  dst.grid = src.grid.map((n) => (keep.has(n) ? n : 0))
+  dst.rooms = src.rooms.filter((r) => keep.has(r.n)).map((r) => ({ ...r }))
+  dst.nextRoom = src.nextRoom
+  dst.walls = src.walls.filter((w) => edgeSides(w.x, w.y, w.side).some(([x, y]) => keep.has(gridAt(src, x, y)))).map((w) => ({ ...w }))
+  const cuts = Object.fromEntries(Object.entries(src.cuts ?? {}).filter(([k]) => keep.has(gridAt(src, ...(k.split(',').map(Number) as [number, number])))))
+  if (Object.keys(cuts).length) dst.cuts = cuts
+  else delete dst.cuts
+  const curves = (src.curves ?? []).filter((c) => keep.has(c.room)).map((c) => structuredClone(c))
+  if (curves.length) dst.curves = curves
+  else delete dst.curves
+  dst.items = plan.items.map((it) => ({ ...it, id: `o${s.nextId++}` }))
+  tidy(dst)
+  dst.rev++
+  g.rev++
   return null
 }
 
