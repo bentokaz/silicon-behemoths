@@ -977,18 +977,36 @@ function buildStand(b: Body, type: DeviceType, m: Mats): THREE.Group {
     const block = slab(mount.w - 12, mount.h - 12, 6, 17, 2)
     add(block, 0, mount.y, back - 16)
     if (id === 'arm') {
-      // a leaning plate from the block down to a foot that reaches forward under the screen
-      const footT = 7
-      const footD = Math.min(230, Math.max(150, b.height * 0.5))
-      const drop = mount.y - (floor + footT)
-      const lean = drop * 0.3
-      const topZ = back - 9
-      const len = Math.hypot(drop, lean) + 10
-      const neck = slab((mount.w - 12) * 0.7, len, 4, 9, 2.5)
-      neck.translate(0, 0, -4.5)
-      const o = add(neck, 0, mount.y - drop / 2, topZ - lean / 2)
-      o.rotation.x = Math.atan2(lean, drop)
-      add(flatSlab(Math.max(190, b.width * 0.36), footD, 16, footT, 2.5), 0, floor, topZ - lean + footD * 0.5 - 22)
+      // a desk clamp, an upright post, two arm segments with joints, and a VESA plate behind the panel
+      const clampZ = back - 120
+      const postTop = floor + Math.max(150, b.height * 0.42)
+      add(flatSlab(120, 110, 16, 10, 3), 0, floor, clampZ)
+      add(new THREE.BoxGeometry(70, 40, 12), 0, floor + 30, clampZ - 52)
+      add(new THREE.CylinderGeometry(12, 12, postTop - floor, 24), 0, (postTop + floor) / 2, clampZ)
+      const joint = (y: number, z: number, r: number) => {
+        const o = add(new THREE.CylinderGeometry(r, r, 30, 24), 0, y, z)
+        o.rotation.z = Math.PI / 2
+      }
+      const link = (y0: number, z0: number, y1: number, z1: number) => {
+        const o = add(new THREE.BoxGeometry(22, 14, Math.hypot(y1 - y0, z1 - z0)), 0, (y0 + y1) / 2, (z0 + z1) / 2)
+        o.rotation.x = -Math.atan2(y1 - y0, z1 - z0)
+      }
+      const tipZ = back - 36
+      const wristY = mount.y + 10
+      const elbowY = postTop + 36
+      const midZ = (clampZ + tipZ) / 2
+      joint(postTop, clampZ, 18)
+      link(postTop, clampZ, elbowY, midZ)
+      joint(elbowY, midZ, 16)
+      link(elbowY, midZ, wristY, tipZ)
+      joint(wristY, tipZ, 15)
+      // VESA plate: a neck to the block and four screw heads on a square
+      add(new THREE.BoxGeometry(30, 30, 24), 0, wristY, back - 28)
+      const vs = Math.min(mount.w, mount.h) * 0.35
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+        const h = add(new THREE.CylinderGeometry(4, 4, 4, 12), sx * vs, mount.y + sy * vs, back - 20)
+        h.rotation.x = Math.PI / 2
+      }
     } else {
       // a round column behind the block, on a disc
       const r = Math.min(18, Math.max(11, b.width * 0.022))

@@ -67,7 +67,9 @@ export function screenTexture(type: DeviceType, wallpaper: number, width: number
   const step = Math.round(Math.log(width / height) / 0.03)
   // an operating system's look replaces the home screen of the devices that show one
   const kind = OS_SCREEN_OF[type]
-  const os = look && kind ? look : undefined
+  const own = look && kind ? look : undefined
+  // the device's own wallpaper wins over the system's default one
+  const os = own ? { ...own, wallpaper: WALLPAPERS[index][0], wallpaper2: WALLPAPERS[index][1], wallStyle: 'linear' as const } : undefined
   const key = `${type}|${index}|${step}|${detail < 1 ? 's' : 'l'}|${panel ? `${panel.name}@${panel.hz}:${panel.level ?? ''}` : ''}|${os ? JSON.stringify(os) : ''}`
   const hit = cache.get(key)
   if (hit) {

@@ -676,7 +676,7 @@ function ColoursPanel({ preview, setPreview }: { preview: number; setPreview: (i
   return (
     <>
       <Group title="Colourways">
-        <div className="text-[11px] leading-snug text-dim">Sell the device in up to three extra colours. Each adds a little appeal and a little cost. Click one to see it on the model.</div>
+        <div className="text-[11px] leading-snug text-dim">Sell the device in up to nine extra colours. Each adds a little appeal and a little cost. Click one to see it on the model.</div>
         <button type="button" aria-pressed={preview === -1} title="Show the standard colour on the model" onClick={() => setPreview(-1)} className={`mt-2 flex h-7 w-full items-center gap-2 border px-2 text-left text-xs ${preview === -1 ? 'border-accent bg-accent/10 text-fg' : 'border-line2 text-fg hover:border-fg'}`}>
           <span className="h-4 w-4 border border-line2" style={{ background: d.body.backColor }} />
           Standard
@@ -698,8 +698,8 @@ function ColoursPanel({ preview, setPreview }: { preview: number; setPreview: (i
             </div>
           </div>
         ))}
-        {colors.length < 3 && (
-          <Btn small icon="plus" className="mt-2 w-full" onClick={() => (setDraft({ colors: [...colors, { name: ['Midnight', 'Sage', 'Sand'][colors.length], back: ['#1c2330', '#7d9482', '#d9c7a8'][colors.length], frame: ['#161b25', '#6b8070', '#c4b393'][colors.length] }] }), setPreview(colors.length))}>
+        {colors.length < 9 && (
+          <Btn small icon="plus" className="mt-2 w-full" onClick={() => (setDraft({ colors: [...colors, { name: ['Midnight', 'Sage', 'Sand', 'Rose', 'Ocean', 'Ember', 'Violet', 'Slate', 'Ivory'][colors.length], back: ['#1c2330', '#7d9482', '#d9c7a8', '#d9a5b0', '#2f6f8f', '#c4572f', '#6a4c93', '#5a6470', '#ece6d8'][colors.length], frame: ['#161b25', '#6b8070', '#c4b393', '#c08e9a', '#245a75', '#a64624', '#563d7a', '#48515b', '#d6cfbd'][colors.length] }] }), setPreview(colors.length))}>
             Add a colour
           </Btn>
         )}

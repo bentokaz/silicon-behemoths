@@ -247,7 +247,7 @@ function Model({ product, onClose }: { product: Product; onClose: () => void }) 
         </Btn>
       </div>
       {!!product.design.colors?.length && (
-        <div className="absolute bottom-2 left-2 flex gap-1">
+        <div className="absolute bottom-2 left-2 flex max-w-[80%] flex-wrap gap-1">
           {[{ back: product.design.body.backColor, name: 'Standard' }, ...product.design.colors].map((c, i) => (
             <button key={i} type="button" title={c.name} aria-label={`Show it in ${c.name}`} aria-pressed={color === i - 1} onClick={() => setColor(i - 1)} className={`h-5 w-5 border ${color === i - 1 ? 'border-accent' : 'border-line2'}`} style={{ background: c.back }} />
           ))}
