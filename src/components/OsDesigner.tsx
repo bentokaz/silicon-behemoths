@@ -7,7 +7,7 @@ import { sfx } from '../audio/sfx'
 import { OS_SCREEN_NAMES, type OsScreen, motionPeriod, paintOsLook } from '../3d/osLook'
 import { yearAt } from '../data/eras'
 import { canAfford, setOsLicence, setOsLook } from '../sim/game'
-import { DEFAULT_OS_LOOK, OS_LICENCES, OS_LOOK_CHOICES, OS_WIDGETS, cleanLook, industryOs, licenceBlocked, licenceInfo, licenceOpen, licenceSwitchCost } from '../sim/tech'
+import { DEFAULT_OS_LOOK, OS_LICENCES, OS_LOOK_CHOICES, OS_WIDGETS, cleanLook, lookFor, industryOs, licenceBlocked, licenceInfo, licenceOpen, licenceSwitchCost } from '../sim/tech'
 import type { OsLook } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { Btn, Choice, ColorField, Filters, Fold, Help, Panel, Row, Tag, int, money, reducedMotion, useKept } from './ui'
@@ -76,8 +76,13 @@ const NAMES: Record<string, string> = {
   big: 'Big clock', stacked: 'Stacked hours', analog: 'Analogue', minimal: 'Minimal',
   off: 'Off', calm: 'Calm', normal: 'Normal', brisk: 'Brisk',
   sharp: 'Sharp', soft: 'Soft', round: 'Round',
+  digital: 'Digital', analog_: 'Hands', rings_: 'Activity rings', modular: 'Modular',
+  wide: 'Wide cards', posters: 'Posters', icons: 'Round icons',
+  full: 'Edge to edge', floating: 'Floating', centred: 'Centred apps',
 }
-const nameOf = (k: string, v: string) => (k === 'layout' && v === 'grid' ? NAMES.grid_ : (NAMES[v] ?? v))
+/** What the dock is on each kind of screen. */
+const DOCK_LABEL: Partial<Record<OsScreen, string>> = { phone: 'Dock', tablet: 'Dock', desktop: 'Taskbar edge', tv: 'Home row', console: 'Home row', handheld: 'Quick buttons', ereader: 'Toolbar', display: 'App row' }
+const nameOf = (k: string, v: string) => (k === 'layout' && v === 'grid' ? NAMES.grid_ : k === 'watchFace' && (v === 'analog' || v === 'rings') ? NAMES[`${v}_`] : (NAMES[v] ?? v))
 
 /** Wallpaper presets: two colours and how they are drawn. Gradients belong to the system's artwork, not the game's. */
 const WALL_PRESETS: { name: string; look: Partial<OsLook> }[] = [
@@ -96,10 +101,16 @@ const SWATCHES = ['#16324a', '#0a1018', '#ff8a3d', '#ff4d6d', '#34c77b', '#2f9bf
 export function OsLookDesigner() {
   const g = useGame()
   const { act } = useStore.getState()
-  const look = cleanLook(g.os.look)
+  const base = cleanLook(g.os.look)
   const [kind, setKind] = useKept<OsScreen>('os-preview-kind', 'phone')
   const [screen, setScreen] = useState<'home' | 'lock'>('home')
-  const set = (patch: Partial<OsLook>) => act((s) => setOsLook(s, patch))
+  const shown = KINDS.includes(kind) ? kind : 'phone'
+  // a kind of screen with a look of its own is edited on its own: every control below then changes that kind only
+  const own = !!base.kinds[shown]
+  const look = own ? lookFor(base, shown) : base
+  const setBase = (patch: Partial<OsLook>) => act((s) => setOsLook(s, patch))
+  const setKinds = (kinds: OsLook['kinds']) => act((s) => setOsLook(s, { kinds }))
+  const set = (patch: Partial<OsLook>) => (own ? setKinds({ ...base.kinds, [shown]: { ...base.kinds[shown], ...patch } }) : setBase(patch))
   const choice = <K extends keyof typeof OS_LOOK_CHOICES>(k: K, label: string) => (
     <Choice label={label} value={look[k] as string} options={(OS_LOOK_CHOICES[k] as readonly string[]).map((v) => ({ value: v, label: nameOf(k, v) }))} onChange={(v) => set({ [k]: v } as Partial<OsLook>)} />
   )
@@ -109,8 +120,9 @@ export function OsLookDesigner() {
       <ColorField label={label} showHex value={look[k]} presets={SWATCHES} onChange={(v) => set({ [k]: v })} />
     </label>
   )
-  const shown = KINDS.includes(kind) ? kind : 'phone'
   const toggleWidget = (id: string) => set({ widgets: look.widgets.includes(id) ? look.widgets.filter((w) => w !== id) : [...look.widgets, id].slice(0, 4) })
+  const kindName = OS_SCREEN_NAMES[shown].toLowerCase()
+  const others = KINDS.filter((k) => k !== shown && base.kinds[k]).map((k) => OS_SCREEN_NAMES[k])
   return (
     <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-2">
       <Panel
@@ -126,6 +138,28 @@ export function OsLookDesigner() {
           </>
         }
       >
+        <Fold title={`${OS_SCREEN_NAMES[shown]} screen`} icon="phone" keep="os-kind" bodyClass="pb-2">
+          <Choice
+            label="Look"
+            value={own ? 'own' : 'shared'}
+            options={[{ value: 'shared', label: 'Shared look' }, { value: 'own', label: `Customise for the ${kindName}` }]}
+            onChange={(v) => {
+              if (v === 'own') setKinds({ ...base.kinds, [shown]: { accent: base.accent } })
+              else {
+                const next = { ...base.kinds }
+                delete next[shown]
+                setKinds(next)
+              }
+            }}
+          />
+          <div className="pb-1 text-[11px] leading-snug text-faint">
+            {own ? `Every choice below now changes the ${kindName} only; the other screens keep the shared look.` : `The ${kindName} shows the shared look. Customise it to give this kind of screen choices of its own.`}
+            {others.length > 0 && ` Set apart: ${others.join(', ')}.`}
+          </div>
+          {shown === 'watch' && choice('watchFace', 'Watch face')}
+          {(shown === 'tv' || shown === 'console') && choice('tvRow', 'Home row tiles')}
+          {shown === 'desktop' && choice('taskbar', 'Taskbar')}
+        </Fold>
         <Fold title="Theme" icon="design" keep="os-theme" bodyClass="pb-2">
           <Choice label="Panels" value={look.dark ? 'dark' : 'light'} options={[{ value: 'dark', label: 'Dark' }, { value: 'light', label: 'Light' }]} onChange={(v) => set({ dark: v === 'dark' })} />
           {colour('accent', 'Accent')}
@@ -153,7 +187,7 @@ export function OsLookDesigner() {
         </Fold>
         <Fold title="Home screen" icon="home" keep="os-home" bodyClass="pb-2">
           {choice('layout', 'Apps')}
-          {choice('dock', 'Dock and taskbar')}
+          {shown !== 'watch' && choice('dock', DOCK_LABEL[shown] ?? 'Dock and taskbar')}
           <div className="mt-1 text-xs text-dim">Widgets, up to four</div>
           <div className="mt-1 grid grid-cols-3 gap-1">
             {OS_WIDGETS.map((w) => {
