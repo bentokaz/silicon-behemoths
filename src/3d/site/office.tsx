@@ -25,6 +25,8 @@ export interface OfficeCtx {
   progress?: number
   /** Work is going on here right now. */
   busy?: boolean
+  /** A meeting table joined to another at its left and right ends: drawn as one long table. */
+  join?: [boolean, boolean]
 }
 
 type V3 = [number, number, number]
@@ -295,7 +297,12 @@ export function OfficeItem({ kind, c }: { kind: string; c: OfficeCtx }) {
           {[-0.5, 0.5].map((x) => (
             <B key={x} p={[x, 0.36, 0]} s={[0.1, 0.72, 0.5]} c={DARK} r={0.02} />
           ))}
-          <B p={[0, 0.745, 0]} s={[1.5, 0.05, 0.86]} c={WALNUT} r={0.03} rough={0.35} />
+          {(() => {
+            // a top that runs on to the tile's edge where another table stands end to end with this one
+            const l = c.join?.[0] ? -1.0 : -0.75
+            const r = c.join?.[1] ? 1.0 : 0.75
+            return <B p={[(l + r) / 2, 0.745, 0]} s={[r - l, 0.05, 0.86]} c={WALNUT} r={c.join ? 0 : 0.03} rough={0.35} />
+          })()}
           <C p={[0, 0.795, 0]} r={[0.07, 0.11]} h={0.05} c={DARK} seg={3} cast={false} />
           {[-0.5, 0, 0.5].map((x) => (
             <group key={x}>
