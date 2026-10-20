@@ -1463,10 +1463,13 @@ export function placeItem(s: GameState, ref: string, kind: string, x: number, y:
   if (!site) return NO_SITE
   let turn = quarterTurns(rot)
   if (!site.level && (kind === 'dock_in' || kind === 'dock_out') && Number.isInteger(x) && Number.isInteger(y)) {
+    // a dock goes on the outer wall, facing out, when it fits there; otherwise where it was put
     const sn = snapDock(site, kind, x, y, turn)
-    x = sn.x
-    y = sn.y
-    turn = sn.rot
+    if (!canPlace(site, kind, sn.x, sn.y, sn.rot, wellsFor(s, ref))) {
+      x = sn.x
+      y = sn.y
+      turn = sn.rot
+    }
   }
   const err = canPlace(site, kind, x, y, turn, wellsFor(s, ref)) ?? siteLocked(s, site.kind, 'item', kind) ?? climbFor(s, ref, kind, tilesOf(ITEMS[site.kind][kind], x, y, turn))
   if (err) return err
