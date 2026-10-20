@@ -8,6 +8,7 @@ import { CLIP, type Facet, type Pt, bayStands, curveTiles, geomOf } from '../../
 import { FACADES, ROOFS, cutAt, defaultGround, edgeRuns, gridAt, groundAt, styleOf, wholeRun } from '../../sim/sites'
 import type { Corner, Room, Site } from '../../sim/types'
 import { hash } from './kit'
+import { planKey } from './plankey'
 
 /** How much of the building is drawn: low cut-away walls, full-height walls, or the outside with a roof. */
 export type ViewMode = 'cut' | 'walls' | 'full'
@@ -28,50 +29,130 @@ const colorOf = (hex: string) => {
   return c
 }
 
+/** A growing run of floats or indices, kept in a typed array so building a large site does not churn through plain arrays. */
+class Grow<T extends Float32Array | Uint32Array> {
+  n = 0
+  constructor(public a: T) {}
+  room(k: number) {
+    if (this.n + k <= this.a.length) return
+    let size = this.a.length * 2
+    while (size < this.n + k) size *= 2
+    const next = new (this.a.constructor as { new (n: number): T })(size)
+    next.set(this.a)
+    this.a = next
+  }
+}
+interface Group {
+  pos: Grow<Float32Array>
+  nor: Grow<Float32Array>
+  col: Grow<Float32Array>
+  idx: Grow<Uint32Array>
+  /** Vertices so far. */
+  v: number
+}
+
 /** Collects boxes and flat quads per material, then builds one mesh for each. */
 export class Batch {
-  private groups = new Map<string, { pos: number[]; nor: number[]; col: number[] }>()
-  private get(key: string) {
+  private groups = new Map<string, Group>()
+  private get(key: string): Group {
     let g = this.groups.get(key)
-    if (!g) this.groups.set(key, (g = { pos: [], nor: [], col: [] }))
+    if (!g) this.groups.set(key, (g = { pos: new Grow(new Float32Array(768)), nor: new Grow(new Float32Array(768)), col: new Grow(new Float32Array(768)), idx: new Grow(new Uint32Array(384)), v: 0 }))
     return g
   }
-  private face(g: { pos: number[]; nor: number[]; col: number[] }, v: number[][], n: number[], c: THREE.Color, shade: number) {
-    for (const i of [0, 1, 2, 0, 2, 3]) {
-      g.pos.push(v[i][0], v[i][1], v[i][2])
-      g.nor.push(n[0], n[1], n[2])
-      g.col.push(c.r * shade, c.g * shade, c.b * shade)
+  /** One vertex. */
+  private vert(g: Group, x: number, y: number, z: number, nx: number, ny: number, nz: number, r: number, gr: number, b: number) {
+    g.pos.room(3)
+    g.nor.room(3)
+    g.col.room(3)
+    const p = g.pos.a
+    const n = g.nor.a
+    const c = g.col.a
+    let i = g.pos.n
+    p[i] = x
+    p[i + 1] = y
+    p[i + 2] = z
+    n[i] = nx
+    n[i + 1] = ny
+    n[i + 2] = nz
+    c[i] = r
+    c[i + 1] = gr
+    c[i + 2] = b
+    i += 3
+    g.pos.n = g.nor.n = g.col.n = i
+    g.v++
+  }
+  private tri3(g: Group, a: number, b: number, c: number) {
+    g.idx.room(3)
+    const ix = g.idx.a
+    const i = g.idx.n
+    ix[i] = a
+    ix[i + 1] = b
+    ix[i + 2] = c
+    g.idx.n = i + 3
+  }
+  /** Four corners in order round the face, sharing one normal: two triangles. */
+  private face4(g: Group, q: ArrayLike<number>, nx: number, ny: number, nz: number, c: THREE.Color, shade: number) {
+    const base = g.v
+    const r = c.r * shade
+    const gr = c.g * shade
+    const b = c.b * shade
+    for (let k = 0; k < 12; k += 3) this.vert(g, q[k], q[k + 1], q[k + 2], nx, ny, nz, r, gr, b)
+    this.tri3(g, base, base + 1, base + 2)
+    this.tri3(g, base, base + 2, base + 3)
+  }
+  /** The six faces of a box from its eight corners, numbered by (i, j, k) bits: 1 east, 2 up, 4 south. */
+  private hull(g: Group, cx: Float64Array, c: THREE.Color, shade: number, turn?: [number, number]) {
+    const q = Q
+    const set = (...ids: number[]) => {
+      for (let t = 0; t < 4; t++) {
+        const id = ids[t] * 3
+        q[t * 3] = cx[id]
+        q[t * 3 + 1] = cx[id + 1]
+        q[t * 3 + 2] = cx[id + 2]
+      }
     }
+    const [cos, sin] = turn ?? [1, 0]
+    // normals turned with the box: (nx, nz) -> (nx cos + nz sin, -nx sin + nz cos)
+    set(4, 5, 7, 6)
+    this.face4(g, q, sin, 0, cos, c, shade)
+    set(1, 0, 2, 3)
+    this.face4(g, q, -sin, 0, -cos, c, shade)
+    set(5, 1, 3, 7)
+    this.face4(g, q, cos, 0, -sin, c, shade)
+    set(0, 4, 6, 2)
+    this.face4(g, q, -cos, 0, sin, c, shade)
+    set(6, 7, 3, 2)
+    this.face4(g, q, 0, 1, 0, c, shade)
+    set(0, 1, 5, 4)
+    this.face4(g, q, 0, -1, 0, c, shade)
   }
   /** An axis-aligned box centred at (x, y, z). */
   box(key: string, x: number, y: number, z: number, sx: number, sy: number, sz: number, color: string, shade = 1) {
     const g = this.get(key)
-    const c = colorOf(color)
-    const [a, b, d] = [sx / 2, sy / 2, sz / 2]
-    const p = (i: number, j: number, k: number) => [x + i * a, y + j * b, z + k * d]
-    this.face(g, [p(-1, -1, 1), p(1, -1, 1), p(1, 1, 1), p(-1, 1, 1)], [0, 0, 1], c, shade)
-    this.face(g, [p(1, -1, -1), p(-1, -1, -1), p(-1, 1, -1), p(1, 1, -1)], [0, 0, -1], c, shade)
-    this.face(g, [p(1, -1, 1), p(1, -1, -1), p(1, 1, -1), p(1, 1, 1)], [1, 0, 0], c, shade)
-    this.face(g, [p(-1, -1, -1), p(-1, -1, 1), p(-1, 1, 1), p(-1, 1, -1)], [-1, 0, 0], c, shade)
-    this.face(g, [p(-1, 1, 1), p(1, 1, 1), p(1, 1, -1), p(-1, 1, -1)], [0, 1, 0], c, shade)
-    this.face(g, [p(-1, -1, -1), p(1, -1, -1), p(1, -1, 1), p(-1, -1, 1)], [0, -1, 0], c, shade)
+    const a = sx / 2
+    const b = sy / 2
+    const d = sz / 2
+    for (let id = 0; id < 8; id++) {
+      CORNERS[id * 3] = x + (id & 1 ? a : -a)
+      CORNERS[id * 3 + 1] = y + (id & 2 ? b : -b)
+      CORNERS[id * 3 + 2] = z + (id & 4 ? d : -d)
+    }
+    this.hull(g, CORNERS, colorOf(color), shade)
   }
   /** A flat rectangle facing up (or down). */
   quad(key: string, x0: number, z0: number, x1: number, z1: number, y: number, color: string, shade = 1, up = true) {
     const g = this.get(key)
     const c = colorOf(color)
-    if (up) this.face(g, [[x0, y, z1], [x1, y, z1], [x1, y, z0], [x0, y, z0]], [0, 1, 0], c, shade)
-    else this.face(g, [[x0, y, z0], [x1, y, z0], [x1, y, z1], [x0, y, z1]], [0, -1, 0], c, shade)
+    if (up) this.face4(g, [x0, y, z1, x1, y, z1, x1, y, z0, x0, y, z0], 0, 1, 0, c, shade)
+    else this.face4(g, [x0, y, z0, x1, y, z0, x1, y, z1, x0, y, z1], 0, -1, 0, c, shade)
   }
   /** A flat triangle facing up. Points are [x, z], counter-clockwise seen from above. */
   tri(key: string, pts: [number, number][], y: number, color: string, shade = 1) {
     const g = this.get(key)
     const c = colorOf(color)
-    for (const [x, z] of pts) {
-      g.pos.push(x, y, z)
-      g.nor.push(0, 1, 0)
-      g.col.push(c.r * shade, c.g * shade, c.b * shade)
-    }
+    const base = g.v
+    for (const [x, z] of pts) this.vert(g, x, y, z, 0, 1, 0, c.r * shade, c.g * shade, c.b * shade)
+    for (let i = 0; i + 2 < pts.length; i += 3) this.tri3(g, base + i, base + i + 1, base + i + 2)
   }
   /** A flat convex polygon facing up or down. Points are [x, z], in either order. */
   poly(key: string, pts: Pt[], y: number, color: string, shade = 1, up = true) {
@@ -86,13 +167,9 @@ export class Batch {
     }
     // seen from above, a face that looks up has its points running this way round
     const order = area < 0 === up ? pts : [...pts].reverse()
-    for (let i = 1; i + 1 < order.length; i++) {
-      for (const [x, z] of [order[0], order[i], order[i + 1]]) {
-        g.pos.push(x, y, z)
-        g.nor.push(0, up ? 1 : -1, 0)
-        g.col.push(c.r * shade, c.g * shade, c.b * shade)
-      }
-    }
+    const base = g.v
+    for (const [x, z] of order) this.vert(g, x, y, z, 0, up ? 1 : -1, 0, c.r * shade, c.g * shade, c.b * shade)
+    for (let i = 1; i + 1 < order.length; i++) this.tri3(g, base, base + i, base + i + 1)
   }
   /**
    * An upright face from (ax, az) to (bx, bz) between two heights, seen from
@@ -102,45 +179,47 @@ export class Batch {
   upright(key: string, ax: number, az: number, bx: number, bz: number, y0: number, y1: number, na: Pt, nb: Pt, color: string, shade = 1) {
     const g = this.get(key)
     const c = colorOf(color)
+    const r = c.r * shade
+    const gr = c.g * shade
+    const b = c.b * shade
     const facing = -(bz - az) * (na[0] + nb[0]) + (bx - ax) * (na[1] + nb[1]) >= 0
-    const a0 = [ax, y0, az, na[0], na[1]]
-    const b0 = [bx, y0, bz, nb[0], nb[1]]
-    const b1 = [bx, y1, bz, nb[0], nb[1]]
-    const a1 = [ax, y1, az, na[0], na[1]]
-    const v = facing ? [a0, b0, b1, a1] : [a0, a1, b1, b0]
-    for (const i of [0, 1, 2, 0, 2, 3]) {
-      g.pos.push(v[i][0], v[i][1], v[i][2])
-      g.nor.push(v[i][3], 0, v[i][4])
-      g.col.push(c.r * shade, c.g * shade, c.b * shade)
+    const base = g.v
+    this.vert(g, ax, y0, az, na[0], 0, na[1], r, gr, b)
+    this.vert(g, bx, y0, bz, nb[0], 0, nb[1], r, gr, b)
+    this.vert(g, bx, y1, bz, nb[0], 0, nb[1], r, gr, b)
+    this.vert(g, ax, y1, az, na[0], 0, na[1], r, gr, b)
+    // corners 0 a-low, 1 b-low, 2 b-high, 3 a-high; seen from the other side they run the other way round
+    if (facing) {
+      this.tri3(g, base, base + 1, base + 2)
+      this.tri3(g, base, base + 2, base + 3)
+    } else {
+      this.tri3(g, base, base + 3, base + 2)
+      this.tri3(g, base, base + 2, base + 1)
     }
   }
   /** A box turned about the vertical axis by `rot` radians. */
   boxRot(key: string, x: number, y: number, z: number, sx: number, sy: number, sz: number, rot: number, color: string, shade = 1) {
     const g = this.get(key)
-    const c = colorOf(color)
     const cos = Math.cos(rot)
     const sin = Math.sin(rot)
-    const p = (i: number, j: number, k: number) => {
-      const lx = (i * sx) / 2
-      const lz = (k * sz) / 2
-      return [x + lx * cos + lz * sin, y + (j * sy) / 2, z - lx * sin + lz * cos]
+    for (let id = 0; id < 8; id++) {
+      const lx = ((id & 1 ? 1 : -1) * sx) / 2
+      const lz = ((id & 4 ? 1 : -1) * sz) / 2
+      CORNERS[id * 3] = x + lx * cos + lz * sin
+      CORNERS[id * 3 + 1] = y + ((id & 2 ? 1 : -1) * sy) / 2
+      CORNERS[id * 3 + 2] = z - lx * sin + lz * cos
     }
-    const n = (nx: number, nz: number) => [nx * cos + nz * sin, 0, -nx * sin + nz * cos]
-    this.face(g, [p(-1, -1, 1), p(1, -1, 1), p(1, 1, 1), p(-1, 1, 1)], n(0, 1), c, shade)
-    this.face(g, [p(1, -1, -1), p(-1, -1, -1), p(-1, 1, -1), p(1, 1, -1)], n(0, -1), c, shade)
-    this.face(g, [p(1, -1, 1), p(1, -1, -1), p(1, 1, -1), p(1, 1, 1)], n(1, 0), c, shade)
-    this.face(g, [p(-1, -1, -1), p(-1, -1, 1), p(-1, 1, 1), p(-1, 1, -1)], n(-1, 0), c, shade)
-    this.face(g, [p(-1, 1, 1), p(1, 1, 1), p(1, 1, -1), p(-1, 1, -1)], [0, 1, 0], c, shade)
-    this.face(g, [p(-1, -1, -1), p(1, -1, -1), p(1, -1, 1), p(-1, -1, 1)], [0, -1, 0], c, shade)
+    this.hull(g, CORNERS, colorOf(color), shade, [cos, sin])
   }
   build(materials: (key: string) => { material: THREE.Material; cast?: boolean }): THREE.Mesh[] {
     const out: THREE.Mesh[] = []
     for (const [key, g] of this.groups) {
-      if (!g.pos.length) continue
+      if (!g.v) continue
       const geo = new THREE.BufferGeometry()
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(g.pos, 3))
-      geo.setAttribute('normal', new THREE.Float32BufferAttribute(g.nor, 3))
-      geo.setAttribute('color', new THREE.Float32BufferAttribute(g.col, 3))
+      geo.setAttribute('position', new THREE.BufferAttribute(g.pos.a.slice(0, g.pos.n), 3))
+      geo.setAttribute('normal', new THREE.BufferAttribute(g.nor.a.slice(0, g.nor.n), 3))
+      geo.setAttribute('color', new THREE.BufferAttribute(g.col.a.slice(0, g.col.n), 3))
+      geo.setIndex(new THREE.BufferAttribute(g.v < 65536 ? Uint16Array.from(g.idx.a.subarray(0, g.idx.n)) : g.idx.a.slice(0, g.idx.n), 1))
       const m = materials(key)
       const mesh = new THREE.Mesh(geo, m.material)
       mesh.castShadow = m.cast ?? true
@@ -150,6 +229,9 @@ export class Batch {
     return out
   }
 }
+/** Scratch space for the corners of one box and the four points of one face. */
+const CORNERS = new Float64Array(24)
+const Q = new Float64Array(12)
 
 const shared = new Map<string, THREE.Material>()
 /** Materials for structure meshes, keyed by what kind of surface they are. */
@@ -260,8 +342,24 @@ function Water({ tiles, w, h, dim }: { tiles: [number, number][]; w: number; h: 
 }
 
 /** Floors of every room and the open ground of the plot. */
-export function Ground({ site, dim }: { site: Site; dim: number }) {
-  const built = useMemo(() => {
+export function Ground({ site, dim, upper = false }: { site: Site; dim: number; /** An upper floor: only the rooms' floors, no ground. */ upper?: boolean }) {
+  // the floors and the open ground follow the plan, not the furniture: a desk put down leaves them as they are
+  const key = planKey(site)
+  const built = useMemo(() => groundMeshes(site, dim, upper), [key, dim, upper]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => built.meshes.forEach((m) => m.geometry.dispose()), [built])
+  return (
+    <>
+      {built.meshes.map((m) => (
+        <primitive key={m.uuid} object={m} />
+      ))}
+      {built.water.length > 0 && <Water tiles={built.water} w={site.w} h={site.h} dim={dim} />}
+    </>
+  )
+}
+
+/** The meshes of the room floors and the open ground. */
+export function groundMeshes(site: Site, dim: number, upper = false): { meshes: THREE.Mesh[]; water: [number, number][] } {
+  {
     const b = new Batch()
     const rooms = new Map<number, Room>(site.rooms.map((r) => [r.n, r]))
     const curved = curveTiles(site)
@@ -271,6 +369,8 @@ export function Ground({ site, dim }: { site: Site; dim: number }) {
     const wet = (x: number, y: number) => !gridAt(site, x, y) && site.floor[`${x},${y}`] === 'water'
     /** Open ground on a tile: the whole of it, or just the given pieces. */
     const lay = (x: number, y: number, pieces: Pt[][] | null) => {
+      // upstairs there is no ground: what is not a room is left open to the floor below
+      if (upper) return
       const jitter = (0.86 + hash(x * 31 + y * 17) * 0.1) * dim
       const g = groundAt(site, x, y)
       const key = `floor${Math.round(g.rough * 10)}`
@@ -300,7 +400,7 @@ export function Ground({ site, dim }: { site: Site; dim: number }) {
               for (const p of edge.shape.outside) b.poly(`floor${Math.round(fs.rough * 10)}`, shift(p), 0, fs.floor, jitter)
             } else lay(x, y, edge.shape.outside.map(shift))
           } else b.quad(key, ox + x, oz + y, ox + x + 1, oz + y + 1, 0, st.floor, jitter)
-        } else if (wet(x, y)) {
+        } else if (!upper && wet(x, y)) {
           water.push([x, y])
           // a stone bank wherever the water meets dry land, and a dark bed underneath
           b.quad('floor9', ox + x, oz + y, ox + x + 1, oz + y + 1, WATER_Y - 0.25, '#20313a', dim)
@@ -318,17 +418,7 @@ export function Ground({ site, dim }: { site: Site; dim: number }) {
       }
     }
     return { meshes: b.build((k) => surface(k)), water }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [site, site.rev, dim])
-  useEffect(() => () => built.meshes.forEach((m) => m.geometry.dispose()), [built])
-  return (
-    <>
-      {built.meshes.map((m) => (
-        <primitive key={m.uuid} object={m} />
-      ))}
-      {built.water.length > 0 && <Water tiles={built.water} w={site.w} h={site.h} dim={dim} />}
-    </>
-  )
+  }
 }
 
 /**
@@ -339,7 +429,21 @@ export function Ground({ site, dim }: { site: Site; dim: number }) {
  * the storeys above them.
  */
 export function Structure({ site, mode, glow, leaves = true, dark }: { site: Site; mode: ViewMode; glow: number; leaves?: boolean; dark?: ReadonlySet<number> }) {
-  const meshes = useMeshes(() => {
+  // walls follow the plan: furniture coming and going does not put the whole building up again
+  const key = planKey(site)
+  const meshes = useMeshes(() => structureMeshes(site, mode, glow, leaves, dark), [key, mode, glow, leaves, dark])
+  return (
+    <>
+      {meshes.map((m) => (
+        <primitive key={m.uuid} object={m} />
+      ))}
+    </>
+  )
+}
+
+/** The meshes of the walls, doors, glazing, upper floors and roof. */
+export function structureMeshes(site: Site, mode: ViewMode, glow: number, leaves = true, dark?: ReadonlySet<number>): THREE.Mesh[] {
+  {
     const b = new Batch()
     const rooms = new Map<number, Room>(site.rooms.map((r) => [r.n, r]))
     const curved = curveTiles(site)
@@ -863,12 +967,5 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
     // only the outside view lights its glass: indoors, glowing partitions would get in the way
     // (a glass bay with no light behind it is the same glass, without the glow)
     return b.build((k) => (k === 'glassoff' ? surface('glass', 0) : surface(k, k === 'lit' || k === 'plate' || (k === 'glass' && full) ? Math.round(glow * 10) / 10 : 0)))
-  }, [site, site.rev, mode, glow, leaves, dark])
-  return (
-    <>
-      {meshes.map((m) => (
-        <primitive key={m.uuid} object={m} />
-      ))}
-    </>
-  )
+  }
 }

@@ -11,10 +11,10 @@ import type { Mood } from '../3d/site/env'
 import type { ViewMode } from '../3d/site/structure'
 import { sfx } from '../audio/sfx'
 import { MIN_THICK } from '../sim/curves'
-import { DIFFICULTY, EDGE_COST, PART_COST, clearZone, fillRoom, lookCost, paintArea, placeItems, player, removeItems, removeRoom, roomCost, rotateItem, setEdges, setLook, setRoomStyle, zoneRoom } from '../sim/game'
+import { DIFFICULTY, EDGE_COST, PART_COST, clearZone, fillRoom, lookCost, paintArea, placeItems, player, removeItems, removeRoom, roomCost, rotateItem, setEdges, setLook, setRoomStyle, siteOf, zoneRoom } from '../sim/game'
 import { factoryLife, officeLife, storeLife, venueLife } from '../sim/life'
 import { type CapId, capOf, has, lockTip } from '../sim/progress'
-import { FACADES, GROUNDS, ITEMS, type ItemDef, type LineStats, MAX_FLOORS, OUT, ROOFS, ROOMS, builtTiles, gridAt, groundsFor, itemAllowed, needsOf, roomNames, roomOf, sealedRooms, upkeep } from '../sim/sites'
+import { FACADES, GROUNDS, ITEMS, type ItemDef, type LineStats, MAX_FLOORS, OUT, ROOFS, ROOMS, builtTiles, gridAt, groundsFor, itemAllowed, linkedLevels, needsOf, roomNames, roomOf, sealedOn, sealedRooms, upkeep } from '../sim/sites'
 import type { Employee, GameState, Product, Site, SiteItem } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { actionFor, keyName, keysFor } from '../store/settings'
@@ -76,6 +76,8 @@ const ARCS: { sweep: number; name: string; icon: IconName; note: string }[] = [
 /** Which way the open side of an arc faces, by quarter turn. */
 const OPEN_SIDE: Record<number, string[]> = { 180: ['south', 'west', 'north', 'east'], 90: ['south-east', 'south-west', 'north-west', 'north-east'], 270: ['south-east', 'south-west', 'north-west', 'north-east'] }
 const FACING = ['north', 'east', 'south', 'west']
+/** What a storey is called: 0 is the ground floor. */
+const floorName = (f: number) => (f ? `Floor ${f}` : 'Ground floor')
 type EdgeKind = 'door' | 'glass' | 'open' | 'wall'
 const EDGE_ICONS: Record<EdgeKind, IconName> = { door: 'door', glass: 'glass', open: 'opening', wall: 'wall' }
 const EDGES: { kind: EdgeKind; name: string; note: string }[] = [
@@ -123,7 +125,7 @@ function useBottom(ref: React.RefObject<HTMLElement | null>, fallback: number): 
 }
 
 /** A row of the palette: a thing to pick. One that cannot be used is dashed and says why underneath; it is never faded. */
-function PickRow({ on, off, why, title, onClick, children, right, onPeek }: { on: boolean; /** Cannot be used now. */ off?: boolean; /** The reason, shown under the name and on hover. */ why?: string; title?: string; onClick: () => void; children: ReactNode; right?: ReactNode; /** Told which row the pointer (or the focus) rests on, for the card beside the palette; null when it leaves. */ onPeek?: (row: HTMLElement | null) => void }) {
+function PickRow({ on, off, why, tag, plain, title, onClick, children, right, onPeek }: { on: boolean; /** Cannot be used now. */ off?: boolean; /** The reason, shown under the name and on hover. */ why?: string; /** Where it goes, under the name: marked as fitting or not where the builder is looking. */ tag?: { ok: boolean; text: string }; /** The tag only informs: there is no place to fit or not. */ plain?: boolean; title?: string; onClick: () => void; children: ReactNode; right?: ReactNode; /** Told which row the pointer (or the focus) rests on, for the card beside the palette; null when it leaves. */ onPeek?: (row: HTMLElement | null) => void }) {
   return (
     <button
       type="button"
@@ -141,6 +143,12 @@ function PickRow({ on, off, why, title, onClick, children, right, onPeek }: { on
           <span className="mt-[2px] flex items-center gap-[5px] text-[11px] leading-snug text-dim">
             <Icon name={off ? 'lock' : 'info'} size={10} className="shrink-0" />
             <span className="min-w-0 truncate">{why}</span>
+          </span>
+        )}
+        {tag && (
+          <span className={`mt-[2px] flex items-center gap-[5px] text-[11px] leading-snug ${plain ? 'text-faint' : tag.ok ? 'text-pos' : 'text-warn'}`}>
+            {!plain && <Icon name={tag.ok ? 'check' : 'ban'} size={10} className="shrink-0" />}
+            <span className="min-w-0 truncate">{tag.text}</span>
           </span>
         )}
       </span>
@@ -161,9 +169,17 @@ function defaultStatus(site: Site): Figure[] {
   ]
 }
 
-export function SiteBuilder({ siteRef, site, status, children, tools, seated, idle, line, producing, products, busy, show }: Props) {
+export function SiteBuilder({ siteRef, site: ground, status, children, tools, seated, idle, line, producing, products, busy, show }: Props) {
   const g = useGame()
   const { act, say } = useStore.getState()
+  // ---- the storey being built on: 0 is the ground floor; an office's upper floors are plans of their own
+  const [floorPick, setFloor] = useState(0)
+  const storeys = (ground.upper?.length ?? 0) + 1
+  const floor = Math.min(floorPick, storeys - 1)
+  /** The plan being built on: the ground floor, or the upper floor picked. */
+  const site = (floor && ground.upper?.[floor - 1]) || ground
+  /** How the sim names that plan. */
+  const ref = floor ? `${siteRef}@${floor}` : siteRef
   const defs = ITEMS[site.kind]
   const rooms = ROOMS[site.kind]
   const groups = useMemo(() => [...new Set(Object.values(defs).map((d) => d.group))], [defs])
@@ -209,6 +225,7 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
   const [walk, setWalk] = useState(false)
   const endWalk = useCallback(() => setWalk(false), [])
   const startWalk = () => {
+    setFloor(0)
     setTool(null)
     setOpen(false)
     setDetail(false)
@@ -224,7 +241,21 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
   const curvy = drawn === 'round' || drawn === 'ring'
   const active: SiteTool = tool?.type === 'item' ? { ...tool, rot } : tool && 'shape' in tool ? { ...tool, shape: drawn, opts: curvy ? { thick, sweep, turn: rot } : undefined } : tool
   const room = selected ? roomOf(site, selected) : undefined
-  const sealed = sealedRooms(site)
+  /**
+   * The room the pointer last rested on in the view (0 for open ground, -1 for none yet). It is taken
+   * only once the pointer has stayed a moment, so crossing other rooms on the way to the palette does
+   * not shuffle the list.
+   */
+  const [rested, setRested] = useState(-1)
+  const restTimer = useRef(0)
+  const onHoverRoom = useCallback((n: number) => {
+    window.clearTimeout(restTimer.current)
+    restTimer.current = window.setTimeout(() => setRested(n), 350)
+  }, [])
+  useEffect(() => () => window.clearTimeout(restTimer.current), [])
+  /** Every piece of furniture is listed, not only what goes where the builder is looking. */
+  const [showAll, setShowAll] = useState(false)
+  const sealed = floor ? sealedOn(ground, floor) : sealedRooms(site)
   /** What the area tool says about the ground under it: that it would fill a courtyard, or why it cannot. */
   const [note, setNote] = useState<AreaNote | undefined>(undefined)
   const onPreview = useCallback((n: number, about?: AreaNote) => {
@@ -243,9 +274,31 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
   // ---- every change is a step that can be undone
   /** Runs one of the sim's building actions as a step. Says whether anything came of it. */
   const step = <T,>(label: string, fn: (s: GameState) => T): { out: T; changed: boolean } => {
-    const before = `${site.rev}|${g.cash}`
-    const out = act((s) => record(s, siteRef, label, fn))
-    return { out, changed: `${site.rev}|${g.cash}` !== before }
+    const before = `${ground.rev}|${site.rev}|${g.cash}`
+    // the history is the whole building's, whichever floor the step is on; a change upstairs is a change to the building
+    const out = act((s) =>
+      record(s, siteRef, label, (st) => {
+        const level = floor ? siteOf(st, ref) : null
+        const was = level?.rev
+        const done = fn(st)
+        const base = siteOf(st, siteRef)
+        if (level && base && level.rev !== was) base.rev++
+        return done
+      }),
+    )
+    return { out, changed: `${ground.rev}|${site.rev}|${g.cash}` !== before }
+  }
+  /** Go up or down a storey. What was picked on the old floor is let go. */
+  const toFloor = (f: number) => {
+    const next = Math.max(0, Math.min(storeys - 1, f))
+    if (next === floor) return
+    setFloor(next)
+    setSelected(0)
+    setRested(-1)
+    if (next && (tab === 'Grounds' || tab === 'Look')) (setTab('Rooms'), setTool(null))
+    if (next && (tool?.type === 'ground' || (tool?.type === 'room' && tool.shape !== 'rect' && tool.shape !== 'diag'))) setTool(null)
+    if (next && shape !== 'rect' && shape !== 'diag') setShape('rect')
+    sfx.toggle()
   }
   const refuse = (text: string) => say(text, 'bad')
   const undoStep = () => {
@@ -268,8 +321,8 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
   const redoable = canRedo(g, siteRef)
 
   // ---- keys
-  const live = useRef({ undoStep, redoStep, note, run, drawn, walk })
-  live.current = { undoStep, redoStep, note, run, drawn, walk }
+  const live = useRef({ undoStep, redoStep, note, run, drawn, walk, toFloor, floor, storeys })
+  live.current = { undoStep, redoStep, note, run, drawn, walk, toFloor, floor, storeys }
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName
@@ -279,6 +332,12 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
         e.preventDefault()
         if (e.code === 'KeyY' || e.shiftKey) live.current.redoStep()
         else live.current.undoStep()
+        return
+      }
+      // a storey up or down
+      if ((e.code === 'PageUp' || e.code === 'PageDown') && live.current.storeys > 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault()
+        live.current.toFloor(live.current.floor + (e.code === 'PageUp' ? 1 : -1))
         return
       }
       const action = actionFor(e, ['Building'])
@@ -315,7 +374,7 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
     }
     if (active.type === 'rotate') {
       if (!item) return void refuse('There is nothing there to turn. Click a piece of furniture.')
-      const { out } = step(`Turn ${defs[item.kind]?.name.toLowerCase() ?? 'item'}`, (s) => rotateItem(s, siteRef, item.id))
+      const { out } = step(`Turn ${defs[item.kind]?.name.toLowerCase() ?? 'item'}`, (s) => rotateItem(s, ref, item.id))
       if (out) refuse(out)
       else sfx.toggle()
     }
@@ -330,15 +389,15 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
     if (active?.type !== 'item') return
     const kind = active.kind
     const turn = active.rot
-    ran(step(defs[kind].name, (s) => placeItems(s, siteRef, kind, x0, y0, x1, y1, turn)).out, sfx.build)
+    ran(step(defs[kind].name, (s) => placeItems(s, ref, kind, x0, y0, x1, y1, turn)).out, sfx.build)
   }
   const onEdges = (wall: EdgeRun) => {
     if (active?.type !== 'edge') return
     const kind = active.kind
-    ran(step(EDGES.find((e) => e.kind === kind)!.name, (s) => setEdges(s, siteRef, wall, kind)).out, sfx.build)
+    ran(step(EDGES.find((e) => e.kind === kind)!.name, (s) => setEdges(s, ref, wall, kind)).out, sfx.build)
   }
   const onSell = (ids: string[]) => {
-    if (active?.type === 'remove') ran(step(ids.length === 1 ? 'Sale' : `Sale of ${ids.length}`, (s) => removeItems(s, siteRef, ids)).out, sfx.cash)
+    if (active?.type === 'remove') ran(step(ids.length === 1 ? 'Sale' : `Sale of ${ids.length}`, (s) => removeItems(s, ref, ids)).out, sfx.cash)
   }
   const onArea = (x0: number, y0: number, x1: number, y1: number, apart: boolean) => {
     if (!active) return
@@ -351,12 +410,12 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
       // floor laid against one joins it, unless it is asked to stand apart
       const start = roomOf(site, gridAt(site, x0, y0))
       const into = !apart && start?.type === type ? start.n : undefined
-      const { out } = step(rooms[type].name, (s) => (active.shape === 'fill' ? fillRoom(s, siteRef, type, x0, y0, apart) : zoneRoom(s, siteRef, type, x0, y0, x1, y1, box, into, opts, apart)))
+      const { out } = step(rooms[type].name, (s) => (active.shape === 'fill' ? fillRoom(s, ref, type, x0, y0, apart) : zoneRoom(s, ref, type, x0, y0, x1, y1, box, into, opts, apart)))
       if (out) refuse(out)
       else sfx.zone()
     } else if (active.type === 'clear') {
       const opts = active.opts
-      if (step('Demolition', (s) => clearZone(s, siteRef, x0, y0, x1, y1, box, opts)).changed) sfx.demolish()
+      if (step('Demolition', (s) => clearZone(s, ref, x0, y0, x1, y1, box, opts)).changed) sfx.demolish()
       else refuse('There are no rooms there to knock down.')
     } else if (active.type === 'ground') {
       const id = active.id
@@ -386,11 +445,11 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
         site={site}
         room={r}
         onStyle={(i) => {
-          if (step(`${rooms[r.type].name} finish`, (s) => setRoomStyle(s, siteRef, r.n, i)).changed) sfx.toggle()
+          if (step(`${rooms[r.type].name} finish`, (s) => setRoomStyle(s, ref, r.n, i)).changed) sfx.toggle()
         }}
         onFurnish={() => (close(), setTab('Furnish'), setOpen(true))}
         onDemolish={() => {
-          step(`${rooms[r.type].name} demolition`, (s) => removeRoom(s, siteRef, r.n))
+          step(`${rooms[r.type].name} demolition`, (s) => removeRoom(s, ref, r.n))
           sfx.demolish()
           shut()
         }}
@@ -450,6 +509,10 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
   else if (tool?.type === 'remove') {
     if (run) (hintTone = run.count ? 'live' : 'warn'), (hint = run.count ? [`Sell ${things(run.count, 'thing', 'things')} for ${money(run.cost)} back. Let go to sell`, ...key('cancel'), 'cancels'] : ['Nothing in that box to sell'])
     else hint = ['Sell: click a thing, or drag a box over several. Half the price comes back', ...key('cancel'), 'done']
+  } else if (floor && !site.rooms.length) hint = [`${floorName(floor)}: bare floor over the building below. Mark out rooms over the ground floor's rooms, then put stairs or a lift in, and on every floor under this one`, ...key('buildMenu')]
+  else if (floor && sealed.length && sealed.length === site.rooms.length && !linkedLevels(ground)) {
+    hintTone = 'warn'
+    hint = [`Nobody can get up to ${floorName(floor).toLowerCase()} yet: every floor up to it needs a staircase or a lift (Furnish, Floors), on the ground floor in a room with a door`]
   } else if (sealed.length) {
     hintTone = 'warn'
     hint = [`${sealed.length === 1 ? `The ${rooms[sealed[0].type].name.toLowerCase()} has` : `${num(sealed.length)} rooms have`} no door, so nothing inside counts. Add one under Build, Walls`]
@@ -513,7 +576,7 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
   )
 
   // ---- the strip: the screen's figures, or the builder's own, and what is wrong with the building
-  const figures: Figure[] = [...(status ?? defaultStatus(site))]
+  const figures: Figure[] = [...(status ?? defaultStatus(ground))]
   if (cutOff > 0) figures.push({ label: cutOff === 1 ? 'Room cut off' : 'Rooms cut off', value: num(cutOff), tone: 'warn', icon: 'alert', title: 'Nobody can walk to these rooms from the street: a room has no door, its door is blocked by furniture, or it only leads into another closed-off room. People who work there appear at their desks instead of walking in. Add or clear a door under Build, Walls.' })
 
   // ---- where things are, so that nothing floating lies on anything else
@@ -524,7 +587,15 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
 
   const tiles = builtTiles(site)
   // furniture that only goes in rooms the company cannot build yet stays off the list until it can
-  const items = Object.entries(defs).filter(([kind, d]) => d.group === group && itemAllowed(site, kind) && (!room || d.rooms.includes(room.type)) && (!needsOf(site.kind, 'item', kind) || has(g, needsOf(site.kind, 'item', kind) as CapId)))
+  const offered = Object.entries(defs).filter(([kind]) => itemAllowed(site, kind) && (!needsOf(site.kind, 'item', kind) || has(g, needsOf(site.kind, 'item', kind) as CapId)))
+  // where the furniture is for: the room picked in the view, else the room (or the open ground) the pointer last rested on
+  const restedRoom = rested > 0 ? roomOf(site, rested) : undefined
+  const place: { type: string; name: string } | null = room ? { type: room.type, name: rooms[room.type]?.name.toLowerCase() ?? 'room' } : restedRoom ? { type: restedRoom.type, name: rooms[restedRoom.type]?.name.toLowerCase() ?? 'room' } : rested === 0 ? { type: OUT, name: 'open ground' } : null
+  const fits = (d: ItemDef) => !!place && d.rooms.includes(place.type)
+  /** What a room is for comes first: the pieces that do its work, then the ones that go in few rooms, then the ones that go anywhere. */
+  const useful = (d: ItemDef) => (d.seats || d.station || d.meet || d.stage || d.visitors || d.crowd ? 0 : 1) * 100 + d.rooms.length
+  const narrowed = !!place && !showAll
+  const items = (narrowed ? offered.filter(([, d]) => fits(d)) : offered.filter(([, d]) => d.group === group)).sort(([, a], [, b]) => (place ? Number(fits(b)) - Number(fits(a)) : 0) || (narrowed ? groups.indexOf(a.group) - groups.indexOf(b.group) || useful(a) - useful(b) : 0))
   /** Why a piece of furniture cannot be put down yet: its room is not built, or the money is not there. */
   const itemWhy = (d: ItemDef): string | undefined => {
     if (!d.rooms.some((r) => r === OUT || site.rooms.some((x) => x.type === r))) {
@@ -554,7 +625,8 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
         <Stage3D label={`Drawing the ${KIND_NAME[site.kind]}`}>
           <SiteView
             key={`${site.kind}-${site.tier}`}
-            site={site}
+            site={ground}
+            floor={floor}
             mode={mode}
             mood={mood}
             tool={active}
@@ -570,6 +642,7 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
             onRun={onRun}
             onArea={onArea}
             onPreview={onPreview}
+            onHoverRoom={onHoverRoom}
             onOff={onOff}
             budget={budget}
             clear={clear}
@@ -608,6 +681,16 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
             <IconBtn icon="redo" title={redoable ? `Redo: ${redoable} (Ctrl+Shift+Z)` : 'Nothing to redo'} disabled={!redoable} className="-ml-px" onClick={redoStep} />
           </div>
           <SiteMenu label="View" value={mode} options={VIEWS} onChange={setMode} />
+          {ground.kind === 'office' && (
+            <div className="sb-float flex items-center" role="group" aria-label="Floor">
+              <IconBtn icon="arrowDown" title={floor ? `Down to ${floorName(floor - 1).toLowerCase()} (Page Down)` : 'This is the ground floor'} disabled={!floor} onClick={() => toFloor(floor - 1)} />
+              <span className="num min-w-[92px] px-2 text-center text-[11px] text-fg" title={storeys > 1 ? `${storeys} storeys. Build on each floor: upper floors stand over the rooms of the ground floor, and need stairs or a lift on every floor below them.` : 'One storey. Add floors under Build, Look; then build on each of them here.'}>
+                {floorName(floor)}
+                <span className="text-faint"> / {storeys}</span>
+              </span>
+              <IconBtn icon="arrowUp" className="-ml-px" title={floor < storeys - 1 ? `Up to ${floorName(floor + 1).toLowerCase()} (Page Up)` : storeys > 1 ? 'This is the top floor' : 'One storey: add floors under Build, Look'} disabled={floor >= storeys - 1} onClick={() => toFloor(floor + 1)} />
+            </div>
+          )}
           <SiteMenu
             label="Light"
             value={light}
@@ -667,12 +750,12 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
 
       {open && !walk && (
         <div data-coach-target="build" data-site-palette className="sb-float absolute left-2 z-10 flex flex-col" style={{ top: 48, width: PALETTE_W, maxHeight: 'calc(100% - 96px)' }}>
-          <Tabs value={tab} options={TABS.map((x) => ({ value: x, label: x }))} onChange={(t) => (setTab(t), setTool(null))} className="[&>button]:flex-1 [&>button]:justify-center [&>button]:px-1" />
+          <Tabs value={tab} options={TABS.filter((x) => !floor || (x !== 'Grounds' && x !== 'Look')).map((x) => ({ value: x, label: x }))} onChange={(t) => (setTab(t), setTool(null))} className="[&>button]:flex-1 [&>button]:justify-center [&>button]:px-1" />
           {(tab === 'Rooms' || tab === 'Grounds') && (
             <div className="shrink-0 border-b border-line px-2 py-[6px]">
               <div className={`grid gap-1 ${tab === 'Rooms' ? 'grid-cols-5' : 'grid-cols-4'}`}>
                 {(tab === 'Rooms' ? ROOM_SHAPES : GROUND_SHAPES).map((sh) => (
-                  <Btn key={sh} small className="!h-[38px] !px-0" active={(tab === 'Rooms' ? shape : drawn) === sh} onClick={() => setShape(sh)} title={SHAPE_NOTES[sh]}>
+                  <Btn key={sh} small className="!h-[38px] !px-0" active={(tab === 'Rooms' ? shape : drawn) === sh} disabled={!!floor && sh !== 'rect' && sh !== 'diag'} onClick={() => setShape(sh)} title={floor && sh !== 'rect' && sh !== 'diag' ? 'Upper floors are marked out as boxes or diagonals' : SHAPE_NOTES[sh]}>
                     <span className="flex flex-col items-center gap-[3px] text-[11px] leading-none">
                       <Icon name={SHAPE_ICONS[sh]} size={14} />
                       {SHAPE_NAMES[sh]}
@@ -711,7 +794,20 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
               )}
             </div>
           )}
-          {tab === 'Furnish' && (
+          {tab === 'Furnish' && place && (
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line py-[3px] pl-2 pr-1 text-[11px]">
+              <span className="min-w-0 truncate text-dim" title={room ? 'The room picked in the view. Click open ground or press Esc to let go of it.' : 'Where the pointer last rested in the view'}>
+                {showAll ? 'Everything, what fits ' : 'What goes '}
+                {place.type === OUT ? 'on ' : 'in the '}
+                <span className="text-fg">{place.name}</span>
+                {showAll ? ' first' : ''}
+              </span>
+              <Btn small tone="ghost" aria-pressed={showAll} title={showAll ? 'List only what goes here' : 'List every piece of furniture, by kind'} onClick={() => setShowAll((v) => !v)}>
+                {showAll ? 'Fits here' : 'Show all'}
+              </Btn>
+            </div>
+          )}
+          {tab === 'Furnish' && !narrowed && (
             <div role="group" aria-label="Kind of furniture" className="flex shrink-0 flex-wrap gap-1 border-b border-line px-2 py-[6px]">
               {groups.map((x) => (
                 <button key={x} type="button" aria-pressed={group === x} onClick={() => setGroup(x)} className={`h-6 border px-2 text-[11px] ${group === x ? 'border-accent bg-accent/10 text-accent' : 'border-line2 text-dim hover:border-fg hover:text-fg'}`}>
@@ -744,21 +840,19 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
                   </PickRow>
                 )
               })}
-            {tab === 'Furnish' && room && (
-              <div className="flex items-center justify-between border-b border-line py-[2px] pl-2 text-[11px] text-dim">
-                <span className="min-w-0 truncate">For the {rooms[room.type].name.toLowerCase()}</span>
-                <Btn small tone="ghost" onClick={() => setSelected(0)}>
-                  Show all
-                </Btn>
-              </div>
-            )}
             {tab === 'Furnish' &&
               (items.length ? (
-                items.map(([kind, d]) => {
+                items.map(([kind, d], i) => {
                   const on = tool?.type === 'item' && tool.kind === kind
                   const why = itemWhy(d)
+                  const ok = fits(d)
+                  // every row says where it goes: here, or which rooms instead
+                  const tag = place ? { ok, text: ok ? `Goes ${place.type === OUT ? 'on' : 'in the'} ${place.name}` : `Not here: goes in ${roomNames(site.kind, d)}` } : { ok: true, text: `Goes in ${roomNames(site.kind, d)}` }
+                  const head = narrowed && (i === 0 || items[i - 1][1].group !== d.group)
                   return (
-                    <PickRow key={kind} on={on} off={!!why} why={why} title={`${d.note} Goes in: ${roomNames(site.kind, d)}.`} onPeek={peekAt(`item:${kind}`, () => <ItemPeek kind={site.kind} def={d} why={why} />)} onClick={() => (why ? refuse(`${d.name}: ${why.charAt(0).toLowerCase()}${why.slice(1)}. It goes in: ${roomNames(site.kind, d)}.`) : pick(on ? null : { type: 'item', kind, rot }))} right={money(d.cost)}>
+                    <div key={kind}>
+                      {head && <div className="border-b border-line bg-raise px-2 py-[2px] text-[10px] uppercase tracking-wider text-faint">{d.group}</div>}
+                    <PickRow on={on} off={!!why} why={why} tag={why ? undefined : tag} plain={!place} title={`${d.note} Goes in: ${roomNames(site.kind, d)}.`} onPeek={peekAt(`item:${kind}`, () => <ItemPeek kind={site.kind} def={d} why={why} />)} onClick={() => (why ? refuse(`${d.name}: ${why.charAt(0).toLowerCase()}${why.slice(1)}. It goes in: ${roomNames(site.kind, d)}.`) : pick(on ? null : { type: 'item', kind, rot }))} right={money(d.cost)}>
                       <span className="min-w-0 truncate">{d.name}</span>
                       {(d.w > 1 || d.h > 1) && (
                         <span className="num shrink-0 text-[11px] text-dim">
@@ -766,10 +860,11 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
                         </span>
                       )}
                     </PickRow>
+                    </div>
                   )
                 })
               ) : (
-                <div className="px-2 py-3 text-[11px] text-dim">Nothing of this kind goes in that room.</div>
+                <div className="px-2 py-3 text-[11px] text-dim">{narrowed ? `Nothing you can buy yet goes ${place?.type === OUT ? 'on open ground' : 'in this room'}. Show all to see the rest.` : 'Nothing of this kind is on offer yet.'}</div>
               ))}
             {tab === 'Walls' &&
               EDGES.map((e) => {
@@ -800,7 +895,7 @@ export function SiteBuilder({ siteRef, site, status, children, tools, seated, id
                 <div className="border-b border-line px-2 pb-1 pt-2 text-[11px] text-dim">Roof</div>
                 {ROOFS.map((r, i) => lookRow(r.name, r.color, site.roof === i, lookCost(site, { roof: i }), () => look(`${r.name} roof`, { roof: i })))}
                 <div className="flex items-center justify-between gap-2 px-2 py-2">
-                  <span className="text-[11px] text-dim" title="Upper floors hold the departments you do not manage desk by desk. They add prestige and upkeep, and make new rooms cost more.">
+                  <span className="text-[11px] text-dim" title="Each upper floor is a floor of its own to build on: pick it with the floor switcher (Page Up, Page Down). Upper floors add prestige and upkeep, and make new ground-floor rooms cost more.">
                     Storeys <span className="num text-fg">{site.floors}</span>
                   </span>
                   <span className="flex gap-1">

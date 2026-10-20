@@ -22,7 +22,7 @@ import { ACCESSORY, footfall, storeBuyers } from './retail'
 import { contractBlocked, offerContracts, stepContracts } from './contracts'
 import { bayStands, curveAt, curveTiles, onCurve } from './curves'
 import { fixLayout, lineStats } from './factoryline'
-import { FACADES, FLOOR_COST, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, VENUE_PRESETS, type VenuePreset, rigFloors, venueLayout, type Shape, type ShapeOpts, SHORT_WALL, UNKNOWN_ITEM, areaOf, areaTiles, autoDoor, builtTiles, canPartition, canPlace, courtyardFor, curveFor, defaultGround, doorFits, fillError, gridAt, groundsFor, hasGround, inPlot, isBoundary, itemAllowed, itemAt, itemTiles, mergeRooms, newSite, openRooms, pocketAt, roomOf, rowSpots, shapeCuts, starterLine, storeStats, tidy, tierOf, touching, upkeep, partAt, venueStats, wallAt, zone } from './sites'
+import { FACADES, FLOOR_COST, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, VENUE_PRESETS, type VenuePreset, rigFloors, venueLayout, type Shape, type ShapeOpts, SHORT_WALL, UNKNOWN_ITEM, areaOf, areaTiles, autoDoor, builtTiles, canPartition, canPlace, courtyardFor, curveFor, defaultGround, doorFits, fillError, gridAt, groundsFor, hasGround, inPlot, isBoundary, itemAllowed, itemAt, itemTiles, mergeRooms, newSite, openRooms, pocketAt, roomOf, rowSpots, shapeCuts, starterLine, storeStats, syncLevels, tidy, tierOf, touching, upkeep, partAt, venueStats, wallAt, zone } from './sites'
 import { capOfChannel, locked, refreshExecs, siteLocked, stepProgress } from './progress'
 import { EXECS, HEADHUNT_COST, HOURS, TEAM_SPAN, dropFromTeams, execFx, inTraining, monthlySalaries, monthlyStaff, newPolicy, perksCost, refreshCandidates, staffEffects, stepStaff, trainingCost } from './staff'
 import { CHIP_BUDGET, OS_FEATURES, OS_TYPES, chipAdoption, cleanLook, licenceBlocked, licenceInfo, licenceSwitchCost, osRoyalty, chipBlocked, chipProjectCost, chipProjectDays, finishChip, newOs, osBlocked, osProjectCost, osProjectDays, osShipQuality, servicesPerMonth, softwareBonus } from './tech'
@@ -31,7 +31,7 @@ import { stockOf, type ChannelId, type Company, type Corner, type CostKey, type 
 // 7: site walls may be partitions inside a room (SiteWall.part, kind 'wall'); older saves have none and load as they are
 // 8: factory blocks have input and output faces; a floor laid before then is turned to match where it can be
 // 9: plots of the office grew (old ones are widened, see growPlot); products may reorder by themselves, OSes are licensed, contracts
-export const SAVE_VERSION = 9
+export const SAVE_VERSION = 10
 export const RETAIL_CUT = 0.15
 
 // ---------------------------------------------------------------- what an action will take
@@ -779,11 +779,20 @@ export function headhunt(s: GameState): string | null {
 
 export function siteOf(s: GameState, ref: string): Site | null {
   if (ref === 'office') return s.office
+  // an upper floor of the head office: "office@1" is the first floor
+  if (typeof ref === 'string' && ref.startsWith('office@')) {
+    const f = Number(ref.slice(7))
+    return Number.isInteger(f) && f > 0 ? (s.office.upper?.[f - 1] ?? null) : null
+  }
   if (ref === 'factory') return s.factory
   if (ref === 'venue') return s.venue
   return s.stores.find((st) => `store:${st.id}` === ref)?.site ?? null
 }
 const siteBucket = (site: Site): CostKey => (site.kind === 'office' ? 'overhead' : 'facilities')
+/** Upper floors are laid out in straight lines. */
+export const UPPER_SHAPE = 'Upper floors are marked out as boxes or diagonals: round rooms and courtyard fills are for the ground floor'
+/** A room upstairs needs building under it. */
+export const OVERHANG = 'An upper floor stands on the building below: mark the room out over rooms of the ground floor'
 /** Rooms cost more to build when the building has upper floors to carry. */
 export const roomCost = (site: Site, type: string, tiles: number) => Math.round(tiles * (ROOMS[site.kind][type]?.cost ?? 0) * (1 + 0.4 * (site.floors - 1)))
 
@@ -884,8 +893,10 @@ export function zoneRoom(s: GameState, ref: string, type: string, x0: number, y0
   if (!near(site, x0, y0, x1, y1)) return OFF_PLOT
   const lock = siteLocked(s, site.kind, 'room', type)
   if (lock) return lock
+  if (site.level && shape !== 'rect' && shape !== 'diag') return UPPER_SHAPE
   const plan = zonePlan(site, x0, y0, x1, y1, shape, opts)
-  if (!plan.tiles.length) return plan.offPlot ? OFF_PLOT : 'That land is already built on. Clear it first, or mark the room out on open ground.'
+  if (!plan.tiles.length) return plan.offPlot ? OFF_PLOT : site.level ? 'That floor is already built on. Clear it first, or mark the room out where the floor is bare.' : 'That land is already built on. Clear it first, or mark the room out on open ground.'
+  if (site.level && plan.tiles.some(([x, y]) => !gridAt(s.office, x, y))) return OVERHANG
   // diagonal rooms get their stepped edges cut to 45 degrees; round ones keep their true curve
   const cuts = shape === 'diag' ? shapeCuts(areaTiles(x0, y0, x1, y1, shape)) : {}
   return raise(s, site, type, plan.tiles, roomCost(site, type, plan.area), into, apart, cuts, plan.curve)
@@ -903,6 +914,7 @@ export function fillRoom(s: GameState, ref: string, type: string, x: number, y: 
   if (!site) return NO_SITE
   if (!lists(ROOMS[site.kind], type)) return 'There is no such kind of room for this plot'
   if (!whole(x) || !whole(y) || !inPlot(site, x, y)) return OFF_PLOT
+  if (site.level) return UPPER_SHAPE
   const lock = siteLocked(s, site.kind, 'room', type)
   if (lock) return lock
   const pocket = pocketAt(site, x, y)
@@ -929,14 +941,39 @@ export function clearZone(s: GameState, ref: string, x0: number, y0: number, x1:
     back += ITEMS[site.kind][it.kind].cost / 2
     return false
   })
+  const gone = new Set<number>()
   for (const key of hit) {
     const [x, y] = key.split(',').map(Number)
     site.grid[y * site.w + x] = 0
+    gone.add(y * site.w + x)
   }
+  back += dropAbove(site, gone)
   s.cash += back
   s.cur[siteBucket(site)] -= back
   tidy(site)
   site.rev++
+}
+
+/**
+ * The storeys above ground that was just cleared come down with it: the
+ * rooms over those tiles go, and what stood in them is sold for half its
+ * price, which is returned. Nothing happens on a building of one storey.
+ */
+function dropAbove(site: Site, tiles: Set<number>): number {
+  let back = 0
+  if (!tiles.size || site.level) return 0
+  for (const l of site.upper ?? []) {
+    if (![...tiles].some((i) => l.grid[i])) continue
+    l.items = l.items.filter((it) => {
+      if (!ITEMS[l.kind][it.kind] || !itemTiles(l, it).some(([x, y]) => tiles.has(y * l.w + x))) return true
+      back += ITEMS[l.kind][it.kind].cost / 2
+      return false
+    })
+    for (const i of tiles) l.grid[i] = 0
+    tidy(l)
+    l.rev++
+  }
+  return back
 }
 
 /** Knock down one whole room. */
@@ -949,7 +986,9 @@ export function removeRoom(s: GameState, ref: string, room: number) {
     back += ITEMS[site.kind][it.kind].cost / 2
     return false
   })
-  for (let i = 0; i < site.grid.length; i++) if (site.grid[i] === room) site.grid[i] = 0
+  const gone = new Set<number>()
+  for (let i = 0; i < site.grid.length; i++) if (site.grid[i] === room) (site.grid[i] = 0), gone.add(i)
+  back += dropAbove(site, gone)
   s.cash += back
   s.cur[siteBucket(site)] -= back
   tidy(site)
@@ -1142,12 +1181,16 @@ export function setLook(s: GameState, ref: string, look: { facade?: number; roof
   if (look.facade !== undefined && (!whole(look.facade) || !FACADES[look.facade])) return 'There is no such cladding'
   if (look.roof !== undefined && (!whole(look.roof) || !ROOFS[look.roof])) return 'There is no such roof'
   if (look.floors !== undefined && (!whole(look.floors) || look.floors < 1 || look.floors > MAX_FLOORS)) return `A building can have 1 to ${MAX_FLOORS} floors`
+  if (site.level) return 'The cladding, the roof and the number of floors are set for the whole building, from the ground floor'
+  // a storey with rooms on it is not taken off: they would be left in the air
+  if (look.floors !== undefined && site.upper?.slice(look.floors - 1).some((l) => l.rooms.length)) return 'The top floor has rooms on it. Clear them first, then take the storey off'
   const cost = lookCost(site, look)
   if (!canAfford(s, cost)) return `Not enough cash: that would cost ${dollars(cost)}`
   spend(s, cost, siteBucket(site))
   if (look.facade !== undefined) site.facade = look.facade
   if (look.roof !== undefined) site.roof = look.roof
   if (look.floors !== undefined) site.floors = look.floors
+  syncLevels(site)
   site.rev++
   return null
 }
@@ -1263,7 +1306,7 @@ export function paintFloor(s: GameState, ref: string, x: number, y: number, grou
 /** Lay a ground finish over an area of open land. */
 export function paintArea(s: GameState, ref: string, x0: number, y0: number, x1: number, y1: number, shape: Shape, groundId: string, opts?: ShapeOpts) {
   const site = siteOf(s, ref)
-  if (!site || !groundsFor(site).some((g) => g.id === groundId) || !SHAPES.includes(shape) || !near(site, x0, y0, x1, y1)) return
+  if (!site || site.level || !groundsFor(site).some((g) => g.id === groundId) || !SHAPES.includes(shape) || !near(site, x0, y0, x1, y1)) return
   const lay = ([x, y]: [number, number]) => {
     if (groundId === defaultGround(site).id) delete site.floor[`${x},${y}`]
     else site.floor[`${x},${y}`] = groundId
@@ -1318,6 +1361,19 @@ function transplant(old: Site, site: Site, dx: number, dy: number) {
   site.facade = old.facade
   site.roof = old.roof
   site.floors = old.floors
+  // the storeys above move with the building
+  if (old.upper?.length) {
+    site.upper = old.upper.map((l) => {
+      const to = newSite(site.kind, site.tier)
+      to.w = site.w
+      to.h = site.h
+      to.grid = new Array(site.w * site.h).fill(0)
+      transplant(l, to, dx, dy)
+      to.level = l.level
+      to.rev = l.rev + 1
+      return to
+    })
+  }
 }
 
 /** A plot widened to the size its kind and tier has now, with everything on it moved to the middle; the plot itself if it is already that big. */
@@ -2758,6 +2814,8 @@ export function migrate(input: GameState): GameState {
     if (s.venue) s.venue = growPlot(s.venue)
     for (const st of s.stores ?? []) st.site = growPlot(st.site)
   }
+  // version 10: the head office's upper storeys became floors of their own to build on, bare to begin with
+  if (from < 10 && s.office) syncLevels(s.office)
   s.unlocks = s.unlocks ?? {}
   s.execSeats = s.execSeats ?? {}
   s.execPool = s.execPool ?? []

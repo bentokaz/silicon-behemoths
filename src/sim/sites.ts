@@ -93,6 +93,8 @@ export const ITEMS: Record<SiteKind, Record<string, ItemDef>> = {
     parking: d('Parking bay', 1500, 3, 5, 'Grounds', [OUT], 'Marked space for one car.', { comfort: 0.3 }),
     bikes: d('Bike rack', 700, 2, 1, 'Grounds', [OUT], 'A row of hoops and a few bikes.', { comfort: 0.4 }),
     flag: d('Flagpole', 1200, 1, 1, 'Grounds', [OUT], 'Your colours, flying.', { prestige: 0.8 }),
+    stairs: d('Staircase', 6000, 1, 3, 'Floors', OFFICE_IN, 'Joins a floor to the one below. Every upper floor needs stairs or a lift, and so does each floor under it.'),
+    lift: d('Lift', 24000, 2, 2, 'Floors', OFFICE_IN, 'Joins a floor to the one below, as stairs do. Adds a little prestige.', { prestige: 0.5 }),
     sign: d('Entrance sign', 6000, 3, 1, 'Grounds', [OUT], 'A stone sign with your name on it.', { prestige: 2.5 }),
   },
   factory: {
@@ -1123,6 +1125,7 @@ export function canPlace(site: Site, kind: string, x: number, y: number, rot: nu
   // only what the list itself names: "constructor" is a property of every object, and not a piece of furniture
   const def = typeof kind === 'string' && Object.hasOwn(ITEMS[site.kind], kind) ? ITEMS[site.kind][kind] : undefined
   if (!def) return UNKNOWN_ITEM
+  if (site.level && !def.rooms.some((r) => r !== OUT)) return `${def.name} stands outdoors, on the ground floor`
   if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(rot)) return 'It does not fit on the plot'
   if (!itemAllowed(site, kind)) return 'Trees do not grow inside a mall'
   let room = -1
@@ -1130,8 +1133,10 @@ export function canPlace(site: Site, kind: string, x: number, y: number, rot: nu
     if (!inPlot(site, a, b)) return 'It does not fit on the plot'
     if (cutAt(site, a, b)) return 'That corner of the room is cut away'
     if (onCurve(site, a, b)) return 'The curved wall runs through there'
-    if (!def.rooms.includes(typeAt(site, a, b))) return `${def.name} goes in: ${roomNames(site.kind, def)}`
     const n = gridAt(site, a, b)
+    // an upper floor has no open ground: what is not a room there is the drop to the floor below
+    if (site.level && !n) return UPSTAIRS_OPEN
+    if (!def.rooms.includes(typeAt(site, a, b))) return `${def.name} goes in: ${roomNames(site.kind, def)}`
     if (room >= 0 && n !== room) return 'It cannot straddle a wall'
     room = n
     if (itemAt(site, a, b)) return 'Something is already there'
@@ -1141,13 +1146,105 @@ export function canPlace(site: Site, kind: string, x: number, y: number, rot: nu
 
 export const countItems = (site: Site, kind: string) => site.items.filter((i) => i.kind === kind).length
 
-/** Items standing in rooms people can actually reach (or outdoors). */
+// ---------------------------------------------------------------- storeys
+
+/** What is said of open space on an upper floor. */
+export const UPSTAIRS_OPEN = 'Upstairs, everything stands in a room: build one here first'
+/** Staircases and lifts: what joins a storey to the one under it. */
+export const CLIMB: ReadonlySet<string> = new Set(['stairs', 'lift'])
+
+/**
+ * The storeys above the ground floor, one for each floor the building has
+ * over the first: plans of their own, laid over the ground floor's
+ * footprint. Made to match the number of floors; only offices have them.
+ */
+export function syncLevels(site: Site): Site[] {
+  if (site.kind !== 'office' || site.level) return []
+  const want = Math.max(0, site.floors - 1)
+  const up = site.upper ?? []
+  while (up.length < want) {
+    const l = newSite(site.kind, site.tier)
+    l.w = site.w
+    l.h = site.h
+    l.grid = new Array(site.w * site.h).fill(0)
+    l.level = up.length + 1
+    up.push(l)
+  }
+  up.length = want
+  for (const l of up) {
+    l.facade = site.facade
+    l.roof = site.roof
+  }
+  if (up.length) site.upper = up
+  else delete site.upper
+  return up
+}
+
+/** A storey of a building: 0 is the ground floor itself. */
+export const levelOf = (site: Site, floor: number): Site | undefined => (floor > 0 ? site.upper?.[floor - 1] : site)
+
+const climbs = (site: Site, open?: ReadonlySet<number>) =>
+  site.items.some((i) => {
+    if (!CLIMB.has(i.kind)) return false
+    const n = gridAt(site, i.x, i.y)
+    return !!n && (!open || open.has(n))
+  })
+
+/**
+ * How many storeys above the ground floor people can get up to. Each floor
+ * needs a staircase or a lift, and so does every floor under it; on the
+ * ground floor it has to stand in a room with a way in.
+ */
+export function linkedLevels(site: Site): number {
+  if (!site.upper?.length || !climbs(site, openRooms(site))) return 0
+  let k = 0
+  for (const l of site.upper) {
+    if (!climbs(l)) break
+    k++
+  }
+  return k
+}
+
+/** Rooms on an upper floor people can get into once they are up there: the ones with the stairs or a lift, and those with a door. */
+function levelOpen(level: Site): Set<number> {
+  const open = new Set(openRooms(level))
+  for (const i of level.items) if (CLIMB.has(i.kind)) open.add(gridAt(level, i.x, i.y))
+  return open
+}
+
+/** Rooms on a storey nobody can get into: no door, or (upstairs) no stairs or lift reaching that floor. */
+export function sealedOn(site: Site, floor: number): Room[] {
+  const level = levelOf(site, floor)
+  if (!level) return []
+  if (!floor) return sealedRooms(site)
+  if (floor > linkedLevels(site)) return level.rooms
+  const open = levelOpen(level)
+  return level.rooms.filter((r) => !open.has(r.n))
+}
+
+/** Every piece of furniture on every storey. */
+export const allItems = (site: Site): SiteItem[] => (site.upper?.length ? site.items.concat(...site.upper.map((l) => l.items)) : site.items)
+
+const UP_REACH = new WeakMap<Site, { key: string; items: SiteItem[] }>()
+/**
+ * Items standing in rooms people can actually reach (or outdoors), on every
+ * storey people can get up to.
+ */
 export function reachable(site: Site): SiteItem[] {
   const memo = memoOf(site)
-  return (memo.reach ??= findReachable(site))
+  const own = (memo.reach ??= findReachable(site))
+  if (!site.upper?.length) return own
+  const k = linkedLevels(site)
+  if (!k) return own
+  const key = `${site.rev}:${own.length}:${k}:${site.upper.map((l) => `${l.rev}.${l.items.length}`).join(',')}`
+  const hit = UP_REACH.get(site)
+  if (hit && hit.key === key) return hit.items
+  const items = own.concat(...site.upper.slice(0, k).map((l) => reachable(l)))
+  UP_REACH.set(site, { key, items })
+  return items
 }
 function findReachable(site: Site): SiteItem[] {
-  const open = openRooms(site)
+  const open = site.level ? levelOpen(site) : openRooms(site)
   return site.items.filter((it) => {
     const n = gridAt(site, it.x, it.y)
     return ITEMS[site.kind][it.kind] && (!n || open.has(n))

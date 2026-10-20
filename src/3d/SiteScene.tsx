@@ -38,6 +38,7 @@ import { seatOwners } from './site/seats'
 import { buildSpots, seatAisles } from './site/spots'
 import { Shoppers, StoreItem } from './site/store'
 import { Batch, CUT_H, Ground, STOREY, Structure, type ViewMode, WALL_T } from './site/structure'
+import { planKey } from './site/plankey'
 import { Walk } from './site/walk'
 import { Heartbeat, type Pulse, useTick } from './site/tick'
 import { VenueItem } from './site/venue'
@@ -143,6 +144,8 @@ export interface SiteLife {
 
 export interface SiteViewProps {
   site: Site
+  /** Offices: the storey being built on, 0 for the ground floor. Floors under it are drawn beneath, those above are left off. */
+  floor?: number
   mode: ViewMode
   mood: Mood
   tool: SiteTool
@@ -166,6 +169,8 @@ export interface SiteViewProps {
   onArea?: (x0: number, y0: number, x1: number, y1: number, apart: boolean) => void
   /** Tiles the area tool would cover right now (0 when not dragging one out), and anything worth saying about it. */
   onPreview?: (tiles: number, note?: AreaNote) => void
+  /** The room under the pointer (0 for open ground), told whenever the pointer moves onto another one. */
+  onHoverRoom?: (n: number) => void
   /** Office: seated employees, in desk order, and everyone without a desk. */
   seated?: Employee[]
   idle?: Employee[]
@@ -233,7 +238,7 @@ const STAGED: Phase[] = ['rehearsal', 'doors', 'show', 'ovation']
 /** Heights of the things worth clicking at a venue, in metres. */
 const VENUE_TALL: Record<string, number> = { stage: 1.95, screen: 5.4, lights: 6.6, speakers: 3.4, camera: 2.3, seats: 1.05, seats_mid: 1.6, seats_high: 2.3, demo: 1.0, reception: 1.16, logowall: 2.0 }
 /** How tall things are to the pointer, where that is more than the usual pick height (see itemBox): what the sell and turn tools find when a click lands on their top. */
-const PICK_TALL: Record<string, number> = { otree: 4.4, bamboo: 3.8, tree: 2.2, lamp: 3.4, flag: 6, sculpture: 1.6, sign: 1.6, fountain: 1.7, tank: 3, forklift: 2.2, truck: 3.6, rack: 2.4, stockrack: 2, lights: 6.6, speakers: 3.4, screen: 2, aquarium: 1.6, bookshelf: 2, vending: 1.9, arcade: 1.8, booth: 2.2, lockers: 1.9 }
+const PICK_TALL: Record<string, number> = { otree: 4.4, bamboo: 3.8, tree: 2.2, lamp: 3.4, flag: 6, sculpture: 1.6, sign: 1.6, fountain: 1.7, tank: 3, forklift: 2.2, truck: 3.6, rack: 2.4, stockrack: 2, lights: 6.6, speakers: 3.4, screen: 2, aquarium: 1.6, bookshelf: 2, vending: 1.9, arcade: 1.8, booth: 2.2, lockers: 1.9, stairs: 2.9, lift: 2.9 }
 /** Rooms that get a status screen on the wall. */
 const BOARD_ROOMS = new Set(['lab', 'eng', 'studio', 'media', 'support', 'server', 'meeting', 'soft'])
 
@@ -829,11 +834,17 @@ const PLATE_TEXT = { accent: 'text-fg', pos: 'text-pos', warn: 'text-warn', neg:
 const researchOn = (o: OfficeLife, given?: ResearchNow[]): ResearchNow[] => given ?? o.research
 const fmtHour = (h: number) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`
 
-export function SiteScene({ site, mode: chosen, mood, tool, company, color, logo, selectedRoom, sealed, onTile, onRow, onEdges, onSell, onRun, onArea, onPreview, seated = [], idle = [], applicants, onPerson, day = 0, line, producing = false, products = [], busy = 0, show, autoRotate, director, presenterWalk, speed = 0, life, card, onCutOff, budget = Infinity, onOff, clear, month, research, onDrawn, walk = false, onWalkEnd }: SiteViewProps) {
+export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, company, color, logo, selectedRoom, sealed, onTile, onRow, onEdges, onSell, onRun, onArea, onPreview, onHoverRoom, seated = [], idle = [], applicants, onPerson, day = 0, line, producing = false, products = [], busy = 0, show, autoRotate, director, presenterWalk, speed = 0, life, card, onCutOff, budget = Infinity, onOff, clear, month, research, onDrawn, walk = false, onWalkEnd }: SiteViewProps) {
   /** The camera is the walker's: from the glide down to eye height until the glide back up. */
   const [walking, setWalking] = useState(false)
-  // low cut walls are no use to someone walking about: the walls stand full height, under a roof if the outside was being shown
-  const mode: ViewMode = walking && chosen === 'cut' ? 'walls' : chosen
+  // ---- an upper floor: its own plan, lifted to its height, with the floors under it drawn beneath
+  const level = floor > 0 ? ground.upper?.[floor - 1] : undefined
+  /** The plan the view works on: what is built, picked and drawn with tools. */
+  const site = level ?? ground
+  const lift = level ? floor * STOREY : 0
+  // low cut walls are no use to someone walking about: the walls stand full height, under a roof if the outside was being shown;
+  // upstairs the outside is the floor's own walls, with no roof over them to hide the rooms
+  const mode: ViewMode = (walking && chosen === 'cut') || (level && chosen === 'full') ? 'walls' : chosen
   const endWalk = useCallback(() => onWalkEnd?.(), [onWalkEnd])
   const prefs = useSettings((s) => s.settings)
   const Q = QUALITY[prefs.quality]
@@ -852,6 +863,10 @@ export function SiteScene({ site, mode: chosen, mood, tool, company, color, logo
   const dark = mood === 'night' && !indoor
   const span = Math.max(w, h)
   const [hover, setHover] = useState<{ x: number; y: number; edge: Edge } | null>(null)
+  const hoverRoom = hover ? gridAt(site, hover.x, hover.y) : -1
+  useEffect(() => {
+    if (hoverRoom >= 0) onHoverRoom?.(hoverRoom)
+  }, [hoverRoom, onHoverRoom])
   const [anchor, setAnchor] = useState<[number, number] | null>(null)
   /** The view has drawn its first frames. */
   const [up, setUp] = useState(false)
@@ -877,7 +892,7 @@ export function SiteScene({ site, mode: chosen, mood, tool, company, color, logo
   const filling = tool?.type === 'room' && tool.shape === 'fill'
   const shape: Shape = tool && 'shape' in tool && tool.shape !== 'fill' ? tool.shape : 'rect'
   /** The site shows what the company is doing: clocks run, screens are live, things can be clicked. */
-  const lively = !!life && !autoRotate
+  const lively = !!life && !autoRotate && !level
   const office = site.kind === 'office' ? life?.office : undefined
   const cut = mode === 'cut'
   const opts = tool && 'shape' in tool ? tool.opts : undefined
@@ -1090,7 +1105,17 @@ export function SiteScene({ site, mode: chosen, mood, tool, company, color, logo
   }, [site, site.rev])
 
   // ---- walls rise when a room is built and crumble when it is knocked down
-  const snap = useMemo(() => snapshot(site), [site, site.rev]) // eslint-disable-line react-hooks/exhaustive-deps
+  // the walls follow the plan, not the furniture: a desk put down leaves the building standing as it is
+  const plan = planKey(site)
+  const groundPlan = planKey(ground)
+  /** Upstairs: the bare floor over the building below, where rooms can still be marked out. */
+  const voidTiles = useMemo(() => {
+    const out: [number, number][] = []
+    if (!level) return out
+    for (let i = 0; i < ground.grid.length; i++) if (ground.grid[i] && !level.grid[i]) out.push([i % ground.w, Math.floor(i / ground.w)])
+    return out
+  }, [level, plan, groundPlan]) // eslint-disable-line react-hooks/exhaustive-deps
+  const snap = useMemo(() => snapshot(site), [site, plan]) // eslint-disable-line react-hooks/exhaustive-deps
   const [standing, setStanding] = useState(snap)
   const [wallFx, setWallFx] = useState<{ pieces: WallPiece[]; falling: boolean; then: Site; id: number } | null>(null)
   const fxId = useRef(0)
@@ -1767,7 +1792,7 @@ export function SiteScene({ site, mode: chosen, mood, tool, company, color, logo
   const height = mode === 'full' ? site.floors * STOREY : 0
   const home = useMemo<[number, number, number]>(() => [span * 0.75, span * 0.95 + height, span * 1.2 + 6], [span, height])
   /** What the camera looks at when a site opens, and again when it is recentred. */
-  const aim = useMemo<[number, number, number]>(() => [0, height * 0.35 + 0.5, 0], [height])
+  const aim = useMemo<[number, number, number]>(() => [0, height * 0.35 + 0.5 + lift, 0], [height, lift])
   // with a tool that paints as it is dragged, the left button is the tool's: the middle one turns the view instead
   const mouseButtons = useMemo(() => ({ LEFT: dragTool ? (-1 as THREE.MOUSE) : THREE.MOUSE.ROTATE, MIDDLE: dragTool ? THREE.MOUSE.ROTATE : THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN }), [dragTool])
   const touches = useMemo(() => ({ ONE: dragTool ? (-1 as THREE.TOUCH) : THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN }), [dragTool])
@@ -1801,7 +1826,23 @@ export function SiteScene({ site, mode: chosen, mood, tool, company, color, logo
       </Environment>
 
       <Environs env={tier.env} w={w} h={h} mood={mood} />
-      <Ground site={site} dim={indoor ? M.ground : mood === 'night' ? 0.6 : mood === 'dusk' ? 0.85 : 1} />
+      <Ground site={ground} dim={indoor ? M.ground : mood === 'night' ? 0.6 : mood === 'dusk' ? 0.85 : 1} />
+      {/* upstairs: the floors under the one being built on, cut low and seen through its bare floor */}
+      {level &&
+        Array.from({ length: floor }, (_, f) => {
+          const plan = f ? ground.upper?.[f - 1] : ground
+          if (!plan) return null
+          return (
+            <group key={`lower${f}`} position-y={f * STOREY}>
+              {f > 0 && <Ground site={plan} dim={0.8} upper />}
+              <Structure site={plan} mode="cut" glow={0} leaves={false} />
+              <Chunk sig={`${f}|${plan.rev}|${plan.items.length}|${glowKey}`} render={() => plan.items.filter((i) => ITEMS[plan.kind][i.kind]).map((i) => model(i, M.glow))} />
+            </group>
+          )
+        })}
+      <group position-y={lift}>
+      {level && <Ground site={level} dim={1} upper />}
+      {level && voidTiles.length > 0 && <Tint tiles={voidTiles} w={w} h={h} color="#8d9095" opacity={0.42} y={-0.02} inset={0} />}
       <Structure site={standing} mode={mode} glow={mood === 'day' ? 0 : M.glow * 0.6} leaves={false} dark={mode === 'cut' ? undefined : darkRooms} />
 
       {/* pick surface over the whole plot: found by the pointer, never drawn */}
@@ -2007,6 +2048,7 @@ export function SiteScene({ site, mode: chosen, mood, tool, company, color, logo
       })}
       {edgeCursor}
       {runTag}
+      </group>
 
       {Q.shadows > 0 && <StaticShadows sig={shadowSig} />}
       {Q.ao && (

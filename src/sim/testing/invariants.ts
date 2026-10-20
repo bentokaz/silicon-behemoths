@@ -454,6 +454,14 @@ export function checkState(s: GameState, opts: CheckOpts = {}): string[] {
   if (!opts.light) {
     if (s.office.kind !== 'office' || (s.factory && s.factory.kind !== 'factory') || (s.venue && s.venue.kind !== 'venue')) bad('site-kind', 'a plot is of the wrong kind')
     out.push(...checkSite(s.office, 'office'))
+    // the storeys above: one for each floor over the first, each over the ground floor's rooms
+    const up = s.office.upper ?? []
+    if (up.length !== s.office.floors - 1) bad('site-levels', `office has ${up.length} upper floors for ${s.office.floors} storeys`)
+    up.forEach((l, i) => {
+      out.push(...checkSite(l, `office@${i + 1}`))
+      if (l.level !== i + 1) bad('site-levels', `office@${i + 1} says it is floor ${l.level}`)
+      if (l.grid.some((n, t) => n && !s.office.grid[t])) bad('site-levels', `office@${i + 1} has rooms over open ground`)
+    })
     if (s.factory) out.push(...checkSite(s.factory, 'factory'))
     if (s.venue) out.push(...checkSite(s.venue, 'venue'))
     for (const st of s.stores) out.push(...checkSite(st.site, `store ${st.id}`))

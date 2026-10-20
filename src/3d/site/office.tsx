@@ -556,6 +556,29 @@ export function OfficeItem({ kind, c }: { kind: string; c: OfficeCtx }) {
           ))}
         </>
       )
+    case 'stairs':
+      // a straight flight rising to the north, up to the floor above, with a rail on each side
+      return (
+        <>
+          {Array.from({ length: 10 }, (_, i) => {
+            const top = (i + 1) * 0.29
+            return <B key={i} p={[0, top / 2, 1.5 - (i + 0.5) * 0.3]} s={[0.86, top, 0.3]} c={i % 2 ? '#8d9095' : '#979a9e'} r={0.004} rough={0.7} />
+          })}
+          {[-0.45, 0.45].map((x) => (
+            <B key={x} p={[x, 2.0, 0]} s={[0.04, 0.05, 3.1]} c="#2a2d31" r={0} rough={0.4} cast={false} />
+          ))}
+        </>
+      )
+    case 'lift':
+      // a glass car in a steel frame, its doors to the south
+      return (
+        <>
+          <B p={[0, 1.45, 0]} s={[1.76, 2.9, 1.76]} c="#5a6068" r={0.01} rough={0.35} />
+          <B p={[0, 1.2, 0.885]} s={[1.0, 2.2, 0.02]} c="#c9ced3" r={0} rough={0.25} cast={false} />
+          <B p={[0, 1.2, 0.895]} s={[0.012, 2.2, 0.01]} c="#2a2d31" r={0} cast={false} />
+          <B p={[0.62, 1.4, 0.89]} s={[0.08, 0.16, 0.01]} c="#ffb866" r={0} cast={false} />
+        </>
+      )
     case 'bookshelf':
       return (
         <>

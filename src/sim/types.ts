@@ -455,6 +455,14 @@ export interface Site {
   facade: number
   roof: number
   floors: number
+  /**
+   * Offices: the storeys above the ground floor, first floor first, one for
+   * each floor over the first. Each is a plan of its own (its `floors` is 1),
+   * laid over the ground floor's footprint. Missing for a single storey.
+   */
+  upper?: Site[]
+  /** On a storey above the ground floor: which one, 1 for the first floor. */
+  level?: number
   /** Bumped on every change, so the 3D view knows when to rebuild. */
   rev: number
 }
