@@ -45,6 +45,8 @@ interface Props<R> {
   rowKey: (row: R) => string
   /** What opening a row does (a click, Enter or Space). */
   onRow?: (row: R) => void
+  /** Rows that can be opened, when not all can: the others are not focusable or clickable. */
+  canRow?: (row: R) => boolean
   /** The key of the row whose details are open. */
   selected?: string | null
   /** The row's own action, at its right-hand end. Shown on hover and focus. */
@@ -80,7 +82,7 @@ const typeScale = () => {
 }
 const widthAt = <R,>(c: Column<R>, k: number) => Math.round((c.min ?? (c.num ? 88 : 120)) * k)
 
-export function Table<R>({ cols, rows, groups, rowKey, onRow, selected, action, actionAlways, actionWidth: actionAt12 = 104, sort: initial, keep, empty, rowTitle, rowClass, firstMin: firstAt12 = 150, className = '', label }: Props<R>) {
+export function Table<R>({ cols, rows, groups, rowKey, onRow: openRow, canRow, selected, action, actionAlways, actionWidth: actionAt12 = 104, sort: initial, keep, empty, rowTitle, rowClass, firstMin: firstAt12 = 150, className = '', label }: Props<R>) {
   const box = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
   const [k, setK] = useState(typeScale)
@@ -142,7 +144,7 @@ export function Table<R>({ cols, rows, groups, rowKey, onRow, selected, action, 
   const openWith = (row: R) => (e: ReactKeyboardEvent) => {
     if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return
     e.preventDefault()
-    onRow?.(row)
+    openRow?.(row)
   }
 
   return (
@@ -193,6 +195,7 @@ export function Table<R>({ cols, rows, groups, rowKey, onRow, selected, action, 
               const k = rowKey(row)
               const on = selected === k
               const always = actionAlways?.(row)
+              const onRow = openRow && (!canRow || canRow(row)) ? openRow : undefined
               return (
                 <tr
                   key={k}

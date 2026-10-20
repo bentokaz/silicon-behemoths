@@ -50,7 +50,7 @@ function TeamCard({ t }: { t: Team }) {
     ) : null
   return (
     <Panel
-      title={<NameInput aria-label="Team name" title="Rename this team" value={t.name} onChange={(v) => act((s) => renameTeam(s, t.id, v))} maxLength={24} className="!h-6 w-36 !border-transparent !bg-transparent !px-0 !text-[13px] font-semibold text-fg hover:!border-line2 focus:!border-accent focus:!px-1" />}
+      title={<NameInput aria-label="Team name" title="Rename this team" value={t.name} onChange={(v) => act((s) => renameTeam(s, t.id, v))} maxLength={24} style={{ width: `${Math.max(8, t.name.length + 3)}ch` }} className="!h-6 max-w-full !border-transparent !bg-transparent !px-0 !text-[13px] font-semibold text-fg hover:!border-line2 focus:!border-accent focus:!px-1" />}
       right={
         <>
           {members.length > TEAM_SPAN && (

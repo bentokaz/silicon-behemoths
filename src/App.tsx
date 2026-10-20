@@ -1,11 +1,13 @@
 import { Suspense, lazy, useEffect } from 'react'
-import { installUiSounds } from './audio/sfx'
+import { setMusicLevel, setMusicMood } from './audio/music'
+import { installUiSounds, setEffectsLevel } from './audio/sfx'
 import { MainMenu, NewGame } from './components/Menu'
 import { FeedbackHost } from './components/Feedback'
 import { MenuNote } from './components/MenuNote'
 import { Tips } from './components/Tips'
 import { CrashGuard, SizeNotice } from './components/Safety'
 import { useStore } from './store/game'
+import { useSettings } from './store/settings'
 
 // the game itself (every screen and the 3D views) loads apart from the menu, so the menu is up sooner
 const loadShell = () => import('./components/Shell').then((m) => ({ default: m.Shell }))
@@ -19,6 +21,16 @@ export default function App() {
   const screen = useStore((s) => s.screen)
   const hasGame = useStore((s) => !!s.game)
   useEffect(installUiSounds, [])
+  // the music and the effects follow their settings from the first screen on
+  const musicLevel = useSettings((s) => s.settings.music)
+  const effects = useSettings((s) => s.settings.effects)
+  useEffect(() => setMusicLevel(musicLevel), [musicLevel])
+  useEffect(() => setEffectsLevel(effects), [effects])
+  const inGame = screen === 'game' && hasGame
+  // (in a game, the screen on show picks the mood: see Shell)
+  useEffect(() => {
+    if (!inGame) setMusicMood('calm')
+  }, [inGame])
   // fetch the rest while the player is still on the menu
   useEffect(() => {
     const id = window.setTimeout(() => void loadShell(), 300)

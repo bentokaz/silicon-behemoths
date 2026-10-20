@@ -10,17 +10,30 @@ try {
   /* storage unavailable */
 }
 
+/** Loudness of the clicks, chimes and stingers, 0-1, under the main volume. */
+let effectsLevel = 1
+export const setEffectsLevel = (v: number) => {
+  effectsLevel = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1
+}
+/** Told when the main volume changes, so the music follows it at once. */
+const volumeWatchers = new Set<() => void>()
+export const onVolume = (fn: () => void) => (volumeWatchers.add(fn), () => void volumeWatchers.delete(fn))
+
 export const getVolume = () => volume
 export function setVolume(v: number) {
   volume = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0.5
   // the background sound of the place on screen follows the volume at once, not at the next change of screen
   ambient?.level()
+  for (const fn of volumeWatchers) fn()
   try {
     localStorage.setItem('sb-volume', String(v))
   } catch {
     /* storage unavailable */
   }
 }
+
+/** The shared audio context, woken if the browser had it waiting; null when the sound is off or there is none. */
+export const audioContext = () => audio()
 
 function audio(): AudioContext | null {
   if (volume <= 0) return null
@@ -34,6 +47,7 @@ function audio(): AudioContext | null {
 }
 
 function tone(freq: number, duration: number, type: OscillatorType, gain: number, delay = 0, slideTo?: number) {
+  if (effectsLevel <= 0) return
   const a = audio()
   if (!a) return
   const t = a.currentTime + delay
@@ -43,7 +57,7 @@ function tone(freq: number, duration: number, type: OscillatorType, gain: number
   osc.frequency.setValueAtTime(freq, t)
   if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t + duration)
   amp.gain.setValueAtTime(0, t)
-  amp.gain.linearRampToValueAtTime(gain * volume, t + 0.004)
+  amp.gain.linearRampToValueAtTime(gain * volume * effectsLevel, t + 0.004)
   amp.gain.exponentialRampToValueAtTime(0.0001, t + duration)
   osc.connect(amp).connect(a.destination)
   osc.start(t)
@@ -53,6 +67,7 @@ function tone(freq: number, duration: number, type: OscillatorType, gain: number
 let noiseBuffer: AudioBuffer | null = null
 /** A burst of filtered noise: thuds, hisses, claps. */
 function noise(duration: number, gain: number, freq: number, q = 1, delay = 0, type: BiquadFilterType = 'bandpass', sweepTo?: number) {
+  if (effectsLevel <= 0) return
   const a = audio()
   if (!a) return
   if (!noiseBuffer) {
@@ -71,7 +86,7 @@ function noise(duration: number, gain: number, freq: number, q = 1, delay = 0, t
   filter.Q.value = q
   const amp = a.createGain()
   amp.gain.setValueAtTime(0, t)
-  amp.gain.linearRampToValueAtTime(gain * volume, t + 0.006)
+  amp.gain.linearRampToValueAtTime(gain * volume * effectsLevel, t + 0.006)
   amp.gain.exponentialRampToValueAtTime(0.0001, t + duration)
   src.connect(filter).connect(amp).connect(a.destination)
   src.start(t, Math.random() * 0.5)

@@ -19,9 +19,13 @@ export interface Settings {
   walkers: boolean
   /** Background sound of the place on screen, 0-1. */
   ambience: number
+  /** Background music, 0-1. */
+  music: number
+  /** Clicks, chimes and stingers, 0-1. */
+  effects: number
 }
 
-export const DEFAULT_SETTINGS: Settings = { quality: 'medium', cameraSpeed: 1, zoomToPointer: true, autosave: true, pauseOnAlert: false, walkers: true, ambience: 0.5 }
+export const DEFAULT_SETTINGS: Settings = { quality: 'medium', cameraSpeed: 1, zoomToPointer: true, autosave: true, pauseOnAlert: false, walkers: true, ambience: 0.5, music: 0.5, effects: 1 }
 
 export const QUALITY: Record<Quality, { label: string; note: string; dpr: number; shadows: number; ao: boolean }> = {
   low: { label: 'Low', note: 'No shadows or shading. For laptops without a graphics card.', dpr: 1, shadows: 0, ao: false },
@@ -116,6 +120,8 @@ export function cleanSettings(raw: Record<string, unknown>): Settings {
     pauseOnAlert: flag(raw.pauseOnAlert, d.pauseOnAlert),
     walkers: flag(raw.walkers, d.walkers),
     ambience: within(raw.ambience, 0, 1, d.ambience),
+    music: within(raw.music, 0, 1, d.music),
+    effects: within(raw.effects, 0, 1, d.effects),
   }
 }
 

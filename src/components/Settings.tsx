@@ -1,7 +1,8 @@
 // Settings and key bindings, shown under Save and settings and on the main
 // menu; and where saves are kept besides this browser.
 import { useEffect, useState } from 'react'
-import { getVolume, setAmbienceLevel, setVolume, sfx } from '../audio/sfx'
+import { nextTrack, nowPlaying, setMusicLevel } from '../audio/music'
+import { getVolume, setAmbienceLevel, setEffectsLevel, setVolume, sfx } from '../audio/sfx'
 import { checkCloud, chooseFolder, cloudBuiltIn, cloudConfig, cloudRemembers, cloudStatus, cloudUser, folderState, forgetCloudConfig, forgetFolder, setCloudConfig, signIn, signOut, signUp, unlockFolder } from '../store/cloud'
 import { ACTIONS, type Action, DEFAULT_SETTINGS, QUALITY, type Quality, keyName, keysFor, useSettings } from '../store/settings'
 import { ThemePicker } from './System'
@@ -30,6 +31,7 @@ const GROUP_ICON: Record<string, IconName> = { Game: 'play', Screens: 'overview'
 export function SettingsPanel({ theme = false }: { /** Offer the interface colours here too (the main menu; in a game they are under Company). */ theme?: boolean }) {
   const { settings, set, resetSettings } = useSettings()
   const [vol, setVol] = useState(getVolume())
+  const [playing, setPlaying] = useState(nowPlaying())
   return (
     <div className="grid shrink-0 grid-cols-3 items-start gap-2">
       <Panel title="Graphics" icon="desktop" bodyClass="p-3">
@@ -60,14 +62,22 @@ export function SettingsPanel({ theme = false }: { /** Offer the interface colou
         <Toggle on={settings.pauseOnAlert} onChange={(v) => set({ pauseOnAlert: v })} title="Pause on alerts" note="Stops the clock when something needs a decision, such as a sell-out or a recall." />
       </Panel>
       <Panel title="Sound" icon="sound" bodyClass="p-3">
-        <Slider label="Volume" value={vol} min={0} max={1} step={0.05} format={(v) => (v ? pct(v, 0) : 'Off')} onChange={(v) => (setVol(v), setVolume(v), sfx.click())} />
-        <Slider label="Background ambience" value={settings.ambience} min={0} max={1} step={0.05} format={(v) => (v ? pct(v, 0) : 'Off')} onChange={(v) => (set({ ambience: v }), setAmbienceLevel(v))} hint="The hum of the office, the factory floor, a busy store. There is no music." />
-        <Btn icon="play" className="mt-2" title="Play a sound at the volume set above" onClick={() => sfx.launch()}>
-          Test the sound
-        </Btn>
-        <div className="mt-2 text-[11px] leading-snug text-faint">There is no music: every sound is made in the browser.</div>
+        <Slider label="Main volume" value={vol} min={0} max={1} step={0.05} format={(v) => (v ? pct(v, 0) : 'Off')} onChange={(v) => (setVol(v), setVolume(v), sfx.click())} hint="Everything below plays under this." />
+        <Slider label="Music" value={settings.music} min={0} max={1} step={0.05} format={(v) => (v ? pct(v, 0) : 'Off')} onChange={(v) => (set({ music: v }), setMusicLevel(v))} hint="Calm on the menu and the books, focused in the office and the labs, driving on the factory floor, bright in the stores and the city, big at the venue." />
+        <Slider label="Background ambience" value={settings.ambience} min={0} max={1} step={0.05} format={(v) => (v ? pct(v, 0) : 'Off')} onChange={(v) => (set({ ambience: v }), setAmbienceLevel(v))} hint="The hum of the office, the factory floor, a busy store." />
+        <Slider label="Effects" value={settings.effects} min={0} max={1} step={0.05} format={(v) => (v ? pct(v, 0) : 'Off')} onChange={(v) => (set({ effects: v }), setEffectsLevel(v), sfx.click())} hint="Clicks, chimes and the stingers when something happens." />
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <Btn icon="play" title="Play a sound at the volume set above" onClick={() => sfx.launch()}>
+            Test the sound
+          </Btn>
+          <Btn icon="fast" title="Skip to the next track for this screen" disabled={!settings.music || !vol} onClick={() => (nextTrack(), window.setTimeout(() => setPlaying(nowPlaying()), 2700))}>
+            Next track
+          </Btn>
+          {playing && <span className="text-[11px] text-dim">Playing: {playing}</span>}
+        </div>
+        <div className="mt-2 text-[11px] leading-snug text-faint">The music is composed as it plays, in the browser: it never repeats quite the same way.</div>
         <div className="mt-3 border-t border-line pt-3">
-          <ConfirmBtn tone="default" icon="reset" confirm="Put every setting back?" title="Graphics, camera, play and sound go back to how they were at first. Keys and colours are left alone." onClick={() => (resetSettings(), setVol(0.5), setVolume(0.5), setAmbienceLevel(DEFAULT_SETTINGS.ambience), sfx.confirm())}>
+          <ConfirmBtn tone="default" icon="reset" confirm="Put every setting back?" title="Graphics, camera, play and sound go back to how they were at first. Keys and colours are left alone." onClick={() => (resetSettings(), setVol(0.5), setVolume(0.5), setAmbienceLevel(DEFAULT_SETTINGS.ambience), setMusicLevel(DEFAULT_SETTINGS.music), setEffectsLevel(DEFAULT_SETTINGS.effects), sfx.confirm())}>
             Reset all settings
           </ConfirmBtn>
         </div>
