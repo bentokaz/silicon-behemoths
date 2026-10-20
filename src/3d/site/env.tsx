@@ -142,8 +142,8 @@ function mall(b: Batch, w: number, h: number, dim: (hex: string) => string, mood
       b.quad('floor3', x, z, Math.min(reach, x + 2), Math.min(across, z + 2), -0.02, dim(mid && band ? band : chequer), (0.97 + hash(x * 13 + z * 7) * 0.05) * (1 + lamplight * pool(x + 1, z + 1)))
     }
   }
-  for (const z of [front + 0.5, across - 0.5]) b.quad('floor3', -reach, z - 0.12, reach, z + 0.12, -0.008, dim('#4a4640'))
-  for (const z of [front + 4, front + 8]) b.quad('floor3', -reach, z - 0.05, reach, z + 0.05, -0.008, dim('#8c857a'))
+  for (const z of [front + 0.5, across - 0.5]) b.quad('floor3', -reach, z - 0.12, reach, z + 0.12, -0.004, dim('#4a4640'))
+  for (const z of [front + 4, front + 8]) b.quad('floor3', -reach, z - 0.05, reach, z + 0.05, -0.004, dim('#8c857a'))
 
   /** A ground-floor shop facing the concourse: a lit glass front under a coloured sign band. `face` is 1 to look south, -1 north. */
   const unit = (x0: number, x1: number, z0: number, z1: number, face: 1 | -1, seed: number) => {
@@ -176,7 +176,7 @@ function mall(b: Batch, w: number, h: number, dim: (hex: string) => string, mood
     for (let x = x0; x < x1 - 0.01; x += 2) {
       for (let z = z0; z < z1 - 0.01; z += 2) b.quad('floor3', x, z, Math.min(x1, x + 2), Math.min(z1, z + 2), DECK + 0.01, dim(tone[(Math.round((x - x0) / 2) + Math.round((z - z0) / 2)) & 1]), 0.95 + hash(x * 11 + z * 5) * 0.05)
     }
-    b.quad('floor3', x0, edge - 0.09, x1, edge + 0.09, DECK + 0.016, dim('#6f695f'))
+    b.quad('floor3', x0, edge - 0.09, x1, edge + 0.09, DECK + 0.03, dim('#6f695f'))
   }
   /** The edge of a gallery: the slab's rim, a glass balustrade and its rail, from one point to another along x or z. */
   const rail = (x0: number, z0: number, x1: number, z1: number) => {
@@ -350,7 +350,7 @@ function mall(b: Batch, w: number, h: number, dim: (hex: string) => string, mood
   // (none opposite the unit: that is where the view usually stands, and a lamp there would be in its face)
   for (let x = -reach + 3.5; x < reach - 1; x += 9) if (Math.abs(x) > hw + 13) lamp(x, across + 1.6, DECK, 2.6)
   // a directory at the head of the escalator, and a rug of darker tile where it lands
-  b.quad('floor3', ex + 9.4, across + 0.5, ex + 13.4, across + 4.2, DECK + 0.02, dim('#8c857a'))
+  b.quad('floor3', ex + 9.4, across + 0.5, ex + 13.4, across + 4.2, DECK + 0.03, dim('#8c857a'))
   b.box('wall', ex + 13, DECK + 1.05, across + 3.6, 0.22, 2.1, 0.9, '#2c3036')
   b.box('lit', ex + 12.87, DECK + 1.25, across + 3.6, 0.03, 1.4, 0.74, '#27353f')
   // this side: lamps along the balustrade, a bench or a planter between them, clear of the well the unit stands in

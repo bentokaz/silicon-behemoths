@@ -390,7 +390,7 @@ export function OfficeItem({ kind, c }: { kind: string; c: OfficeCtx }) {
         <>
           <B p={[0, 1.2, -0.38]} s={[1.94, 2.4, 0.12]} c="#191b1f" r={0.01} rough={0.7} />
           <B p={[0, 1.3, -0.316]} s={[1.6, 0.9, 0.012]} c="#101114" r={0} glow="#3a2a1a" glowPower={0.6 * c.glow} cast={false} />
-          <Sign p={[0, 1.3, -0.308]} size={[1.5, 0.8]} name={c.company} logo={c.logo} glow={1.3 * c.glow} />
+          <Sign p={[0, 1.3, -0.3]} size={[1.5, 0.8]} name={c.company} logo={c.logo} glow={1.3 * c.glow} />
           <B p={[0, 0.06, -0.3]} s={[1.9, 0.03, 0.04]} c="#ffffff" r={0} glow="#ffd9a8" glowPower={1.5 * c.glow} cast={false} />
         </>
       )

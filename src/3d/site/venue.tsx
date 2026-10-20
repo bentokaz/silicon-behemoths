@@ -54,8 +54,8 @@ function SeatBlock({ h, c }: { h: number; c: VenueCtx }) {
                   <group key={`${side}${i}`}>
                     <B p={[x, y / 2, at + 0.125]} s={[STAIR_W, y, 0.75]} c="#2b2d31" r={0.006} rough={0.8} />
                     <B p={[x, mid / 2, at - 0.375]} s={[STAIR_W, mid, 0.25]} c="#2b2d31" r={0.006} rough={0.8} />
-                    <B p={[x, y + 0.004, at - 0.235]} s={[STAIR_W - 0.02, 0.008, 0.02]} c="#ffffff" r={0} glow="#ffd9a8" glowPower={0.5 + 0.9 * c.glow} cast={false} />
-                    <B p={[x, mid + 0.004, at - 0.485]} s={[STAIR_W - 0.02, 0.008, 0.02]} c="#ffffff" r={0} glow="#ffd9a8" glowPower={0.5 + 0.9 * c.glow} cast={false} />
+                    <B p={[x, y + 0.008, at - 0.235]} s={[STAIR_W - 0.02, 0.008, 0.02]} c="#ffffff" r={0} glow="#ffd9a8" glowPower={0.5 + 0.9 * c.glow} cast={false} />
+                    <B p={[x, mid + 0.008, at - 0.485]} s={[STAIR_W - 0.02, 0.008, 0.02]} c="#ffffff" r={0} glow="#ffd9a8" glowPower={0.5 + 0.9 * c.glow} cast={false} />
                   </group>
                 )
               })

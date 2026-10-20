@@ -65,7 +65,7 @@ export function StoreItem({ kind, c }: { kind: string; c: StoreCtx }) {
           <C p={[0, 0.5, 0]} r={[0.05, 0.05]} h={0.92} c={STEEL} seg={10} metal={0.8} rough={0.35} />
           <C p={[0, 0.98, 0]} r={[0.36, 0.36]} h={0.04} c={WHITE} seg={24} rough={0.4} />
           {c.products.length && c.soldOut?.has(c.products[c.seed % c.products.length].id) ? <Gap p={[0, 1.0, 0]} /> : <DeviceProp product={c.products.length ? c.products[c.seed % c.products.length] : undefined} p={[0, 1.0, 0]} />}
-          <C p={[0, 0.995, 0]} r={[0.3, 0.3]} h={0.012} c="#ffffff" glow="#fff1d6" glowPower={0.5 * c.glow} seg={24} cast={false} />
+          <C p={[0, 1.004, 0]} r={[0.3, 0.3]} h={0.012} c="#ffffff" glow="#fff1d6" glowPower={0.5 * c.glow} seg={24} cast={false} />
         </>
       )
     case 'shelf':
@@ -134,8 +134,8 @@ export function StoreItem({ kind, c }: { kind: string; c: StoreCtx }) {
       return (
         <>
           <B p={[0, 1.5, -0.36]} s={[2.92, 3.0, 0.16]} c="#17191c" r={0.01} rough={0.6} />
-          <B p={[0, 1.6, -0.276]} s={[2.76, 1.7, 0.012]} c="#0c1622" r={0} glow="#3a78c8" glowPower={0.8 * c.glow} rough={0.15} cast={false} />
-          <Sign p={[0, 1.6, -0.266]} size={[1.8, 1.0]} name={c.company} logo={c.logo} glow={1.1 * c.glow} />
+          <B p={[0, 1.6, -0.272]} s={[2.76, 1.7, 0.012]} c="#0c1622" r={0} glow="#3a78c8" glowPower={0.8 * c.glow} rough={0.15} cast={false} />
+          <Sign p={[0, 1.6, -0.255]} size={[1.8, 1.0]} name={c.company} logo={c.logo} glow={1.1 * c.glow} />
           <B p={[0, 0.06, -0.24]} s={[2.9, 0.03, 0.04]} c="#ffffff" r={0} glow="#ffd9a8" glowPower={1.4 * c.glow} cast={false} />
         </>
       )
@@ -175,8 +175,8 @@ export function StoreItem({ kind, c }: { kind: string; c: StoreCtx }) {
         <>
           <B p={[0, 0.08, 0]} s={[0.7, 0.16, 0.5]} c="#8c8e90" r={0.02} rough={0.9} />
           <B p={[0, 1.76, 0]} s={[0.56, 3.2, 0.2]} c="#17191c" r={0.02} rough={0.5} />
-          <B p={[0, 2.6, 0.102]} s={[0.46, 1.2, 0.012]} c="#0c0d0f" r={0} glow={c.color} glowPower={0.5 * c.glow} cast={false} />
-          <Sign p={[0, 2.6, 0.11]} size={[0.42, 0.42]} name={c.company.slice(0, 1)} logo={c.logo} glow={0.5 + 0.7 * c.glow} />
+          <B p={[0, 2.6, 0.106]} s={[0.46, 1.2, 0.012]} c="#0c0d0f" r={0} glow={c.color} glowPower={0.5 * c.glow} cast={false} />
+          <Sign p={[0, 2.6, 0.122]} size={[0.42, 0.42]} name={c.company.slice(0, 1)} logo={c.logo} glow={0.5 + 0.7 * c.glow} />
         </>
       )
   }

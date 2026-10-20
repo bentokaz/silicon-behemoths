@@ -109,6 +109,8 @@ export function slide(nav: Nav, x: number, z: number, dx: number, dz: number): [
   return [x, z]
 }
 
+/** How close the walker comes to anyone else, metres between the two. */
+const PERSON = 0.5
 /** Metres from one storey's floor to the next (the view's STOREY). */
 const STOREY_H = 3
 /** Metres a second up or down a flight of stairs; an escalator carries you a little slower and steadier. */
@@ -200,7 +202,7 @@ export function Walk({ nav, on, onActive, onLeave, floor = 0, flights = [], lift
   /** A line for the screen to show while walking: what a key does here. */
   onHint?: (text: string | null) => void
   /** The people about: told where the walker is, so they step round them. */
-  crowd?: { setWalker(at: { x: number; z: number; yaw: number } | null): void } | null
+  crowd?: { setWalker(at: { x: number; z: number; yaw: number } | null): void; blocks(x: number, z: number, r: number): boolean } | null
 }) {
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera
   const controls = useThree((s) => s.controls) as unknown as Controls | null
@@ -237,6 +239,8 @@ export function Walk({ nav, on, onActive, onLeave, floor = 0, flights = [], lift
     menu: false,
     hint: '' as string,
   })
+  const crowdRef = useRef(crowd)
+  crowdRef.current = crowd
   const flightsRef = useRef(flights)
   flightsRef.current = flights
   const liftsRef = useRef(lifts)
@@ -266,6 +270,21 @@ export function Walk({ nav, on, onActive, onLeave, floor = 0, flights = [], lift
       }
       const target = controls?.target ?? new THREE.Vector3()
       ;[s.x, s.z] = startAt(navRef.current, target.x, target.z)
+      // not inside someone: the nearest clear place round about
+      const cr = crowdRef.current
+      if (cr?.blocks(s.x, s.z, PERSON)) {
+        for (let k = 0; k < 24; k++) {
+          const a2 = k * 2.4
+          const d = 0.7 + Math.floor(k / 8) * 0.7
+          const tx = s.x + Math.cos(a2) * d
+          const tz = s.z + Math.sin(a2) * d
+          if (standable(navRef.current, tx, tz) && !cr.blocks(tx, tz, PERSON)) {
+            s.x = tx
+            s.z = tz
+            break
+          }
+        }
+      }
       s.base = floorRef.current * STOREY_H
       s.climb = null
       s.menu = false
@@ -469,7 +488,9 @@ export function Walk({ nav, on, onActive, onLeave, floor = 0, flights = [], lift
         if (s.climb) return
         // clear of the flight just come off: it can be taken again
         if (s.guard && !flightsRef.current.some((f) => f.id.slice(1) === s.guard && inFlight(f, s.x, s.z, BODY))) s.guard = ''
-        const [nx, nz] = slide(n, s.x, s.z, dx, dz)
+        let [nx, nz] = slide(n, s.x, s.z, dx, dz)
+        // people are in the way as walls are: the walker stops short rather than walking into someone (but can always step away)
+        if (crowd && crowd.blocks(nx, nz, PERSON) && !crowd.blocks(s.x, s.z, PERSON)) [nx, nz] = [s.x, s.z]
         const moved = Math.hypot(nx - s.x, nz - s.z)
         s.x = nx
         s.z = nz

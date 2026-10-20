@@ -260,6 +260,11 @@ export class Crowd {
   private tables: Spot[][] = []
   /** The walker, standing on this floor: kept clear of like anyone else on their feet. */
   private you: Body | null = null
+  /** Whether anyone on this floor stands within r metres of a point: the walker does not walk into people. */
+  blocks(x: number, z: number, r: number): boolean {
+    for (const b of this.bodies) if (b.mode !== Mode.Off && (b.x - x) ** 2 + (b.z - z) ** 2 < r * r) return true
+    return false
+  }
   /** Tells the crowd where someone walking the site is (null when nobody is). */
   setWalker(at: { x: number; z: number; yaw: number } | null) {
     if (!at) {
