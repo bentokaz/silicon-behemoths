@@ -97,6 +97,29 @@ export function slide(nav: Nav, x: number, z: number, dx: number, dz: number): [
 
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
 const look = new THREE.Euler(0, 0, 0, 'YXZ')
+/** Radians of turn for each pixel the mouse moves. */
+const LOOK = 0.0024
+/** How far up or down the walker can look, short of straight up. */
+const PITCH = 1.35
+/** Pixels in one mouse event past which it is a glitch (Chrome sends these as the pointer is taken, and now and then besides). */
+const SPIKE = 180
+/** An angle kept between -pi and pi. */
+const wrap = (a: number) => a - Math.round(a / (Math.PI * 2)) * Math.PI * 2
+/** Take the pointer for looking round: raw movement where the browser offers it, plain pointer lock where not; a drag looks round where neither works. */
+function takePointer(dom: HTMLElement) {
+  try {
+    const raw = (dom.requestPointerLock as unknown as (o?: { unadjustedMovement?: boolean }) => Promise<void> | undefined)?.call(dom, { unadjustedMovement: true })
+    raw?.catch?.(() => {
+      try {
+        ;(dom.requestPointerLock() as unknown as Promise<void> | undefined)?.catch?.(() => {})
+      } catch {
+        /* dragging it is */
+      }
+    })
+  } catch {
+    /* dragging it is */
+  }
+}
 const aim = new THREE.Quaternion()
 const lookAt = new THREE.Matrix4()
 const UP = new THREE.Vector3(0, 1, 0)
@@ -133,6 +156,11 @@ export function Walk({ nav, on, onActive, onLeave }: { nav: Nav; on: boolean; on
     homeAim: new THREE.Vector3(),
     keys: new Set<string>(),
     drag: false,
+    /** Mouse movement since the last frame, in pixels: turned into a look once a frame, never smoothed. */
+    dx: 0,
+    dy: 0,
+    /** Mouse events still to ignore: the first ones after the pointer is taken or let go jump. */
+    skip: 0,
   })
   const navRef = useRef(nav)
   navRef.current = nav
@@ -163,12 +191,7 @@ export function Walk({ nav, on, onActive, onLeave }: { nav: Nav; on: boolean; on
       if (controls) controls.enabled = false
       active.current(true)
       // the pointer is held by the view while walking; where the browser will not, the mouse looks round by dragging
-      try {
-        const asked = dom.requestPointerLock?.() as unknown as Promise<void> | undefined
-        asked?.catch?.(() => {})
-      } catch {
-        /* dragging still looks round */
-      }
+      takePointer(dom)
     } else if (!on && (s.phase === 'in' || s.phase === 'walk')) {
       s.from.copy(camera.position)
       s.fromQ.copy(camera.quaternion)
@@ -198,31 +221,36 @@ export function Walk({ nav, on, onActive, onLeave }: { nav: Nav; on: boolean; on
     }
     const up = (e: KeyboardEvent) => s.keys.delete(e.code)
     const blur = () => s.keys.clear()
-    const turn = (dx: number, dy: number) => {
-      s.yaw -= dx * 0.0024
-      s.pitch = THREE.MathUtils.clamp(s.pitch - dy * 0.0024, -1.35, 1.35)
-    }
     const move = (e: MouseEvent) => {
       if (s.phase !== 'walk' && s.phase !== 'in') return
-      if (document.pointerLockElement === dom || s.drag) turn(e.movementX, e.movementY)
+      if (document.pointerLockElement !== dom && !s.drag) return
+      // the first events after the pointer is taken carry the jump to the middle of the screen
+      if (s.skip > 0) {
+        s.skip--
+        return
+      }
+      const dx = e.movementX || 0
+      const dy = e.movementY || 0
+      // a single event further than any hand moves in a few milliseconds is the browser's glitch, not the mouse
+      if (Math.abs(dx) > SPIKE || Math.abs(dy) > SPIKE) return
+      s.dx += dx
+      s.dy += dy
     }
     const press = (e: MouseEvent) => {
       if (s.phase !== 'walk' && s.phase !== 'in') return
       if (document.pointerLockElement !== dom) {
         // a click on the view takes the pointer again, if the browser lets it; until then a drag looks round
         s.drag = true
-        try {
-          const asked = dom.requestPointerLock?.() as unknown as Promise<void> | undefined
-          asked?.catch?.(() => {})
-        } catch {
-          /* dragging it is */
-        }
+        takePointer(dom)
       }
     }
     const release = () => (s.drag = false)
     let held = false
     const lock = () => {
       const now = document.pointerLockElement === dom
+      s.skip = 2
+      s.dx = 0
+      s.dy = 0
       // the browser let go of the pointer (Esc does that before any key reaches the page): the walk ends with it
       if (held && !now && (s.phase === 'walk' || s.phase === 'in')) leave.current()
       held = now
@@ -285,6 +313,14 @@ export function Walk({ nav, on, onActive, onLeave }: { nav: Nav; on: boolean; on
       }
     }
 
+    // the look follows the mouse exactly: what moved since the last frame, applied once
+    if (s.dx || s.dy) {
+      s.yaw = wrap(s.yaw - s.dx * LOOK)
+      s.pitch = THREE.MathUtils.clamp(s.pitch - s.dy * LOOK, -PITCH, PITCH)
+      s.dx = 0
+      s.dy = 0
+    }
+    if (import.meta.env.DEV) (window as unknown as { sbWalk?: unknown }).sbWalk = { yaw: s.yaw, pitch: s.pitch, phase: s.phase }
     look.set(s.pitch, s.yaw, 0)
     aim.setFromEuler(look)
     const eyeY = EYE + Math.sin(s.bob) * 0.025

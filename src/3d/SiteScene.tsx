@@ -10,7 +10,8 @@ import { type Pt, bayRun, bayStands, curveTiles, nearestBay } from '../sim/curve
 import { money, moneyDelta, num, pct } from '../components/format'
 import { EDGE_COST, edgePrice, keepsDoors, partitionRun, roomCost, zonePlan } from '../sim/game'
 import type { FactoryLife, OfficeLife, StoreLife, VenueLife } from '../sim/life'
-import { type Well, blankLevel, storeysOf, wellsOn, ITEMS, type LineStats, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, areaOf, areaTiles, canPartition, canPlace, ceilingOf, curveFor, cutAt, doorFits, fillError, gridAt, inPlot, isBoundary, hasGround, isStage, itemAt, itemTiles, pocketAt, reachable, roomOf, rowSpots, stageOf, tilesOf, wallAt } from '../sim/sites'
+import { turnPlan } from '../sim/game'
+import { type Well, blankLevel, ceilingAt, storeysOf, wellsOn, ITEMS, type LineStats, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, areaOf, areaTiles, canPartition, canPlace, ceilingOf, curveFor, cutAt, doorFits, fillError, gridAt, inPlot, isBoundary, hasGround, isStage, itemAt, itemTiles, pocketAt, reachable, roomOf, rowSpots, stageOf, tilesOf, wallAt } from '../sim/sites'
 import { ROLE_INFO, inTraining, jobTitle } from '../sim/staff'
 import type { Employee, Product, Site, SiteItem, SiteKind } from '../sim/types'
 import { QUALITY, type Quality, isHeld, useSettings } from '../store/settings'
@@ -38,7 +39,7 @@ import { seatOwners } from './site/seats'
 import { buildSpots, seatAisles } from './site/spots'
 import { Shoppers, StoreItem } from './site/store'
 import { Batch, CUT_H, Ground, STOREY, Structure, type ViewMode, WALL_T, wallTop } from './site/structure'
-import { Storeys, holesOn } from './site/storeys'
+import { Climb, Storeys, holesOn } from './site/storeys'
 import { planKey } from './site/plankey'
 import { Walk } from './site/walk'
 import { Heartbeat, type Pulse, useTick } from './site/tick'
@@ -55,6 +56,8 @@ export type SiteTool =
   | { type: 'item'; kind: string; rot: number }
   | { type: 'room'; room: string; shape: AreaShape; opts?: ShapeOpts }
   | { type: 'clear'; shape: AreaShape; opts?: ShapeOpts }
+  /** Turn the rooms in a box a quarter turn, with their walls and furniture. */
+  | { type: 'turn'; shape: AreaShape; opts?: ShapeOpts }
   | { type: 'ground'; id: string; shape: AreaShape; opts?: ShapeOpts }
   | { type: 'edge'; kind: 'wall' | 'glass' | 'door' | 'open' }
   | { type: 'rotate' }
@@ -109,6 +112,8 @@ export interface AreaNote {
   anchored?: boolean
   /** Things standing on the ground that building here clears away and sells. */
   clears?: number
+  /** Turning rooms: what it costs. */
+  cost?: number
 }
 
 /** The store's month, projected to its end, for the plate over its tills. */
@@ -284,6 +289,8 @@ function ItemKind({ kind, item, c }: { kind: SiteKind; item: string; c: ItemCtx 
   // plants that grow the same on every kind of site, and keep clear of the walls beside them
   if (item === 'otree') return <Tree seed={c.seed} fit={c.fit} />
   if (item === 'bamboo') return <Bamboo seed={c.seed} fit={c.fit} />
+  // stairs, lifts and escalators look the same in every kind of building
+  if (kind !== 'office' && (item === 'stairs' || item === 'lift' || item === 'escalator')) return <Climb kind={item} />
   if (kind === 'office') return <OfficeItem kind={item} c={{ who: c.who, glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, devices: c.devices, on: c.on, live: c.live, progress: c.progress, busy: c.busy }} />
   if (kind === 'factory') return <FactoryItem kind={item} c={{ running: !!c.running, flow: c.flow, glow: c.glow, seed: c.seed, fill: c.fill, away: c.away, live: c.live }} />
   if (kind === 'store') return <StoreItem kind={item} c={{ products: c.products, glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, soldOut: c.soldOut }} />
@@ -852,7 +859,7 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
   // a venue's hall is walked under its own roof, raised over the rigging; upstairs the outside is the floor's own walls, with no roof over them to hide the rooms
   const mode: ViewMode = walking && ground.kind === 'venue' ? 'full' : (walking && (chosen === 'cut' || chosen === 'down')) || (level && chosen === 'full') ? 'walls' : chosen
   /** An office of several storeys seen from outside: each floor is drawn as built, the ground floor one storey high, each with its roof over what is not built on above. */
-  const stacked = mode === 'full' && !level && !!ground.upper?.length
+  const stacked = mode === 'full' && !level && !!ground.upper?.some((l) => l.rooms.length)
   const endWalk = useCallback(() => onWalkEnd?.(), [onWalkEnd])
   const prefs = useSettings((s) => s.settings)
   const Q = QUALITY[prefs.quality]
@@ -895,7 +902,7 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
   const accent = themeColor('accent', '#ff6b1a')
   const neg = themeColor('neg', '#ff4d4f')
   const palette = useMemo<Palette>(() => ({ accent, neg, pos: themeColor('pos', '#5fd08a'), warn: themeColor('warn', '#f2b631') }), [accent, neg])
-  const areaTool = tool?.type === 'room' || tool?.type === 'clear' || tool?.type === 'ground'
+  const areaTool = tool?.type === 'room' || tool?.type === 'clear' || tool?.type === 'ground' || tool?.type === 'turn'
   /** Filling a courtyard is one click on it, and only rooms are built that way: any other area tool draws a box instead. */
   const filling = tool?.type === 'room' && tool.shape === 'fill'
   const shape: Shape = tool && 'shape' in tool && tool.shape !== 'fill' ? tool.shape : 'rect'
@@ -934,7 +941,7 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
   const owners = useMemo(() => seatOwners(ground, seated), [ground, site, site.rev, ground.rev, seatedKey]) // eslint-disable-line react-hooks/exhaustive-deps
   // what each person is called: an executive goes by the seat they hold, not their desk job
   const titles = useMemo(() => new Map([...seated, ...idle].map((e) => [String(e.id), jobTitle(e)])), [seatedKey, idle.length]) // eslint-disable-line react-hooks/exhaustive-deps
-  const crowdOn = lively && prefs.walkers && (site.kind !== 'factory' || !!life?.factory)
+  const crowdOn = lively && prefs.walkers && (site.kind !== 'factory' || !!life?.factory) && !(level && (site.kind === 'venue' || site.kind === 'factory'))
   const crowd = useMemo(() => (crowdOn ? (site.kind === 'venue' ? new VenueCrowd() : site.kind === 'factory' ? new FactoryCrowd() : new Crowd()) : null), [crowdOn, site.kind])
   /** Whether the site is in its working day, and where a venue is in its programme: told by the clock when either turns over. */
   const [turn, setTurn] = useState<{ working: boolean; phase: Phase }>({ working: true, phase: 'closed' })
@@ -1128,7 +1135,8 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
   const snap = useMemo(() => {
     const shot = snapshot(site)
     // with storeys of their own over it, the ground floor stands one storey high
-    if (stacked) shot.floors = 1
+    // (a venue's hall keeps its full height, its balconies inside it)
+    if (stacked && site.kind !== 'venue') shot.floors = 1
     return shot
   }, [site, plan, stacked]) // eslint-disable-line react-hooks/exhaustive-deps
   const [standing, setStanding] = useState(snap)
@@ -1224,7 +1232,7 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
       fill: Math.round(busy * 5) / 5,
       away: !!item.id && yard.managed.has(item.id),
       aisles: site.kind === 'venue' && 'x' in item ? seatAisles(site, item as SiteItem) : 0,
-      ceiling: site.kind === 'venue' && 'x' in item && gridAt(site, (item as SiteItem).x, (item as SiteItem).y) > 0 ? ceilingOf(site) : undefined,
+      ceiling: site.kind === 'venue' && 'x' in item && gridAt(site, (item as SiteItem).x, (item as SiteItem).y) > 0 ? ceilingAt(site, (item as SiteItem).x, (item as SiteItem).y) : undefined,
       sparing,
       fit: item.kind === 'otree' || item.kind === 'bamboo' ? fitOf(item) : undefined,
     }
@@ -1352,6 +1360,17 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
         return yard(pocket.tiles, live, pocket)
       }
       const from = anchor ?? [hover.x, hover.y]
+      // turning rooms: where they would stand, in the tool's colour, or the rooms themselves in the warning colour where they cannot
+      if (tool.type === 'turn') {
+        const plan = turnPlan(site, from[0], from[1], hover.x, hover.y)
+        const own = new Set(plan.rooms)
+        const mine: [number, number][] = []
+        site.grid.forEach((n, i) => own.has(n) && mine.push([i % w, Math.floor(i / w)]))
+        const error = plan.error ?? (plan.cost > budget ? `Not enough cash: turning them costs ${money(plan.cost)}` : undefined)
+        const note: AreaNote = { anchored: !!anchor, cost: plan.cost, error }
+        if (error) return { good: [] as [number, number][], bad: mine.length ? mine : [[hover.x, hover.y]] as [number, number][], curve: null, area: 0, note }
+        return { good: [...plan.to.keys()].map((k) => k.split(',').map(Number) as [number, number]), bad: [] as [number, number][], curve: null, area: plan.to.size, note }
+      }
       // a box across half or more of a curved courtyard takes the whole of it; one in such a courtyard at all is told so,
       // before the first corner is set as well as after
       const plan = tool.type === 'room' && shape === 'rect' && site.curves?.length ? zonePlan(site, from[0], from[1], hover.x, hover.y, shape, opts) : null

@@ -119,6 +119,8 @@ export const ITEMS: Record<SiteKind, Record<string, ItemDef>> = {
     otree: d('Tree', 900, 1, 1, 'Yard', [OUT], 'Softens the yard.'),
     bamboo: d('Bamboo', 700, 1, 1, 'Yard', [OUT], 'A clump of canes that screens the yard.'),
     lamp: d('Lamp post', 500, 1, 1, 'Yard', [OUT], 'Lights the yard.'),
+    stairs: d('Staircase', 6000, 1, 3, 'Floors', ['hall', 'store', 'control', 'crew'], 'Rises to the floor above and opens a stairwell through it. Build a room over it up there to arrive in.'),
+    lift: d('Lift', 24000, 2, 2, 'Floors', ['hall', 'store', 'control', 'crew'], 'Its shaft runs up through every floor above with a room over it, stopping at each.'),
   },
   store: {
     table: d('Display table', 6000, 2, 1, 'Fixtures', ['sales'], 'Shows your devices. Serves 70 shoppers a day.', { visitors: 70 }),
@@ -139,6 +141,9 @@ export const ITEMS: Record<SiteKind, Record<string, ItemDef>> = {
     bamboo: d('Bamboo', 700, 1, 1, 'Decor', ['sales', 'service', 'forum', OUT], 'A clump of canes, green, golden or black.', { comfort: 0.6 }),
     planter: d('Planter', 1400, 2, 1, 'Outside', [OUT], 'Greenery at the entrance.', { comfort: 0.6 }),
     sign: d('Totem sign', 5000, 1, 1, 'Outside', [OUT], 'Your logo on a lit column.', { comfort: 1 }),
+    stairs: d('Staircase', 6000, 1, 3, 'Floors', ['sales', 'service', 'forum', 'stock'], 'Rises to the floor above and opens a stairwell through it. Build a room over it up there to arrive in.'),
+    lift: d('Lift', 24000, 2, 2, 'Floors', ['sales', 'service', 'forum', 'stock'], 'Its shaft runs up through every floor above with a room over it, stopping at each.'),
+    escalator: d('Escalator', 38000, 2, 4, 'Floors', ['sales', 'service', 'forum'], 'A moving stair up to the floor above: takes a crowd where stairs take a queue.'),
   },
   venue: {
     stage: d('Stage', 60000, 6, 4, 'Stage', ['hall', OUT], 'The platform everything happens on. A venue needs one.', { show: 2 }),
@@ -164,6 +169,9 @@ export const ITEMS: Record<SiteKind, Record<string, ItemDef>> = {
     lamp: d('Lamp post', 500, 1, 1, 'Grounds', [OUT], 'Lights the way in.'),
     flag: d('Flagpole', 1200, 1, 1, 'Grounds', [OUT], 'Your colours, flying.'),
     fountain: d('Fountain', 22000, 3, 3, 'Grounds', [OUT], 'A round pool with a jet.', { show: 0.5 }),
+    stairs: d('Staircase', 6000, 1, 3, 'Floors', ['foyer', 'hall'], 'Rises to the floor above and opens a stairwell through it. Build a room over it up there to arrive in.'),
+    lift: d('Lift', 24000, 2, 2, 'Floors', ['foyer', 'hall'], 'Its shaft runs up through every floor above with a room over it, stopping at each.'),
+    escalator: d('Escalator', 38000, 2, 4, 'Floors', ['foyer', 'hall'], 'A moving stair up to the floor above: takes a crowd where stairs take a queue.'),
   },
 }
 
@@ -1130,6 +1138,7 @@ export function canPlace(site: Site, kind: string, x: number, y: number, rot: nu
   // only what the list itself names: "constructor" is a property of every object, and not a piece of furniture
   const def = typeof kind === 'string' && Object.hasOwn(ITEMS[site.kind], kind) ? ITEMS[site.kind][kind] : undefined
   if (!def) return UNKNOWN_ITEM
+  if (site.level && GROUND_ONLY[site.kind].has(kind)) return `${def.name} stands on the ground floor: an upper floor cannot carry it`
   if (site.level && !def.rooms.some((r) => r !== OUT)) return `${def.name} stands outdoors, on the ground floor`
   if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(rot)) return 'It does not fit on the plot'
   if (!itemAllowed(site, kind)) return 'Trees do not grow inside a mall'
@@ -1157,7 +1166,22 @@ export const countItems = (site: Site, kind: string) => site.items.filter((i) =>
 /** What is said of open space on an upper floor. */
 export const UPSTAIRS_OPEN = 'Upstairs, everything stands in a room: build one here first'
 /** Staircases and lifts: what joins a storey to the one above it. */
-export const CLIMB: ReadonlySet<string> = new Set(['stairs', 'lift'])
+export const CLIMB: ReadonlySet<string> = new Set(['stairs', 'lift', 'escalator'])
+
+/**
+ * What stays on the ground floor of each kind of building: a production
+ * line's heavy machines and docks, and a venue's stages and screens. Upstairs
+ * a factory has warehouses, control and crew rooms; a venue balconies of
+ * seating and foyers; a store any of its rooms.
+ */
+export const GROUND_ONLY: Record<SiteKind, ReadonlySet<string>> = {
+  office: new Set(),
+  factory: new Set(['dock_in', 'dock_out', 'conveyor', 'smt', 'robot', 'manual', 'test', 'pack', 'forklift']),
+  store: new Set(),
+  venue: new Set(['stage', 'stage_l', 'stage_xl', 'screen', 'screen_l', 'screen_xl', 'fountain']),
+}
+/** Rooms that stand only on the ground floor: a factory's production hall carries the line. */
+export const GROUND_ROOMS: Record<SiteKind, ReadonlySet<string>> = { office: new Set(), factory: new Set(['hall']), store: new Set(), venue: new Set() }
 
 /**
  * The storeys above the ground floor, one for each floor the building has
@@ -1165,7 +1189,7 @@ export const CLIMB: ReadonlySet<string> = new Set(['stairs', 'lift'])
  * the number of floors; only offices have them.
  */
 export function syncLevels(site: Site): Site[] {
-  if (site.kind !== 'office' || site.level) return []
+  if (site.level) return []
   const want = Math.max(0, site.floors - 1)
   const up = site.upper ?? []
   while (up.length < want) up.push(blankLevel(site, up.length + 1))
@@ -1228,7 +1252,7 @@ export function wellsOn(ground: Site, floor: number): Map<number, Well> {
     for (const it of floors[f].items) {
       if (!CLIMB.has(it.kind)) continue
       // stairs come up one floor; a lift only as far as its shaft runs, and one floor past that
-      if (it.kind === 'stairs' ? f !== floor - 1 : liftTop(floors, f, it) < floor - 1) continue
+      if (it.kind !== 'lift' ? f !== floor - 1 : liftTop(floors, f, it) < floor - 1) continue
       const tiles = itemTiles(floors[f], it)
       const lands = roomedOver(here, tiles)
       for (const [x, y] of tiles) out.set(y * ground.w + x, { kind: it.kind, lands })
@@ -1244,7 +1268,7 @@ export function climbBlocked(ground: Site, floor: number, kind: string, tiles: [
   for (let f = floor + 1; f < floors.length; f++) {
     const l = floors[f]
     if (tiles.some(([x, y]) => itemAt(l, x, y))) return `Something stands over it on ${f === 1 ? 'the first floor' : `floor ${f}`}: move it first`
-    if (kind === 'stairs' || !roomedOver(l, tiles)) break
+    if (kind !== 'lift' || !roomedOver(l, tiles)) break
   }
   return null
 }
@@ -1273,7 +1297,7 @@ export function linkedLevels(site: Site): number {
       const open = storeyOpen(floors, m)
       for (const it of floors[m].items) {
         if (!CLIMB.has(it.kind) || !open.has(gridAt(floors[m], it.x, it.y))) continue
-        if (it.kind === 'stairs' ? m === f - 1 && roomedOver(floors[f], itemTiles(floors[m], it)) : liftTop(floors, m, it) >= f) {
+        if (it.kind !== 'lift' ? m === f - 1 && roomedOver(floors[f], itemTiles(floors[m], it)) : liftTop(floors, m, it) >= f) {
           reached = true
           break
         }
@@ -1402,8 +1426,10 @@ export function storeStats(site: Site): StoreStats {
   const supports = count('support')
   const repairs = count('repair')
   const capacity = sumOf(site, 'visitors', items)
-  const tiles = Math.max(1, builtTiles(site))
-  const used = items.filter((i) => !ITEMS.store[i.kind].flat && gridAt(site, i.x, i.y)).reduce((a, i) => a + ITEMS.store[i.kind].w * ITEMS.store[i.kind].h, 0)
+  // every storey people can get up to is shop floor
+  const tiles = Math.max(1, storeysOf(site).reduce((a, l) => a + builtTiles(l), 0))
+  const outdoors = new Set(site.items.filter((i) => !gridAt(site, i.x, i.y)).map((i) => i.id))
+  const used = items.filter((i) => !ITEMS.store[i.kind].flat && !CLIMB.has(i.kind) && !outdoors.has(i.id)).reduce((a, i) => a + ITEMS.store[i.kind].w * ITEMS.store[i.kind].h, 0)
   // a little decor goes a long way; a cluttered floor puts people off
   const decor = Math.min(1, sumOf(site, 'comfort', items) / (tiles * 0.06))
   const crowding = Math.max(0, used / tiles - 0.4) * 2.5
@@ -1458,6 +1484,21 @@ export function stageOf(site: Site): SiteItem | undefined {
 /** Metres from a storey's floor to the next one (the 3D view's STOREY), and the clear height of a hall under its roof. */
 export const STOREY_M = 3
 export const ceilingOf = (site: Pick<Site, 'floors'>) => site.floors * STOREY_M - 0.1
+/** The clear height over a tile of the ground floor: up through every storey that has no room over it, to the roof or the first floor built over it. */
+export function ceilingAt(site: Site, x: number, y: number): number {
+  let n = 1
+  for (const l of site.upper ?? []) {
+    if (gridAt(l, x, y)) break
+    n++
+  }
+  return Math.min(n, site.floors) * STOREY_M - 0.1
+}
+/** Storeys a venue's tallest rigging needs over it, 1 with none. */
+export function rigNeed(site: Site): number {
+  let top = 0
+  for (const it of site.items) if (RIG_TOP[it.kind] && gridAt(site, it.x, it.y)) top = Math.max(top, RIG_TOP[it.kind])
+  return top ? Math.ceil((top + 0.4) / STOREY_M) : 1
+}
 /** How tall each piece of stage rigging stands when it has the room, in metres. */
 export const RIG_TOP: Record<string, number> = { screen: 5.2, screen_l: 7.2, screen_xl: 10.8, lights: 6.6, stage_l: 7.0, stage_xl: 9.6 }
 

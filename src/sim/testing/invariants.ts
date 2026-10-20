@@ -453,20 +453,21 @@ export function checkState(s: GameState, opts: CheckOpts = {}): string[] {
   for (const st of s.stores) if (!REGIONS.some((r) => r.id === st.region)) bad('store-region', `${st.id} ${st.region}`)
   if (!opts.light) {
     if (s.office.kind !== 'office' || (s.factory && s.factory.kind !== 'factory') || (s.venue && s.venue.kind !== 'venue')) bad('site-kind', 'a plot is of the wrong kind')
-    out.push(...checkSite(s.office, 'office'))
-    // the storeys above: one for each floor over the first, each over the ground floor's rooms
-    const up = s.office.upper ?? []
-    if (up.length !== s.office.floors - 1) bad('site-levels', `office has ${up.length} upper floors for ${s.office.floors} storeys`)
-    up.forEach((l, i) => {
-      out.push(...checkSite(l, `office@${i + 1}`))
-      if (l.level !== i + 1) bad('site-levels', `office@${i + 1} says it is floor ${l.level}`)
-      // rooms upstairs may stand over open ground: they are carried on columns
-      if (l.w !== s.office.w || l.h !== s.office.h) bad('site-levels', `office@${i + 1} is not the size of the plot`)
-      for (const it of l.items) if (wellsOn(s.office, i + 1).has(it.y * l.w + it.x)) bad('site-levels', `office@${i + 1} has ${it.kind} standing in a stairwell`)
-    })
-    if (s.factory) out.push(...checkSite(s.factory, 'factory'))
-    if (s.venue) out.push(...checkSite(s.venue, 'venue'))
-    for (const st of s.stores) out.push(...checkSite(st.site, `store ${st.id}`))
+    // every building and the storeys above it: one for each floor over the first, the size of the plot
+    const buildings: [Site, string][] = [[s.office, 'office'], ...(s.factory ? [[s.factory, 'factory'] as [Site, string]] : []), ...(s.venue ? [[s.venue, 'venue'] as [Site, string]] : []), ...s.stores.map((st): [Site, string] => [st.site, `store ${st.id}`])]
+    for (const [g, name] of buildings) {
+      out.push(...checkSite(g, name))
+      const up = g.upper ?? []
+      if (up.length && up.length !== g.floors - 1) bad('site-levels', `${name} has ${up.length} upper floors for ${g.floors} storeys`)
+      up.forEach((l, i) => {
+        const at = `${name}@${i + 1}`
+        out.push(...checkSite(l, at))
+        if (l.level !== i + 1) bad('site-levels', `${at} says it is floor ${l.level}`)
+        if (l.w !== g.w || l.h !== g.h) bad('site-levels', `${at} is not the size of the plot`)
+        const wells = wellsOn(g, i + 1)
+        for (const it of l.items) if (wells.has(it.y * l.w + it.x)) bad('site-levels', `${at} has ${it.kind} standing in a stairwell`)
+      })
+    }
     // a save is the state as JSON: nothing may be lost or changed by the trip
     // the screens' own sums, asked for once a month
     if (!opts.noJson) out.push(...checkReadouts(s))
