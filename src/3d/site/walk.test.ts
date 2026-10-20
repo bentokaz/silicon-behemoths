@@ -31,6 +31,9 @@ describe('walking', () => {
     // south through the door, and out onto the open ground beyond
     const [, out] = slide(nav, x, z, 0, 5)
     expect(out).toBeGreaterThan(8 - site.h / 2 + 1)
+    // off the middle of the doorway, the frame eases the walker through rather than holding them
+    const [, eased] = slide(nav, wx(site, 6) + 0.38, z, 0, 5)
+    expect(eased).toBeGreaterThan(8 - site.h / 2 + 1)
     // a metre along, there is no door: the wall holds
     const [, held] = slide(nav, wx(site, 7.2), z, 0, 5)
     expect(held).toBeLessThanOrEqual(8 - site.h / 2 - BODY + 1e-6)

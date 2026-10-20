@@ -2171,11 +2171,11 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
 
       {site.kind === 'store' && !crowdOn && <Shoppers spots={shopperSpots} count={Math.round(busy * shopperSpots.length)} />}
 
-      {roomFloor.tiles.length + roomFloor.shapes.length > 0 && <Tint tiles={roomFloor.tiles} shapes={roomFloor.shapes} w={w} h={h} color={accent} opacity={0.16} y={0.014} inset={0} />}
-      {sealedFloor.tiles.length + sealedFloor.shapes.length > 0 && <Tint tiles={sealedFloor.tiles} shapes={sealedFloor.shapes} w={w} h={h} color={neg} opacity={0.22} y={0.016} inset={0} />}
+      {roomFloor.tiles.length + roomFloor.shapes.length > 0 && <Tint tiles={roomFloor.tiles} shapes={roomFloor.shapes} w={w} h={h} color={accent} opacity={0.16} y={0.028} inset={0} />}
+      {sealedFloor.tiles.length + sealedFloor.shapes.length > 0 && <Tint tiles={sealedFloor.tiles} shapes={sealedFloor.shapes} w={w} h={h} color={neg} opacity={0.22} y={0.03} inset={0} />}
       {preview && (preview.good.length > 0 || ('shapes' in preview && !!preview.shapes?.length)) && <Tint tiles={preview.good} shapes={'shapes' in preview ? preview.shapes : undefined} w={w} h={h} color={accent} opacity={ghost ? 0.22 : 0.45} inset={'shapes' in preview && preview.shapes ? 0 : undefined} />}
       {/* the box the sell tool is being dragged over, faintly, round what it would take */}
-      {preview && 'zone' in preview && preview.zone && <Tint tiles={preview.zone} w={w} h={h} color={accent} opacity={0.1} y={0.012} inset={0} />}
+      {preview && 'zone' in preview && preview.zone && <Tint tiles={preview.zone} w={w} h={h} color={accent} opacity={0.1} y={0.026} inset={0} />}
       {preview && preview.bad.length > 0 && <Tint tiles={preview.bad} w={w} h={h} color={neg} opacity={0.5} />}
       {preview && 'curve' in preview && preview.curve && <CurveOutline spec={preview.curve} w={w} h={h} color={accent} />}
       {ghost}
@@ -2196,7 +2196,7 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
       )}
       <Drawn on={onUp} />
       {!autoRotate && !walking && !director && <CameraKeys span={span} home={home} aim={aim} />}
-      <Walk nav={nav} on={walk} onActive={setWalking} onLeave={endWalk} floor={floor} flights={flights} lifts={liftStops} onFloor={onWalkFloor} onHint={onWalkHint} />
+      <Walk nav={nav} on={walk} onActive={setWalking} onLeave={endWalk} floor={floor} flights={flights} lifts={liftStops} onFloor={onWalkFloor} onHint={onWalkHint} crowd={crowd} />
       {autoRotate && !director && <AutoTurn speed={3} />}
       {director && <Director shot={director} />}
       <CameraFence span={span} top={height + 6} />

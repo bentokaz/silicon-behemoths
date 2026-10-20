@@ -258,6 +258,19 @@ export class Crowd {
   protected byKey = new Map<string, Spot>()
   protected wanderTiles: number[] = []
   private tables: Spot[][] = []
+  /** The walker, standing on this floor: kept clear of like anyone else on their feet. */
+  private you: Body | null = null
+  /** Tells the crowd where someone walking the site is (null when nobody is). */
+  setWalker(at: { x: number; z: number; yaw: number } | null) {
+    if (!at) {
+      this.you = null
+      return
+    }
+    const y = (this.you ??= Object.assign(new Body(), { id: 'you', mode: Mode.Do }))
+    y.x = at.x
+    y.z = at.z
+    y.yaw = at.yaw
+  }
   /** Places to stand and present beside a screen or a whiteboard, one taken by whoever leads a meeting in that room. */
   private podiums: Spot[] = []
 
@@ -1939,6 +1952,8 @@ export class Crowd {
       if (b.striding && (b.mode === Mode.Enter || b.mode === Mode.Exit)) continue
       if (b.mode !== Mode.Do || !b.spot || b.spot.open) foot.push(b)
     }
+    // the walker, if someone is walking the site: people step round them as round anyone standing there
+    if (this.you) foot.push(this.you)
     this.countGates()
     this.wayers.length = 0
     for (const b of this.bodies) if (b.striding && (b.mode === Mode.Enter || b.mode === Mode.Exit)) this.wayers.push(b)

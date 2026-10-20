@@ -17,6 +17,8 @@ export const campus = {
   /** Hours since the first midnight; the hour of the day is this modulo 24. */
   t: FIRST_LOOK,
 }
+// (dev builds: the clock can be set from the console, and by the screenshot scripts)
+if (import.meta.env.DEV && typeof window !== 'undefined') Object.assign(window, { sbClock: campus })
 
 export const hourOf = (t: number) => ((t % 24) + 24) % 24
 export const dayOf = (t: number) => Math.floor(t / 24)

@@ -97,7 +97,8 @@ export function Ceilings({ ground, floor, sig }: { ground: Site; floor: number; 
       const z = Math.floor(i / plan.w)
       b.box('wall', x + 0.5 - plan.w / 2, y, z + 0.5 - plan.h / 2, 1, 0.07, 1, '#e9e7e2', 0.95)
     }
-    return b.build((k) => surface(k))
+    // (a ceiling casts no shadow: the rooms under it are lit as the daylight lights them, not shut in the dark)
+    return b.build((k) => ({ ...surface(k), cast: false }))
   }, [sig, floor])
   return (
     <>

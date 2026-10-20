@@ -789,11 +789,13 @@ export function SiteBuilder({ siteRef, site: ground, status, children, tools, se
         <>
           {/* where the eyes are pointed */}
           <div aria-hidden className="pointer-events-none absolute left-1/2 top-1/2 z-20 h-[9px] w-[9px] -translate-x-1/2 -translate-y-1/2 border border-fg/70" />
-          <div data-walk-hint className="absolute bottom-2 left-1/2 z-20 sb-float flex -translate-x-1/2 items-center gap-3 px-3 py-[6px] text-[11px] text-dim">
+          <div data-walk-hint className="absolute bottom-2 left-1/2 z-20 sb-float flex -translate-x-1/2 items-center gap-3 whitespace-nowrap px-3 py-[6px] text-[11px] text-dim">
             <span className="flex items-center gap-[6px] text-fg">
               <Icon name="walk" size={13} />
-              Walking
+              Walking{ground.upper?.length ? `, ${floorName(floor).toLowerCase()}` : ''}
             </span>
+            {walkHint && <span className="text-accent">{walkHint}</span>}
+            {!walkHint && ground.upper?.length ? <span>Stairs and escalators change floor</span> : null}
             <span>
               <span className="num text-fg">W A S D</span> move
             </span>
@@ -1030,7 +1032,6 @@ export function SiteBuilder({ siteRef, site: ground, status, children, tools, se
       )}
 
       {!walk && <SiteHint parts={hint} tone={hintTone} help={help} />}
-      {walk && <SiteHint parts={[walkHint ?? `${floorName(floor)}. W A S D to walk, the mouse to look, Shift to run; walk onto stairs or an escalator to change floor`, ...key('cancel'), 'stops walking']} tone={walkHint ? 'live' : undefined} help={help} />}
     </div>
   )
 }

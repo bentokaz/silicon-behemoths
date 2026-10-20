@@ -92,6 +92,19 @@ export function slide(nav: Nav, x: number, z: number, dx: number, dz: number): [
     if (standable(nav, x + sx, z + sz)) (x += sx), (z += sz)
     else if (sx && standable(nav, x + sx, z)) x += sx
     else if (sz && standable(nav, x, z + sz)) z += sz
+    else {
+      // caught on a door frame or a corner: ease sideways toward the middle of the way through, so a doorway funnels rather than snags
+      const step = Math.hypot(sx, sz)
+      if (Math.abs(sx) > Math.abs(sz)) {
+        const mid = Math.floor(z + nav.h / 2) + 0.5 - nav.h / 2
+        const nz = z + Math.sign(mid - z) * Math.min(Math.abs(mid - z), step)
+        if (nz !== z && standable(nav, x, nz)) z = nz
+      } else {
+        const mid = Math.floor(x + nav.w / 2) + 0.5 - nav.w / 2
+        const nx = x + Math.sign(mid - x) * Math.min(Math.abs(mid - x), step)
+        if (nx !== x && standable(nav, nx, z)) x = nx
+      }
+    }
   }
   return [x, z]
 }
@@ -173,7 +186,7 @@ interface Controls {
  * walker's, from the start of the glide down to the end of the glide back;
  * `onLeave` asks the screen to end the walk (Esc, or the pointer let go).
  */
-export function Walk({ nav, on, onActive, onLeave, floor = 0, flights = [], lifts = [], onFloor, onHint }: {
+export function Walk({ nav, on, onActive, onLeave, floor = 0, flights = [], lifts = [], onFloor, onHint, crowd }: {
   nav: Nav
   on: boolean
   onActive: (active: boolean) => void
@@ -186,6 +199,8 @@ export function Walk({ nav, on, onActive, onLeave, floor = 0, flights = [], lift
   onFloor?: (floor: number) => void
   /** A line for the screen to show while walking: what a key does here. */
   onHint?: (text: string | null) => void
+  /** The people about: told where the walker is, so they step round them. */
+  crowd?: { setWalker(at: { x: number; z: number; yaw: number } | null): void } | null
 }) {
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera
   const controls = useThree((s) => s.controls) as unknown as Controls | null
@@ -473,6 +488,7 @@ export function Walk({ nav, on, onActive, onLeave, floor = 0, flights = [], lift
     look.set(s.pitch, s.yaw, 0)
     aim.setFromEuler(look)
     const eyeY = s.base + EYE + Math.sin(s.bob) * 0.025
+    crowd?.setWalker(s.phase === 'walk' && !s.climb ? { x: s.x, z: s.z, yaw: s.yaw } : null)
     // what a key does here, for the screen to say
     if (s.phase === 'walk') {
       const lift = liftsRef.current.find((l) => Math.hypot(l.x - s.x, l.z - s.z) < 1.4)

@@ -67,7 +67,7 @@ export function meetingTopic(office: OfficeLife | undefined, team: number, day: 
   for (const c of office.campaigns) options.push({ text: `Campaign check-in: ${c.target}`, secret: false })
   const sale = office.onSale[0]
   if (sale) options.push({ text: `${sale.name}: sales numbers`, secret: false })
-  if (office.support.tickets > 0) options.push({ text: `Support queue: ${office.support.tickets} open tickets`, secret: false })
+  if (office.support.tickets >= 1) options.push({ text: `Support queue: ${Math.round(office.support.tickets).toLocaleString('en-US')} open tickets`, secret: false })
   return pick(options, n) ?? { text: 'Weekly planning', secret: false }
 }
 

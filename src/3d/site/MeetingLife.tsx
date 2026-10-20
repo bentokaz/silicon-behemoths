@@ -70,7 +70,7 @@ export function MeetingLife({ site, crowd, office, palette, glow, height, showTe
   if (all.length !== frosted.length) setFrosted(all)
   const screens = useMemo(() => {
     const rooms = new Map(now.map((m) => [gridAt(site, m.table.x, m.table.y), m.table.id]))
-    return site.items.filter((i) => (i.kind === 'screen' || i.kind === 'whiteboard') && rooms.has(gridAt(site, i.x, i.y))).map((i) => ({ item: i, table: rooms.get(gridAt(site, i.x, i.y))! }))
+    return site.items.filter((i) => i.kind === 'whiteboard' && rooms.has(gridAt(site, i.x, i.y))).map((i) => ({ item: i, table: rooms.get(gridAt(site, i.x, i.y))! }))
   }, [now, site])
   return (
     <>
