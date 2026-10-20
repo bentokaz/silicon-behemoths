@@ -206,7 +206,7 @@ export function SiteBuilder({ siteRef, site: ground, status, children, tools, se
   const storeId = siteRef.startsWith('store:') ? siteRef.slice(6) : ''
   const rev = useStore((s) => s.rev)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const life = useMemo<SiteLife | undefined>(() => (siteRef === 'office' ? { office: officeLife(g) } : siteRef === 'factory' ? { factory: factoryLife(g) } : storeId ? { store: storeLife(g, storeId) ?? undefined } : siteRef === 'venue' ? { venue: venueLife(g) } : undefined), [g, siteRef, storeId, rev])
+  const life = useMemo<SiteLife | undefined>(() => (siteRef === 'office' ? { office: officeLife(g) } : siteRef === 'factory' || siteRef.startsWith('plant:') ? { factory: factoryLife(g) } : storeId ? { store: storeLife(g, storeId) ?? undefined } : siteRef === 'venue' ? { venue: venueLife(g) } : undefined), [g, siteRef, storeId, rev])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const research = useMemo(() => (siteRef === 'office' ? runningResearch(g) : undefined), [g, siteRef, rev])
   // eslint-disable-next-line react-hooks/exhaustive-deps

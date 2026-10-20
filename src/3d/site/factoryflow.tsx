@@ -7,8 +7,9 @@ import { Html } from '@react-three/drei'
 import { useFrame } from '@react-three/fiber'
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
-import { DIRS, type Joint, type LineStats, RANK, boxOf, faceCells, portsOf } from '../../sim/factoryline'
+import { DIRS, type Joint, type LineStats, boxOf, faceCells, portsOf } from '../../sim/factoryline'
 import { ITEMS, itemTiles } from '../../sim/sites'
+import { useFactoryOverlay } from './overlay'
 import type { Site, SiteItem } from '../../sim/types'
 import { PORT_IN, PORT_OUT } from './factory'
 import { B, STEEL } from './kit'
@@ -18,14 +19,30 @@ const SPEED = 0.7
 const GAP = 0.85
 const MAX_PARTS = 1200
 
-/** What rides the line after each stage: tray of parts, bare board, device, boxed device. */
+/**
+ * What rides the line out of each kind of block, so a belt says what it carries: a grey tray of raw parts, a green
+ * board, a dark device, a brown carton, and each component in a shape of its own.
+ */
 const CARGO = [
   { s: [0.24, 0.1, 0.24], c: '#8d9299' },
   { s: [0.3, 0.035, 0.22], c: '#2f7a4a' },
   { s: [0.17, 0.03, 0.32], c: '#1b1d21' },
   { s: [0.26, 0.19, 0.26], c: '#b98b56' },
+  { s: [0.12, 0.03, 0.12], c: '#2b2d31' },
+  { s: [0.3, 0.012, 0.2], c: '#9be7ff' },
+  { s: [0.1, 0.22, 0.1], c: '#3fae5a' },
+  { s: [0.26, 0.06, 0.16], c: '#c9ccd0' },
+  { s: [0.1, 0.1, 0.1], c: '#5a7dff' },
+  { s: [0.2, 0.1, 0.14], c: '#15171a' },
 ] as const
-const cargoOf = (rank: number) => (rank >= 4 ? 3 : rank >= 2 ? 2 : rank >= 1 ? 1 : 0)
+const PART_CARGO: Record<string, number> = { chip: 4, display: 5, cell: 6, casing: 7, camera: 8, psu: 9 }
+/** The cargo a block sends on: its own product, or for belts and splitters whatever came in. */
+const madeBy = (kind: string): number | undefined => {
+  const def = ITEMS.factory[kind]
+  if (!def?.stage) return undefined
+  if (def.part) return PART_CARGO[def.part]
+  return { in: 0, smt: 1, assembly: 2, test: 2, pack: 3 }[def.stage as string]
+}
 
 interface Run {
   ax: number
@@ -188,13 +205,15 @@ export function FactoryFlow({ site, line, running, labels = true }: { site: Site
     const live = line.live
     const order = [...live].map((id) => byId.get(id)!).filter(Boolean)
     for (const it of order) if (stage(it) === 'in') carry.set(it.id, 0)
-    for (let pass = 0; pass < order.length + 1; pass++) {
+    // what leaves each block: what it makes, or what reached it
+    for (let pass = 0; pass < Math.min(order.length + 1, 400); pass++) {
       let moved = false
       for (const j of line.joints) {
         if (!here(j) || !j.ok || !j.to || !live.has(j.from) || !live.has(j.to) || !carry.has(j.from)) continue
-        const r = Math.max(carry.get(j.from)!, RANK[stage(byId.get(j.to)!)!])
-        if ((carry.get(j.to) ?? -1) < r) {
-          carry.set(j.to, r)
+        const to = byId.get(j.to)!
+        const c = madeBy(to.kind) ?? carry.get(j.from)!
+        if (!carry.has(j.to) || (madeBy(to.kind) === undefined && carry.get(j.to)! < c)) {
+          carry.set(j.to, c)
           moved = true
         }
       }
@@ -209,7 +228,7 @@ export function FactoryFlow({ site, line, running, labels = true }: { site: Site
       const [bx, bz] = centre(site, b)
       const len = Math.hypot(bx - ax, bz - az)
       if (len < 0.01) continue
-      runs.push({ ax, az, bx, bz, len, n: Math.max(1, Math.round(len / GAP)), cargo: cargoOf(carry.get(j.from) ?? 0), phase: (a.x * 7 + a.y * 3) % 5 })
+      runs.push({ ax, az, bx, bz, len, n: Math.max(1, Math.round(len / GAP)), cargo: carry.get(j.from) ?? 0, phase: (a.x * 7 + a.y * 3) % 5 })
     }
     return { bridges, blocked, arrows, runs }
   }, [site, site.rev, line]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -226,6 +245,54 @@ export function FactoryFlow({ site, line, running, labels = true }: { site: Site
         <mesh key={i} geometry={ARROW} material={a.out ? ARROW_OUT : ARROW_IN} position={[a.x, 0.022, a.z]} rotation-y={Math.atan2(-DIRS[a.dir][1], DIRS[a.dir][0])} renderOrder={4} userData={{ live: true }} />
       ))}
       {running && <Parts runs={view.runs} />}
+      <Overlay site={site} line={line} />
     </group>
   )
 }
+
+/** The rates on the joints, when asked for, and the blocks that hold a line back, marked. */
+function Overlay({ site, line }: { site: Site; line: LineStats }) {
+  const o = useFactoryOverlay()
+  const marks = useMemo(() => {
+    const ids = new Set(o.focus)
+    return site.items.filter((it) => ids.has(it.id)).map((it) => {
+      const [x0, y0, x1, y1] = boxOf(site, it)
+      return { id: it.id, x: (x0 + x1 + 1) / 2 - site.w / 2, z: (y0 + y1 + 1) / 2 - site.h / 2, w: x1 - x0 + 1, d: y1 - y0 + 1 }
+    })
+  }, [o.focus, site, site.rev]) // eslint-disable-line react-hooks/exhaustive-deps
+  const ref = useRef<THREE.Group>(null)
+  useFrame(({ clock }) => {
+    if (ref.current) ref.current.position.y = 0.04 * Math.sin(clock.elapsedTime * 5)
+  })
+  // rates where they say something: out of docks, belts, arms and splitters, the links that can run full
+  const rates = useMemo(() => {
+    if (!o.rates) return []
+    const kinds = new Map(site.items.map((it) => [it.id, ITEMS.factory[it.kind]?.stage]))
+    return line.joints.filter((j) => j.ok && j.rate !== undefined && j.rate > 0 && ['in', 'belt', 'split'].includes(kinds.get(j.from) ?? '')).slice(0, 60)
+  }, [o.rates, line, site]) // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <>
+      <group ref={ref}>
+        {marks.map((m) => (
+          <lineSegments key={m.id} geometry={EDGES} position={[m.x, 1.2, m.z]} scale={[m.w + 0.12, 2.4, m.d + 0.12]} renderOrder={7} userData={{ live: true }}>
+            <lineBasicMaterial color="#ffb020" depthTest={false} transparent opacity={0.95} />
+          </lineSegments>
+        ))}
+      </group>
+      {marks[0] && (
+        <Html position={[marks[0].x, 3.0, marks[0].z]} center zIndexRange={[26, 16]} style={{ pointerEvents: 'none' }}>
+          <div className="w-[240px] border border-warn bg-panel/95 px-2 py-1 text-[11px] text-fg">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-warn">Bottleneck</div>
+            {o.why}
+          </div>
+        </Html>
+      )}
+      {rates.map((j) => (
+        <Html key={`r${j.from}${j.to}`} position={[j.x - site.w / 2, 1.35, j.y - site.h / 2]} center zIndexRange={[24, 14]} style={{ pointerEvents: 'none' }}>
+          <div className="num whitespace-nowrap border border-line2 bg-panel/90 px-1 text-[10px] text-fg">{Math.round(j.rate! * (line.plant.shifts === 3 ? 2.7 : line.plant.shifts === 2 ? 1.9 : 1)).toLocaleString('en-US')}</div>
+        </Html>
+      ))}
+    </>
+  )
+}
+const EDGES = new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1))

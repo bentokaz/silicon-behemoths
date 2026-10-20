@@ -4,22 +4,32 @@
 // orders live with the devices (Orders.tsx) and component supply with the
 // company's money (Supply.tsx): neither is about this building.
 import { sfx } from '../audio/sfx'
-import { useState } from 'react'
-import { autoLine, buildFactory, fixFactoryLayout, roomCost, zoneable } from '../sim/game'
+import { useEffect, useState } from 'react'
+import { autoLine, buildFactory, fixFactoryLayout, growPlant, openPlant, roomCost, zoneable } from '../sim/game'
+import { setFactoryOverlay } from '../3d/site/overlay'
+import { REGIONS, homeRegion, regionInfo } from '../sim/regions'
+import { BlueprintsPanel, LinesPanel, MachinesPanel, PartsPanel, PlantPanel } from './FactoryPanels'
 import { CONTRACT, FACTORY_SAVING, factoryLine } from '../sim/ops'
-import { ITEMS, type LineStats, SITE_TIERS, planFix, starterLine, tierOf } from '../sim/sites'
+import { ITEMS, SITE_TIERS, lineStats, planFix, starterLine, tierOf } from '../sim/sites'
 import { FactoryGuide, guideSeen, markGuideSeen } from './FactoryGuide'
+import type { GameState } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import { SiteBuilder } from './SiteBuilder'
 import { aSite, factoryNow, factoryStatus } from './SitesFigures'
 import { BarRow, Detail, Fact, Note, Sec, SiteIntro } from './SitesParts'
-import { Btn, ConfirmBtn, IconBtn, Legend, Meter, money, num, pct } from './ui'
+import { Btn, ConfirmBtn, Meter, Pick, money, num, pct, useKept } from './ui'
 
 export function FactoryScreen() {
   const g = useGame()
   const { act, say, go } = useStore.getState()
   const line = factoryLine(g)
   const [guide, setGuide] = useState(() => !guideSeen())
+  const [kept, setAt] = useKept<string>('factory:plant', 'factory')
+  const [region, setRegion] = useState(() => REGIONS.find((r) => r.id !== homeRegion(g))?.id ?? REGIONS[0].id)
+  const plant = kept.startsWith('plant:') ? g.plants?.find((p) => `plant:${p.id}` === kept) : undefined
+  const at = plant ? kept : 'factory'
+  // the marks on the floor belong to the factory they were set for
+  useEffect(() => () => setFactoryOverlay({ focus: [], why: '' }), [at])
   const next = SITE_TIERS.factory[g.factory ? g.factory.tier + 1 : 0]
   const build = () => {
     const err = act((s) => buildFactory(s))
@@ -47,7 +57,16 @@ export function FactoryScreen() {
     )
   }
 
+  const site = plant?.site ?? g.factory
+  const local = lineStats(site)
+  const wealth = regionInfo(plant?.region ?? homeRegion(g)).wealth
+  const grow = SITE_TIERS.factory[site.tier + 1]
   const now = factoryNow(g)
+  const run = (f: (s: GameState) => string | null) => {
+    const err = act(f)
+    if (err) say(err, 'bad')
+    else sfx.confirm()
+  }
   const plan = starterLine(g.factory)
   const starterCost = plan ? plan.items.reduce((a, p) => a + ITEMS.factory[p.kind].cost, 0) + roomCost(g.factory, 'hall', zoneable(g.factory, ...plan.hall, 'rect').length) : 0
   const canFix = !!planFix(g.factory)
@@ -74,14 +93,18 @@ export function FactoryScreen() {
     <>
     <FactoryGuide open={guide} onClose={closeGuide} example={starterCost} onExample={example} fix={canFix} onFix={fix} />
     <SiteBuilder
-      siteRef="factory"
-      site={g.factory}
+      key={at}
+      siteRef={at}
+      site={site}
       busy={Math.min(1, g.products.filter((p) => p.companyId === 'player').reduce((a, p) => a + p.stock, 0) / 150e3)}
-      line={line}
+      line={local}
       producing={now.queue.length > 0}
       status={factoryStatus(g)}
       tools={
         <>
+        {(g.plants?.length ?? 0) > 0 && (
+          <Pick label="Factory" value={at} options={[{ value: 'factory', label: 'Main factory' }, ...(g.plants ?? []).map((p) => ({ value: `plant:${p.id}`, label: p.name }))]} onChange={(v) => setAt(v)} />
+        )}
         <Btn small tone="ghost" icon="help" title="Input and output faces, transfer belts, the order of the stages and what sets the output" onClick={() => setGuide(true)}>
           How factories work
         </Btn>
@@ -129,16 +152,33 @@ export function FactoryScreen() {
           </>
         )}
       </Sec>
-      <LineSection line={line} onGuide={() => setGuide(true)} onFix={fix} canFix={canFix} />
+      <LinesPanel g={g} at={at} site={site} line={local} onGuide={() => setGuide(true)} />
+      {canFix && !plant && (
+        <Btn small tone="primary" icon="turn" className="w-full" title="Turns blocks in place so each output faces the next input. Free: nothing moves." onClick={fix}>
+          Fix layout: turn blocks to face the flow
+        </Btn>
+      )}
+      <PlantPanel at={at} line={local} wealth={wealth} />
+      <PartsPanel g={g} site={site} line={local} />
+      <MachinesPanel at={at} site={site} />
+      <BlueprintsPanel g={g} at={at} />
       <Sec title="Site">
-        <Fact k="Size" v={`${tierOf(g.factory).name}, ${g.factory.w} x ${g.factory.h} m`} />
-        {next ? (
-          <ConfirmBtn small tone="default" icon="plot" className="mt-2 w-full" confirm={`Pay ${money(next.cost)}?`} title={`${next.blurb} ${next.w} x ${next.h} m, upkeep ${money(next.rent)} a month. Everything built moves across as it stands.`} onClick={build}>
-            Move to {aSite(next.name)} for {money(next.cost)}
+        <Fact k="Size" v={`${tierOf(site).name}, ${site.w} x ${site.h} m`} />
+        {plant && <Fact k="Region" v={regionInfo(plant.region).name} />}
+        {grow ? (
+          <ConfirmBtn small tone="default" icon="plot" className="mt-2 w-full" confirm={`Pay ${money(grow.cost)}?`} title={`${grow.blurb} ${grow.w} x ${grow.h} m, upkeep ${money(grow.rent)} a month. Everything built moves across as it stands.`} onClick={plant ? () => run((s) => growPlant(s, plant.id)) : build}>
+            Move to {aSite(grow.name)} for {money(grow.cost)}
           </ConfirmBtn>
         ) : (
           <div className="mt-1 text-[11px] text-dim">This is the largest factory site.</div>
         )}
+      </Sec>
+      <Sec title="Plants in other regions" count={g.plants?.length || undefined}>
+        <div className="mb-1 text-[11px] text-dim">Each plant has a floor of its own and works on every order; its wages follow its region.</div>
+        <Pick label="Region" value={region} options={REGIONS.map((r) => ({ value: r.id, label: `${r.name}, wages x${r.wealth.toFixed(2)}` }))} onChange={(v) => setRegion(v)} />
+        <ConfirmBtn small tone="default" icon="factory" className="mt-1 w-full" confirm={`Pay ${money(SITE_TIERS.factory[0].cost * 2)}?`} onClick={() => run((s) => openPlant(s, region))}>
+          Open a plant for {money(SITE_TIERS.factory[0].cost * 2)}
+        </ConfirmBtn>
       </Sec>
      </Detail>
     </SiteBuilder>
@@ -146,50 +186,3 @@ export function FactoryScreen() {
   )
 }
 
-const STAGE_LABEL = { smt: 'Board assembly', assembly: 'Device assembly', pack: 'Packaging', test: 'Testing' } as const
-
-/** What each line on the floor can do, what holds it back, and what stops the ones that do not run. */
-function LineSection({ line, onGuide, onFix, canFix }: { line: LineStats | null; onGuide: () => void; onFix: () => void; canFix: boolean }) {
-  const lines = line?.lines ?? []
-  const help = <IconBtn small icon="help" tone="ghost" title="How factories work" onClick={onGuide} />
-  const fixBtn = canFix && (
-    <Btn small tone="primary" icon="turn" className="mt-1.5 w-full" title="Turns blocks in place so each output faces the next input. Free: nothing moves." onClick={onFix}>
-      Fix layout: turn blocks to face the flow
-    </Btn>
-  )
-  if (!line?.running) {
-    return (
-      <Sec title="Line" right={help}>
-        <Note tone="warn">{line?.problem ?? 'There is no line yet.'}</Note>
-        {lines.slice(1).map((l, i) => l.problem && (
-          <Note key={l.id} tone="dim">
-            Line {i + 2}: {l.problem}
-          </Note>
-        ))}
-        {fixBtn}
-        <div className="mt-1 text-[11px] text-dim">Parts run from a receiving dock to a shipping dock through board assembly, device assembly and packaging, each block's output face touching the next one's input.</div>
-      </Sec>
-    )
-  }
-  const stages = (['smt', 'assembly', 'pack', 'test'] as const).map((k) => [k, line.caps[k]] as const)
-  const peak = Math.max(1, ...stages.map((s) => s[1]))
-  const bottleneck = lines.find((l) => l.running)?.bottleneck
-  const blocked = line.joints.filter((j) => !j.ok)
-  return (
-    <Sec title="Line" count={lines.length > 1 ? lines.length : undefined} right={help}>
-      {stages.map(([k, cap]) => (
-        <BarRow key={k} label={STAGE_LABEL[k]} share={cap / peak} value={num(cap)} tone={k === bottleneck ? 'warn' : 'accent'} title={k === 'test' ? 'Units a day the test stations can check. Testing never slows the line: it only lowers the share of faulty units.' : 'Units a day this stage can handle: blocks of one kind in a row add up'} />
-      ))}
-      <Legend className="mt-1" items={[{ label: 'Units a day', tone: 'accent' }, { label: 'Slowest stage: sets the output', tone: 'warn' }]} />
-      <Fact k="Running cost a day, at full output" v={money(line.runCost)} num />
-      {lines.length > 1 && lines.map((l, i) => <Fact key={l.id} k={`Line ${i + 1}`} v={l.running ? `${num(l.throughput)} a day` : 'stopped'} tone={l.running ? undefined : 'warn'} title={l.problem} />)}
-      {blocked.length > 0 && (
-        <Note tone="neg">
-          {blocked.length === 1 ? 'One joint is' : `${blocked.length} joints are`} blocked. {blocked[0].why}
-        </Note>
-      )}
-      {line.loose.length > 0 && <Note tone="dim">{line.loose.length === 1 ? 'One block is' : `${line.loose.length} blocks are`} not joined to a receiving dock.</Note>}
-      {fixBtn}
-    </Sec>
-  )
-}

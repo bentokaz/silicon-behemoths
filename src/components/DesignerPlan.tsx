@@ -10,7 +10,7 @@ import { RETAIL_CUT, canAfford, devPlan, fmtDate, isVariantOf, player, productNa
 import { EVENTS, hasStage } from '../sim/growth'
 import { demandEstimate, unitCostParts } from '../sim/insight'
 import { bestSegment } from '../sim/market'
-import { CONTRACT, factoryLine } from '../sim/ops'
+import { CONTRACT, contractPerDay, factoryLine } from '../sim/ops'
 import { has, lockTip } from '../sim/progress'
 import { evaluate } from '../sim/scoring'
 import type { ProductionOrder, StorageTier } from '../sim/types'
@@ -78,7 +78,7 @@ export function LaunchPlan({ plan, patch, back }: { plan: LaunchState; patch: (p
   const runCost = quantity * cost.total
   const note = runNote(quantity, est, cost.total, cash)
   // how long whoever builds it takes over the run
-  const perDay = (mode === 'contract' ? CONTRACT.perDay : (line?.throughput ?? 0)) / T.capacity
+  const perDay = (mode === 'contract' ? contractPerDay(g) : (line?.throughput ?? 0)) / T.capacity
   const buildDays = perDay > 0 ? Math.ceil(quantity / perDay) + (mode === 'contract' ? CONTRACT.leadDays : 0) : 0
   const slowBuild = buildDays > BUILD_DAYS_LONG
   const best = bestSegment({ raw: ev.raw, featureBonus: ev.featureBonus, price: plan.price, type, design: draft }, me, g.day)

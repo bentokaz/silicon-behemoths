@@ -6,7 +6,7 @@
 import { TYPES, segmentInfo } from '../data/devices'
 import { RETAIL_CUT } from '../sim/game'
 import { OUTSIDE_OPTION, attraction, bestSegment, priceFactor, tierAverages } from '../sim/market'
-import { CONTRACT, factoryLine, orderLeft } from '../sim/ops'
+import { CONTRACT, contractPerDay, factoryLine, orderLeft } from '../sim/ops'
 import { priceIndex } from '../sim/world'
 import { type Company, type GameState, type Product, type ProductionOrder, hasStock } from '../sim/types'
 import { type SortDir, type SortKey, sortRows } from './tablesort'
@@ -210,7 +210,7 @@ export function orderDays(g: GameState, o: ProductionOrder): number | null {
   const p = g.products.find((x) => x.id === o.productId)
   if (!p) return null
   const use = TYPES[p.type].capacity
-  if (o.mode === 'contract') return Math.max(0, CONTRACT.leadDays - (g.day - o.placedDay)) + Math.ceil(orderLeft(o) / Math.max(1, Math.floor(CONTRACT.perDay / use)))
+  if (o.mode === 'contract') return Math.max(0, CONTRACT.leadDays - (g.day - o.placedDay)) + Math.ceil(orderLeft(o) / Math.max(1, Math.floor(contractPerDay(g) / use)))
   const line = factoryLine(g)
   if (!line?.running || line.throughput <= 0) return null
   let ahead = 0

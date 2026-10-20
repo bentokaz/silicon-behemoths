@@ -21,17 +21,17 @@ import { cleanRule, defaultReorder, reorderLocked, reordersDue } from './reorder
 import { ACCESSORY, footfall, storeBuyers, storeTrade } from './retail'
 import { contractBlocked, offerContracts, stepContracts } from './contracts'
 import { bayStands, curveAt, curveTiles, onCurve } from './curves'
-import { fixLayout, lineStats } from './factoryline'
+import { MAX_MODS, MODULES, type Module, TIER, fixLayout, lineStats, tierOf as machineTier } from './factoryline'
 import { FACADES, FLOOR_COST, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, VENUE_PRESETS, type VenuePreset, rigFloors, venueLayout, RIG_TOP, STOREY_M, tilesOf, climbBlocked, wellsOn, rigNeed, GROUND_ROOMS, GROUND_ONLY, roomTiles, edgeSides, levelOf, blankLevel, linkedLevels, CLIMB, cutAt, type Shape, type ShapeOpts, SHORT_WALL, UNKNOWN_ITEM, areaOf, areaTiles, autoDoor, builtTiles, canPartition, canPlace, courtyardFor, curveFor, defaultGround, doorFits, fillError, gridAt, groundsFor, hasGround, inPlot, isBoundary, itemAllowed, itemAt, itemTiles, mergeRooms, newSite, openRooms, pocketAt, roomOf, rowSpots, shapeCuts, starterLine, storeStats, syncLevels, tidy, tierOf, touching, upkeep, partAt, venueStats, wallAt, zone } from './sites'
 import { capOfChannel, locked, refreshExecs, siteLocked, stepProgress } from './progress'
 import { EXECS, HEADHUNT_COST, HOURS, TEAM_SPAN, dropFromTeams, execFx, inTraining, monthlySalaries, monthlyStaff, newPolicy, perksCost, refreshCandidates, staffEffects, stepStaff, trainingCost } from './staff'
 import { CHIP_BUDGET, OS_FEATURES, OS_TYPES, chipAdoption, cleanLook, licenceBlocked, licenceInfo, licenceSwitchCost, osRoyalty, osRunCost, releaseNameFor, chipBlocked, chipProjectCost, chipProjectDays, finishChip, newOs, osBlocked, osProjectCost, osProjectDays, osShipQuality, servicesPerMonth, softwareBonus } from './tech'
-import { stockOf, type ChannelId, type Company, type Corner, type SiteItem, type SiteWall, type CostKey, type DeviceDesign, type DeviceType, type Difficulty, type EventType, type GameConfig, type GameState, type Levels, type MonthReport, type NewsItem, type OsLook, type Product, type ProductionOrder, type ReorderRule, type SegmentId, type Site, type SiteKind, type StaffPolicy, type StorageTier, SUPPLY_CATS, type SupplyCat, TRACKS, type Track, dollars, hasStock, millions, monthCosts, thousands, wasReleased } from './types'
+import { stockOf, type Blueprint, type ChannelId, type Company, type Corner, type SiteItem, type SiteWall, type CostKey, type DeviceDesign, type DeviceType, type Difficulty, type EventType, type GameConfig, type GameState, type Levels, type MonthReport, type NewsItem, type OsLook, type Product, type ProductionOrder, type ReorderRule, type SegmentId, type Site, type SiteKind, type StaffPolicy, type StorageTier, SUPPLY_CATS, type SupplyCat, TRACKS, type Track, dollars, hasStock, millions, monthCosts, thousands, wasReleased } from './types'
 
 // 7: site walls may be partitions inside a room (SiteWall.part, kind 'wall'); older saves have none and load as they are
 // 8: factory blocks have input and output faces; a floor laid before then is turned to match where it can be
 // 9: plots of the office grew (old ones are widened, see growPlot); products may reorder by themselves, OSes are licensed, contracts
-export const SAVE_VERSION = 15
+export const SAVE_VERSION = 16
 export const RETAIL_CUT = 0.15
 /** Days of the company's own stores' sales held back from retailers, so the stores' shelves are not emptied by the market. */
 export const STORE_RESERVE_DAYS = 14
@@ -790,6 +790,7 @@ export function siteOf(s: GameState, ref: string): Site | null {
   }
   if (ref === 'office') return s.office
   if (ref === 'factory') return s.factory ?? null
+  if (ref.startsWith('plant:')) return s.plants?.find((p) => `plant:${p.id}` === ref)?.site ?? null
   if (ref === 'venue') return s.venue ?? null
   return s.stores.find((st) => `store:${st.id}` === ref)?.site ?? null
 }
@@ -1642,6 +1643,8 @@ function transplant(old: Site, site: Site, dx: number, dy: number) {
   site.facade = old.facade
   site.roof = old.roof
   site.floors = old.floors
+  if (old.shifts) site.shifts = old.shifts
+  if (old.assign) site.assign = { ...old.assign }
   // the storeys above move with the building
   if (old.upper?.length) {
     site.upper = old.upper.map((l) => {
@@ -1857,6 +1860,225 @@ export function buildFactory(s: GameState): string | null {
   spend(s, def.cost, 'facilities')
   s.factory = s.factory ? movePlot(s.factory) : newSite('factory', 0)
   news(s, 'finance', `${tier ? 'The factory moved to a bigger site' : 'The company bought land for its first factory'}: ${def.name}.`)
+  return null
+}
+
+// ---------------------------------------------------------------- factory depth: plants, tiers, modules, shifts, blueprints
+
+/** A factory by its reference: 'factory' or 'plant:<id>', or a storey of one. */
+const factorySite = (s: GameState, ref: string): Site | null => {
+  const site = siteOf(s, ref)
+  return site && site.kind === 'factory' ? site : null
+}
+
+/** Open a factory in another region, on the smallest plot. Its wages follow the region's. */
+export function openPlant(s: GameState, region: string): string | null {
+  const lock = locked(s, 'factory')
+  if (lock) return lock
+  if (!s.factory) return 'Build your first factory before opening plants elsewhere'
+  const r = REGIONS.find((x) => x.id === region)
+  if (!r) return 'There is no such region'
+  const def = SITE_TIERS.factory[0]
+  const cost = def.cost * 2
+  if (!canAfford(s, cost)) return `Not enough cash: a plant in ${r.name} costs ${dollars(cost)}`
+  spend(s, cost, 'facilities')
+  const n = (s.plants ?? []).filter((p) => p.region === region).length
+  s.plants = [...(s.plants ?? []), { id: `p${s.nextId++}`, name: `${r.name} plant${n ? ` ${n + 1}` : ''}`, region, site: newSite('factory', 0) }]
+  news(s, 'finance', `The company opened a factory in ${r.name}: ${def.name}.`)
+  return null
+}
+
+/** Move a plant to the next size of site, everything on it moving across as it stands. */
+export function growPlant(s: GameState, id: string): string | null {
+  const p = s.plants?.find((x) => x.id === id)
+  if (!p) return 'There is no such plant'
+  const def = SITE_TIERS.factory[p.site.tier + 1]
+  if (!def) return 'This is the largest factory site'
+  if (!canAfford(s, def.cost)) return `Not enough cash: the ${def.name.toLowerCase()} costs ${dollars(def.cost)}`
+  spend(s, def.cost, 'facilities')
+  p.site = movePlot(p.site)
+  return null
+}
+
+/** How many shifts a factory works a day: more output, more wages. */
+export function setShifts(s: GameState, ref: string, shifts: number): string | null {
+  const site = factorySite(s, ref)
+  if (!site) return 'There is no such factory'
+  if (!whole(shifts) || shifts < 1 || shifts > 3) return 'A factory works one, two or three shifts'
+  site.shifts = shifts
+  site.rev++
+  return null
+}
+
+/** What raising one machine from its tier to the next costs, or null when it cannot go higher. */
+export function upgradeCost(it: SiteItem): number | null {
+  const def = ITEMS.factory[it.kind]
+  const t = machineTier(it)
+  if (!def || t >= 3 || !(def.cap || def.stage === 'in')) return null
+  return Math.round(def.cost * TIER.upgrade[t - 1])
+}
+
+/** Raise every machine of a kind on a factory floor one tier, as far as the money goes. Returns how many. */
+export function upgradeKind(s: GameState, ref: string, kind: string): string | null {
+  const site = factorySite(s, ref)
+  if (!site) return 'There is no such factory'
+  const list = site.items.filter((it) => it.kind === kind && upgradeCost(it) !== null)
+  if (!list.length) return 'Nothing of that kind can go a tier higher'
+  // the lowest tier first, so a row comes up together
+  list.sort((a, b) => machineTier(a) - machineTier(b))
+  const low = machineTier(list[0])
+  let done = 0
+  for (const it of list) {
+    if (machineTier(it) !== low) break
+    const cost = upgradeCost(it)!
+    if (!canAfford(s, cost)) break
+    spend(s, cost, 'facilities')
+    it.tier = low + 1
+    done++
+  }
+  if (!done) return `Not enough cash: one costs ${dollars(upgradeCost(list[0])!)}`
+  site.rev++
+  return null
+}
+
+/** Fit a module to every machine of a kind that has room for one and does not have it yet. */
+export function fitModule(s: GameState, ref: string, kind: string, mod: Module): string | null {
+  const site = factorySite(s, ref)
+  if (!site) return 'There is no such factory'
+  const m = MODULES[mod]
+  if (!m) return 'There is no such module'
+  if (!ITEMS.factory[kind]?.cap) return 'Only machines take modules'
+  const list = site.items.filter((it) => it.kind === kind && (it.mods?.length ?? 0) < MAX_MODS)
+  if (!list.length) return `Every one already has ${MAX_MODS} modules`
+  let done = 0
+  for (const it of list) {
+    if (!canAfford(s, m.cost)) break
+    spend(s, m.cost, 'facilities')
+    it.mods = [...(it.mods ?? []), mod]
+    done++
+  }
+  if (!done) return `Not enough cash: a ${m.name.toLowerCase()} costs ${dollars(m.cost)}`
+  site.rev++
+  return null
+}
+
+/** Take the modules out of every machine of a kind. They are not refunded. */
+export function clearModules(s: GameState, ref: string, kind: string): string | null {
+  const site = factorySite(s, ref)
+  if (!site) return 'There is no such factory'
+  for (const it of site.items) if (it.kind === kind) delete it.mods
+  site.rev++
+  return null
+}
+
+/** Set a line to build one device first, or (null) whatever is on order. */
+export function assignLine(s: GameState, ref: string, dockId: string, productId: string | null): string | null {
+  const site = factorySite(s, ref)
+  if (!site) return 'There is no such factory'
+  if (!site.items.some((i) => i.id === dockId && i.kind === 'dock_in')) return 'There is no such line'
+  const assign = { ...(site.assign ?? {}) }
+  if (productId === null) delete assign[dockId]
+  else {
+    const p = s.products.find((x) => x.id === productId && x.companyId === 'player')
+    if (!p || p.status === 'ended') return 'There is no such device'
+    assign[dockId] = productId
+  }
+  site.assign = assign
+  return null
+}
+
+/** Save one line (everything joined to its receiving dock) as a blueprint, to be placed again here or in another factory. */
+export function saveBlueprint(s: GameState, ref: string, dockId: string, name?: string): string | null {
+  const site = factorySite(s, ref)
+  if (!site) return 'There is no such factory'
+  const line = lineStats(site).lines.find((l) => l.id === dockId)
+  if (!line) return 'There is no such line'
+  const items = site.items.filter((i) => line.items.includes(i.id))
+  let x0 = Infinity
+  let y0 = Infinity
+  let x1 = -Infinity
+  let y1 = -Infinity
+  for (const it of items)
+    for (const [x, y] of itemTiles(site, it)) {
+      x0 = Math.min(x0, x)
+      y0 = Math.min(y0, y)
+      x1 = Math.max(x1, x)
+      y1 = Math.max(y1, y)
+    }
+  const list = s.blueprints ?? []
+  if (list.length >= 24) return 'There is room for 24 blueprints: delete one first'
+  s.blueprints = [...list, { id: `b${s.nextId++}`, name: (name ?? '').trim().slice(0, 40) || `Line ${list.length + 1}`, w: x1 - x0 + 1, h: y1 - y0 + 1, items: items.map((it) => ({ kind: it.kind, x: it.x - x0, y: it.y - y0, rot: it.rot, ...(it.tier && it.tier > 1 ? { tier: it.tier } : {}), ...(it.mods?.length ? { mods: [...it.mods] } : {}) })) }]
+  return null
+}
+
+export function deleteBlueprint(s: GameState, id: string): string | null {
+  if (!s.blueprints?.some((b) => b.id === id)) return 'There is no such blueprint'
+  s.blueprints = s.blueprints.filter((b) => b.id !== id)
+  return null
+}
+
+/** What placing a blueprint costs: its machines at their tiers and modules, and the hall under it if one has to be zoned. */
+export function blueprintCost(bp: Blueprint): number {
+  let total = 0
+  for (const it of bp.items) {
+    const def = ITEMS.factory[it.kind]
+    if (!def) continue
+    total += def.cost
+    for (let t = 1; t < (it.tier ?? 1); t++) total += def.cost * TIER.upgrade[t - 1]
+    for (const m of it.mods ?? []) total += MODULES[m as Module]?.cost ?? 0
+  }
+  return Math.round(total)
+}
+
+/**
+ * Place a blueprint on a factory floor: in the first spot inside a production
+ * hall where it fits whole, or failing that on open ground, where a hall is
+ * zoned round it. Machines come at the blueprint's tiers and with its modules.
+ */
+export function placeBlueprint(s: GameState, ref: string, id: string): string | null {
+  const site = factorySite(s, ref)
+  if (!site) return 'There is no such factory'
+  const bp = s.blueprints?.find((b) => b.id === id)
+  if (!bp) return 'There is no such blueprint'
+  const cost = blueprintCost(bp)
+  const fits = (ox: number, oy: number) => bp.items.every((it) => ITEMS.factory[it.kind] && !canPlace(site, it.kind, ox + it.x, oy + it.y, it.rot))
+  let spot: [number, number] | null = null
+  for (let y = 0; y + bp.h <= site.h && !spot; y++) for (let x = 0; x + bp.w <= site.w && !spot; x++) if (fits(x, y)) spot = [x, y]
+  let hall = 0
+  if (!spot) {
+    // open ground with a tile clear all round: a hall goes down first
+    for (let y = 1; y + bp.h + 1 < site.h && !spot; y++)
+      for (let x = 1; x + bp.w + 1 < site.w && !spot; x++) {
+        let clear = true
+        for (let j = -1; j <= bp.h && clear; j++) for (let i = -1; i <= bp.w && clear; i++) if (gridAt(site, x + i, y + j) || itemAt(site, x + i, y + j)) clear = false
+        if (clear) spot = [x, y]
+      }
+    if (!spot) return `There is no room for it: it needs ${bp.w} by ${bp.h} m of hall, or ${bp.w + 2} by ${bp.h + 2} m of open ground`
+    hall = roomCost(site, 'hall', (bp.w + 2) * (bp.h + 2))
+  }
+  if (!canAfford(s, cost + hall)) return `Not enough cash: placing it costs ${dollars(cost + hall)}`
+  const [ox, oy] = spot
+  if (hall) {
+    const err = zoneRoom(s, ref, 'hall', ox - 1, oy - 1, ox + bp.w, oy + bp.h)
+    if (err) return err
+  }
+  for (const it of bp.items) {
+    const err = placeItem(s, ref, it.kind, ox + it.x, oy + it.y, it.rot)
+    if (err) return err
+    const placed = site.items[site.items.length - 1]
+    if (it.tier && it.tier > 1) {
+      const def = ITEMS.factory[it.kind]
+      let extra = 0
+      for (let t = 1; t < it.tier; t++) extra += def.cost * TIER.upgrade[t - 1]
+      spend(s, extra, 'facilities')
+      placed.tier = it.tier
+    }
+    if (it.mods?.length) {
+      spend(s, it.mods.reduce((a, m) => a + (MODULES[m as Module]?.cost ?? 0), 0), 'facilities')
+      placed.mods = [...it.mods]
+    }
+  }
+  site.rev++
   return null
 }
 

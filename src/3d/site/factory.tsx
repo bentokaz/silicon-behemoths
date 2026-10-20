@@ -17,6 +17,9 @@ export interface FactoryCtx {
   fill?: number
   /** The shift is drawn walking about, so nobody is modelled sitting at a bench. */
   live?: boolean
+  /** Machines: tier 1-3, and how many modules are fitted. */
+  tier?: number
+  mods?: number
 }
 
 const BELT = 0.8
@@ -29,7 +32,7 @@ const CREW: PersonLook[] = [
 ]
 
 /** A length of belt on legs, running along X, centred on the origin. */
-function BeltRun({ len }: { len: number }) {
+function BeltRun({ len, rail = YELLOW }: { len: number; rail?: string }) {
   return (
     <>
       {[-len / 2 + 0.12, len / 2 - 0.12].map((x) =>
@@ -38,7 +41,7 @@ function BeltRun({ len }: { len: number }) {
       <B p={[0, BELT - 0.07, 0]} s={[len, 0.1, 0.62]} c="#3a3d42" r={0.01} metal={0.5} rough={0.5} />
       <B p={[0, BELT - 0.012, 0]} s={[len, 0.02, 0.5]} c="#15171a" r={0} rough={0.9} cast={false} />
       {[-0.3, 0.3].map((z) => (
-        <B key={z} p={[0, BELT + 0.02, z]} s={[len, 0.06, 0.03]} c={YELLOW} r={0.006} rough={0.6} cast={false} />
+        <B key={z} p={[0, BELT + 0.02, z]} s={[len, 0.06, 0.03]} c={rail} r={0.006} rough={0.6} cast={false} />
       ))}
     </>
   )
@@ -83,7 +86,7 @@ function Hatch({ x, out, glow }: { x: number; out: boolean; glow: number }) {
 /** Input and output hatches on a line block's two ends. */
 function Ports({ kind, glow }: { kind: string; glow: number }) {
   const def = ITEMS.factory[kind]
-  if (!def?.stage || def.stage === 'belt') return null
+  if (!def?.stage || def.stage === 'belt' || def.stage === 'split') return null
   const half = def.w / 2
   return (
     <>
@@ -178,12 +181,231 @@ export function Lorry({ seed, wheels = true }: { seed: number; wheels?: boolean 
   )
 }
 
+/** Tier colours, I to III: plain steel, blue and gold, as a band round the machine's foot and a plate on its top. */
+export const TIER_COLOUR = ['#8d9299', '#3a7bd5', '#e0b23a']
+
+/** A machine's tier and modules, readable from above: a coloured kick plate round its foot, a pip per tier, a light per module. */
+function TierMark({ kind, tier = 1, mods = 0 }: { kind: string; tier?: number; mods?: number }) {
+  const def = ITEMS.factory[kind]
+  if (!def?.cap) return null
+  // the plates stand just inside the footprint's edge, clear of every machine's body (none comes closer than 3 cm)
+  const w = def.w - 0.02
+  const d = def.h - 0.02
+  const col = TIER_COLOUR[Math.max(0, Math.min(2, tier - 1))]
+  return (
+    <>
+      {[-1, 1].map((s) => (
+        <B key={`x${s}`} p={[0, 0.05, (s * d) / 2]} s={[w, 0.1, 0.02]} c={col} r={0} rough={0.6} cast={false} />
+      ))}
+      {[-1, 1].map((s) => (
+        <B key={`z${s}`} p={[(s * w) / 2, 0.05, 0]} s={[0.02, 0.1, d]} c={col} r={0} rough={0.6} cast={false} />
+      ))}
+      {Array.from({ length: tier }, (_, i) => (
+        <B key={i} p={[-w / 2 + 0.12 + i * 0.14, 0.16, d / 2 + 0.006]} s={[0.1, 0.06, 0.012]} c={col} r={0} glow={col} glowPower={0.6} cast={false} />
+      ))}
+      {Array.from({ length: mods }, (_, i) => (
+        <B key={`m${i}`} p={[w / 2 - 0.12 - i * 0.14, 0.16, d / 2 + 0.006]} s={[0.08, 0.08, 0.012]} c="#7fd1ff" r={0} glow="#7fd1ff" glowPower={1} cast={false} />
+      ))}
+    </>
+  )
+}
+
+/** A long enclosed process machine W by D: base, hood with windows down its front, a stack of status lamps. */
+function Enclosed({ W, D, body, hood, glass, h = 1.6, c, lamps = 3 }: { W: number; D: number; body: string; hood: string; glass: string; h?: number; c: FactoryCtx; lamps?: number }) {
+  return (
+    <>
+      <B p={[0, 0.4, 0]} s={[W - 0.1, 0.8, D - 0.2]} c={body} r={0.015} rough={0.5} />
+      <B p={[0, 0.8 + (h - 0.8) / 2, -0.05]} s={[W - 0.16, h - 0.8, D - 0.36]} c={hood} r={0.03} rough={0.4} />
+      {Array.from({ length: lamps }, (_, i) => {
+        const x = -W / 2 + ((i + 0.5) * W) / lamps
+        return <B key={i} p={[x, 0.8 + (h - 0.8) / 2, D / 2 - 0.2]} s={[W / lamps - 0.3, (h - 0.8) * 0.55, 0.012]} c="#0c1622" r={0} glow={glass} glowPower={(c.running ? 0.9 : 0.25) * Math.max(0.5, c.glow)} rough={0.1} cast={false} />
+      })}
+      <Beacon p={[W / 2 - 0.3, h, -D / 2 + 0.3]} on={c.running} glow={c.glow} />
+    </>
+  )
+}
+
+/** The models for the machines a deep factory adds: component lines, logistics and power. */
+function DeepModel({ kind, c }: { kind: string; c: FactoryCtx }) {
+  switch (kind) {
+    case 'conveyor_2':
+    case 'conveyor_3':
+      return (
+        <>
+          <BeltRun len={1} rail={kind === 'conveyor_2' ? '#c9553d' : '#3a7bd5'} />
+          <Chevrons len={1} />
+        </>
+      )
+    case 'splitter':
+      return (
+        <>
+          <BeltRun len={1} rail="#9aa0a6" />
+          <B p={[0, BELT + 0.16, 0]} s={[0.5, 0.3, 0.7]} c="#2b2d31" r={0.03} />
+          {[-1, 1].map((z) => (
+            <B key={z} p={[0.1, BELT + 0.16, z * 0.36]} s={[0.3, 0.12, 0.04]} c={YELLOW} r={0} glow={YELLOW} glowPower={0.4} cast={false} />
+          ))}
+          <B p={[0.26, BELT + 0.16, 0]} s={[0.04, 0.12, 0.3]} c={YELLOW} r={0} glow={YELLOW} glowPower={0.4} cast={false} />
+        </>
+      )
+    case 'arm':
+      return (
+        <>
+          <C p={[0, 0.3, 0]} r={[0.22, 0.28]} h={0.6} c="#2b2d31" seg={14} />
+          <C p={[0, 0.66, 0]} r={[0.14, 0.14]} h={0.12} c="#e0812a" seg={12} />
+          <group position={[0, 0.72, 0]} rotation={[0, 0, -0.5]}>
+            <B p={[0, 0.3, 0]} s={[0.1, 0.6, 0.1]} c="#e0812a" r={0.03} rough={0.5} />
+            <group position={[0, 0.6, 0]} rotation={[0, 0, 1.6]}>
+              <B p={[0, 0.25, 0]} s={[0.08, 0.5, 0.08]} c="#e0812a" r={0.025} rough={0.5} />
+              <B p={[0, 0.52, 0]} s={[0.14, 0.06, 0.14]} c={STEEL} r={0.01} metal={0.9} rough={0.3} cast={false} />
+            </group>
+          </group>
+        </>
+      )
+    case 'buffer':
+      return (
+        <>
+          {[-0.85, 0, 0.85].map((x) => [-0.3, 0.3].map((z) => <B key={`${x}${z}`} p={[x, 0.9, z]} s={[0.05, 1.8, 0.05]} c="#3a7bd5" r={0.006} cast={false} />))}
+          {[0.3, 1.1, 1.75].map((y) => (
+            <B key={y} p={[0, y, 0]} s={[1.84, 0.05, 0.66]} c="#e0812a" r={0.006} rough={0.6} />
+          ))}
+          {[-0.5, 0.2, 0.6].map((x, i) => (
+            <B key={x} p={[x, 1.25 + (i % 2) * 0.1, 0]} s={[0.4, 0.26, 0.5]} c={BOX} r={0.01} rough={0.85} cast={false} />
+          ))}
+          <BeltRun len={1.9} rail="#9aa0a6" />
+        </>
+      )
+    case 'chippack':
+      // a clean-room line: white panels, a blue window run and filter units on the roof
+      return (
+        <>
+          <Enclosed W={3} D={2} body="#e9ecef" hood="#f6f7f8" glass="#58a6ff" h={1.9} c={c} lamps={3} />
+          {[-0.9, 0, 0.9].map((x) => (
+            <B key={x} p={[x, 2.0, -0.2]} s={[0.6, 0.2, 0.9]} c="#cfd3d6" r={0.02} rough={0.5} cast={false} />
+          ))}
+        </>
+      )
+    case 'laminator':
+      return (
+        <>
+          <Enclosed W={3} D={1} body="#2b2d31" hood="#3a3d42" glass="#9be7ff" h={1.3} c={c} lamps={2} />
+          {/* rollers pressing a sheet */}
+          {[-0.6, 0.6].map((x) => (
+            <C key={x} p={[x, 1.38, 0]} r={[0.12, 0.12]} h={0.7} c={STEEL} seg={14} rot={[Math.PI / 2, 0, 0]} metal={0.8} rough={0.3} cast={false} />
+          ))}
+          <B p={[0, 1.31, 0]} s={[1.8, 0.01, 0.6]} c="#bfe0f2" glass={0.3} r={0} cast={false} />
+        </>
+      )
+    case 'cellline':
+      return (
+        <>
+          <Enclosed W={3} D={2} body="#3f4a3a" hood="#56634f" glass="#7cf29a" h={1.6} c={c} lamps={3} />
+          {/* a rack of cells on top, standing like a tray of batteries */}
+          {Array.from({ length: 10 }, (_, i) => (
+            <C key={i} p={[-1.1 + (i % 5) * 0.55, 1.75, -0.3 + Math.floor(i / 5) * 0.4]} r={[0.1, 0.1]} h={0.3} c={i % 2 ? '#2b2d31' : '#3fae5a'} seg={10} cast={false} />
+          ))}
+        </>
+      )
+    case 'cnc':
+      return (
+        <>
+          <B p={[0, 0.9, 0]} s={[1.9, 1.8, 1.7]} c="#d6d9dc" r={0.06} rough={0.45} />
+          <B p={[0.15, 1.05, 0.856]} s={[1.1, 0.9, 0.012]} c="#bfe0f2" glass={0.25} r={0} cast={false} />
+          <B p={[-0.75, 1.1, 0.86]} s={[0.3, 0.5, 0.02]} c="#15171a" r={0.01} glow="#55e39f" glowPower={0.5 * c.glow} cast={false} />
+          <B p={[0, 1.86, 0]} s={[1.6, 0.12, 1.4]} c={YELLOW} r={0.02} rough={0.6} cast={false} />
+          <Beacon p={[0.8, 1.92, -0.7]} on={c.running} glow={c.glow} />
+        </>
+      )
+    case 'moulder':
+      return (
+        <>
+          <B p={[0, 0.45, 0]} s={[1.9, 0.9, 0.8]} c="#2f5d8a" r={0.02} rough={0.5} />
+          <C p={[-0.45, 1.2, 0]} r={[0.18, 0.18]} h={1.2} c={STEEL} seg={16} rot={[0, 0, Math.PI / 2]} metal={0.7} rough={0.3} />
+          <C p={[-0.95, 1.45, 0]} r={[0.22, 0.12]} h={0.5} c="#c9ccd0" seg={14} />
+          <B p={[0.5, 1.15, 0]} s={[0.7, 0.6, 0.7]} c="#d6a24f" r={0.02} rough={0.5} />
+          <Beacon p={[0.85, 1.45, -0.3]} on={c.running} glow={c.glow} />
+        </>
+      )
+    case 'cammod':
+      return (
+        <>
+          <Enclosed W={2} D={1} body="#1f2226" hood="#2b2d31" glass="#ff9ec9" h={1.4} c={c} lamps={2} />
+          <C p={[0.4, 1.5, 0]} r={[0.14, 0.14]} h={0.2} c="#0b0c0e" seg={16} cast={false} />
+          <C p={[0.4, 1.61, 0]} r={[0.08, 0.08]} h={0.02} c="#1c2a44" glow="#5a7dff" glowPower={0.6} seg={16} cast={false} />
+        </>
+      )
+    case 'psuline':
+      return (
+        <>
+          <Enclosed W={2} D={1} body="#3a3d42" hood="#4a4e55" glass="#ffd166" h={1.3} c={c} lamps={2} />
+          {[-0.5, 0, 0.5].map((x) => (
+            <B key={x} p={[x, 1.38, 0]} s={[0.36, 0.16, 0.5]} c="#15171a" r={0.01} cast={false} />
+          ))}
+        </>
+      )
+    case 'workshop':
+      return (
+        <>
+          <B p={[0, 0.45, -0.1]} s={[1.9, 0.08, 0.7]} c="#8a6a4a" r={0.01} rough={0.7} />
+          {[-0.85, 0.85].map((x) => (
+            <B key={x} p={[x, 0.22, -0.1]} s={[0.06, 0.44, 0.6]} c={STEEL} r={0.006} metal={0.7} />
+          ))}
+          <B p={[0, 1.2, -0.42]} s={[1.9, 1.0, 0.04]} c="#3a3d42" r={0.006} />
+          {Array.from({ length: 6 }, (_, i) => (
+            <B key={i} p={[-0.75 + i * 0.3, 1.25, -0.385]} s={[0.04, 0.3, 0.02]} c={i % 2 ? '#c9553d' : STEEL} r={0} cast={false} />
+          ))}
+          <B p={[0.6, 0.6, -0.1]} s={[0.3, 0.22, 0.3]} c="#c9553d" r={0.02} cast={false} />
+        </>
+      )
+    case 'generator':
+      return (
+        <>
+          <B p={[0, 0.9, 0]} s={[2.9, 1.8, 1.8]} c="#3f7d4d" r={0.04} rough={0.5} />
+          {[-1, -0.3, 0.4].map((x) => (
+            <B key={x} p={[x, 1.2, 0.906]} s={[0.5, 0.9, 0.012]} c="#2b2d31" r={0} cast={false} />
+          ))}
+          <C p={[1.1, 2.4, -0.4]} r={[0.14, 0.14]} h={1.2} c={STEEL} seg={12} metal={0.6} />
+          <Beacon p={[-1.2, 1.8, -0.6]} on={c.running} glow={c.glow} />
+        </>
+      )
+    case 'substation':
+      return (
+        <>
+          <B p={[0, 0.05, 0]} s={[1.96, 0.1, 1.96]} c="#7d8388" r={0.006} rough={0.9} />
+          {[-0.5, 0.5].map((x) => (
+            <group key={x}>
+              <B p={[x, 0.72, 0]} s={[0.6, 1.2, 0.8]} c="#9aa0a6" r={0.02} metal={0.4} rough={0.5} />
+              {[-0.2, 0, 0.2].map((z) => (
+                <C key={z} p={[x, 1.55, z]} r={[0.05, 0.08]} h={0.5} c="#c96b3d" seg={10} cast={false} />
+              ))}
+            </group>
+          ))}
+          {[-0.95, 0.95].map((x) => [-0.95, 0.95].map((z) => <B key={`${x}${z}`} p={[x, 0.9, z]} s={[0.04, 1.8, 0.04]} c={STEEL} r={0} cast={false} />))}
+        </>
+      )
+    case 'solar':
+      return (
+        <>
+          {[-1, 0, 1].map((z) => (
+            <group key={z} position={[0, 0.9, z * 0.95]} rotation={[-0.45, 0, 0]}>
+              <B p={[0, 0, 0]} s={[2.9, 0.05, 0.8]} c="#1c2a44" r={0.006} metal={0.4} rough={0.2} />
+            </group>
+          ))}
+          {[-1.3, 1.3].map((x) => [-1, 0, 1].map((z) => <B key={`${x}${z}`} p={[x, 0.45, z * 0.95]} s={[0.05, 0.9, 0.05]} c={STEEL} r={0} cast={false} />))}
+        </>
+      )
+  }
+  return null
+}
+
+const DEEP = new Set(['conveyor_2', 'conveyor_3', 'splitter', 'arm', 'buffer', 'chippack', 'laminator', 'cellline', 'cnc', 'moulder', 'cammod', 'psuline', 'workshop', 'generator', 'substation', 'solar'])
+
 /** The model for one factory item. */
 export function FactoryItem({ kind, c }: { kind: string; c: FactoryCtx }) {
   return (
     <>
-      <FactoryModel kind={kind} c={c} />
+      {DEEP.has(kind) ? <DeepModel kind={kind} c={c} /> : <FactoryModel kind={kind} c={c} />}
       <Ports kind={kind} glow={Math.max(0.6, c.glow)} />
+      <TierMark kind={kind} tier={c.tier} mods={c.mods} />
     </>
   )
 }

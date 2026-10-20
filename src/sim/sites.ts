@@ -4,7 +4,9 @@
 import { CLIP, type CurveSpec, type LiveTile, MIN_RADIUS, MIN_THICK, type Side, plotMark, bayBeyond, bayStands, curveAt, curveTiles, geomOf, holeOf, onCurve, settle } from './curves'
 import type { Corner, Role, Room, Site, SiteItem, SiteKind } from './types'
 
-export type Stage = 'in' | 'out' | 'belt' | 'smt' | 'assembly' | 'test' | 'pack'
+export type Stage = 'in' | 'out' | 'belt' | 'split' | 'smt' | 'part' | 'assembly' | 'test' | 'pack'
+/** Components a factory can make for itself instead of buying them in. Boards come from the board assembly line (stage 'smt'). */
+export type Part = 'chip' | 'display' | 'cell' | 'casing' | 'camera' | 'psu'
 
 /** Room type id used for open ground. */
 export const OUT = 'out'
@@ -31,6 +33,21 @@ export interface ItemDef {
   stage?: Stage
   cap?: number
   run?: number
+  /** Factory: the component a part machine makes. */
+  part?: Part
+  /** Factory: power drawn at full output, kW; workers it needs on each shift. */
+  kw?: number
+  crew?: number
+  /** Factory belts: kits a day one tile carries. Receiving docks: kits a day it takes in. */
+  belt?: number
+  /** Factory: power it supplies (kW). */
+  supply?: number
+  /** Factory: machines one of these keeps serviced. */
+  service?: number
+  /** Factory: workers a shift it gives a place to change and eat. */
+  houses?: number
+  /** Factory: a buffer on the line, which rides out short stoppages. */
+  buffer?: boolean
   /** Store: shoppers per day this fixture can serve. */
   visitors?: number
   /** Venue: people this seats, and how much it adds to the show. */
@@ -98,23 +115,39 @@ export const ITEMS: Record<SiteKind, Record<string, ItemDef>> = {
     sign: d('Entrance sign', 6000, 3, 1, 'Grounds', [OUT], 'A stone sign with your name on it.', { prestige: 2.5 }),
   },
   factory: {
-    dock_in: d('Receiving dock', 20000, 2, 1, 'Line', ['hall'], 'Components arrive here. A line starts at a receiving dock.', { stage: 'in' }),
-    dock_out: d('Shipping dock', 20000, 2, 1, 'Line', ['hall'], 'Finished devices leave here. A line ends at a shipping dock.', { stage: 'out' }),
-    conveyor: d('Conveyor', 1200, 1, 1, 'Line', ['hall'], 'Links machines that are not side by side.', { stage: 'belt' }),
-    smt: d('Board assembly line', 220000, 3, 1, 'Machines', ['hall'], 'Builds circuit boards. 700 units a day.', { stage: 'smt', cap: 700, run: 900 }),
-    robot: d('Robotic assembly cell', 160000, 2, 2, 'Machines', ['hall'], 'Assembles devices. 500 units a day.', { stage: 'assembly', cap: 500, run: 700 }),
-    manual: d('Assembly bench', 9000, 1, 1, 'Machines', ['hall'], 'Hand assembly. 60 units a day.', { stage: 'assembly', cap: 60, run: 180 }),
-    test: d('Test station', 45000, 1, 1, 'Machines', ['hall'], 'Catches faults before shipping. Covers 450 units a day.', { stage: 'test', cap: 450, run: 250 }),
-    pack: d('Packaging line', 60000, 2, 1, 'Machines', ['hall'], 'Boxes devices. 900 units a day.', { stage: 'pack', cap: 900, run: 300 }),
+    dock_in: d('Receiving dock', 20000, 2, 1, 'Line', ['hall'], 'Raw materials and bought-in parts arrive here: 3,000 kits a day. A line starts at a receiving dock.', { stage: 'in', belt: 3000, kw: 10, crew: 2 }),
+    dock_out: d('Shipping dock', 20000, 2, 1, 'Line', ['hall'], 'Finished devices leave here. A line ends at a shipping dock.', { stage: 'out', kw: 10, crew: 2 }),
+    conveyor: d('Conveyor', 1200, 1, 1, 'Logistics', ['hall'], 'Carries 2,400 kits a day. Takes parts in at the back or either side.', { stage: 'belt', belt: 2400, kw: 1 }),
+    conveyor_2: d('Fast conveyor', 3500, 1, 1, 'Logistics', ['hall'], 'Carries 6,000 kits a day.', { stage: 'belt', belt: 6000, kw: 2 }),
+    conveyor_3: d('Express conveyor', 9000, 1, 1, 'Logistics', ['hall'], 'Carries 15,000 kits a day.', { stage: 'belt', belt: 15000, kw: 4 }),
+    splitter: d('Splitter', 6000, 1, 1, 'Logistics', ['hall'], 'Takes parts in at the back and sends them out of its front and both sides, to feed machines in parallel.', { stage: 'split', belt: 15000, kw: 2 }),
+    arm: d('Robotic arm', 14000, 1, 1, 'Logistics', ['hall'], 'Lifts kits from a belt into the next machine: 5,000 a day, round a corner if need be.', { stage: 'belt', belt: 5000, kw: 3 }),
+    buffer: d('Buffer rack', 18000, 2, 1, 'Logistics', ['hall'], 'Holds a few hours of kits on the line, so a stoppage upstream does not stop everything after it. Carries 6,000 a day.', { stage: 'belt', belt: 6000, buffer: true, kw: 2 }),
+    smt: d('Board assembly line', 220000, 3, 1, 'Machines', ['hall'], 'Builds circuit boards. 700 units a day.', { stage: 'smt', cap: 700, run: 900, kw: 180, crew: 3 }),
+    chippack: d('Chip packaging line', 380000, 3, 2, 'Components', ['hall'], 'Packages chips in-house instead of buying them ready-made. 900 a day.', { stage: 'part', part: 'chip', cap: 900, run: 800, kw: 240, crew: 3 }),
+    laminator: d('Display lamination line', 300000, 3, 1, 'Components', ['hall'], 'Bonds glass, touch layer and panel into finished displays. 800 a day.', { stage: 'part', part: 'display', cap: 800, run: 600, kw: 160, crew: 3 }),
+    cellline: d('Battery cell line', 340000, 3, 2, 'Components', ['hall'], 'Winds, fills and seals battery cells. 1,000 a day.', { stage: 'part', part: 'cell', cap: 1000, run: 700, kw: 260, crew: 3 }),
+    cnc: d('CNC casing mill', 150000, 2, 2, 'Components', ['hall'], 'Mills metal casings from billet. 450 a day.', { stage: 'part', part: 'casing', cap: 450, run: 400, kw: 90, crew: 2 }),
+    moulder: d('Injection moulder', 120000, 2, 1, 'Components', ['hall'], 'Moulds plastic casings. 900 a day.', { stage: 'part', part: 'casing', cap: 900, run: 300, kw: 120, crew: 1 }),
+    cammod: d('Camera module cell', 260000, 2, 1, 'Components', ['hall'], 'Aligns lenses on sensors and seals the modules. 700 a day.', { stage: 'part', part: 'camera', cap: 700, run: 500, kw: 60, crew: 2 }),
+    psuline: d('Power supply line', 140000, 2, 1, 'Components', ['hall'], 'Builds power supplies and chargers. 800 a day.', { stage: 'part', part: 'psu', cap: 800, run: 350, kw: 70, crew: 2 }),
+    robot: d('Robotic assembly cell', 160000, 2, 2, 'Machines', ['hall'], 'Assembles devices. 500 units a day.', { stage: 'assembly', cap: 500, run: 700, kw: 110, crew: 2 }),
+    manual: d('Assembly bench', 9000, 1, 1, 'Machines', ['hall'], 'Hand assembly. 60 units a day.', { stage: 'assembly', cap: 60, run: 180, kw: 3, crew: 2 }),
+    test: d('Test station', 45000, 1, 1, 'Machines', ['hall'], 'Catches faults before shipping. Covers 450 units a day.', { stage: 'test', cap: 450, run: 250, kw: 20, crew: 1 }),
+    pack: d('Packaging line', 60000, 2, 1, 'Machines', ['hall'], 'Boxes devices. 900 units a day.', { stage: 'pack', cap: 900, run: 300, kw: 40, crew: 1 }),
     rack: d('Storage rack', 5000, 2, 1, 'Storage', ['store', 'hall'], 'Tall shelving for parts.'),
     pallets: d('Pallet stack', 500, 1, 1, 'Storage', ['store', 'hall', OUT], 'Boxes on a pallet.'),
     forklift: d('Forklift', 18000, 1, 2, 'Storage', ['store', 'hall', OUT], 'Parked, for now.'),
-    console: d('Control desk', 30000, 2, 1, 'Control', ['control'], 'Operators watch the line from here. Each desk cuts faults a little.'),
+    console: d('Control desk', 30000, 2, 1, 'Control', ['control'], 'Operators watch the line from here: each desk cuts faults a little and keeps 8 machines from breaking down.', { service: 8 }),
+    workshop: d('Maintenance workshop', 45000, 2, 1, 'Control', ['control', 'store', 'crew'], 'Technicians service the machines: each workshop keeps 14 from breaking down.', { service: 14 }),
     qa: d('Inspection bench', 16000, 2, 1, 'Control', ['control'], 'Samples are checked by hand. Each bench cuts faults a little.'),
-    lockers: d('Lockers', 1500, 2, 1, 'Crew', ['crew'], 'Somewhere for coats and boots.', { comfort: 0.5 }),
-    canteen: d('Canteen table', 1200, 2, 1, 'Crew', ['crew'], 'A long table and benches.', { comfort: 1 }),
+    lockers: d('Lockers', 1500, 2, 1, 'Crew', ['crew'], 'Somewhere for coats and boots: room for 10 workers a shift.', { comfort: 0.5, houses: 10 }),
+    canteen: d('Canteen table', 1200, 2, 1, 'Crew', ['crew'], 'A long table and benches: feeds 8 workers a shift.', { comfort: 1, houses: 8 }),
     vending: d('Vending machine', 2400, 1, 1, 'Crew', ['crew'], 'Snacks between shifts.', { comfort: 0.8 }),
     tank: d('Storage tank', 9000, 2, 2, 'Yard', [OUT], 'A steel tank on legs.'),
+    generator: d('Gas generator', 420000, 3, 2, 'Power', [OUT], 'Adds 2,500 kW of power when the grid connection is not enough. Burns $2,600 of gas a day.', { supply: 2500, run: 2600 }),
+    substation: d('Grid substation', 900000, 2, 2, 'Power', [OUT], 'A bigger connection to the grid: 6,000 kW more.', { supply: 6000, run: 300 }),
+    solar: d('Solar array', 160000, 3, 3, 'Power', [OUT], 'Panels on frames in the yard: about 180 kW on average.', { supply: 180 }),
     truck: d('Truck bay', 4000, 3, 8, 'Yard', [OUT], 'A marked bay with a lorry waiting.'),
     otree: d('Tree', 900, 1, 1, 'Yard', [OUT], 'Softens the yard.'),
     bamboo: d('Bamboo', 700, 1, 1, 'Yard', [OUT], 'A clump of canes that screens the yard.'),
@@ -373,6 +406,8 @@ export const SITE_TIERS: Record<SiteKind, TierDef[]> = {
     { name: 'Workshop plot', w: 22, h: 14, env: 'industrial', cost: 450e3, rent: 12e3, blurb: 'Room for one short production line.' },
     { name: 'Plant site', w: 34, h: 20, env: 'industrial', cost: 3e6, rent: 45e3, blurb: 'Space for several lines running side by side.' },
     { name: 'Gigafactory site', w: 52, h: 30, env: 'industrial', cost: 18e6, rent: 160e3, blurb: 'Volume manufacturing on your own terms.' },
+    { name: 'Industrial park', w: 78, h: 44, env: 'industrial', cost: 60e6, rent: 420e3, blurb: 'Room for a dozen lines and the component plants that feed them.' },
+    { name: 'Megafab campus', w: 110, h: 60, env: 'industrial', cost: 200e6, rent: 1.1e6, blurb: 'Millions of devices a month from one site.' },
   ],
   store: [
     { name: 'Mall unit', w: 10, h: 8, env: 'mall', cost: 120e3, rent: 14e3, traffic: 700, blurb: 'A small shop with steady passing trade.' },

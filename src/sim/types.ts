@@ -407,6 +407,27 @@ export interface SiteItem {
   y: number
   /** Quarter turns, 0-3. */
   rot: number
+  /** Factory machines and docks: 1-3, upgraded in place. Missing is 1. */
+  tier?: number
+  /** Factory machines: up to two modules, 'speed', 'quality' or 'eff'. */
+  mods?: string[]
+}
+
+/** A second (third...) factory, in a region of its own, with a layout of its own. */
+export interface Plant {
+  id: string
+  name: string
+  region: string
+  site: Site
+}
+
+/** A saved stretch of factory floor, placed again in one go on any factory. */
+export interface Blueprint {
+  id: string
+  name: string
+  w: number
+  h: number
+  items: { kind: string; x: number; y: number; rot: number; tier?: number; mods?: string[] }[]
 }
 
 /**
@@ -492,6 +513,10 @@ export interface Site {
   upper?: Site[]
   /** On a storey above the ground floor: which one, 1 for the first floor. */
   level?: number
+  /** Factories: shifts a day, 1-3. Missing is 1. */
+  shifts?: number
+  /** Factories: which device each line builds, by the id of its first receiving dock. A line not listed builds whatever is on order. */
+  assign?: Record<string, string>
   /** Bumped on every change, so the 3D view knows when to rebuild. */
   rev: number
 }
@@ -822,6 +847,10 @@ export interface GameState {
   unlocks: Record<string, number>
   office: Site
   factory: Site | null
+  /** Factories beyond the first, each in a region. Missing in older saves. */
+  plants?: Plant[]
+  /** Saved factory layouts. */
+  blueprints?: Blueprint[]
   venue: Site | null
   orders: ProductionOrder[]
   supply: SupplyState

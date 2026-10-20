@@ -18,7 +18,7 @@ import { DIFFICULTY, RETAIL_CUT, devPlan, fmtDate, player } from './game'
 import { CHANNELS, EVENTS, FAN_CYCLE, OWN_VENUE, dailyTickets, productSatisfaction } from './growth'
 import { researchLines } from './life'
 import { OUTSIDE_OPTION, bestSegment, hypeLift, launchHype, lifecycle, normalised, priceFactor, pull, segmentDemand, tierAverages, utility } from './market'
-import { CONTRACT, FACTORY_SAVING, buildCost, costNow, factoryLine, marketPrice, orderLeft, pendingUnits } from './ops'
+import { CONTRACT, FACTORY_SAVING, contractPerDay, buildCost, costNow, factoryLine, marketPrice, orderLeft, pendingUnits } from './ops'
 import { has, vacantSeats } from './progress'
 import { REGIONS, homeRegion, regionIncome, regionTaste, rivalReach } from './regions'
 import { clamp } from './rng'
@@ -404,7 +404,7 @@ export function reorderQuote(g: GameState, p: Product, units: number): { cost: n
   const n = Math.max(0, Math.floor(units))
   let days = 0
   if (n > 0) {
-    if (mode === 'contract') days = CONTRACT.leadDays - 1 + Math.ceil(n / Math.max(1, Math.floor(CONTRACT.perDay / use)))
+    if (mode === 'contract') days = CONTRACT.leadDays - 1 + Math.ceil(n / Math.max(1, Math.floor(contractPerDay(g) / use)))
     else {
       let ahead = 0
       for (const o of g.orders) {
