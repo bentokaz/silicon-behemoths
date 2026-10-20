@@ -538,6 +538,7 @@ export const DRONE_IO: IoInfo[] = [
   { id: 'range', name: 'Long-range antennas', cost: 5, level: 3, value: 0.6 },
   { id: 'swap', name: 'Hot-swap batteries', cost: 4, level: 4, value: 0.5 },
   { id: 'lidar', name: 'Night-flight lidar', cost: 9, level: 5, value: 0.8 },
+  { id: 'secure', name: 'Encrypted link and secure boot', cost: 5, level: 2, value: 0.4 },
 ]
 /** What an e-reader's display levels are, by Display level: generations of e-ink. */
 export const EINK_PANELS = ['E-ink Pearl', 'E-ink Carta', 'Carta 1200', 'Carta 1300', 'Kaleido colour', 'Gallery colour', 'Gallery 3', 'Video-rate e-ink', 'Holo-paper']

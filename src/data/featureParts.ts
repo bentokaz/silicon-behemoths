@@ -135,6 +135,7 @@ const IO_PARTS: Record<string, FeaturePart> = {
   'drone:range': P('antennas', [6, 70, 4], 'slide', 'edge', sig('blue', 'top')),
   'drone:swap': P('packcell', [40, 80, 20], 'silo', 'back'),
   'drone:lidar': P('lidar', [22, 22, 16], 'spin', 'top', sig('accent', 'front')),
+  'drone:secure': P('antennas', [6, 40, 4], 'slide', 'edge', { v: 1, ...sig('accent', 'top') }),
   // PC towers
   'tower:wifi': P('wifimod', [22, 30, 3], 'plug', 'board', { v: 2, ...sig('blue', 'top') }),
   'tower:bays': P('drivebay', [100, 146, 26], 'silo', 'centre'),

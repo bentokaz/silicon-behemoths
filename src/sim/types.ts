@@ -70,6 +70,8 @@ export interface Body {
   rgb?: RgbLight
   /** Mice: a sculpted right-handed shape, or one that suits either hand. */
   grip?: 'ergo' | 'ambi'
+  /** A camouflage pattern over the shell. Missing means a plain finish. */
+  camo?: 'woodland' | 'desert' | 'urban' | 'arctic'
 }
 
 /** RGB lighting: which zones light up, in what colours, and how they move. */
@@ -266,6 +268,12 @@ export interface Product {
   reorder?: ReorderRule
 }
 
+/** One thing a client asks of the design (see sim/contractReqs.ts). */
+export interface ContractReq {
+  kind: 'wood' | 'calm' | 'camo' | 'matte' | 'maxLong' | 'maxVolume' | 'quiet' | 'flight' | 'battery' | 'secure' | 'rgb'
+  value?: number
+}
+
 /** A business asking for a batch of devices (see sim/contracts.ts). */
 export interface ContractJob {
   id: string
@@ -286,6 +294,11 @@ export interface ContractJob {
   due?: number
   delivered: number
   state: 'offer' | 'active' | 'done' | 'failed'
+  /** Sector of the client, its tier (0-3), what it asks of the design, and days of grace after the date in which pay falls away. */
+  sector?: string
+  tier?: number
+  reqs?: ContractReq[]
+  grace?: number
 }
 
 /** When a device orders another production run by itself, and how much. */
@@ -883,6 +896,8 @@ export interface GameState {
   news: NewsItem[]
   /** Contract work offered, under way and lately finished. Missing in older saves. */
   contracts?: ContractJob[]
+  /** Standing with each sector's clients, 0-1. Missing in older saves. */
+  sectorRep?: Record<string, number>
   /** Troubles the feed has already been told about, by name, with the day: each is announced once and not again until it has passed. */
   told?: Record<string, number>
 }

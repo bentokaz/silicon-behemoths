@@ -228,6 +228,7 @@ export const MATERIALS: MaterialInfo[] = [
   { id: 'titanium', name: 'Titanium', level: 3, density: 4.5, cost: 38, premium: 0.93, use: 'frame' },
   { id: 'sapphire', name: 'Sapphire', level: 5, density: 3.98, cost: 55, premium: 0.97, use: 'back' },
   { id: 'liquidmetal', name: 'Liquidmetal', level: 6, density: 6, cost: 60, premium: 1, use: 'frame' },
+  { id: 'wood', name: 'Wood veneer', level: 0, density: 0.7, cost: 6, premium: 0.55, use: 'both' },
   { id: 'graphene', name: 'Graphene composite', level: 7, density: 1.6, cost: 75, premium: 1, use: 'both' },
 ]
 export const materialInfo = (id: string) => MATERIALS.find((m) => m.id === id) ?? MATERIALS[0]

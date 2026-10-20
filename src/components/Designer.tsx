@@ -17,10 +17,12 @@ import { appeal, bestSegment, normalised } from '../sim/market'
 import { costNow, factoryLine } from '../sim/ops'
 import { type FingerprintStyle, type FrontStyle, LAYOUT_NAMES, NO_REFRESH } from '../sim/rivals'
 import { batteryLabel, chargeWatts, evaluate, foldedThickness, lifeLabel, minBezel, minThickness, panelName, selfieMinDia, thermal } from '../sim/scoring'
-import { type Colorway, DEVICE_TYPES, type DeviceType, type Face, type Lens, type PlacedPart, SUBS, type Track } from '../sim/types'
+import { CAMO_NAMES } from '../sim/contractReqs'
+import { type Body, type Colorway, DEVICE_TYPES, type DeviceType, type Face, type Lens, type PlacedPart, SUBS, type Track } from '../sim/types'
 import { hasType } from '../sim/world'
 import { useGame, useStore } from '../store/game'
 import { LaunchPlan, type LaunchState, MarginRow } from './DesignerPlan'
+import { ContractBrief } from './WorkParts'
 import { FeatureList } from './FeatureList'
 import { DEVICE_PALETTE, colourName, houseColours } from '../data/palette'
 import { PART_NOTES, featurePart } from '../data/featureParts'
@@ -309,6 +311,7 @@ function BodyPanel({ simple }: { simple: boolean }) {
       <Group title={backName}>
         {!oneShell && <Choice label="Material" value={body.backMat} options={mats('back')} onChange={(v) => setBody({ backMat: v })} />}
         <ColorPick label="Colour" value={body.backColor} onChange={(v) => setBody({ backColor: v })} />
+        <Choice label="Camouflage" value={body.camo ?? 'none'} options={[{ value: 'none', label: 'None' }, ...Object.entries(CAMO_NAMES).map(([value, label]) => ({ value, label }))]} onChange={(v) => setBody({ camo: v === 'none' ? undefined : (v as Body['camo']) })} />
         {type !== 'speaker' && <Toggle label="Finish" value={body.backFinish} options={['gloss', 'matte'] as const} onChange={(backFinish) => setBody({ backFinish })} />}
       </Group>
       {type === 'headset' && (
@@ -1299,6 +1302,7 @@ function Workbench() {
         </div>
       )}
 
+      <ContractBrief design={draft} lifeHours={ev.report.lifeHours} />
       {launching && <LaunchPlan plan={plan} patch={patch} back={() => setLaunching(false)} />}
     </div>
   )
