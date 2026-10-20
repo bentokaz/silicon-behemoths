@@ -9,7 +9,7 @@ import { osLookOf } from '../3d/osLook'
 import { deviceThumbnail } from '../3d/thumbnail'
 import { sfx } from '../audio/sfx'
 import { EXTRAS, LENSES, SUPPLY_LABELS, materialInfo, panelInfo, sensorInfo } from '../data/catalog'
-import { ANC, COOLERS, DRIVERS, GPUS, HINGES, INPUT_NAMES, MIC_ARRAYS, OPTICS, SPEAKERS, SPEAKER_DRIVERS, STRAPS, TYPES, headStrap, inputOptions, ioInfo, segmentInfo, standInfo, subLabel } from '../data/devices'
+import { PSUS, RGB_EFFECTS, TOWER_FORM_NAMES, caseFront, caseOf, caseSide, rgbOf, rgbOn, towerForm, ANC, COOLERS, coolersFor, DRIVERS, GPUS, HINGES, INPUT_NAMES, MIC_ARRAYS, OPTICS, SPEAKERS, SPEAKER_DRIVERS, STRAPS, TYPES, headStrap, inputOptions, ioInfo, segmentInfo, standInfo, subLabel } from '../data/devices'
 import { recallCost } from '../sim/care'
 import { RECALL_DEADLINE,companyOf, discontinue, fmtDate, monthLabel, player, productName, recallProduct } from '../sim/game'
 import { type Why, demandEstimate, productProfit, suggestReorder, whyLines } from '../sim/insight'
@@ -73,7 +73,8 @@ export function specLines(d: DeviceDesign, diag: number, g?: GameState): [string
   const size = `${d.body.width} x ${d.body.height} x ${d.body.thickness} mm`
   const fitted = (s.io ?? []).map((id) => ioInfo(type, id)?.name).filter(Boolean).join(', ') || 'none'
   const lines: [string, string][] = []
-  if (type === 'console') lines.push(['Video output', `${panelName(type, s.panel)}, ${s.refresh} Hz`])
+  if (type === 'console' || type === 'tower') lines.push(['Video output', `${panelName(type, s.panel)}, ${s.refresh} Hz`])
+  else if (type === 'mouse') lines.push(['Sensor', panelName(type, s.panel)])
   else if (type === 'headset') lines.push(['Displays', `${panelInfo(s.panel).name} ${s.refresh} Hz, ${OPTICS[s.optics ?? 0].name.toLowerCase()}`])
   else if (type === 'speaker') lines.push(['Screen', d.body.screen ? `${diag.toFixed(1)}" ${panelInfo(s.panel).name}` : 'none'])
   else if (type === 'drone') lines.push(['Video link', panelName(type, s.panel)])
@@ -93,6 +94,17 @@ export function specLines(d: DeviceDesign, diag: number, g?: GameState): [string
     lines.push(['Tracking cameras', selfie.length ? `${selfie.length} x ${sensorInfo(selfie[0].sensor ?? 0).name}` : 'none'])
     lines.push(['Strap', headStrap(d.body.strap).name])
   }
+  if (type === 'tower') {
+    const pc = caseOf(d.body)
+    lines.push(['Case', `${TOWER_FORM_NAMES[towerForm(d.body)]}, ${caseSide(pc.side).name.toLowerCase()} side, ${caseFront(pc.front).name.toLowerCase()} front`])
+    lines.push(['Fans', `${pc.fans} x ${pc.fanSize} mm at the front`])
+    lines.push(['Power supply', PSUS[s.psu ?? 1].name])
+  }
+  if (type === 'mouse') lines.push(['Shape', d.body.grip === 'ambi' ? 'Ambidextrous' : 'Sculpted, right-handed'])
+  if (type === 'tower' || type === 'mouse') {
+    const l = rgbOf(d.body)
+    lines.push(['Lighting', rgbOn(d.body) ? `${RGB_EFFECTS.find((x) => x.id === l.effect)?.name}, ${l.zones.length} zone${l.zones.length === 1 ? '' : 's'}` : 'none'])
+  }
   if (type === 'earbuds') {
     lines.push(['Driver', DRIVERS[s.driver ?? 0].name])
     lines.push(['Noise cancelling', ANC[s.anc ?? 0].name])
@@ -110,9 +122,9 @@ export function specLines(d: DeviceDesign, diag: number, g?: GameState): [string
   if (T.input) lines.push([INPUT_NAMES[T.input], inputOptions(type)[s.keyboard ?? 0].name])
   if (T.ioLabel) lines.push([T.ioLabel, fitted])
   if (type === 'laptop' || type === 'desktop') lines.push(['Webcam', selfie.length ? sensorInfo(selfie[0].sensor ?? 0).name : 'none'])
-  if (T.mains?.cool) lines.push(['Cooling', COOLERS[s.cooling ?? 0].name])
+  if (T.mains?.cool) lines.push(['Cooling', coolersFor(type)[s.cooling ?? 0].name])
   if (T.mains?.sound) lines.push(['Speakers', SPEAKERS[s.speakers ?? 0].name])
-  if (type === 'desktop' || type === 'tv') lines.push(['Stand', standInfo(type, d.body.stand).name])
+  if (type === 'desktop' || type === 'tv' || type === 'monitor') lines.push(['Stand', standInfo(type, d.body.stand).name])
   lines.push([type === 'earbuds' ? 'Case' : 'Body', size])
   lines.push(['Materials', T.oneShell ? materialInfo(d.body.frameMat).name : type === 'earbuds' ? `${materialInfo(d.body.backMat).name} case, ${materialInfo(d.body.frameMat).name.toLowerCase()} trim` : `${materialInfo(d.body.frameMat).name} frame, ${materialInfo(d.body.backMat).name.toLowerCase()} back`])
   if (extras.length) lines.push(['Extras', extras.join(', ')])

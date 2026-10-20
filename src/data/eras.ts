@@ -53,6 +53,9 @@ export const TYPE_YEAR: Record<DeviceType, number> = {
   actioncam: 2009,
   ereader: 2007,
   ring: 2019,
+  tower: 1980,
+  monitor: 1980,
+  mouse: 1984,
 }
 
 /** Customer segments that appear later than their device type. */
@@ -66,6 +69,11 @@ export const SEGMENT_YEAR: Record<string, number> = {
   'e-hifi': 2018,
   'f-work': 2021,
   'v-pro': 2023,
+  'pc-game': 1996,
+  'pc-compact': 2005,
+  'mo-game': 2010,
+  'm-game': 2003,
+  'm-pro': 2012,
 }
 
 /** Years over which a new kind of device grows from its first buyers to its full market. */

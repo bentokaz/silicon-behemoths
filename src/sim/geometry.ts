@@ -49,6 +49,11 @@ const FACES: Record<DeviceType, FaceMap> = {
   actioncam: { camera: ['back'], island: ['back'], button: ['top', 'left', 'right'], port: ['left', 'right', 'bottom'], grille: ['left', 'right', 'top', 'bottom'], light: ['back', 'front', 'top'], logo: ['back', 'left', 'right', 'front'] },
   // front = the nose, where the gimbal hangs; back = the tail, where the battery goes in
   drone: { camera: ['front'], light: ['back', 'front', 'left', 'right'], button: ['top', 'back'], port: ['back', 'left', 'right'], vent: ['top', 'bottom', 'left', 'right'], logo: ['top', 'left', 'right'] },
+  // front = the front panel, back = the rear with its port panel; the side panel over the parts is on the right
+  tower: { slot: ['front'], port: ['front', 'top', 'back'], button: ['front', 'top'], light: ['front', 'top'], vent: ['top', 'front', 'back', 'left', 'bottom'], logo: ['front', 'left', 'right', 'top'] },
+  monitor: { camera: ['front'], port: ['back', 'bottom', 'left', 'right'], island: ['back'], grille: ['bottom', 'back'], vent: ['back', 'top'], button: ['bottom', 'back', 'right'], light: ['front'], logo: ['front', 'back'] },
+  // top = the shell under the palm, front = the nose with the cable, right (+X) = the thumb side, bottom = the base
+  mouse: { button: ['top', 'right', 'left'], port: ['front'], light: ['top', 'left', 'right', 'back'], island: ['bottom'], logo: ['top', 'back'] },
 }
 const KINDS: PartKind[] = ['camera', 'island', 'flash', 'notch', 'slot', 'port', 'button', 'light', 'grille', 'vent', 'fingerprint', 'logo']
 
@@ -94,6 +99,17 @@ export function partLabel(p: Pick<PlacedPart, 'kind' | 'crown' | 'face'>, type: 
   if (type === 'actioncam' && p.kind === 'button' && p.face === 'top') return 'Shutter button'
   if (type === 'drone' && p.kind === 'camera') return 'Gimbal camera'
   if (type === 'drone' && p.kind === 'light') return 'Navigation light'
+  if (type === 'tower' && p.kind === 'button') return 'Power button'
+  if (type === 'tower' && p.kind === 'light') return 'Light strip'
+  if (type === 'tower' && p.kind === 'slot') return 'Optical drive bay'
+  if (type === 'tower' && p.kind === 'vent') return 'Dust-filtered vent'
+  if (type === 'monitor' && p.kind === 'island') return 'Port panel'
+  if (type === 'monitor' && p.kind === 'button') return 'Menu button'
+  if (type === 'monitor' && p.kind === 'camera') return 'Webcam'
+  if (type === 'mouse' && p.kind === 'button') return p.face === 'top' ? 'DPI button' : 'Thumb button'
+  if (type === 'mouse' && p.kind === 'island') return 'Sensor window'
+  if (type === 'mouse' && p.kind === 'port') return 'Cable port'
+  if (type === 'mouse' && p.kind === 'light') return 'Status light'
   return PART_LABELS[p.kind]
 }
 
@@ -111,6 +127,9 @@ const FACE_LABELS: Partial<Record<DeviceType, Partial<Record<Face, string>>>> = 
   ring: { front: 'outside of the band', back: 'inside of the band', top: 'top edge', bottom: 'bottom edge' },
   actioncam: { front: 'screen side', back: 'lens side', left: 'left side', right: 'right side', bottom: 'underside' },
   drone: { front: 'nose', back: 'tail', bottom: 'underside', left: 'left side', right: 'right side' },
+  tower: { front: 'front panel', back: 'rear panel', left: 'left side', right: 'side panel', top: 'top', bottom: 'underside' },
+  monitor: { top: 'top edge', bottom: 'bottom edge', left: 'left edge', right: 'right edge' },
+  mouse: { top: 'shell', front: 'nose', back: 'tail', right: 'thumb side', left: 'outer side', bottom: 'base' },
 }
 /** What a face is called on a given device, for the editor. */
 export const faceLabel = (face: Face, type: DeviceType): string => FACE_LABELS[type]?.[face] ?? face
@@ -383,7 +402,7 @@ export function carrierBody(b: Body, type: DeviceType, carrier: Carrier): Body {
 }
 
 /** A console's sides are large surfaces, so their coordinates run across and up like a front face. */
-const uprightSides = (type: DeviceType) => type === 'console' || type === 'drone'
+const uprightSides = (type: DeviceType) => type === 'console' || type === 'drone' || type === 'tower' || type === 'mouse'
 
 /**
  * Axes of a solid's face in the solid's own space: where x and y of a part point,
@@ -411,7 +430,7 @@ export const isSide = (f: Face) => f !== 'front' && f !== 'back'
 
 /** True if the face is a thin edge, where parts sit in a row and cannot move across it. */
 export function isEdge(face: Face, type: DeviceType): boolean {
-  if (type === 'console' || type === 'earbuds' || type === 'headset' || type === 'speaker' || type === 'drone' || type === 'ring') return false
+  if (type === 'console' || type === 'tower' || type === 'mouse' || type === 'earbuds' || type === 'headset' || type === 'speaker' || type === 'drone' || type === 'ring') return false
   return isSide(mountOf(type, face).face)
 }
 
@@ -442,7 +461,13 @@ function faceInset(b: Body, face: Face, type: DeviceType): { x: number; y: numbe
     return { x: Math.min(r, fs.w * 0.3), y: Math.min(r, fs.h * 0.3) }
   }
   if (type === 'ring') return { x: 0, y: Math.min(1, fs.h * 0.2) }
-  if (type === 'console') {
+  if (type === 'mouse') {
+    // the shell curves away all round: keep parts to its crown and the middle of each side
+    if (face === 'top') return { x: Math.min(b.width * 0.22, fs.w * 0.3), y: Math.min(b.thickness * 0.18, fs.h * 0.3) }
+    if (face === 'left' || face === 'right') return { x: Math.min(b.thickness * 0.22, fs.w * 0.3), y: Math.min(b.height * 0.25, fs.h * 0.3) }
+    return { x: Math.min(b.width * 0.2, fs.w * 0.3), y: Math.min(b.height * 0.2, fs.h * 0.3) }
+  }
+  if (type === 'console' || type === 'tower') {
     if (face === 'top' || face === 'bottom') return { x: Math.min(b.corner, fs.w * 0.3), y: 2 }
     if (face === 'left' || face === 'right') return { x: 2, y: Math.min(b.corner, fs.h * 0.3) }
     return { x: 0, y: 0 }
@@ -487,7 +512,7 @@ export function edgeBevel(b: Body): number {
 }
 
 /** Gap between a stand-mounted panel and the desk it stands on. */
-export const standLift = (b: Body, type: DeviceType) => (type === 'tv' ? Math.round(b.height * 0.075) : Math.round(b.height * 0.2))
+export const standLift = (b: Body, type: DeviceType) => (type === 'tv' ? Math.round(b.height * 0.075) : type === 'monitor' ? Math.round(b.height * 0.26) : Math.round(b.height * 0.2))
 
 /** The patch on the back that a desktop's stand bolts to, in back-face coordinates. Null if nothing is there. */
 export function standMount(b: Body, type: DeviceType): { x: number; y: number; w: number; h: number } | null {
@@ -610,7 +635,7 @@ export function newPart(kind: PartKind, d: DeviceDesign, sensorLevel = 0): Place
   const fs = faceSize(b, face, type)
   const base = { id: nextPartId(d), kind, face, x: 0, y: 0, rot: 0 }
   // large devices get parts sized to match
-  const big = type === 'tv' ? 3 : type === 'desktop' ? 2 : type === 'console' ? 1.5 : 1
+  const big = type === 'tv' ? 3 : type === 'desktop' || type === 'monitor' ? 2 : type === 'console' || type === 'tower' ? 1.5 : 1
   let p: PlacedPart
   switch (kind) {
     case 'camera': {
@@ -637,7 +662,8 @@ export function newPart(kind: PartKind, d: DeviceDesign, sensorLevel = 0): Place
       if (type === 'watch') p = { ...base, w: 26, h: 26, r: 13, finish: 'black' }
       else if (type === 'ring') p = { ...base, w: 7, h: Math.max(2, b.height - 3), r: 1.2, finish: 'black' }
       else if (type === 'actioncam') p = { ...base, w: Math.min(34, fs.h - 6), h: Math.min(34, fs.h - 6), r: 7, finish: 'black', x: fs.w * 0.2 }
-      else if (type === 'desktop' || type === 'tv') p = { ...base, w: 70 * big, h: 40 * big, r: 6, finish: 'black', x: fs.w * 0.25 }
+      else if (type === 'desktop' || type === 'tv' || type === 'monitor') p = { ...base, w: 70 * big, h: 40 * big, r: 6, finish: 'black', x: fs.w * 0.25 }
+      else if (type === 'mouse') p = { ...base, w: 14, h: 18, r: 3, finish: 'black', y: 0 }
       else p = { ...base, w: 30, h: 30, r: 8, finish: 'back', y: b.height / 2 - 24 }
       break
     case 'flash':
@@ -649,8 +675,10 @@ export function newPart(kind: PartKind, d: DeviceDesign, sensorLevel = 0): Place
     case 'button':
       if (type === 'watch') p = { ...base, w: 6, h: 6, x: 6, crown: true }
       else if (type === 'console') p = { ...base, w: 10, h: 10, x: fs.w / 2 - 22 }
+      else if (type === 'tower') p = { ...base, w: 11, h: 11, y: fs.h / 2 - 20 }
+      else if (type === 'mouse') p = base.face === 'top' ? { ...base, w: 5, h: 7, y: -fs.h * 0.1 } : { ...base, w: 11, h: 4.5, x: -fs.w * 0.08, y: fs.h * 0.1 }
       else if (type === 'earbuds') p = { ...base, w: 5, h: 5 }
-      else if (type === 'desktop' || type === 'tv') p = { ...base, w: 12, h: 12, x: fs.w / 2 - 40, y: -fs.h / 2 + 40 }
+      else if (type === 'desktop' || type === 'tv' || type === 'monitor') p = { ...base, w: 12, h: 12, x: fs.w / 2 - 40, y: -fs.h / 2 + 40 }
       else if (type === 'headset') p = { ...base, w: 12, h: 5, x: fs.w * 0.3 }
       else if (type === 'speaker') p = { ...base, w: Math.max(5, Math.min(10, fs.w * 0.16)), h: Math.max(5, Math.min(10, fs.w * 0.16)), y: fs.h * 0.25 }
       else if (type === 'handheld') p = { ...base, w: 10, h: 2.6, x: 24 }
@@ -671,7 +699,7 @@ export function newPart(kind: PartKind, d: DeviceDesign, sensorLevel = 0): Place
       const w = type === 'laptop' ? 44 : type === 'watch' ? 14 : type === 'earbuds' ? 16 : type === 'ring' ? 9 : type === 'actioncam' ? 16 : 22 * big
       const h = type === 'laptop' ? 14 : type === 'watch' ? 4 : type === 'earbuds' ? 5 : type === 'ring' ? 2.4 : type === 'actioncam' ? 4.5 : 7 * big
       // on a screen, the logo goes in the bezel below it
-      if ((type === 'tv' || type === 'desktop') && face === 'front') {
+      if ((type === 'tv' || type === 'desktop' || type === 'monitor') && face === 'front') {
         const room = Math.max(3, b.bezelBottom * 0.5)
         p = { ...base, w: Math.min(w, room * 3.2), h: Math.min(h, room), y: -b.height / 2 + b.bezelBottom / 2, text: 'LOGO' }
       } else p = { ...base, w, h, text: 'LOGO' }
@@ -681,10 +709,12 @@ export function newPart(kind: PartKind, d: DeviceDesign, sensorLevel = 0): Place
       p = { ...base, w: Math.min(fs.w * 0.5, 60 * big), h: Math.min(fs.h * 0.4, 12 * big) }
       break
     case 'slot':
-      p = { ...base, w: 124, h: 3.2, rot: fs.w < 132 ? 90 : 0 }
+      p = type === 'tower' ? { ...base, w: 148, h: 12, y: fs.h / 2 - 30, rot: fs.w < 156 ? 90 : 0 } : { ...base, w: 124, h: 3.2, rot: fs.w < 132 ? 90 : 0 }
       break
     case 'light':
       if (type === 'console') p = { ...base, w: Math.min(60, fs.w * 0.3), h: 1.6, y: -fs.h * 0.25, color: '#5ab4ff' }
+      else if (type === 'tower') p = { ...base, w: 3, h: Math.min(fs.h * 0.7, 300), x: fs.w / 2 - 12, color: '#ff6b1a' }
+      else if (type === 'mouse') p = { ...base, w: 2, h: 2, y: fs.h * 0.25, color: '#8dffa8' }
       else if (type === 'speaker') p = lightRing(b, base)
       else if (type === 'headset') p = { ...base, w: 12, h: 1.4, y: -fs.h * 0.3, color: '#ffffff' }
       else if (type === 'drone') p = { ...base, w: 8, h: 1.6, color: '#ff4d3d' }

@@ -1,7 +1,7 @@
 // Turns a DeviceDesign into raw sub-scores, a design report derived from the
 // physical model, and a unit cost. No randomness: same design, same result.
 import { CHARGE_W, EXTRAS, LENSES, MIN_BEZEL, MIN_THICKNESS, PANEL_NAMES, REFRESH, batteryDensity, chipInfo, featuresAtLevels, idealRam, idealStorage, materialInfo, panelInfo, refScore, sensorInfo } from '../data/catalog'
-import { ANC, COOLERS, DRIVERS, FLIP, GPUS, HEADSET_PANELS, HINGES, MIC_ARRAYS, OPTICS, SPEAKERS, SPEAKER_DRIVERS, STRAPS, TYPES, VIDEO_OUT, EINK_PANELS, VIDEO_LINKS, headStrap, inputOptions, ioInfo, standInfo } from '../data/devices'
+import { ANC, COOLERS, DRIVERS, FLIP, GPUS, HEADSET_PANELS, HINGES, MIC_ARRAYS, MOUSE_SENSORS, OPTICS, PC_COOLERS, PSUS, SPEAKERS, SPEAKER_DRIVERS, STRAPS, TYPES, VIDEO_OUT, EINK_PANELS, VIDEO_LINKS, caseFeet, caseFront, caseOf, caseSide, coolersFor, headStrap, inputOptions, ioInfo, onStandType, rgbOf, rgbOn, rgbZones, standInfo, towerForm } from '../data/devices'
 import { contains, coverScreen, isCoverCam, isEdge, isFlip, isRing, notchStyle, rectsOverlap, screenRect, speakerShape, speakerSockets, standMount } from './geometry'
 import { clamp } from './rng'
 import type { Body, CostParts, CustomChip, DeviceDesign, DeviceType, Evaluation, Issue, Levels, PlacedPart, Specs } from './types'
@@ -50,6 +50,7 @@ export function lifeLabel(type: DeviceType, hours: number): { name: string; valu
   if (type === 'ring') return { name: 'Battery life', value: `${(hours / 24).toFixed(1)} days` }
   if (type === 'ereader') return { name: 'Reading time', value: `${Math.round(hours)} h, about ${Math.round(hours / 7)} weeks` }
   if (type === 'actioncam') return { name: 'Recording time', value: `${Math.round(hours * 60)} min` }
+  if (type === 'mouse') return { name: 'Battery life', value: `${Math.round(hours)} h of use, about ${Math.max(1, Math.round(hours / 8 / 5))} weeks` }
   return { name: type === 'earbuds' ? 'Listening, with case' : 'Battery life', value: `${hours.toFixed(1)} h` }
 }
 /** The steps a battery's capacity is chosen in: a ring's cell holds a few dozen mAh. */
@@ -60,7 +61,7 @@ export const batteryLabel = (type: DeviceType, mah: number) => (type === 'laptop
 /** Charging power in watts. An earbud case charges at a tenth of what a phone does. */
 export const chargeWatts = (type: DeviceType, level: number) => (type === 'earbuds' ? CHARGE_W[level] / 10 : type === 'ring' ? CHARGE_W[level] / 20 : CHARGE_W[level])
 /** Name of a display level: a panel, or for a console what its video output can drive. */
-export const panelName = (type: DeviceType, level: number) => (type === 'console' ? VIDEO_OUT[level] : type === 'ereader' ? EINK_PANELS[level] : type === 'drone' ? VIDEO_LINKS[level] : PANEL_NAMES[level])
+export const panelName = (type: DeviceType, level: number) => (type === 'console' || type === 'tower' ? VIDEO_OUT[level] : type === 'mouse' ? MOUSE_SENSORS[level] : type === 'ereader' ? EINK_PANELS[level] : type === 'drone' ? VIDEO_LINKS[level] : PANEL_NAMES[level])
 
 /** Screen-to-body ratio a top design at this level is expected to reach. */
 function targetSbr(type: DeviceType, level: number): number {
@@ -120,7 +121,8 @@ export function deviceWeight(d: DeviceDesign): number {
   const plateVol = (b.width * b.height * 0.7) / 1000
   let w = d.specs.battery * 0.011 + frameVol * frame.density + plateVol * back.density + (t.noScreen ? 0 : plateVol * 2.5) + volume * t.density
   if (t.gpu) w += GPUS[d.specs.gpu ?? 0].weight
-  if (d.type === 'desktop' || d.type === 'tv') w += standInfo(d.type, b.stand).weight * areaScale(d)
+  if (onStandType(d.type)) w += standInfo(d.type, b.stand).weight * areaScale(d)
+  if (d.type === 'tower') w += psuWeight(d.specs)
   if (d.type === 'earbuds') w += 2 * budWeight(d)
   if (d.type === 'foldable') w += (HINGES[d.specs.hinge ?? 0] ?? HINGES[0]).weight
   if (d.type === 'headset') w += (OPTICS[d.specs.optics ?? 0] ?? OPTICS[0]).weight + headStrap(b.strap).weight
@@ -132,7 +134,10 @@ export function deviceWeight(d: DeviceDesign): number {
 /** Grams of a drone's four arms, motors and propellers, which grow with the length of its body. */
 export const droneMotors = (b: Body) => 4 * (3 + 0.035 * b.thickness + 0.0002 * b.thickness * b.thickness)
 
-export type WeightKey = 'battery' | 'frame' | 'back' | 'display' | 'works' | 'gpu' | 'stand' | 'buds' | 'hinge' | 'optics' | 'strap' | 'driver' | 'motors'
+/** Grams of a tower's power supply: a bigger one carries more copper and a heavier transformer. */
+const psuWeight = (s: Specs) => (PSUS[s.psu ?? 1] ?? PSUS[1]).watts * 1.6
+
+export type WeightKey = 'psu' | 'battery' | 'frame' | 'back' | 'display' | 'works' | 'gpu' | 'stand' | 'buds' | 'hinge' | 'optics' | 'strap' | 'driver' | 'motors'
 
 /**
  * The same sum as deviceWeight(), term by term: what the cells, the frame, the back, the display and everything
@@ -152,7 +157,8 @@ export function weightParts(d: DeviceDesign): { key: WeightKey; label: string; g
     { key: 'works', label: 'Everything inside', grams: volume * t.density },
   ]
   if (t.gpu) out.push({ key: 'gpu', label: 'Graphics', grams: GPUS[d.specs.gpu ?? 0].weight })
-  if (d.type === 'desktop' || d.type === 'tv') out.push({ key: 'stand', label: 'Stand', grams: standInfo(d.type, b.stand).weight * areaScale(d) })
+  if (onStandType(d.type)) out.push({ key: 'stand', label: 'Stand', grams: standInfo(d.type, b.stand).weight * areaScale(d) })
+  if (d.type === 'tower') out.push({ key: 'psu', label: 'Power supply', grams: psuWeight(d.specs) })
   if (d.type === 'earbuds') out.push({ key: 'buds', label: 'Earbuds, the pair', grams: 2 * budWeight(d) })
   if (d.type === 'foldable') out.push({ key: 'hinge', label: 'Hinge', grams: (HINGES[d.specs.hinge ?? 0] ?? HINGES[0]).weight })
   if (d.type === 'headset') out.push({ key: 'optics', label: 'Lenses', grams: (OPTICS[d.specs.optics ?? 0] ?? OPTICS[0]).weight }, { key: 'strap', label: 'Head strap', grams: headStrap(b.strap).weight })
@@ -174,6 +180,16 @@ export function thermal(d: DeviceDesign, chips?: CustomChip[]): { heat: number; 
   if (!T.mains?.cool) return null
   const b = d.body
   const s = d.specs
+  if (d.type === 'tower') {
+    // the processor's cooler has to carry its heat to the air, and the case's fans that air, and the card's, out
+    const cpu = chipFor(s, chips).watts * (T.heat ?? 1)
+    const heat = cpu + GPUS[s.gpu ?? 0].drain
+    const c = caseOf(b)
+    const litres = (b.width * b.height * b.thickness) / 1e6
+    const air = (40 + c.fans * (c.fanSize === 140 ? 78 : 60) * caseFront(c.front).air + litres * 1.2) * caseSide(c.side).air * (c.feet === 'pads' ? 0.95 : 1)
+    const cooler = PC_COOLERS[s.cooling ?? 0] ?? PC_COOLERS[0]
+    return { heat, litres, headroom: Math.min(cooler.cap / Math.max(1, cpu), air / Math.max(1, heat)) }
+  }
   const scr = screenRect(b)
   // the display panel itself takes the first few millimetres behind the glass
   const panel = T.noScreen ? 0 : scr.w * scr.h * Math.min(b.thickness, 8)
@@ -223,6 +239,10 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
   const io = s.io ?? []
   const has = (id: string) => s.extras.includes(id)
   const ref = refScore(mLevel)
+  // a tower's power supply has to feed its processor and graphics card with some to spare; a mouse with no radio is wired
+  const psu = PSUS[s.psu ?? 1] ?? PSUS[1]
+  const psuNeed = type === 'tower' ? (thermal(d, chips)?.heat ?? 0) + 90 : 0
+  const wired = type === 'mouse' && !io.includes('wireless') && !io.includes('bt')
 
   // ---- tech locks and physical limits
   if (s.customChip && !chip.custom) err('The chosen in-house chip is not ready')
@@ -384,6 +404,25 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
     if (!d.parts.some((p) => p.kind === 'port')) err('No charging port')
     if (buttons.length === 0) warn('No power button')
     special = (0.3 * inputRank + 0.3 * seen + 0.4 * Math.min(1, ioValue / 4.6)) * ref * 1.1
+  } else if (T.special === 'expand') {
+    const c = caseOf(b)
+    if (!io.includes('fusb') && !io.includes('fusbc')) warn('No front USB: everything has to be plugged in round the back')
+    if (buttons.length === 0) warn('No power button')
+    if (io.includes('odd') && Math.max(b.width, b.height) < 160) err('An optical drive bay needs a front at least 160 mm wide or tall')
+    if (c.fans === 0 && caseFront(c.front).air < 1) warn('No intake fans behind a closed front: the case is starved of air')
+    const spare = lerp01(psu.watts / Math.max(1, psuNeed), 1, 1.6)
+    const room = lerp01((b.width * b.height * b.thickness) / 1e6, 10, 55)
+    special = (0.5 * Math.min(1, ioValue / 5.5) + 0.25 * spare + 0.25 * room) * ref * 1.1
+  } else if (T.special === 'inputs') {
+    if (!io.includes('hdmi') && !io.includes('dp') && !io.includes('usbc')) err('No video input: nothing can be plugged in')
+    if (buttons.length === 0) warn('No buttons for the on-screen menu')
+    special = (0.12 + 0.88 * Math.min(1, ioValue / 5.6)) * ref * 1.1
+  } else if (T.special === 'buttons') {
+    if (wired && !d.parts.some((p) => p.kind === 'port')) err('A wired mouse needs its cable at the nose')
+    if (!wired && s.battery <= 0) err('A wireless mouse needs a battery')
+    if (!wired && !d.parts.some((p) => p.kind === 'port') && !io.includes('dock')) err('No charging port and no charging dock')
+    const thumbs = buttons.filter((p) => p.face === 'left' || p.face === 'right').length
+    special = (0.3 + 0.55 * Math.min(1, ioValue / 5) + 0.15 * Math.min(1, thumbs / 2)) * ref * 1.1
   } else if (T.special === 'home') {
     special = ioValue
     if (!d.parts.some((p) => p.kind === 'port')) err('No power inlet')
@@ -449,6 +488,13 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
   } else if (type === 'console') {
     // a sharper output is only worth having with the graphics power to drive it
     display = panel.quality * (0.8 + rf.bonus) * [0.8, 0.88, 0.95, 1][s.gpu ?? 0]
+  } else if (type === 'tower') {
+    // a tower's picture is its graphics card's: an output it cannot fill is wasted
+    display = panel.quality * (0.8 + rf.bonus) * [0.7, 0.84, 0.94, 1][s.gpu ?? 0]
+  } else if (type === 'mouse') {
+    // the sensor: how finely and how steadily it reads the desk
+    display = panel.quality * 0.98 * (io.includes('poll') ? 1.03 : 1)
+    perf = chip.perf * memoryFit * (io.includes('poll') ? 1.08 : 1) * (io.includes('wireless') || io.includes('bt') ? 0.98 : 1)
   } else if (type === 'headset') {
     // the picture reaches the eye through the lenses
     display = panel.quality * (0.8 + rf.bonus) * optics.clarity
@@ -478,8 +524,14 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
   let lifeHours = 0
   let battery: number
   const heat = thermal(d, chips)
-  const cooler = COOLERS[s.cooling ?? 0] ?? COOLERS[0]
+  const coolers = coolersFor(type)
+  const cooler = coolers[s.cooling ?? 0] ?? coolers[0]
   const speakers = SPEAKERS[s.speakers ?? 0] ?? SPEAKERS[0]
+  if (type === 'tower') {
+    if (psu.level > lv.charging) err(`${psu.name} power supply needs Charging level ${psu.level}`)
+    if (psu.watts < psuNeed) err(`The ${psu.name} power supply cannot feed ${Math.round(psuNeed)} W: fit a bigger one`)
+    else if (psu.watts < psuNeed * 1.2) warn('Little power to spare: the supply will run hot and loud')
+  }
   if (T.mains) {
     let cool = 1
     if (heat) {
@@ -494,6 +546,14 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
     }
     // a speaker's bass and loudness come from the size of its enclosure and the drivers in it
     battery = (spk ? 0.5 * lerp01(spk.litres, 0.25, 2.4) + 0.5 * woofer.bass : T.mains.cool * cool + T.mains.sound * speakers.quality) * ref * 1.1
+    // a tower is judged on how calm it stays as well as how cool: big slow fans and liquid are quieter
+    if (type === 'tower') battery = (0.72 * cool + 0.28 * (PC_COOLERS[s.cooling ?? 0] ?? PC_COOLERS[0]).quiet * (caseOf(b).fanSize === 140 ? 1 : 0.92)) * ref * 1.1
+    // a monitor's place in this score is its stand, which sets it at the right height and angle, and its sound
+    if (type === 'monitor') battery = (0.65 * standInfo('monitor', b.stand).premium + 0.35 * speakers.quality) * ref * 1.1
+  } else if (wired) {
+    // a wired mouse never needs charging
+    lifeHours = 0
+    battery = ref * 1.02
   } else if (type === 'earbuds') {
     // each bud has a small cell of its own; the case recharges both several times
     const cell = (stem ? 0.19 : 0.155) * batteryDensity(lv.battery)
@@ -525,7 +585,7 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
   const bumpArea = islands.reduce((a, p) => a + p.w * p.h, 0) + looseCams.reduce((a, p) => a + p.w * p.h, 0)
 
   // symmetry and alignment of everything on the face that is judged: the back, or the front of a box
-  const judged = type === 'console' || type === 'earbuds' || type === 'headset' || type === 'ring' ? 'front' : type === 'speaker' || type === 'drone' ? 'top' : 'back'
+  const judged = type === 'console' || type === 'tower' || type === 'earbuds' || type === 'headset' || type === 'ring' ? 'front' : type === 'speaker' || type === 'drone' || type === 'mouse' ? 'top' : 'back'
   const backParts = d.parts.filter((p) => p.face === judged)
   // a foldable's back is judged about the middle of the half that is not a screen
   const mid = type === 'foldable' && !isFlip(b) ? -b.width / 4 : 0
@@ -573,7 +633,7 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
     ergo = 0.6 * (1 - lerp01(b.height, 47, 56)) + 0.4 * (buttons.some((p) => p.crown) ? 1 : buttons.length ? 0.6 : 0)
   } else if (type === 'laptop') {
     ergo = 0.5 * (1 - lerp01(weight, 1500, 2800)) + 0.5 * (1 - lerp01(b.thickness, 17, 29))
-  } else if (type === 'desktop' || type === 'tv') {
+  } else if (onStandType(type)) {
     // sockets you can reach without turning the whole thing round
     const ports = d.parts.filter((p) => p.kind === 'port')
     const near = ports.filter((p) => p.face !== 'back' || Math.abs(p.x) > b.width * 0.3)
@@ -589,13 +649,40 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
   // a notch costs more of the screen than a waterdrop, and a pill standing clear of the edge least of all
   const notchPenalty = dl >= 1.5 ? notches.reduce((k, p) => Math.min(k, { notch: 0.5, drop: 0.72, pill: 0.85 }[notchStyle(b, p)]), 1) : 1
   const strap = STRAPS.find((x) => x.id === b.strap) ?? STRAPS[0]
-  const onStand = type === 'desktop' || type === 'tv'
-  const stand = standInfo(type === 'tv' ? 'tv' : 'desktop', b.stand)
+  const onStand = onStandType(type)
+  const stand = standInfo(type === 'tv' || type === 'monitor' ? type : 'desktop', b.stand)
   const wScale = T.weightByArea ? areaScale(d) : 1
   const weightRow = (max: number) => ({ key: 'weight', label: 'Weight', max, score: max * (1 - lerp01(weight, T.weight[0] * wScale, T.weight[1] * wScale)) })
 
   let breakdown: { key: string; label: string; score: number; max: number }[]
-  if (type === 'console') {
+  if (type === 'tower') {
+    const c = caseOf(b)
+    const litres = (b.width * b.height * b.thickness) / 1e6
+    const lit = rgbOn(b)
+    const frontIo = io.filter((id) => ioInfo(type, id)?.face === 'top').length
+    breakdown = [
+      { key: 'panels', label: 'Side and front panels', max: 18, score: 18 * (0.55 * caseSide(c.side).premium + 0.45 * caseFront(c.front).premium) },
+      { key: 'compact', label: 'Size for what it holds', max: 14, score: 14 * (1 - lerp01(litres, 9, 75)) },
+      weightRow(8),
+      { key: 'detail', label: 'Lighting and badge', max: 10, score: (lit ? 6 : lights.length ? 5 : 3) + (d.parts.some((p) => p.kind === 'logo') ? 4 : 0) },
+      { key: 'sym', label: 'Symmetry and alignment', max: 14, score: 14 * symmetry },
+      { key: 'ergo', label: 'Front ports and feet', max: 14, score: 14 * (0.6 * Math.min(1, frontIo / 3) + 0.4 * caseFeet(c.feet).premium) },
+      { key: 'mat', label: 'Materials', max: 22, score: 22 * materials },
+    ]
+    void towerForm
+  } else if (type === 'mouse') {
+    // most of how a mouse is judged is how it sits under the hand and how little it weighs to flick
+    const prop = b.width / Math.max(1, b.thickness)
+    const thumbs = buttons.filter((p) => p.face === 'right').length
+    breakdown = [
+      { key: 'weight', label: 'Weight', max: 28, score: 28 * (1 - lerp01(weight, T.weight[0], T.weight[1])) },
+      { key: 'shape', label: 'Shape and grip', max: 20, score: 20 * (b.grip === 'ergo' ? 1 : 0.86) * (1 - lerp01(Math.abs(prop - 0.54), 0.04, 0.2)) },
+      { key: 'detail', label: 'Lighting and badge', max: 10, score: (rgbOn(b) ? 6 : 3) + (d.parts.some((p) => p.kind === 'logo') ? 4 : 0) },
+      { key: 'sym', label: 'Symmetry and alignment', max: 10, score: 10 * symmetry },
+      { key: 'ergo', label: 'Buttons in reach', max: 12, score: 12 * (0.6 * Math.min(1, thumbs / 2) + 0.4 * (buttons.some((p) => p.face === 'top') ? 1 : 0.4)) },
+      { key: 'mat', label: 'Materials and coating', max: 20, score: 20 * materials },
+    ]
+  } else if (type === 'console') {
     const litres = (b.width * b.height * b.thickness) / 1e6
     breakdown = [
       { key: 'compact', label: 'Compact size', max: 26, score: 26 * (1 - lerp01(litres, 4.5, 13)) },
@@ -682,7 +769,7 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
       { key: 'mat', label: 'Materials', max: 15, score: 15 * materials },
     ]
   }
-  const clipping = Math.min(20, overlaps * 4) + (buttons.length === 0 && type !== 'laptop' && type !== 'earbuds' && type !== 'ring' ? 5 : 0)
+  const clipping = Math.min(20, overlaps * 4) + (buttons.length === 0 && type !== 'laptop' && type !== 'earbuds' && type !== 'ring' && type !== 'mouse' ? 5 : 0)
   if (clipping > 0) breakdown.push({ key: 'clip', label: 'Clipping penalties', max: 0, score: -clipping })
   const pct = clamp(breakdown.reduce((a, x) => a + x.score, 0), 0, 100)
   const design = (pct / 100) * refScore(dl) * 1.06
@@ -695,7 +782,7 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
   for (const p of rear) cost.semis += sensorInfo(p.sensor ?? 0).cost * LENSES[p.lens ?? 'wide'].cost
   for (const p of selfie) cost.semis += sensorInfo(p.sensor ?? 0).cost * (type === 'drone' ? 1 : 0.6) * (p.underDisplay ? 1.5 : 1)
   cost.displays = areaCm2 * panel.costPerCm2 * (1 + rf.bonus) * T.panelCost
-  cost.memory = T.memory > 0 ? s.ram * 2.5 + s.storage * 0.08 : type === 'earbuds' ? 1 : 4
+  cost.memory = T.memory > 0 ? s.ram * 2.5 + s.storage * 0.08 : type === 'earbuds' || type === 'mouse' ? 1 : type === 'monitor' ? 1.5 : 4
   cost.batteries = T.mains ? 0 : s.battery * 0.0022 * (1 + 0.1 * lv.battery) + 1 + 0.04 * chargeWatts(type, s.charging)
   cost.materials = (frame.cost + back.cost) * areaFactor * (T.matCost ?? 1) + (type === 'watch' ? strap.cost : 0)
   if (type === 'foldable') cost.materials += hinge.cost
@@ -715,6 +802,12 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
   else cost.other += ioCost
   if (input) cost.other += input.cost
   if (type === 'console') cost.semis += 3 + 2 * s.panel * (1 + rf.bonus)
+  if (type === 'mouse') cost.semis += 1 + 1.1 * s.panel
+  for (const z of rgbOf(b).zones) if (rgbOn(b)) cost.other += rgbZones(type).find((x) => x.id === z)?.cost ?? 0
+  if (type === 'tower') {
+    const c = caseOf(b)
+    cost.other += psu.cost + caseSide(c.side).cost + caseFront(c.front).cost + caseFeet(c.feet).cost + c.fans * (c.fanSize === 140 ? 5 : 4)
+  }
   if (type === 'drone') {
     // the radio that carries the picture, and the four motors with their controllers
     cost.semis += 4 + 3 * s.panel
@@ -727,7 +820,7 @@ export function evaluate(d: DeviceDesign, lv: Levels, mLevel: number, feats?: st
   }
   if (T.mains) {
     // the power supply, then whatever keeps it cool and makes it heard
-    cost.other += spk ? 3 : 6 + 0.05 * (heat?.heat ?? 40)
+    cost.other += type === 'tower' ? 0 : spk ? 3 : 6 + 0.05 * (heat?.heat ?? 40)
     if (T.mains.cool > 0) cost.other += cooler.cost
     if (T.mains.sound > 0) cost.other += speakers.cost
     if (onStand) cost.materials += stand.cost * areaScale(d)

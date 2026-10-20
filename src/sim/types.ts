@@ -5,8 +5,8 @@ export type Track = 'display' | 'chipset' | 'camera' | 'battery' | 'charging' | 
 export const TRACKS: Track[] = ['display', 'chipset', 'camera', 'battery', 'charging', 'materials', 'design']
 export type Levels = Record<Track, number>
 
-export type DeviceType = 'phone' | 'tablet' | 'watch' | 'laptop' | 'desktop' | 'console' | 'earbuds' | 'tv' | 'foldable' | 'headset' | 'speaker' | 'handheld' | 'ereader' | 'ring' | 'actioncam' | 'drone'
-export const DEVICE_TYPES: DeviceType[] = ['phone', 'tablet', 'watch', 'laptop', 'desktop', 'console', 'earbuds', 'tv', 'foldable', 'headset', 'speaker', 'handheld', 'ereader', 'ring', 'actioncam', 'drone']
+export type DeviceType = 'phone' | 'tablet' | 'watch' | 'laptop' | 'desktop' | 'console' | 'earbuds' | 'tv' | 'foldable' | 'headset' | 'speaker' | 'handheld' | 'ereader' | 'ring' | 'actioncam' | 'drone' | 'tower' | 'monitor' | 'mouse'
+export const DEVICE_TYPES: DeviceType[] = ['phone', 'tablet', 'watch', 'laptop', 'desktop', 'console', 'earbuds', 'tv', 'foldable', 'headset', 'speaker', 'handheld', 'ereader', 'ring', 'actioncam', 'drone', 'tower', 'monitor', 'mouse']
 
 export type Face = 'front' | 'back' | 'left' | 'right' | 'top' | 'bottom'
 export type PartKind = 'camera' | 'island' | 'flash' | 'notch' | 'button' | 'port' | 'grille' | 'fingerprint' | 'logo' | 'vent' | 'slot' | 'light'
@@ -64,6 +64,33 @@ export interface Body {
   fold?: 'book' | 'flip'
   /** Flips: size of the cover screen on the outside of the upper half, an index into FLIP_COVERS. */
   cover?: number
+  /** PC towers: the case, its panels, fans and feet. */
+  pc?: PcCase
+  /** PC towers and mice: the RGB lighting. */
+  rgb?: RgbLight
+  /** Mice: a sculpted right-handed shape, or one that suits either hand. */
+  grip?: 'ergo' | 'ambi'
+}
+
+/** RGB lighting: which zones light up, in what colours, and how they move. */
+export interface RgbLight {
+  /** Ids from RGB_ZONES for the type. */
+  zones: string[]
+  color: string
+  /** The second colour of the moving effects. */
+  color2: string
+  effect: 'off' | 'static' | 'breathe' | 'cycle' | 'wave'
+}
+
+/** A PC tower's case. Its form factor follows from its size (see towerForm). */
+export interface PcCase {
+  /** The side panel over the parts: on the right as one faces the front. */
+  side: 'solid' | 'glass' | 'mesh'
+  front: 'solid' | 'mesh' | 'glass' | 'slats' | 'vents'
+  /** Intake fans in the front, and their size in mm. */
+  fans: number
+  fanSize: 120 | 140
+  feet: 'pads' | 'tall' | 'stand' | 'casters'
 }
 
 export interface Specs {
@@ -97,6 +124,8 @@ export interface Specs {
   optics?: number
   /** Speakers: microphone array, index into MIC_ARRAYS. */
   mics?: number
+  /** PC towers: the power supply, index into PSUS. */
+  psu?: number
 }
 
 /** An extra colour a device is sold in. */
@@ -618,23 +647,60 @@ export interface OsState {
   version: number
   quality: number
   features: string[]
-  /** Next version in development. */
-  project?: { daysLeft: number; total: number; features: string[]; first: boolean }
+  /** Next version in development, with the release name it will ship under. */
+  project?: { daysLeft: number; total: number; features: string[]; first: boolean; release?: string }
+  /** Every version shipped, oldest first. Missing in saves from before release names. */
+  releases?: OsRelease[]
   servicesIncome: number
   /** How the company's own operating system looks on its devices' screens. Missing means the default look. */
   look?: OsLook
 }
 
-/** The look of an operating system's home screen, as painted on device screens (see src/3d/osLook.ts). */
+/** One shipped version of the company's own operating system. */
+export interface OsRelease {
+  version: number
+  /** Its release name, e.g. "Cedar". */
+  name: string
+  day: number
+  /** Features new in this version. */
+  added: string[]
+  quality: number
+}
+
+/**
+ * The look of an operating system, as painted on device screens (see src/3d/osLook.ts). Everything after `dark`
+ * was added later and is optional in saves: cleanLook fills in what is missing.
+ */
 export interface OsLook {
   /** Wallpaper colour, a CSS hex colour. */
   wallpaper: string
   /** Accent colour for highlights and the clock, a CSS hex colour. */
   accent: string
-  iconShape: 'circle' | 'squircle' | 'square'
+  iconShape: 'circle' | 'squircle' | 'square' | 'hexagon' | 'leaf'
   layout: 'grid' | 'list' | 'tiles'
-  font: 'sans' | 'mono' | 'serif'
+  font: 'sans' | 'mono' | 'serif' | 'rounded' | 'condensed'
   dark: boolean
+  /** Second wallpaper colour, for the gradients and patterns. */
+  wallpaper2?: string
+  /** How the wallpaper is drawn: one colour, a gradient preset, or a generated pattern. */
+  wallStyle?: 'solid' | 'linear' | 'radial' | 'aurora' | 'waves' | 'grid' | 'dots' | 'rings' | 'facets'
+  /** The colour of panels, the dock and widgets. */
+  surface?: string
+  iconSize?: 'small' | 'medium' | 'large'
+  iconStyle?: 'filled' | 'outline' | 'glyph' | 'duotone'
+  /** Where the dock or taskbar sits. */
+  dock?: 'bottom' | 'top' | 'left' | 'right' | 'none'
+  /** Widgets on the home screen, ids from OS_WIDGETS. */
+  widgets?: string[]
+  weight?: 'light' | 'regular' | 'bold'
+  /** The lock screen: how the clock is drawn. */
+  lock?: 'big' | 'stacked' | 'analog' | 'minimal'
+  /** Whether notifications show on the lock screen. */
+  lockNotes?: boolean
+  /** How fast animations run. */
+  motion?: 'off' | 'calm' | 'normal' | 'brisk'
+  /** How round panels, the dock and widgets are. */
+  corners?: 'sharp' | 'soft' | 'round'
 }
 
 export type Difficulty = 'relaxed' | 'normal' | 'tough'

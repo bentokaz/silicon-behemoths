@@ -1,14 +1,14 @@
 // Demand model: how attractive a product is to each customer segment, the
 // review scores outlets give it, and what owners say about it.
 import { extrasAppeal, marketLevel, refScore } from '../data/catalog'
-import { OUTLETS, type SegmentInfo, TYPES, segmentsOf, subLabel } from '../data/devices'
+import { OUTLETS, type SegmentInfo, TYPES, caseAppeal, segmentsOf, subLabel } from '../data/devices'
 import { adoption, segmentOpen } from '../data/eras'
 import { type RngHolder, clamp, pick, range } from './rng'
 import { priceIndex } from './world'
-import { type Company, type Feedback, type Product, type Review, SUBS, type SubScores } from './types'
+import { type Body, type Company, type Feedback, type Product, type Review, SUBS, type SubScores } from './types'
 
 /** What the demand model needs of a device. With its design, the segments that care about its extras see them. */
-type Probe = Pick<Product, 'raw' | 'featureBonus' | 'price' | 'type'> & { design?: { specs: { extras: readonly string[] } } }
+type Probe = Pick<Product, 'raw' | 'featureBonus' | 'price' | 'type'> & { design?: { specs: { extras: readonly string[] }; body?: Body } }
 type Maker = Pick<Company, 'brand' | 'software'>
 
 /** Sub-scores relative to what the leading edge of the market offers today. */
@@ -26,14 +26,14 @@ export function priceFactor(price: number, seg: SegmentInfo): number {
 }
 
 /** Quality as this segment sees it, 1.0 = exactly what the segment expects. */
-export function segmentQuality(n: SubScores, maker: Maker, featureBonus: number, seg: SegmentInfo, extras?: readonly string[]): number {
+export function segmentQuality(n: SubScores, maker: Maker, featureBonus: number, seg: SegmentInfo, extras?: readonly string[], body?: Body): number {
   let q = seg.weights.brand * maker.brand
   for (const k of SUBS) q += seg.weights[k] * n[k]
-  return (q * (1 + featureBonus + extrasAppeal(extras, seg.id) + maker.software)) / seg.expect
+  return (q * (1 + featureBonus + extrasAppeal(extras, seg.id) + caseAppeal(body, seg.type, seg.id) + maker.software)) / seg.expect
 }
 
 export function utility(p: Probe, maker: Maker, seg: SegmentInfo, day: number): number {
-  const q = segmentQuality(normalised(p.raw, day), maker, p.featureBonus, seg, p.design?.specs.extras)
+  const q = segmentQuality(normalised(p.raw, day), maker, p.featureBonus, seg, p.design?.specs.extras, p.design?.body)
   // what counts as cheap or dear moves with the years
   return Math.pow(Math.max(0, q), 1.5) * priceFactor(p.price / priceIndex(day), seg)
 }
@@ -139,6 +139,9 @@ export function makeReviews(r: RngHolder, p: Product, maker: Maker, day: number,
 }
 
 const PRAISE: Record<string, string[]> = {
+  speed: ['Clicks land the instant I press.', 'Not a hint of lag, wired or not.'],
+  sensor: ['Tracks perfectly on any surface.', 'Aim feels locked in. The sensor is superb.'],
+  buttons: ['The thumb buttons are right where my thumb is.', 'Every button feels crisp.'],
   perf: ['Flies through everything I throw at it.', 'Never slows down, even with everything open.'],
   display: ['The screen is gorgeous.', 'Bright, sharp and smooth. Hard to go back.'],
   camera: ['Photos come out great, even at night.', 'The camera is the reason I bought it.'],
@@ -175,6 +178,9 @@ const PRAISE: Record<string, string[]> = {
   flight: ['Steady as a tripod in the wind, and the footage is gorgeous.', 'It follows me and never hits a branch.'],
 }
 const GRIPES: Record<string, string[]> = {
+  speed: ['Feels laggy in games.', 'The clicks seem to arrive late.'],
+  sensor: ['The cursor jitters and skips.', 'Loses tracking when I lift it.'],
+  buttons: ['Too few buttons for what it costs.', 'The side buttons feel mushy.'],
   perf: ['Stutters with a few apps open.', 'Feels slow already.'],
   display: ['Screen looks washed out next to my old one.', 'The display is nothing special.'],
   camera: ['Camera is a letdown.', 'Photos look soft and noisy.'],

@@ -1,10 +1,10 @@
 // The colour picker: a swatch that opens a small panel with a saturation and
-// brightness square, a hue strip, a hex field, presets and the colours chosen
-// last. The square and the strip are the colours themselves, so they are the
-// one place a gradient is drawn; the chrome around them is flat.
+// brightness square, a hue strip, hex and RGB fields, presets and the colours
+// chosen last. The square and the strip are the colours themselves, so they are
+// the one place a gradient is drawn; the chrome around them is flat.
 import { type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { type Hsv, hexToHsv, hsvToHex, parseHex, pushRecent } from './colorMath'
+import { type Hsv, hexToHsv, hexToRgb, hsvToHex, parseHex, pushRecent, rgbToHex } from './colorMath'
 import { useLayer } from './ui'
 
 const RECENT_KEY = 'sb-recent-colours'
@@ -30,6 +30,52 @@ const POP_W = 214
 
 function Chip({ color, label, on, onPick }: { color: string; label: string; on: boolean; onPick: () => void }) {
   return <button type="button" title={color} aria-label={`${label} ${color}`} aria-pressed={on} onClick={onPick} className={`h-5 min-w-0 flex-1 border ${on ? 'border-accent' : 'border-line2 hover:border-fg'}`} style={{ background: color, maxWidth: 24 }} />
+}
+
+type Channel = 'r' | 'g' | 'b'
+const CHANNEL_NAMES: Record<Channel, string> = { r: 'Red', g: 'Green', b: 'Blue' }
+
+/** The colour as three channels, 0 to 255: typed in, or stepped with the arrow keys (Shift for tens). Enter or leaving a field settles it. */
+function RgbFields({ hex, onPick }: { hex: string; onPick: (hex: string) => void }) {
+  const rgb = hexToRgb(hex)
+  const [draft, setDraft] = useState<{ k: Channel; text: string } | null>(null)
+  const commit = (k: Channel, text: string) => {
+    setDraft(null)
+    const n = Math.round(Number(text))
+    if (text.trim() === '' || !Number.isFinite(n)) return
+    const next = rgbToHex({ ...rgb, [k]: Math.max(0, Math.min(255, n)) })
+    if (next !== hex) onPick(next)
+  }
+  return (
+    <div className="mt-[3px] flex items-center gap-[3px]">
+      {(['r', 'g', 'b'] as const).map((k) => (
+        <label key={k} className="flex h-7 min-w-0 flex-1 items-center border border-line2 bg-raise focus-within:border-accent">
+          <span className="w-4 shrink-0 text-center text-[11px] uppercase text-faint">{k}</span>
+          <input
+            type="text"
+            inputMode="numeric"
+            aria-label={CHANNEL_NAMES[k]}
+            maxLength={3}
+            value={draft?.k === k ? draft.text : String(rgb[k])}
+            onChange={(e) => setDraft({ k, text: e.target.value.replace(/[^0-9]/g, '') })}
+            onFocus={(e) => e.currentTarget.select()}
+            onBlur={(e) => commit(k, e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                commit(k, e.currentTarget.value)
+              } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                e.preventDefault()
+                commit(k, String(rgb[k] + (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 10 : 1)))
+              }
+            }}
+            className="num h-full w-full min-w-0 rounded-none bg-transparent pr-[6px] text-right text-xs outline-none"
+            style={{ userSelect: 'text' }}
+          />
+        </label>
+      ))}
+    </div>
+  )
 }
 
 /**
@@ -246,6 +292,7 @@ export function ColorField({ value, onChange, onCommit, label, presets, showHex 
                 style={{ userSelect: 'text' }}
               />
             </div>
+            <RgbFields hex={current} onPick={pick} />
             {presets && presets.length > 0 && (
               <div className="mt-2">
                 <div className="mb-1 text-[11px] text-faint">Presets</div>

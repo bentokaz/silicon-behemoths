@@ -13,6 +13,7 @@ import { themeColor } from '../store/theme'
 import { WEAVE, backMaterial, blackGlass, contactMetal, darkMatte, darkPlastic, fabric, flashMaterial, frameMaterial, lensCore, lensGlass, lightMaterial, rubber } from './materials'
 import { screenTexture } from './screens'
 import { buildActioncam, buildDrone, buildEreader, buildRing, moreFrame } from './buildMore'
+import { buildMouse, buildTower, towerLift } from './buildPc'
 
 // ------------------------------------------------------------ shapes
 
@@ -269,7 +270,7 @@ function notchGeometry(w: number, h: number, r: number, top: number): THREE.Shap
 }
 
 /** A round grille flat on a surface: a fan outlet or a woofer. Its +Z points out of the surface. */
-function roundGrille(r: number, blades = 0): THREE.Group {
+export function roundGrille(r: number, blades = 0): THREE.Group {
   const g = new THREE.Group()
   const hole = mesh(new THREE.CircleGeometry(r * 0.94, 48), darkMatte(), false)
   hole.position.z = lift(0.03)
@@ -754,6 +755,39 @@ function antennaBands(b: Body, c: Ctx): THREE.Group {
   }
   for (const sx of [-1, 1]) for (const sy of [-1, 1]) band((sx * b.width) / 2, sy * (b.height / 2 - inset), false)
   if (c.specs.extras.includes('sat')) for (const sx of [-1, 1]) band(sx * (b.width / 2 - inset - 4), b.height / 2, true)
+  return g
+}
+
+/**
+ * What some special features show on the outside of a slab: the dark window of an infrared blaster in the top edge,
+ * the second speaker's holes beside it, and the end of the stylus at the bottom edge.
+ */
+function featuresOnBody(b: Body, c: Ctx): THREE.Group {
+  const g = new THREE.Group()
+  const has = (id: string) => c.specs.extras.includes(id)
+  const flat = Math.max(0.6, b.thickness - 2 * edgeBevel(b) - 0.4)
+  const edgeX = Math.max(0, b.width / 2 - Math.max(b.corner, 6) - 6)
+  if (has('ir')) {
+    const win = mesh(new THREE.BoxGeometry(Math.min(6, b.width * 0.08), 0.3, Math.min(2.2, flat)), new THREE.MeshPhysicalMaterial({ color: '#1c0a0d', roughness: 0.12, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08 }), false)
+    win.position.set(-edgeX * 0.55, b.height / 2 - 0.08, 0)
+    g.add(win)
+  }
+  if (has('stereo')) {
+    const hole = new THREE.CylinderGeometry(0.42, 0.42, 0.4, 10)
+    const dark = new THREE.MeshPhysicalMaterial({ color: '#0b0c0e', roughness: 0.9 })
+    for (let i = 0; i < 5; i++) {
+      const o = mesh(hole, dark, false)
+      o.position.set(edgeX * 0.5 + (i - 2) * 1.5, b.height / 2 - 0.12, 0)
+      g.add(o)
+    }
+  }
+  if (has('stylus')) {
+    const pen = Math.min(5.5, b.width * 0.08, flat)
+    const cap = mesh(new THREE.CylinderGeometry(pen / 2, pen / 2, 0.6, 20), new THREE.MeshPhysicalMaterial({ color: '#e7e8e4', roughness: 0.4, clearcoat: 0.3 }), false)
+    cap.position.set(edgeX, -b.height / 2 + 0.15, 0)
+    g.add(cap)
+  }
+  g.traverse((o) => (o.raycast = () => {}))
   return g
 }
 
@@ -2171,7 +2205,12 @@ export function deviceFrame(d: DeviceDesign): { radius: number; bottom: number }
       return { radius: Math.hypot(b.width, b.height * 1.15) / 2, bottom: b.height * 0.36 }
     case 'watch':
       return { radius: Math.hypot(b.width, b.height + STRAP_LENGTH * 1.3) / 2, bottom: b.height / 2 + STRAP_LENGTH * 0.72 }
+    case 'tower':
+      return { radius: Math.hypot(b.width, b.height, b.thickness) * 0.47, bottom: b.height / 2 + towerLift(d) }
+    case 'mouse':
+      return { radius: Math.hypot(b.width, b.height, b.thickness) * 0.52, bottom: b.height / 2 }
     case 'desktop':
+    case 'monitor':
     case 'tv': {
       const total = b.height + standLift(b, d.type)
       return { radius: Math.hypot(b.width, total) / 2, bottom: total / 2 }
@@ -2208,8 +2247,13 @@ export function buildDevice(d: DeviceDesign, selectedId?: string | null, logoUrl
     case 'laptop':
       return buildLaptop(d, c)
     case 'desktop':
+    case 'monitor':
     case 'tv':
       return buildPanel(d, c)
+    case 'tower':
+      return buildTower(d, c)
+    case 'mouse':
+      return buildMouse(d, c)
     case 'console':
       return buildConsole(d, c)
     case 'earbuds':
@@ -2233,7 +2277,7 @@ export function buildDevice(d: DeviceDesign, selectedId?: string | null, logoUrl
     default: {
       const root = buildSlab(d.body, c, { carrier: 'body', wallpaper: d.wallpaper })
       if (d.type === 'watch') root.add(buildStrap(d.body))
-      else root.add(antennaBands(d.body, c))
+      else root.add(antennaBands(d.body, c), featuresOnBody(d.body, c))
       addParts(root, d, 'body', c)
       return root
     }

@@ -5,7 +5,7 @@
 import * as THREE from 'three'
 import { drawActioncam, drawEreader } from './screensMore'
 import type { DeviceType, OsLook } from '../sim/types'
-import { paintOsLook } from './osLook'
+import { OS_SCREEN_OF, paintOsLook } from './osLook'
 
 /** Wallpaper palettes: deep tone, mid tone, highlight. */
 const WALLPAPERS: [string, string, string][] = [
@@ -27,8 +27,6 @@ type Ctx = CanvasRenderingContext2D
 type Palette = [string, string, string]
 
 /** Long side of the canvas for each type, in pixels: enough to stay sharp when the camera is close. */
-/** The types whose screen shows the operating system's home screen when it has a look of its own. */
-const OS_SCREENS: DeviceType[] = ['phone', 'tablet', 'foldable']
 const RESOLUTION: Partial<Record<DeviceType, number>> = { phone: 1280, tablet: 1536, watch: 640, laptop: 1920, desktop: 2048, tv: 2048, foldable: 1536, handheld: 1536, speaker: 768, headset: 256, ereader: 1536, actioncam: 768 }
 const GAMES = ['Ember Rally', 'Skyforge', 'Deep Lantern', 'Marrow Keep', 'Glasswing', 'Salt Road']
 
@@ -68,7 +66,8 @@ export function screenTexture(type: DeviceType, wallpaper: number, width: number
   // aspect in 3% steps: close enough that nothing looks stretched, coarse enough to cache
   const step = Math.round(Math.log(width / height) / 0.03)
   // an operating system's look replaces the home screen of the devices that show one
-  const os = look && OS_SCREENS.includes(type) ? look : undefined
+  const kind = OS_SCREEN_OF[type]
+  const os = look && kind ? look : undefined
   const key = `${type}|${index}|${step}|${detail < 1 ? 's' : 'l'}|${panel ? `${panel.name}@${panel.hz}:${panel.level ?? ''}` : ''}|${os ? JSON.stringify(os) : ''}`
   const hit = cache.get(key)
   if (hit) {
@@ -87,8 +86,8 @@ export function screenTexture(type: DeviceType, wallpaper: number, width: number
   // what the interface says about its own panel, e.g. "OLED 120 Hz"
   const tag = panel ? (type === 'watch' ? panel.name : `${panel.name}  ${panel.hz} Hz`) : ''
   if (os) {
-    paintOsLook(g, os, c.width, c.height)
-    if (tag) {
+    paintOsLook(g, os, c.width, c.height, kind)
+    if (tag && (kind === 'phone' || kind === 'tablet')) {
       // the interface still names its panel, on a chip under the status bar
       const u = Math.min(c.width, c.height * 0.6) / 100
       g.font = `600 ${2.6 * u}px ${FONT}`

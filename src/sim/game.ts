@@ -25,13 +25,13 @@ import { fixLayout, lineStats } from './factoryline'
 import { FACADES, FLOOR_COST, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, VENUE_PRESETS, type VenuePreset, rigFloors, venueLayout, type Shape, type ShapeOpts, SHORT_WALL, UNKNOWN_ITEM, areaOf, areaTiles, autoDoor, builtTiles, canPartition, canPlace, courtyardFor, curveFor, defaultGround, doorFits, fillError, gridAt, groundsFor, hasGround, inPlot, isBoundary, itemAllowed, itemAt, itemTiles, mergeRooms, newSite, openRooms, pocketAt, roomOf, rowSpots, shapeCuts, starterLine, storeStats, syncLevels, tidy, tierOf, touching, upkeep, partAt, venueStats, wallAt, zone } from './sites'
 import { capOfChannel, locked, refreshExecs, siteLocked, stepProgress } from './progress'
 import { EXECS, HEADHUNT_COST, HOURS, TEAM_SPAN, dropFromTeams, execFx, inTraining, monthlySalaries, monthlyStaff, newPolicy, perksCost, refreshCandidates, staffEffects, stepStaff, trainingCost } from './staff'
-import { CHIP_BUDGET, OS_FEATURES, OS_TYPES, chipAdoption, cleanLook, licenceBlocked, licenceInfo, licenceSwitchCost, osRoyalty, chipBlocked, chipProjectCost, chipProjectDays, finishChip, newOs, osBlocked, osProjectCost, osProjectDays, osShipQuality, servicesPerMonth, softwareBonus } from './tech'
+import { CHIP_BUDGET, OS_FEATURES, OS_TYPES, chipAdoption, cleanLook, licenceBlocked, licenceInfo, licenceSwitchCost, osRoyalty, osRunCost, releaseNameFor, chipBlocked, chipProjectCost, chipProjectDays, finishChip, newOs, osBlocked, osProjectCost, osProjectDays, osShipQuality, servicesPerMonth, softwareBonus } from './tech'
 import { stockOf, type ChannelId, type Company, type Corner, type CostKey, type DeviceDesign, type DeviceType, type Difficulty, type EventType, type GameConfig, type GameState, type Levels, type MonthReport, type NewsItem, type OsLook, type Product, type ProductionOrder, type ReorderRule, type SegmentId, type Site, type SiteKind, type StaffPolicy, type StorageTier, SUPPLY_CATS, type SupplyCat, TRACKS, type Track, dollars, hasStock, millions, monthCosts, thousands, wasReleased } from './types'
 
 // 7: site walls may be partitions inside a room (SiteWall.part, kind 'wall'); older saves have none and load as they are
 // 8: factory blocks have input and output faces; a floor laid before then is turned to match where it can be
 // 9: plots of the office grew (old ones are widened, see growPlot); products may reorder by themselves, OSes are licensed, contracts
-export const SAVE_VERSION = 10
+export const SAVE_VERSION = 11
 export const RETAIL_CUT = 0.15
 
 // ---------------------------------------------------------------- what an action will take
@@ -523,9 +523,9 @@ export function discontinue(s: GameState, productId: string) {
   }
 }
 
-const STARTER_SEGMENT: Record<DeviceType, SegmentId> = { phone: 'mainstream', tablet: 't-main', watch: 'w-smart', laptop: 'l-ultra', desktop: 'd-home', console: 'c-core', earbuds: 'e-anc', tv: 'tv-home', foldable: 'f-value', headset: 'v-mixed', speaker: 's-screen', handheld: 'h-pc', ereader: 'r-premium', ring: 'ri-health', actioncam: 'a-vlog', drone: 'dr-mini' }
+const STARTER_SEGMENT: Record<DeviceType, SegmentId> = { tower: 'pc-game', monitor: 'mo-game', mouse: 'm-game', phone: 'mainstream', tablet: 't-main', watch: 'w-smart', laptop: 'l-ultra', desktop: 'd-home', console: 'c-core', earbuds: 'e-anc', tv: 'tv-home', foldable: 'f-value', headset: 'v-mixed', speaker: 's-screen', handheld: 'h-pc', ereader: 'r-premium', ring: 'ri-health', actioncam: 'a-vlog', drone: 'dr-mini' }
 /** Body colour of the starting template for each device type. */
-const STARTER_COLOR: Partial<Record<DeviceType, string>> = { laptop: '#8f959d', watch: '#3a3d42', desktop: '#c3c7cc', console: '#e4e5e7', earbuds: '#ecebe6', tv: '#25282d', foldable: '#3f4650', headset: '#e4e5e7', speaker: '#8a8f8a', handheld: '#2b2f36', ereader: '#2b2d31', ring: '#c3c6cb', actioncam: '#1f2226', drone: '#5d6268' }
+const STARTER_COLOR: Partial<Record<DeviceType, string>> = { tower: '#1c1e22', monitor: '#25282d', mouse: '#1f2125', laptop: '#8f959d', watch: '#3a3d42', desktop: '#c3c7cc', console: '#e4e5e7', earbuds: '#ecebe6', tv: '#25282d', foldable: '#3f4650', headset: '#e4e5e7', speaker: '#8a8f8a', handheld: '#2b2f36', ereader: '#2b2d31', ring: '#c3c6cb', actioncam: '#1f2226', drone: '#5d6268' }
 
 /** Starting template for a new design, using only what the company has researched. */
 export function starterDesign(s: GameState, type: DeviceType = 'phone'): DeviceDesign {
@@ -1919,7 +1919,7 @@ export function setOsLook(s: GameState, look: Partial<OsLook>): string | null {
   return null
 }
 
-export function startOs(s: GameState, name: string, features: string[]): string | null {
+export function startOs(s: GameState, name: string, features: string[], release?: string): string | null {
   // only features that exist, each once: a list with the same one twice asks for one
   const wanted = [...new Set(Array.isArray(features) ? features : [])].filter((f) => OS_FEATURES.some((x) => x.id === f))
   const blocked = locked(s, 'labs') ?? osBlocked(s, wanted)
@@ -1932,7 +1932,7 @@ export function startOs(s: GameState, name: string, features: string[]): string 
   spend(s, cost, 'development')
   const total = osProjectDays(s, first)
   if (first) s.os.name = named(name)
-  s.os.project = { daysLeft: total, total, features: all, first }
+  s.os.project = { daysLeft: total, total, features: all, first, release: named(release) || releaseNameFor(s.os.version + 1) }
   return null
 }
 
@@ -1981,10 +1981,13 @@ function stepProjects(s: GameState) {
   if (proj && --proj.daysLeft <= 0) {
     s.os.own = true
     s.os.version++
+    const added = proj.features.filter((f) => !s.os.features.includes(f))
     s.os.features = proj.features
     s.os.quality = osShipQuality(s, proj.features)
     s.os.project = undefined
-    news(s, 'research', `${s.os.name} ${s.os.version} shipped to every device you sell.`)
+    const release = proj.release || releaseNameFor(s.os.version)
+    s.os.releases = [...(s.os.releases ?? []), { version: s.os.version, name: release, day: s.day, added, quality: s.os.quality }].slice(-40)
+    news(s, 'research', `${s.os.name} ${s.os.version} "${release}" shipped to every device you sell.`)
   }
 }
 
@@ -2039,7 +2042,7 @@ function sell(s: GameState, p: Product, c: Company, units: number, segment: stri
     // bigger storage options cost a little more to build; faulty units are repaired under warranty
     const repairs = units * p.defectRate * p.unitCost * warrantyLoad(s)
     // and the operating system's maker takes its royalty on everything that runs it
-    spend(s, units * (avg.extraCost + (OS_TYPES.includes(p.type) ? osRoyalty(s) : 0)) + repairs, 'production')
+    spend(s, units * (avg.extraCost + (OS_TYPES.includes(p.type) ? osRoyalty(s) + osRunCost(s) : 0)) + repairs, 'production')
     s.care.month.repairs += units * p.defectRate
     s.care.month.repairCost += repairs
     // console makers earn a licence fee on the games each machine will sell
@@ -2780,6 +2783,8 @@ export function migrate(input: GameState): GameState {
   s.events = s.events ?? []
   s.chips = s.chips ?? []
   s.os = s.os ?? newOs()
+  // release names came with save version 11: the versions shipped before them get the names they would have had
+  if (!s.os.releases) s.os.releases = Array.from({ length: Math.max(0, s.os.version) }, (_, i) => ({ version: i + 1, name: releaseNameFor(i + 1), day: 0, added: i + 1 === s.os.version ? [...s.os.features] : [], quality: s.os.quality }))
   s.owners = s.owners ?? player(s).unitsTotal * 0.7
   s.fans = s.fans ?? s.owners * 0.1
   const fix = (r: MonthReport) => {

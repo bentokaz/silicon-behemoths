@@ -1,5 +1,5 @@
 // Device types, their markets, and the companies that compete in them.
-import type { DeviceType, Face, Levels, PartKind, SegmentId, SubScores } from '../sim/types'
+import type { Body, DeviceType, Face, Levels, PartKind, PcCase, RgbLight, SegmentId, SubScores } from '../sim/types'
 
 export interface TypeSpec {
   name: string
@@ -71,7 +71,7 @@ export interface TypeSpec {
   /** Battery drain per watt of chip heat, for battery devices that run their chip hard. */
   chipDrain?: number
   /** What the third sub-score means for this type. */
-  special: 'camera' | 'sensors' | 'io' | 'games' | 'smarts' | 'ports' | 'tracking' | 'home' | 'play' | 'reading' | 'flight'
+  special: 'camera' | 'sensors' | 'io' | 'games' | 'smarts' | 'ports' | 'tracking' | 'home' | 'play' | 'reading' | 'flight' | 'expand' | 'inputs' | 'buttons'
   specialLabel: string
   /** Names of the other sub-scores, where they differ from the usual ones. */
   labels?: Partial<Record<keyof SubScores, string>>
@@ -211,6 +211,32 @@ export const TYPES: Record<DeviceType, TypeSpec> = {
     labels: { display: 'Video link' }, voice: { display: 'link', camera: 'flight' }, ioLabel: 'Flight features', extras: [], hero: 'front',
     unlock: { cost: 12e6, needs: { camera: 4, battery: 3 }, from: ['actioncam', 'phone'] },
   },
+  // A PC tower: a box of parts on the desk or under it. Its "thickness" is the depth of the case, front to back. Its
+  // form factor (full tower, mid tower, small form factor, cube, horizontal) follows from its size: see towerForm.
+  tower: {
+    name: 'PC tower', plural: 'PC towers', series: 'Rig', width: [150, 460, 220], height: [140, 600, 470], maxThickness: 600, thickBase: 250, thickScale: 0, bezelScale: 1, dims: ['Width', 'Height', 'Depth'], oneShell: true, noScreen: true, diag: [0, 0], weight: [6500, 18000], density: 0.09, sbrFloor: 0, thin: [0, 0],
+    sizes: [{ name: 'Full tower', width: 235, height: 540, thickness: 520 }, { name: 'Mid tower', width: 220, height: 470, thickness: 450 }, { name: 'Small form factor', width: 175, height: 330, thickness: 370 }, { name: 'Cube', width: 280, height: 280, thickness: 300 }, { name: 'Horizontal', width: 430, height: 150, thickness: 380 }],
+    batt: { mx: 0, my: 0, mt: 0, fill: 0 }, mains: { cool: 1, sound: 0 }, heat: 1.6, drainBase: 0, lifeScore: 0, lifeHours: 0, chipCost: 2.2, panelCost: 0, matCost: 0.28, assembly: 70, capacity: 3.2, devCost: 1.6, memory: 2.5, gpu: true, gpuCost: 1.1, special: 'expand', specialLabel: 'Ports and expansion',
+    labels: { display: 'Graphics output', battery: 'Cooling and noise', design: 'Case and lighting' }, voice: { display: 'graphics', camera: 'ports', battery: 'cooling', design: 'look' }, ioLabel: 'Ports and bays', extras: [], hero: 'front',
+    unlock: { cost: 6e6, needs: { chipset: 2 }, from: ['desktop', 'laptop', 'console'] },
+  },
+  // A monitor: a panel on a stand with nothing but the electronics that drive it, plugged into a computer.
+  monitor: {
+    name: 'Monitor', plural: 'Monitors', series: 'View', width: [470, 1220, 615], height: [270, 520, 365], maxThickness: 70, thickBase: -14, thickScale: 4, bezelScale: 2.4, oneShell: true, diag: [24, 34], weight: [3600, 8500], weightByArea: true, density: 0.3, sbrFloor: 0.8, thin: [3, 26],
+    sizes: [panelSize(24), panelSize(27), panelSize(32), { name: '34" ultrawide', width: 812, height: 352 }, { name: '49" super-ultrawide', width: 1205, height: 352 }],
+    batt: { mx: 0, my: 0, mt: 0, fill: 0 }, mains: { cool: 0, sound: 0.3 }, heat: 1, drainBase: 0, lifeScore: 0, lifeHours: 0, chipCost: 0.3, panelCost: 0.1, matCost: 0.45, assembly: 16, capacity: 2, devCost: 1, memory: 0, special: 'inputs', specialLabel: 'Inputs and features',
+    labels: { perf: 'Picture processing', battery: 'Stand and sound' }, voice: { perf: 'smart', camera: 'ports', battery: 'sound', design: 'look' }, ioLabel: 'Inputs and features', extras: [], hero: 'front',
+    unlock: { cost: 3e6, needs: { display: 2 }, from: ['tv', 'desktop', 'tower'] },
+  },
+  // A computer mouse, sitting on the desk as it is used: width across, height of its back, and "thickness" its
+  // length, nose (where the buttons are) at the front.
+  mouse: {
+    name: 'Mouse', plural: 'Mice', series: 'Point', width: [52, 86, 64], height: [30, 48, 38], maxThickness: 136, thickBase: 100, thickScale: 0, bezelScale: 1, dims: ['Width', 'Height', 'Length'], oneShell: true, noScreen: true, diag: [0, 0], weight: [52, 135], density: 0.14, sbrFloor: 0, thin: [0, 0],
+    sizes: [{ name: 'Small', width: 58, height: 34, thickness: 112 }, { name: 'Medium', width: 64, height: 38, thickness: 122 }, { name: 'Large', width: 69, height: 42, thickness: 128 }, { name: 'Ergonomic', width: 80, height: 46, thickness: 126 }],
+    batt: { mx: 22, my: 14, mt: 70, fill: 0.05 }, drainBase: 0.06, lifeScore: 0.0045, lifeHours: 0.006, chipCost: 0.12, panelCost: 0, matCost: 0.4, assembly: 4, capacity: 0.3, devCost: 0.4, memory: 0, special: 'buttons', specialLabel: 'Buttons and features',
+    labels: { perf: 'Responsiveness', display: 'Sensor', design: 'Shape and weight' }, voice: { perf: 'speed', display: 'sensor', camera: 'buttons', design: 'comfort' }, ioLabel: 'Buttons and features', extras: [], hero: 'front',
+    unlock: { cost: 1e6, needs: {}, from: ['laptop', 'desktop', 'tower'] },
+  },
 }
 
 /** A flip is a tall phone that folds in half, so it has its own size range: [min, max, default] in mm. */
@@ -225,6 +251,8 @@ export const subLabel = (type: DeviceType, key: keyof SubScores): string => TYPE
 
 // ---- options that only some device types use
 
+/** How long each graphics card is, mm: a tower has to be deep enough to take it. */
+export const GPU_LENGTH = [0, 200, 285, 336]
 export const GPUS = [
   { name: 'Integrated graphics', cost: 0, boost: 0, drain: 0, weight: 0, thick: 0 },
   { name: 'Entry GPU', cost: 70, boost: 0.1, drain: 60, weight: 90, thick: 1.5 },
@@ -340,12 +368,14 @@ export const ANC = [
   { name: 'Adaptive II', cost: 19, tech: 6.8, weight: 0.4, drain: 2.8, level: 6 },
   { name: 'Neural noise cancelling', cost: 27, tech: 8.3, weight: 0.45, drain: 3, level: 8 },
 ]
-/** Stands for desktops and TVs. `cost` is for a default-sized body and grows with it. */
+/** Stands for desktops, monitors and TVs. `cost` is for a default-sized body and grows with it. */
 export const STANDS: { id: string; name: string; types: DeviceType[]; cost: number; premium: number; weight: number }[] = [
-  { id: 'arm', name: 'Hinged arm', types: ['desktop'], cost: 16, premium: 0.95, weight: 950 },
-  { id: 'pedestal', name: 'Centre pedestal', types: ['desktop', 'tv'], cost: 11, premium: 0.75, weight: 1100 },
-  { id: 'feet', name: 'Two feet', types: ['desktop', 'tv'], cost: 5, premium: 0.45, weight: 500 },
+  { id: 'arm', name: 'Hinged arm', types: ['desktop', 'monitor'], cost: 16, premium: 0.95, weight: 950 },
+  { id: 'pedestal', name: 'Centre pedestal', types: ['desktop', 'tv', 'monitor'], cost: 11, premium: 0.75, weight: 1100 },
+  { id: 'feet', name: 'Two feet', types: ['desktop', 'tv', 'monitor'], cost: 5, premium: 0.45, weight: 500 },
 ]
+/** Types whose body is a screen on a stand. */
+export const onStandType = (type: DeviceType) => type === 'desktop' || type === 'tv' || type === 'monitor'
 export const standsFor = (type: DeviceType) => STANDS.filter((s) => s.types.includes(type))
 export const standInfo = (type: DeviceType, id?: string) => standsFor(type).find((s) => s.id === id) ?? standsFor(type)[0]
 
@@ -521,7 +551,162 @@ export const STRAPS = [
   { id: 'titanium', name: 'Titanium link', cost: 45, premium: 1, level: 3 },
 ]
 
-const IO_LISTS: Partial<Record<DeviceType, IoInfo[]>> = { laptop: PORTS, desktop: DESKTOP_PORTS, watch: SENSORS, console: CONSOLE_IO, tv: TV_IO, earbuds: BUD_FEATURES, headset: HEADSET_IO, speaker: SPEAKER_IO, handheld: HANDHELD_IO, ereader: READER_FEATURES, ring: RING_SENSORS, actioncam: ACTIONCAM_IO, drone: DRONE_IO }
+// ---- PC towers, monitors and mice
+
+/** Power supplies for a PC tower. `level` is the Charging level needed: power conversion is the same science. */
+export const PSUS = [
+  { name: '450 W Bronze', watts: 450, cost: 30, eff: 0.85, level: 0 },
+  { name: '650 W Gold', watts: 650, cost: 52, eff: 0.9, level: 0 },
+  { name: '850 W Gold, modular', watts: 850, cost: 82, eff: 0.91, level: 1 },
+  { name: '1000 W Platinum', watts: 1000, cost: 120, eff: 0.93, level: 2 },
+  { name: '1300 W Titanium', watts: 1300, cost: 175, eff: 0.95, level: 4 },
+]
+/** Processor coolers for a PC tower. `cap` is the watts of processor heat it carries away; `quiet` how calm it runs. */
+export const PC_COOLERS = [
+  { name: 'Stock air cooler', cost: 8, factor: 1, cap: 70, quiet: 0.55, level: 0 },
+  { name: 'Tower air cooler', cost: 28, factor: 1.3, cap: 140, quiet: 0.8, level: 0 },
+  { name: '240 mm liquid cooler', cost: 70, factor: 1.6, cap: 210, quiet: 0.88, level: 2 },
+  { name: '360 mm liquid cooler', cost: 110, factor: 1.9, cap: 290, quiet: 0.95, level: 4 },
+]
+/** The coolers a type chooses from: a tower's processor coolers, or the cooling of a console or an all-in-one. */
+export const coolersFor = (type: DeviceType) => (type === 'tower' ? PC_COOLERS : COOLERS)
+export const CASE_SIDES: { id: PcCase['side']; name: string; cost: number; premium: number; air: number }[] = [
+  { id: 'glass', name: 'Tempered glass', cost: 14, premium: 1, air: 1 },
+  { id: 'mesh', name: 'Steel mesh', cost: 8, premium: 0.78, air: 1.12 },
+  { id: 'solid', name: 'Solid steel', cost: 4, premium: 0.55, air: 1 },
+]
+export const CASE_FRONTS: { id: PcCase['front']; name: string; cost: number; premium: number; air: number }[] = [
+  { id: 'mesh', name: 'Full mesh', cost: 9, premium: 0.88, air: 1.18 },
+  { id: 'glass', name: 'Glass', cost: 12, premium: 0.95, air: 0.72 },
+  { id: 'slats', name: 'Wooden slats', cost: 16, premium: 0.98, air: 1.02 },
+  { id: 'vents', name: 'Side vents', cost: 6, premium: 0.7, air: 0.9 },
+  { id: 'solid', name: 'Solid panel', cost: 4, premium: 0.6, air: 0.62 },
+]
+export const CASE_FEET: { id: PcCase['feet']; name: string; cost: number; premium: number; lift: number }[] = [
+  { id: 'pads', name: 'Rubber pads', cost: 1, premium: 0.55, lift: 6 },
+  { id: 'tall', name: 'Tall feet', cost: 4, premium: 0.85, lift: 22 },
+  { id: 'stand', name: 'Aluminium stand', cost: 9, premium: 1, lift: 30 },
+  { id: 'casters', name: 'Casters', cost: 8, premium: 0.7, lift: 42 },
+]
+export const caseSide = (id?: string) => CASE_SIDES.find((x) => x.id === id) ?? CASE_SIDES[0]
+export const caseFront = (id?: string) => CASE_FRONTS.find((x) => x.id === id) ?? CASE_FRONTS[0]
+export const caseFeet = (id?: string) => CASE_FEET.find((x) => x.id === id) ?? CASE_FEET[0]
+/** A case as it comes before anything is chosen. */
+export const DEFAULT_CASE: PcCase = { side: 'glass', front: 'mesh', fans: 3, fanSize: 120, feet: 'tall' }
+export const caseOf = (b: Pick<Body, 'pc'>): PcCase => ({ ...DEFAULT_CASE, ...(b.pc ?? {}) })
+/** How many front fans fit a case: as many of their size as stand in its front, beside nothing else. */
+export const maxFans = (b: Pick<Body, 'width' | 'height'>, size: number) => Math.max(0, Math.min(4, Math.floor((Math.max(b.width, b.height) - 60) / (size + 6))))
+export const RGB_EFFECTS: { id: RgbLight['effect']; name: string }[] = [
+  { id: 'off', name: 'Off' },
+  { id: 'static', name: 'Static' },
+  { id: 'breathe', name: 'Breathing' },
+  { id: 'cycle', name: 'Colour cycle' },
+  { id: 'wave', name: 'Rainbow wave' },
+]
+/** The zones that can light up, by type. Each costs a little. */
+export const RGB_ZONES: Partial<Record<DeviceType, { id: string; name: string; cost: number }[]>> = {
+  tower: [
+    { id: 'fans', name: 'Fan rings', cost: 4 },
+    { id: 'strip', name: 'Front light strip', cost: 2 },
+    { id: 'logo', name: 'Lit badge', cost: 1 },
+    { id: 'ram', name: 'Memory light bars', cost: 3 },
+    { id: 'gpu', name: 'Graphics card edge', cost: 2 },
+    { id: 'cooler', name: 'Cooler crown', cost: 2 },
+    { id: 'floor', name: 'Underglow', cost: 2 },
+  ],
+  mouse: [
+    { id: 'wheel', name: 'Scroll wheel', cost: 0.4 },
+    { id: 'logo', name: 'Lit badge', cost: 0.4 },
+    { id: 'strip', name: 'Side strips', cost: 0.8 },
+  ],
+}
+export const rgbZones = (type: DeviceType) => RGB_ZONES[type] ?? []
+export const DEFAULT_RGB: RgbLight = { zones: [], color: '#ff6b1a', color2: '#3d7be0', effect: 'off' }
+export const rgbOf = (b: Pick<Body, 'rgb'>): RgbLight => ({ ...DEFAULT_RGB, ...(b.rgb ?? {}) })
+/** True when some zone is lit. */
+export const rgbOn = (b: Pick<Body, 'rgb'>) => {
+  const l = rgbOf(b)
+  return l.effect !== 'off' && l.zones.length > 0
+}
+export type TowerForm = 'full' | 'mid' | 'sff' | 'cube' | 'htpc'
+export const TOWER_FORM_NAMES: Record<TowerForm, string> = { full: 'Full tower', mid: 'Mid tower', sff: 'Small form factor', cube: 'Cube', htpc: 'Horizontal' }
+/** What a tower's size makes it: lying down if it is much wider than tall, a cube if it is as tall as wide and deep, else a tower by its height. */
+export function towerForm(b: Pick<Body, 'width' | 'height' | 'thickness'>): TowerForm {
+  if (b.width > b.height * 1.5) return 'htpc'
+  const big = Math.max(b.width, b.height, b.thickness)
+  const small = Math.min(b.width, b.height, b.thickness)
+  if (big / small < 1.3) return 'cube'
+  if (b.height >= 510) return 'full'
+  if (b.height < 380) return 'sff'
+  return 'mid'
+}
+/** What each level of a mouse's sensor is, by Display level. */
+export const MOUSE_SENSORS = ['800 DPI optical', '3,200 DPI optical', '8,000 DPI laser', '16K DPI optical', '26K DPI optical', '30K DPI, low lift-off', '36K DPI, glass tracking', '44K DPI, 8K sampling', 'Neural tracking']
+export const TOWER_IO: IoInfo[] = [
+  { id: 'fusb', name: 'Front USB pair', cost: 2, level: 0, value: 0.8, size: [13, 5], count: 2, face: 'top' },
+  { id: 'faudio', name: 'Front audio jack', cost: 1, level: 0, value: 0.4, size: [4.2, 4.2], face: 'top' },
+  { id: 'rusb', name: 'Rear USB bank', cost: 3, level: 0, value: 0.7, size: [13, 5], count: 3, face: 'back' },
+  { id: 'lan', name: '2.5G Ethernet', cost: 2, level: 0, value: 0.6, size: [16, 13], face: 'back' },
+  { id: 'fusbc', name: 'Front USB-C', cost: 2, level: 0, value: 0.7, size: [8.6, 2.8], face: 'top' },
+  { id: 'odd', name: 'Optical drive bay', cost: 14, level: 0, value: 0.5, size: [148, 12], part: 'slot', face: 'front' },
+  { id: 'wifi', name: 'Wi-Fi and Bluetooth', cost: 5, level: 1, value: 0.7 },
+  { id: 'sd', name: 'Front card reader', cost: 3, level: 1, value: 0.4, size: [24, 2.4], face: 'top' },
+  { id: 'bays', name: 'Hot-swap drive bays', cost: 12, level: 2, value: 0.8 },
+  { id: 'lan10', name: '10G Ethernet', cost: 9, level: 2, value: 0.7, size: [16, 13], face: 'back' },
+  { id: 'thunder', name: 'Thunderlink 5', cost: 9, level: 3, value: 1, size: [8.6, 2.8], face: 'back' },
+]
+export const MONITOR_IO: IoInfo[] = [
+  { id: 'hdmi', name: 'HDMI input', cost: 2, level: 0, value: 1, size: [15, 5.2] },
+  { id: 'dp', name: 'DisplayPort input', cost: 2, level: 0, value: 1, size: [16, 5] },
+  { id: 'hub', name: 'USB hub', cost: 3, level: 0, value: 0.6, size: [13, 5], count: 2 },
+  { id: 'jack', name: 'Headphone out', cost: 1, level: 0, value: 0.3, size: [4.2, 4.2] },
+  { id: 'usbc', name: 'USB-C with charging', cost: 6, level: 1, value: 1.1, size: [8.6, 2.8] },
+  { id: 'sync', name: 'Variable refresh', cost: 3, level: 1, value: 0.9 },
+  { id: 'colour', name: 'Factory colour calibration', cost: 6, level: 1, value: 0.8 },
+  { id: 'hdr', name: 'HDR certification', cost: 5, level: 2, value: 0.8 },
+  { id: 'kvm', name: 'Built-in KVM switch', cost: 4, level: 2, value: 0.5 },
+  { id: 'daisy', name: 'Daisy-chain output', cost: 4, level: 3, value: 0.4, size: [16, 5] },
+]
+export const MOUSE_IO: IoInfo[] = [
+  { id: 'wireless', name: '2.4 GHz wireless', cost: 2, level: 0, value: 1 },
+  { id: 'side', name: 'Two thumb buttons', cost: 0.6, level: 0, value: 0.9 },
+  { id: 'dpi', name: 'DPI button', cost: 0.3, level: 0, value: 0.5 },
+  { id: 'bt', name: 'Bluetooth', cost: 1, level: 0, value: 0.6 },
+  { id: 'tilt', name: 'Tilting wheel', cost: 0.8, level: 0, value: 0.5 },
+  { id: 'free', name: 'Free-spinning wheel', cost: 1.5, level: 1, value: 0.6 },
+  { id: 'memory', name: 'Onboard profiles', cost: 0.5, level: 1, value: 0.4 },
+  { id: 'hot', name: 'Hot-swap switches', cost: 1.2, level: 2, value: 0.6 },
+  { id: 'dock', name: 'Charging dock', cost: 4, level: 2, value: 0.5 },
+  { id: 'poll', name: '8K polling', cost: 2, level: 3, value: 0.8 },
+  { id: 'weights', name: 'Tuning weights', cost: 0.8, level: 0, value: 0.3 },
+]
+
+/**
+ * How much more a segment wants a device for what its body looks like, past the scores: glass and lighting for
+ * gamers, a quiet plain case for professionals, a small one for the compact market. A share of quality, -5% to 8%.
+ */
+export function caseAppeal(b: Body | undefined, type: DeviceType, segment: SegmentId): number {
+  if (!b || (type !== 'tower' && type !== 'mouse')) return 0
+  const lit = rgbOn(b)
+  const l = rgbOf(b)
+  const zones = Math.min(1, l.zones.length / 4)
+  let k = 0
+  if (type === 'tower') {
+    const c = caseOf(b)
+    const form = towerForm(b)
+    if (segment === 'pc-game') k = 0.035 * (c.side === 'glass' ? 1 : c.side === 'mesh' ? 0.3 : -0.5) + (lit ? 0.04 * zones : -0.01) + (c.front === 'mesh' ? 0.01 : 0)
+    else if (segment === 'pc-work') k = (c.side === 'glass' ? 0 : 0.02) + (lit ? -0.01 - (l.effect === 'cycle' || l.effect === 'wave' ? 0.025 : 0) : 0.02) + (form === 'full' ? 0.02 : form === 'sff' || form === 'cube' ? -0.02 : 0)
+    else if (segment === 'pc-compact') k = (form === 'sff' || form === 'cube' || form === 'htpc' ? 0.045 : form === 'full' ? -0.03 : 0) + (c.front === 'slats' || c.side === 'glass' ? 0.01 : 0)
+  } else {
+    const ergo = b.grip === 'ergo'
+    if (segment === 'm-game') k = (lit ? 0.03 * Math.max(0.4, zones * 1.4) : 0) + (ergo ? 0.005 : 0)
+    else if (segment === 'm-office') k = (ergo ? 0.03 : 0) + (lit && (l.effect === 'cycle' || l.effect === 'wave') ? -0.015 : 0)
+    else if (segment === 'm-pro') k = (ergo ? -0.01 : 0.015) + (lit ? 0.005 : 0)
+  }
+  return Math.max(-0.05, Math.min(0.08, k))
+}
+
+const IO_LISTS: Partial<Record<DeviceType, IoInfo[]>> = { tower: TOWER_IO, monitor: MONITOR_IO, mouse: MOUSE_IO, laptop: PORTS, desktop: DESKTOP_PORTS, watch: SENSORS, console: CONSOLE_IO, tv: TV_IO, earbuds: BUD_FEATURES, headset: HEADSET_IO, speaker: SPEAKER_IO, handheld: HANDHELD_IO, ereader: READER_FEATURES, ring: RING_SENSORS, actioncam: ACTIONCAM_IO, drone: DRONE_IO }
 /** The ports, sensors or features a device type chooses from. Empty for types with none. */
 export const ioOptions = (type: DeviceType): IoInfo[] => IO_LISTS[type] ?? []
 export const ioInfo = (type: DeviceType, id: string) => ioOptions(type).find((x) => x.id === id)
@@ -607,6 +792,18 @@ export const SEGMENTS: SegmentInfo[] = [
 
   { id: 'dr-mini', type: 'drone', name: 'Beginner drone', size: 4.5e6, priceRef: 380, sens: 1.8, expect: 0.66, weights: { perf: 0.1, display: 0.12, camera: 0.3, battery: 0.2, design: 0.18, brand: 0.1 } },
   { id: 'dr-creator', type: 'drone', name: 'Creator drone', size: 2.5e6, priceRef: 950, sens: 1.2, expect: 0.84, weights: { perf: 0.12, display: 0.14, camera: 0.38, battery: 0.16, design: 0.1, brand: 0.1 } },
+  { id: 'pc-game', type: 'tower', name: 'Gaming PC', size: 4e6, priceRef: 1800, sens: 1.2, expect: 0.86, weights: { perf: 0.36, display: 0.26, camera: 0.1, battery: 0.12, design: 0.12, brand: 0.04 } },
+  { id: 'pc-work', type: 'tower', name: 'Workstation', size: 1.2e6, priceRef: 3200, sens: 0.7, expect: 0.92, weights: { perf: 0.44, display: 0.14, camera: 0.2, battery: 0.12, design: 0.04, brand: 0.06 } },
+  { id: 'pc-compact', type: 'tower', name: 'Compact PC', size: 2.5e6, priceRef: 800, sens: 1.5, expect: 0.74, weights: { perf: 0.22, display: 0.12, camera: 0.14, battery: 0.14, design: 0.28, brand: 0.1 } },
+
+  { id: 'mo-office', type: 'monitor', name: 'Office monitor', size: 10e6, priceRef: 180, sens: 2, expect: 0.6, weights: { perf: 0.1, display: 0.4, camera: 0.2, battery: 0.15, design: 0.1, brand: 0.05 } },
+  { id: 'mo-game', type: 'monitor', name: 'Gaming monitor', size: 4e6, priceRef: 420, sens: 1.3, expect: 0.85, weights: { perf: 0.2, display: 0.5, camera: 0.1, battery: 0.08, design: 0.08, brand: 0.04 } },
+  { id: 'mo-pro', type: 'monitor', name: 'Pro display', size: 1e6, priceRef: 1500, sens: 0.8, expect: 0.93, weights: { perf: 0.2, display: 0.48, camera: 0.14, battery: 0.08, design: 0.06, brand: 0.04 } },
+
+  { id: 'm-office', type: 'mouse', name: 'Office mouse', size: 25e6, priceRef: 30, sens: 2.4, expect: 0.55, weights: { perf: 0.1, display: 0.15, camera: 0.2, battery: 0.3, design: 0.15, brand: 0.1 } },
+  { id: 'm-game', type: 'mouse', name: 'Gaming mouse', size: 10e6, priceRef: 70, sens: 1.4, expect: 0.82, weights: { perf: 0.25, display: 0.3, camera: 0.2, battery: 0.08, design: 0.13, brand: 0.04 } },
+  { id: 'm-pro', type: 'mouse', name: 'Esports mouse', size: 2.5e6, priceRef: 150, sens: 0.9, expect: 0.92, weights: { perf: 0.28, display: 0.32, camera: 0.1, battery: 0.06, design: 0.2, brand: 0.04 } },
+
   { id: 'dr-pro', type: 'drone', name: 'Cinema drone', size: 0.8e6, priceRef: 2100, sens: 0.8, expect: 0.93, weights: { perf: 0.14, display: 0.16, camera: 0.42, battery: 0.14, design: 0.06, brand: 0.08 } },
 ]
 export const segmentInfo = (id: SegmentId) => SEGMENTS.find((s) => s.id === id)!
@@ -645,6 +842,12 @@ export interface Tier {
   strap?: string
   /** Speakers: a touch screen in the front. */
   screen?: boolean
+  /** Towers: the case, and whether it is lit. Mice: their shape. */
+  pc?: Partial<PcCase>
+  rgb?: boolean
+  grip?: 'ergo' | 'ambi'
+  /** Towers: the power supply, an index into PSUS, lowered to what the maker has researched. */
+  psu?: number
 }
 export const TIERS: Record<SegmentId, Tier> = {
   budget: { drop: 2, chipTier: 0, cams: 2, thick: 1.6, bezel: 2.2, matRank: 0, margin: 0.18 },
@@ -703,6 +906,17 @@ export const TIERS: Record<SegmentId, Tier> = {
   'dr-mini': { drop: 2, chipTier: 0, cams: 1, thick: 18, bezel: 1, matRank: 0, margin: 0.3, ioShare: 0.5, size: [0.15, 0.1] },
   'dr-creator': { drop: 1, chipTier: 1, cams: 1, thick: 48, bezel: 1, matRank: 0, margin: 0.4, ioShare: 0.85, size: [0.4, 0.3] },
   'dr-pro': { drop: 0, chipTier: 2, cams: 1, thick: 110, bezel: 1, matRank: 1, margin: 0.5, ioShare: 1, size: [0.8, 0.75] },
+  // for a tower, thick is the depth past the shallowest case; size picks the form factor
+  'pc-game': { drop: 0, chipTier: 2, cams: 0, thick: 200, bezel: 1, matRank: 1, margin: 0.28, gpu: 3, ioShare: 0.7, size: [0.22, 0.72], cooling: 2, psu: 3, rgb: true, pc: { side: 'glass', front: 'mesh', fans: 3, fanSize: 120, feet: 'tall' } },
+  'pc-work': { drop: 0, chipTier: 2, cams: 0, thick: 270, bezel: 1, matRank: 2, margin: 0.4, gpu: 2, ioShare: 1, size: [0.27, 0.86], cooling: 1, psu: 3, rgb: false, pc: { side: 'mesh', front: 'mesh', fans: 3, fanSize: 140, feet: 'casters' } },
+  'pc-compact': { drop: 1, chipTier: 1, cams: 0, thick: 110, bezel: 1, matRank: 1, margin: 0.32, gpu: 1, ioShare: 0.6, size: [0.08, 0.41], cooling: 1, psu: 1, rgb: false, pc: { side: 'solid', front: 'slats', fans: 1, fanSize: 140, feet: 'pads' } },
+  'mo-office': { drop: 2, chipTier: 0, cams: 0, thick: 12, bezel: 1.6, matRank: 0, margin: 0.2, io: 3, size: [0.17, 0.2], speakers: 0, stand: 'feet' },
+  'mo-game': { drop: 0, chipTier: 1, cams: 0, thick: 10, bezel: 1.2, matRank: 0, margin: 0.3, io: 6, size: [0.19, 0.38], speakers: 0, stand: 'pedestal' },
+  'mo-pro': { drop: 0, chipTier: 1, cams: 0, thick: 8, bezel: 1.05, matRank: 2, margin: 0.55, io: 9, size: [0.3, 0.6], speakers: 1, stand: 'arm' },
+  // for a mouse, thick is the length past the shortest one
+  'm-office': { drop: 2, chipTier: 0, cams: 0, thick: 20, bezel: 1, matRank: 0, margin: 0.5, ioShare: 0.4, size: [0.35, 0.4], grip: 'ergo' },
+  'm-game': { drop: 0, chipTier: 1, cams: 0, thick: 24, bezel: 1, matRank: 0, margin: 0.6, ioShare: 0.75, size: [0.3, 0.4], grip: 'ergo', rgb: true },
+  'm-pro': { drop: 0, chipTier: 1, cams: 0, thick: 20, bezel: 1, matRank: 0, margin: 0.8, ioShare: 0.8, size: [0.22, 0.25], grip: 'ambi', rgb: false },
 }
 
 export const OUTLETS: { name: string; weights: SubScores; value: number }[] = [
@@ -764,4 +978,9 @@ export const RIVALS: RivalSeed[] = [
   { name: 'Talus', color: '#3d9be0', brand: 0.72, awareness: 0.6, techOffset: 0.1, priceMult: 1, software: 0.02, segments: ['a-sport', 'a-vlog', 'a-pro', 'dr-creator'], layout: 0, palette: ['#17191c', '#2b2e33', '#d9dadc'], series: { 'a-sport': 'Scree', 'a-vlog': 'Scree Vlog', 'a-pro': 'Scree Black', 'dr-creator': 'Gull' }, counter: 9 },
   { name: 'Kestrel', color: '#d06a3a', brand: 0.6, awareness: 0.45, techOffset: 0, priceMult: 0.9, software: 0.01, segments: ['dr-mini', 'dr-creator', 'dr-pro'], layout: 0, palette: ['#4b5056', '#e4e5e7', '#2a2d31'], series: { 'dr-mini': 'Wisp', 'dr-creator': 'Hover', 'dr-pro': 'Stoop' }, counter: 4 },
   { name: 'Skyloft', color: '#8fa3b8', brand: 0.82, awareness: 0.7, techOffset: 0.3, priceMult: 1.05, software: 0.03, segments: ['dr-mini', 'dr-creator', 'dr-pro', 'a-vlog', 'a-pro'], layout: 0, palette: ['#5d6268', '#d4d6d9', '#2a2c30'], series: { 'dr-mini': 'Mote', 'dr-creator': 'Aloft', 'dr-pro': 'Zenith', 'a-vlog': 'Pocketcam', 'a-pro': 'Rugged' }, counter: 5 },
+  // specialists in PC towers, monitors and mice. These names and their lines are invented.
+  { name: 'Forgeline', color: '#e0462c', brand: 0.7, awareness: 0.55, techOffset: 0.2, priceMult: 1, software: 0.01, segments: ['pc-game', 'pc-compact', 'm-game', 'm-pro'], layout: 0, palette: ['#111214', '#e8e8ea', '#2a2d33'], series: { 'pc-game': 'Crucible', 'pc-compact': 'Ingot', 'm-game': 'Spark', 'm-pro': 'Flint' }, counter: 4 },
+  { name: 'Quorra', color: '#7d5cf0', brand: 0.66, awareness: 0.5, techOffset: 0.1, priceMult: 1.05, software: 0.01, segments: ['pc-game', 'pc-work', 'mo-game', 'm-game'], layout: 0, palette: ['#0f1012', '#d9dade', '#3b2f63'], series: { 'pc-game': 'Vanta', 'pc-work': 'Atlas', 'mo-game': 'Prism', 'm-game': 'Talon' }, counter: 4 },
+  { name: 'Clearpane', color: '#3aa0c8', brand: 0.68, awareness: 0.6, techOffset: 0.1, priceMult: 0.95, software: 0, segments: ['mo-office', 'mo-game', 'mo-pro'], layout: 0, palette: ['#1b1d21', '#c9ccd1', '#2f3640'], series: { 'mo-office': 'Pane', 'mo-game': 'Velocity', 'mo-pro': 'Truecolor' }, counter: 3 },
+  { name: 'Tamarin', color: '#5fb36a', brand: 0.6, awareness: 0.65, techOffset: -0.2, priceMult: 0.85, software: 0, segments: ['m-office', 'm-game', 'mo-office', 'pc-compact', 'pc-work'], layout: 0, palette: ['#202226', '#e6e6e6', '#4a5866'], series: { 'm-office': 'Glide', 'm-game': 'Pounce', 'mo-office': 'Daily', 'pc-compact': 'Nook', 'pc-work': 'Bench' }, counter: 3 },
 ]
