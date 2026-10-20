@@ -20,6 +20,8 @@ export interface Nav {
   reach: Uint8Array
   /** Which connected stretch of floor a tile belongs to (0 where nobody can stand). Two tiles can be walked between only if these match. */
   zone: Int32Array
+  /** An upper floor: off its rooms, and off the plot, is a drop. */
+  upstairs?: boolean
   /** Tile people come in and leave by, or -1 if the plot is walled off. */
   entry: number
   /** A point off the plot beyond the entry, where people appear and vanish. */
@@ -330,6 +332,7 @@ export function buildNav(site: Site, arrive?: number[]): Nav {
     reach,
     zone,
     entry,
+    upstairs: !!site.level,
     outside,
     doors,
     narrow: portal,

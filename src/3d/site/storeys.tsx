@@ -80,6 +80,34 @@ export function storeyMeshes(ground: Site, from: number, to: number) {
   return b.build((k) => surface(k))
 }
 
+/**
+ * Walking: the ceiling over every room of a storey, a few centimetres under
+ * the floor above (or the roof), open where stairs go on up through it.
+ */
+export function Ceilings({ ground, floor, sig }: { ground: Site; floor: number; sig: string }) {
+  const meshes = useMeshes(() => {
+    const b = new Batch()
+    const plan = storeysOf(ground)[floor]
+    if (!plan) return []
+    const holes = holesOn(ground, floor + 1)
+    const y = floor * STOREY + STOREY - 0.085
+    for (let i = 0; i < plan.grid.length; i++) {
+      if (!plan.grid[i] || holes.has(i)) continue
+      const x = i % plan.w
+      const z = Math.floor(i / plan.w)
+      b.box('wall', x + 0.5 - plan.w / 2, y, z + 0.5 - plan.h / 2, 1, 0.07, 1, '#e9e7e2', 0.95)
+    }
+    return b.build((k) => surface(k))
+  }, [sig, floor])
+  return (
+    <>
+      {meshes.map((m) => (
+        <primitive key={m.uuid} object={m} />
+      ))}
+    </>
+  )
+}
+
 /** The tiles of a storey left open for the stairs coming up from the floor below. */
 export function holesOn(ground: Site, floor: number): Set<number> {
   const out = new Set<number>()

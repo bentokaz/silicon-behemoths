@@ -11,7 +11,7 @@ import { money, moneyDelta, num, pct } from '../components/format'
 import { EDGE_COST, edgePrice, keepsDoors, partitionRun, roomCost, zonePlan } from '../sim/game'
 import type { FactoryLife, OfficeLife, StoreLife, VenueLife } from '../sim/life'
 import { turnPlan } from '../sim/game'
-import { type Well, blankLevel, ceilingAt, storeysOf, wellsOn, ITEMS, type LineStats, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, areaOf, areaTiles, canPartition, canPlace, ceilingOf, curveFor, cutAt, doorFits, fillError, gridAt, inPlot, isBoundary, hasGround, isStage, itemAt, itemTiles, pocketAt, reachable, roomOf, rowSpots, stageOf, tilesOf, wallAt } from '../sim/sites'
+import { CLIMB, type Well, blankLevel, liftTop, ceilingAt, storeysOf, wellsOn, ITEMS, type LineStats, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, areaOf, areaTiles, canPartition, canPlace, ceilingOf, curveFor, cutAt, doorFits, fillError, gridAt, inPlot, isBoundary, hasGround, isStage, itemAt, itemTiles, pocketAt, reachable, roomOf, rowSpots, stageOf, tilesOf, wallAt } from '../sim/sites'
 import { ROLE_INFO, inTraining, jobTitle } from '../sim/staff'
 import type { Employee, Product, Site, SiteItem, SiteKind } from '../sim/types'
 import { QUALITY, type Quality, isHeld, useSettings } from '../store/settings'
@@ -39,11 +39,11 @@ import { seatOwners } from './site/seats'
 import { buildSpots, seatAisles } from './site/spots'
 import { Shoppers, StoreItem } from './site/store'
 import { Batch, CUT_H, Ground, STOREY, Structure, type ViewMode, WALL_T, wallTop } from './site/structure'
-import { Climb, Storeys, holesOn } from './site/storeys'
+import { Ceilings, Climb, Storeys, holesOn } from './site/storeys'
 import { MeetingLife } from './site/MeetingLife'
 import { tableJoins } from './site/meetings'
 import { planKey } from './site/plankey'
-import { Walk } from './site/walk'
+import { type Flight, type LiftStop, Walk } from './site/walk'
 import { Heartbeat, type Pulse, useTick } from './site/tick'
 import { VenueItem } from './site/venue'
 import { type Phase, VenueCrowd } from './site/venuecrowd'
@@ -179,6 +179,10 @@ export interface SiteViewProps {
   onPreview?: (tiles: number, note?: AreaNote) => void
   /** The room under the pointer (0 for open ground), told whenever the pointer moves onto another one. */
   onHoverRoom?: (n: number) => void
+  /** Walking: the walker went up or down to another storey. */
+  onWalkFloor?: (floor: number) => void
+  /** Walking: what a key does where the walker stands, or null. */
+  onWalkHint?: (text: string | null) => void
   /** Office: seated employees, in desk order, and everyone without a desk. */
   seated?: Employee[]
   idle?: Employee[]
@@ -846,7 +850,21 @@ const PLATE_TEXT = { accent: 'text-fg', pos: 'text-pos', warn: 'text-warn', neg:
 const researchOn = (o: OfficeLife, given?: ResearchNow[]): ResearchNow[] => given ?? o.research
 const fmtHour = (h: number) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`
 
-export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, company, color, logo, selectedRoom, sealed, onTile, onRow, onEdges, onSell, onRun, onArea, onPreview, onHoverRoom, seated = [], idle = [], applicants, onPerson, day = 0, line, producing = false, products = [], busy = 0, show, autoRotate, director, presenterWalk, speed = 0, life, card, onCutOff, budget = Infinity, onOff, clear, month, research, onDrawn, walk = false, onWalkEnd }: SiteViewProps) {
+/** The way a staircase, an escalator or a lift faces on the plot: the way it rises (the item's own -Z). */
+const RISE: [number, number][] = [
+  [0, -1],
+  [1, 0],
+  [0, 1],
+  [-1, 0],
+]
+/** An item's middle on the plot, in the view's coordinates. */
+function middleOf(site: Site, it: SiteItem): [number, number] {
+  const d = ITEMS[site.kind][it.kind]
+  const turned = it.rot % 2 === 1
+  return [it.x + (turned ? d.h : d.w) / 2 - site.w / 2, it.y + (turned ? d.w : d.h) / 2 - site.h / 2]
+}
+
+export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, company, color, logo, selectedRoom, sealed, onTile, onRow, onEdges, onSell, onRun, onArea, onPreview, onHoverRoom, seated = [], idle = [], applicants, onPerson, day = 0, line, producing = false, products = [], busy = 0, show, autoRotate, director, presenterWalk, speed = 0, life, card, onCutOff, budget = Infinity, onOff, clear, month, research, onDrawn, walk = false, onWalkEnd, onWalkFloor, onWalkHint }: SiteViewProps) {
   /** The camera is the walker's: from the glide down to eye height until the glide back up. */
   const [walking, setWalking] = useState(false)
   // ---- an upper floor: its own plan, lifted to its height, with the floors under it drawn beneath
@@ -858,10 +876,45 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
   const lift = level ? floor * STOREY : 0
   /** Where the stairs and lifts from the floors below come up through this one. */
   const wells = useMemo(() => (level ? wellsOn(ground, floor) : new Map<number, Well>()), [level, floor, ground, ground.rev, level?.rev]) // eslint-disable-line react-hooks/exhaustive-deps
+  // ---- for the walker: the flights up from this floor and down from it, and the lifts that stop here
+  const flights = useMemo<Flight[]>(() => {
+    const out: Flight[] = []
+    const floors = storeysOf(ground)
+    const add = (plan: Site, up: boolean) => {
+      for (const it of plan.items) {
+        if (it.kind !== 'stairs' && it.kind !== 'escalator') continue
+        const d = ITEMS[plan.kind][it.kind]
+        const [cx, cz] = middleOf(plan, it)
+        const [dx, dz] = RISE[it.rot % 4]
+        out.push({ id: `${up ? 'u' : 'd'}${it.id}`, kind: it.kind, cx, cz, dx, dz, half: d.h / 2, width: d.w, up })
+      }
+    }
+    const here = level ?? ground
+    // a flight up leads somewhere only when there is a floor over it
+    if (floor + 1 < floors.length) add(here, true)
+    if (floor > 0 && floors[floor - 1]) add(floors[floor - 1], false)
+    return out
+  }, [ground, ground.rev, level, level?.rev, floor]) // eslint-disable-line react-hooks/exhaustive-deps
+  const liftStops = useMemo<LiftStop[]>(() => {
+    const out: LiftStop[] = []
+    const floors = storeysOf(ground)
+    floors.forEach((plan, m) => {
+      if (m > floor) return
+      for (const it of plan.items) {
+        if (it.kind !== 'lift') continue
+        const top = liftTop(floors, m, it)
+        if (top < floor) continue
+        const [cx, cz] = middleOf(plan, it)
+        const [dx, dz] = RISE[it.rot % 4]
+        out.push({ x: cx - dx * 1.4, z: cz - dz * 1.4, floors: Array.from({ length: top - m + 1 }, (_, i) => m + i) })
+      }
+    })
+    return out
+  }, [ground, ground.rev, floor, level?.rev]) // eslint-disable-line react-hooks/exhaustive-deps
   const stairHoles = useMemo(() => new Set([...wells].filter(([, w]) => w.kind === 'stairs').map(([i]) => i)), [wells])
   // low cut walls are no use to someone walking about: the walls stand full height, under a roof if the outside was being shown;
   // a venue's hall is walked under its own roof, raised over the rigging; upstairs the outside is the floor's own walls, with no roof over them to hide the rooms
-  const mode: ViewMode = walking && ground.kind === 'venue' ? 'full' : (walking && (chosen === 'cut' || chosen === 'down')) || (level && chosen === 'full') ? 'walls' : chosen
+  const mode: ViewMode = walking ? (ground.kind === 'venue' ? 'full' : 'walls') : level && chosen === 'full' ? 'walls' : chosen
   /** An office of several storeys seen from outside: each floor is drawn as built, the ground floor one storey high, each with its roof over what is not built on above. */
   const stacked = mode === 'full' && !level && !!ground.upper?.some((l) => l.rooms.length)
   const endWalk = useCallback(() => onWalkEnd?.(), [onWalkEnd])
@@ -969,6 +1022,17 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
       if (out.length >= cap) break
       const e = owners.get(item.id)
       if (e) out.push({ e, seat: item.id })
+    }
+    // on the ground floor, a few of those who work upstairs are seen walking in to the stairs, a lift or an escalator and going up
+    const climbs = !level && ground.upper?.length ? site.items.filter((i) => CLIMB.has(i.kind)) : []
+    if (climbs.length) {
+      const here = new Set(site.items.map((i) => i.id))
+      let k = 0
+      for (const [id, e] of owners) {
+        if (out.length >= cap || k >= 12) break
+        if (here.has(id)) continue
+        out.push({ e, climb: climbs[k++ % climbs.length].id })
+      }
     }
     return out
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1875,7 +1939,7 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
           return (
             <group key={`lower${f}`} position-y={f * STOREY}>
               {f > 0 && <Ground site={plan} dim={0.8} upper holes={holesOn(ground, f)} />}
-              <Structure site={plan} mode="cut" glow={0} leaves={false} />
+              <Structure site={plan} mode={walking ? 'walls' : 'cut'} glow={0} leaves={false} />
               <Chunk sig={`${f}|${plan.rev}|${plan.items.length}|${glowKey}`} render={() => plan.items.filter((i) => ITEMS[plan.kind][i.kind]).map((i) => model(i, M.glow))} />
             </group>
           )
@@ -1885,16 +1949,30 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
         ground.upper!.map((plan, i) => (
           <group key={`upper${i}`} position-y={(i + 1) * STOREY}>
             <Ground site={plan} dim={1} upper holes={holesOn(ground, i + 1)} />
-            <Structure site={plan} mode="full" glow={mood === 'day' ? 0 : M.glow * 0.6} leaves={false} />
+            {/* (a venue's balconies stand inside its hall: its own walls are theirs) */}
+            {ground.kind !== 'venue' && <Structure site={plan} mode="full" glow={mood === 'day' ? 0 : M.glow * 0.6} leaves={false} above={ground.upper![i + 1]} />}
             <Chunk sig={`u${i}|${plan.rev}|${plan.items.length}|${glowKey}`} render={() => plan.items.filter((it) => ITEMS[plan.kind][it.kind]).map((it) => model(it, M.glow))} />
           </group>
         ))}
       {/* columns and slabs under rooms built out over open ground, and rails round the stairwells */}
-      {(level || stacked) && <Storeys ground={ground} from={1} to={level ? floor : (ground.upper?.length ?? 0)} sig={storeysSig} />}
+      {(level || stacked || (walking && !!ground.upper?.length)) && <Storeys ground={ground} from={1} to={walking ? (ground.upper?.length ?? 0) : level ? floor : (ground.upper?.length ?? 0)} sig={storeysSig} />}
+      {/* walking: the floors overhead stand over the walker, each seen from below as a ceiling */}
+      {walking &&
+        (ground.upper ?? []).slice(floor).map((plan, i) => {
+          const f = floor + 1 + i
+          return (
+            <group key={`over${f}`} position-y={f * STOREY}>
+              <Ground site={plan} dim={1} upper holes={holesOn(ground, f)} />
+              <Structure site={plan} mode="walls" glow={0} leaves={false} />
+              <Chunk sig={`o${f}|${plan.rev}|${plan.items.length}|${glowKey}`} render={() => plan.items.filter((it) => ITEMS[plan.kind][it.kind]).map((it) => model(it, M.glow))} />
+            </group>
+          )
+        })}
+      {walking && site.kind !== 'venue' && <Ceilings ground={ground} floor={floor} sig={storeysSig} />}
       <group position-y={lift}>
       {level && <Ground site={level} dim={1} upper holes={stairHoles} />}
       {/* the floors below are faded under this one, as seen through its open parts */}
-      {level && (
+      {level && !walking && (
         <mesh rotation-x={-Math.PI / 2} position={[0, -0.06, 0]} renderOrder={2}>
           <planeGeometry args={[w + 6, h + 6]} />
           <meshBasicMaterial color={sky} transparent opacity={0.45} depthWrite={false} />
@@ -1902,7 +1980,7 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
       )}
       {/* a lift's doors on every floor its shaft reaches */}
       {shafts.map((it) => model(it, M.glow))}
-      <Structure site={standing} mode={mode} glow={mood === 'day' ? 0 : M.glow * 0.6} leaves={false} dark={cut ? undefined : darkRooms} />
+      <Structure site={standing} mode={mode} glow={mood === 'day' ? 0 : M.glow * 0.6} leaves={false} dark={cut ? undefined : darkRooms} above={stacked ? ground.upper?.[0] : undefined} />
 
       {/* pick surface over the whole plot: found by the pointer, never drawn */}
       <mesh
@@ -2118,7 +2196,7 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
       )}
       <Drawn on={onUp} />
       {!autoRotate && !walking && !director && <CameraKeys span={span} home={home} aim={aim} />}
-      <Walk nav={nav} on={walk} onActive={setWalking} onLeave={endWalk} />
+      <Walk nav={nav} on={walk} onActive={setWalking} onLeave={endWalk} floor={floor} flights={flights} lifts={liftStops} onFloor={onWalkFloor} onHint={onWalkHint} />
       {autoRotate && !director && <AutoTurn speed={3} />}
       {director && <Director shot={director} />}
       <CameraFence span={span} top={height + 6} />

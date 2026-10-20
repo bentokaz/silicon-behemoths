@@ -435,10 +435,11 @@ export function groundMeshes(site: Site, dim: number, upper = false, holes?: Rea
  * in straight walls and curved ones alike, and so do most of the windows of
  * the storeys above them.
  */
-export function Structure({ site, mode, glow, leaves = true, dark }: { site: Site; mode: ViewMode; glow: number; leaves?: boolean; dark?: ReadonlySet<number> }) {
+export function Structure({ site, mode, glow, leaves = true, dark, above }: { site: Site; mode: ViewMode; glow: number; leaves?: boolean; dark?: ReadonlySet<number>; /** From outside, the storey built on top of this one: no parapet or roof-line post where its walls stand. */ above?: Site }) {
   // walls follow the plan: furniture coming and going does not put the whole building up again
   const key = planKey(site)
-  const meshes = useMeshes(() => structureMeshes(site, mode, glow, leaves, dark), [key, mode, glow, leaves, dark])
+  const upKey = above ? planKey(above) : ''
+  const meshes = useMeshes(() => structureMeshes(site, mode, glow, leaves, dark, above), [key, mode, glow, leaves, dark, upKey])
   return (
     <>
       {meshes.map((m) => (
@@ -449,7 +450,7 @@ export function Structure({ site, mode, glow, leaves = true, dark }: { site: Sit
 }
 
 /** The meshes of the walls, doors, glazing, upper floors and roof. */
-export function structureMeshes(site: Site, mode: ViewMode, glow: number, leaves = true, dark?: ReadonlySet<number>): THREE.Mesh[] {
+export function structureMeshes(site: Site, mode: ViewMode, glow: number, leaves = true, dark?: ReadonlySet<number>, above?: Site): THREE.Mesh[] {
   {
     const b = new Batch()
     const rooms = new Map<number, Room>(site.rooms.map((r) => [r.n, r]))
@@ -460,6 +461,8 @@ export function structureMeshes(site: Site, mode: ViewMode, glow: number, leaves
     const oz = -site.h / 2
     const full = mode === 'full'
     const H = wallTop(mode)
+    /** A tile with a room on the storey above it: walls carry straight on up there, with no parapet between (two walls in one plane would flicker). */
+    const covered = (x: number, y: number) => !!above && gridAt(above, x, y) > 0
     /** Walls cut low or down: no windows, no door leaves. */
     const low = mode === 'cut' || mode === 'down'
     const WALL_TOP = H
@@ -639,14 +642,16 @@ export function structureMeshes(site: Site, mode: ViewMode, glow: number, leaves
             if (whole && hash(seed + f * 5) > 0.2) slab(upperLit(ra ?? rc, seed, f), x, y, side, toward, y0 + 0.95, y0 + 2.4, '#27353f', 1, 0.014, half)
           }
         }
-        // parapet above the roof line
+        // parapet above the roof line, where nothing is built on top
         const base = site.floors * STOREY - 0.1
-        if (facade.kind === 'glass') onEdge('trim', x, y, side, mid, len, base, base + 0.4, WALL_T, POST)
-        else {
-          outer(x, y, side, toward, base, base + 0.4, seed + 99, u0, u1)
-          slab('wall', x, y, side, toward === 1 ? -1 : 1, base, base + 0.4, facade.color, 0.9, half, 0, u0, u1)
+        if (!covered(x, y) && !(side === 'n' ? covered(x, y - 1) : covered(x - 1, y))) {
+          if (facade.kind === 'glass') onEdge('trim', x, y, side, mid, len, base, base + 0.4, WALL_T, POST)
+          else {
+            outer(x, y, side, toward, base, base + 0.4, seed + 99, u0, u1)
+            slab('wall', x, y, side, toward === 1 ? -1 : 1, base, base + 0.4, facade.color, 0.9, half, 0, u0, u1)
+          }
+          onEdge('trim', x, y, side, mid, len, base + 0.4, base + 0.44, WALL_T + 0.04, CAP)
         }
-        onEdge('trim', x, y, side, mid, len, base + 0.4, base + 0.44, WALL_T + 0.04, CAP)
       }
     }
 
@@ -885,7 +890,7 @@ export function structureMeshes(site: Site, mode: ViewMode, glow: number, leaves
       const len = Math.SQRT2
       const q = half / 2
       const seed = x * 53 + y * 97 + 3
-      const outerTop = full ? site.floors * STOREY + 0.3 : H
+      const outerTop = full ? site.floors * STOREY + (covered(x, y) ? -0.1 : 0.3) : H
       b.boxRot('wall', cx - nx * q, H / 2, cz - nz * q, len, H, half, rot, styleOf(site, room).wall, 0.97 + hash(seed) * 0.05)
       if (facade.kind === 'glass') {
         b.boxRot('glass', cx + nx * q, outerTop / 2 + 0.04, cz + nz * q, len, outerTop - 0.14, 0.03, rot, '#bfe0f2')
@@ -913,7 +918,7 @@ export function structureMeshes(site: Site, mode: ViewMode, glow: number, leaves
         if (straight || slanted) continue
         // only corners that touch the outside carry on up the building
         const ext = !gridAt(site, x, y) || !gridAt(site, x - 1, y) || !gridAt(site, x, y - 1) || !gridAt(site, x - 1, y - 1)
-        const h = full && ext ? top + 0.345 : lowH
+        const h = full && ext ? top + (covered(x, y) || covered(x - 1, y) || covered(x, y - 1) || covered(x - 1, y - 1) ? -0.1 : 0.345) : lowH
         b.box('trim', ox + x, h / 2, oz + y, WALL_T + 0.03, h, WALL_T + 0.03, POST)
       }
     }

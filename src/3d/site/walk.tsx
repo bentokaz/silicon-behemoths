@@ -41,7 +41,8 @@ export function standable(nav: Nav, x: number, z: number, r = BODY): boolean {
   const ax = Math.floor(px)
   const ay = Math.floor(py)
   const inside = (tx: number, ty: number) => tx >= 0 && ty >= 0 && tx < w && ty < h
-  const floor = (tx: number, ty: number) => !inside(tx, ty) || nav.walk[ty * w + tx] === 1
+  // upstairs, off the plot is a drop like any open part of the floor
+  const floor = (tx: number, ty: number) => (!inside(tx, ty) ? !nav.upstairs : nav.walk[ty * w + tx] === 1)
   /** Whether the edge between tile (tx, ty) and its neighbour (dx, dy) away can be crossed. */
   const cross = (tx: number, ty: number, dx: number, dy: number): boolean => {
     const ex = dx > 0 ? tx + 1 : tx
@@ -95,6 +96,43 @@ export function slide(nav: Nav, x: number, z: number, dx: number, dz: number): [
   return [x, z]
 }
 
+/** Metres from one storey's floor to the next (the view's STOREY). */
+const STOREY_H = 3
+/** Metres a second up or down a flight of stairs; an escalator carries you a little slower and steadier. */
+const CLIMB_SPEED = 1.3
+
+/**
+ * A flight of stairs or an escalator, as the walker meets it: its middle,
+ * the way it rises (a unit vector on the plot), half its length and its
+ * width. `up` flights rise from the floor being walked; the others come up
+ * into it from the floor below, and are gone down.
+ */
+export interface Flight {
+  id: string
+  kind: string
+  cx: number
+  cz: number
+  dx: number
+  dz: number
+  half: number
+  width: number
+  up: boolean
+}
+/** A lift door on the floor being walked, and the floors its shaft stops at. */
+export interface LiftStop {
+  x: number
+  z: number
+  floors: number[]
+}
+/** Where a point is against a flight: along it from its middle toward the top, and across it. */
+const onFlight = (f: Flight, x: number, z: number): [number, number] => [(x - f.cx) * f.dx + (z - f.cz) * f.dz, -(x - f.cx) * f.dz + (z - f.cz) * f.dx]
+const inFlight = (f: Flight, x: number, z: number, pad = 0) => {
+  const [a, c] = onFlight(f, x, z)
+  return Math.abs(a) <= f.half + pad && Math.abs(c) <= f.width / 2 + pad
+}
+/** Says which floor a number key picks: 0 the ground floor. */
+const floorWord = (n: number) => (n ? `floor ${n}` : 'the ground floor')
+
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
 const look = new THREE.Euler(0, 0, 0, 'YXZ')
 /** Radians of turn for each pixel the mouse moves. */
@@ -135,7 +173,20 @@ interface Controls {
  * walker's, from the start of the glide down to the end of the glide back;
  * `onLeave` asks the screen to end the walk (Esc, or the pointer let go).
  */
-export function Walk({ nav, on, onActive, onLeave }: { nav: Nav; on: boolean; onActive: (active: boolean) => void; onLeave: () => void }) {
+export function Walk({ nav, on, onActive, onLeave, floor = 0, flights = [], lifts = [], onFloor, onHint }: {
+  nav: Nav
+  on: boolean
+  onActive: (active: boolean) => void
+  onLeave: () => void
+  /** The storey being walked, 0 the ground floor. */
+  floor?: number
+  flights?: Flight[]
+  lifts?: LiftStop[]
+  /** Asks the view to show another storey: the walker has gone up or down. */
+  onFloor?: (floor: number) => void
+  /** A line for the screen to show while walking: what a key does here. */
+  onHint?: (text: string | null) => void
+}) {
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera
   const controls = useThree((s) => s.controls) as unknown as Controls | null
   const dom = useThree((s) => s.gl.domElement)
@@ -161,7 +212,26 @@ export function Walk({ nav, on, onActive, onLeave }: { nav: Nav; on: boolean; on
     dy: 0,
     /** Mouse events still to ignore: the first ones after the pointer is taken or let go jump. */
     skip: 0,
+    /** Height of the floor underfoot. */
+    base: 0,
+    /** On a flight: from where to where, with the height at each end, and how far along. */
+    climb: null as null | { pts: [number, number, number][]; t: number; len: number; to: number },
+    /** The flight just come off: nothing happens on it again until the walker has stepped clear of it. */
+    guard: '',
+    /** The lift's floor list is showing. */
+    menu: false,
+    hint: '' as string,
   })
+  const flightsRef = useRef(flights)
+  flightsRef.current = flights
+  const liftsRef = useRef(lifts)
+  liftsRef.current = lifts
+  const floorRef = useRef(floor)
+  floorRef.current = floor
+  const toFloor = useRef(onFloor)
+  toFloor.current = onFloor
+  const hintRef = useRef(onHint)
+  hintRef.current = onHint
   const navRef = useRef(nav)
   navRef.current = nav
   const leave = useRef(onLeave)
@@ -181,6 +251,9 @@ export function Walk({ nav, on, onActive, onLeave }: { nav: Nav; on: boolean; on
       }
       const target = controls?.target ?? new THREE.Vector3()
       ;[s.x, s.z] = startAt(navRef.current, target.x, target.z)
+      s.base = floorRef.current * STOREY_H
+      s.climb = null
+      s.menu = false
       // facing the way the camera faced
       s.yaw = Math.atan2(-(target.x - camera.position.x), -(target.z - camera.position.z))
       s.pitch = 0
@@ -216,9 +289,26 @@ export function Walk({ nav, on, onActive, onLeave }: { nav: Nav; on: boolean; on
         return
       }
       s.keys.add(e.code)
+      if (s.phase === 'walk' && e.code === 'KeyE') {
+        const lift = nearLift()
+        s.menu = !!lift && !s.menu
+      } else if (s.phase === 'walk' && s.menu && /^(Digit|Numpad)\d$/.test(e.code)) {
+        const n = Number(e.code.slice(-1))
+        const lift = nearLift()
+        if (lift && lift.floors.includes(n) && n !== floorRef.current) {
+          // the doors close, and open on the floor asked for
+          s.base = n * STOREY_H
+          s.x = lift.x
+          s.z = lift.z
+          s.guard = ''
+          toFloor.current?.(n)
+        }
+        s.menu = false
+      }
       // the walk has the keys: nothing else on the screen acts on them meanwhile
       if (s.phase === 'walk' || s.phase === 'in') e.stopImmediatePropagation()
     }
+    const nearLift = () => liftsRef.current.find((l) => Math.hypot(l.x - s.x, l.z - s.z) < 1.4)
     const up = (e: KeyboardEvent) => s.keys.delete(e.code)
     const blur = () => s.keys.clear()
     const move = (e: MouseEvent) => {
@@ -299,12 +389,71 @@ export function Walk({ nav, on, onActive, onLeave }: { nav: Nav; on: boolean; on
       const held = (code: string, action: string) => k.has(code) || isHeld(k, action)
       const fwd = (held('KeyW', 'camForward') || k.has('ArrowUp') ? 1 : 0) - (held('KeyS', 'camBack') || k.has('ArrowDown') ? 1 : 0)
       const side = (held('KeyD', 'camRight') || k.has('ArrowRight') ? 1 : 0) - (held('KeyA', 'camLeft') || k.has('ArrowLeft') ? 1 : 0)
-      if (s.phase === 'walk' && (fwd || side)) {
+      // off a flight and somewhere no one can stand (a lift door onto furniture, the floor changed under them): onto the nearest floor
+      if (!s.climb && s.phase === 'walk' && Math.round(s.base / STOREY_H) === floorRef.current && !standable(n, s.x, s.z)) [s.x, s.z] = startAt(n, s.x, s.z)
+      if (s.climb) {
+        // on a flight: carried along it, up or down, at a steady pace; the keys wait until the far end
+        const c = s.climb
+        c.t = Math.min(c.len, c.t + CLIMB_SPEED * dt)
+        let d = c.t
+        for (let i = 1; i < c.pts.length; i++) {
+          const [ax, ay, az] = c.pts[i - 1]
+          const [bx, by, bz] = c.pts[i]
+          const seg = Math.hypot(bx - ax, bz - az) || 1e-6
+          if (d <= seg || i === c.pts.length - 1) {
+            const u = Math.min(1, d / seg)
+            s.x = ax + (bx - ax) * u
+            s.z = az + (bz - az) * u
+            s.base = ay + (by - ay) * u
+            break
+          }
+          d -= seg
+        }
+        s.bob += CLIMB_SPEED * dt * 5.2
+        if (c.t >= c.len) {
+          s.climb = null
+          s.base = c.to * STOREY_H
+          toFloor.current?.(c.to)
+        }
+      } else if (s.phase === 'walk' && (fwd || side) && Math.round(s.base / STOREY_H) === floorRef.current) {
         const speed = (k.has('ShiftLeft') || k.has('ShiftRight') ? RUN_SPEED : WALK_SPEED) / Math.hypot(fwd, side)
         const sin = Math.sin(s.yaw)
         const cos = Math.cos(s.yaw)
         const dx = (-sin * fwd + cos * side) * speed * dt
         const dz = (-cos * fwd - sin * side) * speed * dt
+        // stepping onto a flight: up the stairs from their foot, or down them from the floor they come up into
+        const ahead = Math.max(0.35, Math.hypot(dx, dz) * 4)
+        const mx = dx / (Math.hypot(dx, dz) || 1)
+        const mz = dz / (Math.hypot(dx, dz) || 1)
+        const at = floorRef.current * STOREY_H
+        for (const f of flightsRef.current) {
+          if (f.id.slice(1) === s.guard) continue
+          const tx = s.x + mx * ahead
+          const tz = s.z + mz * ahead
+          if (!inFlight(f, tx, tz) || inFlight(f, s.x, s.z, -0.05)) continue
+          const along = mx * f.dx + mz * f.dz
+          if (f.up && along > 0.35) {
+            const foot: [number, number, number] = [f.cx - f.dx * f.half, at, f.cz - f.dz * f.half]
+            const top: [number, number, number] = [f.cx + f.dx * (f.half - 0.5), at + STOREY_H, f.cz + f.dz * (f.half - 0.5)]
+            // and on a step past the top, off the stairwell (snapped back to the nearest floor if there is none there)
+            const off: [number, number, number] = [f.cx + f.dx * (f.half + 0.5), at + STOREY_H, f.cz + f.dz * (f.half + 0.5)]
+            const pts: [number, number, number][] = [[s.x, at, s.z], foot, top, off]
+            s.climb = { pts, t: 0, len: Math.hypot(foot[0] - s.x, foot[2] - s.z) + Math.hypot(top[0] - foot[0], top[2] - foot[2]) + 1, to: floorRef.current + 1 }
+            s.guard = f.id.slice(1)
+            break
+          }
+          if (!f.up && along < -0.2) {
+            const top: [number, number, number] = [f.cx + f.dx * (f.half - 0.5), at, f.cz + f.dz * (f.half - 0.5)]
+            const out: [number, number, number] = [f.cx - f.dx * (f.half + 0.5), at - STOREY_H, f.cz - f.dz * (f.half + 0.5)]
+            const pts: [number, number, number][] = [[s.x, at, s.z], top, out]
+            s.climb = { pts, t: 0, len: Math.hypot(top[0] - s.x, top[2] - s.z) + Math.hypot(out[0] - top[0], out[2] - top[2]), to: floorRef.current - 1 }
+            s.guard = f.id.slice(1)
+            break
+          }
+        }
+        if (s.climb) return
+        // clear of the flight just come off: it can be taken again
+        if (s.guard && !flightsRef.current.some((f) => f.id.slice(1) === s.guard && inFlight(f, s.x, s.z, BODY))) s.guard = ''
         const [nx, nz] = slide(n, s.x, s.z, dx, dz)
         const moved = Math.hypot(nx - s.x, nz - s.z)
         s.x = nx
@@ -320,10 +469,20 @@ export function Walk({ nav, on, onActive, onLeave }: { nav: Nav; on: boolean; on
       s.dx = 0
       s.dy = 0
     }
-    if (import.meta.env.DEV) (window as unknown as { sbWalk?: unknown }).sbWalk = { yaw: s.yaw, pitch: s.pitch, phase: s.phase }
+    if (import.meta.env.DEV) Object.assign(window, { sbWalk: { yaw: s.yaw, pitch: s.pitch, phase: s.phase, x: s.x, z: s.z, base: s.base, floor: floorRef.current, climbing: !!s.climb, flights: flightsRef.current.length, lifts: liftsRef.current.length }, sbWalkGo: (x: number, z: number, yaw: number) => ((s.x = x), (s.z = z), (s.yaw = yaw)) })
     look.set(s.pitch, s.yaw, 0)
     aim.setFromEuler(look)
-    const eyeY = EYE + Math.sin(s.bob) * 0.025
+    const eyeY = s.base + EYE + Math.sin(s.bob) * 0.025
+    // what a key does here, for the screen to say
+    if (s.phase === 'walk') {
+      const lift = liftsRef.current.find((l) => Math.hypot(l.x - s.x, l.z - s.z) < 1.4)
+      if (!lift && s.menu) s.menu = false
+      const hint = s.climb ? '' : s.menu && lift ? `Lift: press ${lift.floors.filter((f) => f !== floorRef.current).map((f) => `${f} for ${floorWord(f)}`).join(', ')}` : lift ? 'E: call the lift' : ''
+      if (hint !== s.hint) {
+        s.hint = hint
+        hintRef.current?.(hint || null)
+      }
+    }
 
     if (s.phase === 'walk') {
       camera.position.set(s.x, eyeY, s.z)

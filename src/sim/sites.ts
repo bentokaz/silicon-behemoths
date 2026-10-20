@@ -1224,7 +1224,7 @@ export const storeysOf = (site: Site): Site[] => (site.upper?.length ? [site, ..
 const roomedOver = (level: Site | undefined, tiles: [number, number][]) => !!level && tiles.every(([x, y]) => gridAt(level, x, y) > 0)
 
 /** How far up a lift on a storey runs: the highest floor its shaft reaches, through every storey above with a room over it. */
-function liftTop(floors: Site[], from: number, item: SiteItem): number {
+export function liftTop(floors: Site[], from: number, item: SiteItem): number {
   const tiles = itemTiles(floors[from], item)
   let top = from
   while (roomedOver(floors[top + 1], tiles)) top++

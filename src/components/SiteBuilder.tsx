@@ -229,9 +229,12 @@ export function SiteBuilder({ siteRef, site: ground, status, children, tools, se
   const [selected, setSelected] = useState(0)
   /** Walking the site at eye height: the builder's own panels stand aside meanwhile. */
   const [walk, setWalk] = useState(false)
-  const endWalk = useCallback(() => setWalk(false), [])
+  const [walkHint, setWalkHint] = useState<string | null>(null)
+  const endWalk = useCallback(() => (setWalk(false), setWalkHint(null)), [])
+  const onWalkFloor = useCallback((f: number) => setFloor(f), [])
   const startWalk = () => {
-    setFloor(0)
+    // the walk starts on the floor in view, or the top one built when a new floor is picked
+    setFloor(Math.min(floorPick, storeys - 1))
     setTool(null)
     setOpen(false)
     setDetail(false)
@@ -681,6 +684,8 @@ export function SiteBuilder({ siteRef, site: ground, status, children, tools, se
             show={show}
             walk={walk}
             onWalkEnd={endWalk}
+            onWalkFloor={onWalkFloor}
+            onWalkHint={setWalkHint}
           />
         </Stage3D>
       </div>
@@ -1025,6 +1030,7 @@ export function SiteBuilder({ siteRef, site: ground, status, children, tools, se
       )}
 
       {!walk && <SiteHint parts={hint} tone={hintTone} help={help} />}
+      {walk && <SiteHint parts={[walkHint ?? `${floorName(floor)}. W A S D to walk, the mouse to look, Shift to run; walk onto stairs or an escalator to change floor`, ...key('cancel'), 'stops walking']} tone={walkHint ? 'live' : undefined} help={help} />}
     </div>
   )
 }

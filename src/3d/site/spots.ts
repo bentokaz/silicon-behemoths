@@ -43,7 +43,7 @@ export const Pose = {
 export type Pose = (typeof Pose)[keyof typeof Pose]
 
 /** What a spot is for. A spot can serve several purposes. */
-export const USE = { seat: 1, station: 2, meet: 4, lunch: 8, coffee: 16, gym: 32, think: 64, look: 128, visit: 256, wait: 512, browse: 1024, queue: 2048, help: 4096, guest: 8192, host: 16384, crew: 32768, press: 65536, front: 131072 } as const
+export const USE = { seat: 1, station: 2, meet: 4, lunch: 8, coffee: 16, gym: 32, think: 64, look: 128, visit: 256, wait: 512, browse: 1024, queue: 2048, help: 4096, guest: 8192, host: 16384, crew: 32768, press: 65536, front: 131072, present: 262144 } as const
 
 interface SpotDef {
   use: number
@@ -170,7 +170,14 @@ const DEFS: Record<SiteKind, Record<string, SpotDef[]>> = {
     treadmill: [s(U.gym, 0, 0.2, 0, Pose.Run, 0, 1.5, { y: 0.19 })],
     weights: [s(U.gym, -0.46, 0.82, 0, Pose.Curl, -0.5, 1)],
     yoga: [s(U.gym, -0.46, 0, 0, Pose.Stretch, -0.5, 0), s(U.gym, 0.46, 0, 0, Pose.Stretch, 0.5, 0)],
-    whiteboard: [s(U.think, 0, 0.42, 0, Pose.Write, 0, 1)],
+    whiteboard: [s(U.think, 0, 0.42, 0, Pose.Write, 0, 1), s(U.present, -0.62, 0.45, Math.PI, Pose.Present, -0.5, 1)],
+    // the foot of the stairs, the lift doors and the foot of an escalator: where people bound upstairs go up
+    // (up the flight, step by step, to the top, where they go on up out of this floor's view)
+    stairs: [s(0, 0, -1.3, 0, Pose.Stand, 0, 2, { y: 2.6, via: [[0, 0.29, 1.35], [0, 1.45, 0.05]] })],
+    escalator: [s(0, 0, -1.8, 0, Pose.Stand, 0, 2.5, { y: 2.6, via: [[0, 0.21, 1.8], [0, 1.45, 0.05]] })],
+    lift: [s(0, 0, 1.25, 0, Pose.Stand, 0, 1.5)],
+    // whoever leads a meeting in the room stands beside the screen, facing the table
+    screen: [s(U.present, 1.15, 0.45, Math.PI, Pose.Present, 1, 1)],
     reception,
     showcase: [s(U.look, 0, 0.86, 0, Pose.Look, 0, 1)],
     aquarium: [s(U.look, -0.4, 0.86, 0, Pose.Look, -0.5, 1)],

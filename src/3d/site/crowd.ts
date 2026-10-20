@@ -122,6 +122,10 @@ export class Body {
   shining = false
   training = false
   carry = false
+  /** Works on a floor above: walks in to the stairs, a lift or an escalator here and goes up it, and comes down it at home time. */
+  upstairs = false
+  /** The day they last went up. */
+  upDay = -1
   bag = false
   quit = false
   dead = false
@@ -189,6 +193,8 @@ export interface StaffEntry {
   e: Employee
   /** Id of the desk they sit at, if they have one. */
   seat?: string
+  /** Works upstairs: the id of the stairs, lift or escalator on this floor they go up by. */
+  climb?: string
 }
 
 /** What someone is up to, in a few words, for the label under the pointer. */
@@ -252,6 +258,8 @@ export class Crowd {
   protected byKey = new Map<string, Spot>()
   protected wanderTiles: number[] = []
   private tables: Spot[][] = []
+  /** Places to stand and present beside a screen or a whiteboard, one taken by whoever leads a meeting in that room. */
+  private podiums: Spot[] = []
 
   /** The meetings going on right now: each table with a team sat at it, and how many of them are there. */
   meetingsNow(): { table: Site['items'][number]; team: number; people: number }[] {
@@ -393,6 +401,7 @@ export class Crowd {
       list.push(s)
     }
     this.tables = [...tables.values()]
+    this.podiums = spots.filter((s) => s.use & USE.present && s.access >= 0)
     this.fronts = spots.filter((s) => s.use & USE.front && s.access >= 0).slice(0, 2)
     this.claims.clear()
     for (const b of this.bodies) {
@@ -526,7 +535,7 @@ export class Crowd {
     const seen = new Set<string>()
     this.hours = life?.hours ?? 'standard'
     let changed = false
-    for (const { e, seat } of list) {
+    for (const { e, seat, climb } of list) {
       seen.add(e.id)
       let b = this.bodies.find((x) => x.kind === Kind.Staff && x.id === e.id && !x.quit)
       if (!b) {
@@ -561,7 +570,8 @@ export class Crowd {
       b.ask = !!e.ask
       b.training = e.trainingUntil !== undefined && e.trainingUntil > day
       b.shining = !!life?.shining.has(e.id)
-      const seatSpot = seat ? (this.byKey.get(`${seat}:0`) ?? null) : null
+      b.upstairs = !!climb
+      const seatSpot = climb ? (this.byKey.get(`${climb}:0`) ?? null) : seat ? (this.byKey.get(`${seat}:0`) ?? null) : null
       if (b.seat !== seatSpot) {
         // moved desks: go and find the new one
         if (b.seat && b.seat.taken === b && b.spot !== b.seat) b.seat.taken = null
@@ -832,6 +842,11 @@ export class Crowd {
     this.plan(b, day)
     const s = b.sched
     if (hour < s[0] || hour >= s[1]) return Act.Home
+    // someone who works upstairs is only seen on the way to the stairs and back
+    if (b.upstairs) {
+      if (b.mode === Mode.Do && b.spot && b.spot === b.seat) b.upDay = day
+      return b.upDay === day ? Act.Away : Act.Desk
+    }
     // the first thing anyone does on their first morning is find their desk
     if (b.seat && b.carry) return Act.Desk
     // a team meets whether or not each of them has a desk yet
@@ -877,6 +892,11 @@ export class Crowd {
     if (b.team < 0 || !this.tables.length) return null
     const table = this.tables[b.team % this.tables.length]
     // the lead takes the first chair; anyone past the last chair, or with no way to walk there, stays at their desk
+    // the lead presents, standing at the room's screen or whiteboard when it has one
+    if (b.teamIndex === 0 && table[0]) {
+      const podium = this.podiums.find((p) => p.room === table[0].room && this.nav.zone[p.access] === this.zoneOf(b))
+      if (podium) return podium
+    }
     const s = table[b.teamIndex]
     return s && s.access >= 0 && this.nav.zone[s.access] === this.zoneOf(b) ? s : null
   }
@@ -946,6 +966,25 @@ export class Crowd {
     }
     const away = want === Act.Home || want === Act.Away
     if (away) {
+      // up the stairs: gone from this floor until home time, when they come back down them and walk out
+      if (b.upstairs && want === Act.Away && b.mode !== Mode.Off) {
+        this.release(b, b.spot)
+        this.release(b, b.goalSpot)
+        this.unclaim(b)
+        b.spot = b.goalSpot = null
+        b.mode = Mode.Off
+        b.act = Act.Away
+        return
+      }
+      if (b.upstairs && want === Act.Home && b.mode === Mode.Off && b.act === Act.Away && b.seat && this.clock >= this.nextOut) {
+        this.nextOut = this.clock + this.outEvery * (0.75 + rnd(b.seed + this.counter++) * 0.5)
+        this.place(b, b.seat)
+        b.mode = Mode.Do
+        b.seat.taken = null
+        b.act = Act.Home
+        this.leave(b)
+        return
+      }
       if (b.mode === Mode.Off) {
         b.act = want
         return
