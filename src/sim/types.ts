@@ -248,6 +248,8 @@ export interface Product {
   marketing: number
   /** Extra hype from a launch event, 0-1. */
   hype: number
+  /** Review points the keynote's hands-on area adds (or takes) once the reviews come in. */
+  pressNudge?: number
   /** Campaign-driven interest per segment, 0-1. */
   buzz: Record<string, number>
   /** Share of units that turn out faulty. */
@@ -582,6 +584,29 @@ export interface GameEvent {
   summary?: string
   /** What happened on stage, for the replay. */
   beats?: { wow: number; reach: number; crew: number; luck: number; seats: number }
+  /** Keynotes: more devices still in development, unveiled after the headline one. */
+  extraIds?: string[]
+  /** Keynotes: the next version of the company's own operating system gets a segment too. */
+  withOs?: boolean
+  /** Keynotes: what the whole night came to, for the close of the replay. */
+  stats?: KeynoteStats
+}
+
+/** One device's showing at a keynote. */
+export interface KeynoteLine {
+  id: string
+  wow: number
+  /** What the hands-on area made of it, 0-100; it nudges the reviews. */
+  press: number
+  preorders: number
+  hype: number
+}
+
+export interface KeynoteStats {
+  viewers: number
+  /** The press's score for the night as a whole, 0-100. */
+  press: number
+  lines: KeynoteLine[]
 }
 
 // ---- stock market

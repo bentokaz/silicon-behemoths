@@ -5,7 +5,7 @@ import { type ReactNode, useState } from 'react'
 import { sfx } from '../audio/sfx'
 import { TYPES, segmentsOf } from '../data/devices'
 import { fmtDate, player, scheduleEvent, setCampaignBudget, startCampaign, stopCampaign } from '../sim/game'
-import { CHANNELS, EVENTS, EVENT_LEAD, OWN_VENUE, channelFit, eventBlocked, hasStage, keynoteReach, nextFair } from '../sim/growth'
+import { CHANNELS, EVENTS, EVENT_LEAD, OWN_VENUE, channelFit, MAX_KEYNOTE_EXTRAS, eventBlocked, extrasBlocked, hasStage, keynoteFor, keynoteReach, nextFair } from '../sim/growth'
 import { type CapId, capOf, capOfChannel, has, lockTip } from '../sim/progress'
 import { openRegions, regionInfo } from '../sim/regions'
 import { venueStats } from '../sim/sites'
@@ -281,7 +281,7 @@ const EVENT_FOR: Record<EventType, string> = {
 }
 
 /** Devices in development that have no keynote booked yet. */
-const unveilable = (g: GameState) => g.products.filter((p) => p.companyId === 'player' && p.status === 'dev' && !g.events.some((e) => e.type === 'keynote' && e.productId === p.id && !e.done))
+const unveilable = (g: GameState) => g.products.filter((p) => p.companyId === 'player' && p.status === 'dev' && !keynoteFor(g, p.id))
 
 /** The form for booking one kind of event, in the drawer. */
 function BookEvent({ type, onClose }: { type: EventType; onClose: () => void }) {
@@ -292,15 +292,19 @@ function BookEvent({ type, onClose }: { type: EventType; onClose: () => void }) 
   const [venue, setVenue] = useState(0)
   const [productId, setProductId] = useState('')
   const [days, setDays] = useState(30)
+  const [extras, setExtras] = useState<string[]>([])
+  const [withOs, setWithOs] = useState(false)
   const pid = inDev.some((p) => p.id === productId) ? productId : inDev[0]?.id
   const product = g.products.find((p) => p.id === pid)
+  const others = type === 'keynote' ? extras.filter((id) => id !== pid && inDev.some((p) => p.id === id)) : []
+  const flip = (id: string) => setExtras((xs) => (xs.includes(id) ? xs.filter((x) => x !== id) : [...xs, id]))
   const ownLocked = type === 'keynote' && !hasStage(g) ? (g.venue ? `Your venue is not ready. ${venueStats(g.venue).problem ?? ''}`.trim() : 'Build a venue of your own first, under Sites, Venue.') : null
   const cost = def.venues[venue].cost
-  const blocked = eventBlocked(g, type, venue, pid) ?? (g.cash < cost ? `Not enough cash: this costs ${money(cost)}.` : null)
+  const blocked = eventBlocked(g, type, venue, pid) ?? (type === 'keynote' ? extrasBlocked(g, pid, others) : null) ?? (g.cash < cost ? `Not enough cash: this costs ${money(cost)}.` : null)
   const fair = nextFair(g.day)
   const when = type === 'keynote' ? (product ? `Release day, ${fmtDate(g.day + product.devDaysLeft)}` : 'Release day') : type === 'expo' ? `${fair.name}, ${fmtDate(fair.day)}` : fmtDate(g.day + days)
   const book = () => {
-    const err = act((s) => scheduleEvent(s, type, venue, pid, days))
+    const err = act((s) => scheduleEvent(s, type, venue, pid, days, others, withOs))
     if (err) return say(err, 'bad')
     sfx.confirm()
     say(`${def.name} booked: ${when}.`)
@@ -351,6 +355,29 @@ function BookEvent({ type, onClose }: { type: EventType; onClose: () => void }) 
         </div>
         <div>
           {type === 'keynote' && inDev.length > 0 && <Choice label="Device" icon="devices" value={pid ?? ''} options={inDev.map((p) => ({ value: p.id, label: p.name }))} onChange={setProductId} />}
+          {type === 'keynote' && inDev.length > 1 && (
+            <div className="mt-2">
+              <div className="label mb-1 px-[9px]">Also unveil (up to {MAX_KEYNOTE_EXTRAS}), each with its own segment</div>
+              <div className="space-y-1">
+                {inDev
+                  .filter((p) => p.id !== pid)
+                  .map((p) => {
+                    const on = others.includes(p.id)
+                    const full = !on && others.length >= MAX_KEYNOTE_EXTRAS
+                    return (
+                      <Option key={p.id} on={on} locked={full ? 'The bill is full' : null} icon="devices" name={p.name} onClick={() => !full && flip(p.id)}>
+                        <span className="text-[11px] text-dim">{fmtDate(g.day + p.devDaysLeft)}</span>
+                      </Option>
+                    )
+                  })}
+              </div>
+            </div>
+          )}
+          {type === 'keynote' && g.os.own && (
+            <div className="mt-2">
+              <Option on={withOs} icon="devices" name={`Preview ${g.os.name} ${g.os.version + 1}`} onClick={() => setWithOs((v) => !v)} />
+            </div>
+          )}
           {(type === 'fanfest' || type === 'devcon') && <Slider label="Days from now" icon="hourglass" value={days} min={EVENT_LEAD} max={180} format={(v) => int(v)} onChange={setDays} />}
           <div className="flex items-baseline justify-between gap-3 py-1">
             <span className="text-[11px] text-dim">

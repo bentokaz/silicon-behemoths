@@ -3,7 +3,7 @@
 import { DAYS_PER_MONTH, DAYS_PER_YEAR, MAX_LEVEL, SUPPLY_LABELS, TRACK_INFO, TRUNK_REQS, featureCost, featureInfo, featuresAtLevels, marketLevel, researchCost } from '../data/catalog'
 import { RIVALS, type RivalSeed, SEGMENTS, TIERS, TYPES, segmentInfo, segmentsOf } from '../data/devices'
 import { TYPE_YEAR, segmentOpen, setEra, startYear, typeOpen, typesArriving } from '../data/eras'
-import { BUZZ_DECAY, CHANNELS, EVENTS, EVENT_LEAD, FAN_CYCLE, OWN_VENUE, campaignDay, hasStage, dailyTickets, eventBlocked, nextFair, productSatisfaction, resolveEvent } from './growth'
+import { BUZZ_DECAY, CHANNELS, EVENTS, EVENT_LEAD, FAN_CYCLE, OWN_VENUE, campaignDay, hasStage, dailyTickets, eventBlocked, extrasBlocked, applyPress, nextFair, productSatisfaction, resolveEvent } from './growth'
 import { INCIDENTS } from './world'
 import { RECALL_DEADLINE, TRADE_CREDIT, TRADE_PULL, REFURB_RETURN, UPDATE_YEARS, WARRANTY_YEARS, canRefurb, careBonus, careSatisfaction, checkRecalls, closeCareMonth, newCare, recallCost, stepCare, warrantyLoad } from './care'
 import { type Goal, checkGoals } from './goals'
@@ -182,6 +182,11 @@ function release(s: GameState, p: Product, c: Company, issues: string[]) {
   p.launchDay = s.day
   p.reviews = makeReviews(s, p, c, s.day, issues)
   p.reviewAvg = p.reviews.reduce((a, r) => a + r.score, 0) / p.reviews.length
+  // what the keynote's hands-on area said colours the reviews
+  if (p.pressNudge) {
+    applyPress(p, p.pressNudge)
+    delete p.pressNudge
+  }
   if (!p.segment) p.segment = bestSegment(p, c, s.day).seg.id
   p.satisfaction = productSatisfaction(p, c.software, 0, 0, false)
   const w = c.isPlayer ? 0.3 : 0.15
@@ -2519,10 +2524,11 @@ export function setCampaignBudget(s: GameState, campaignId: string, monthly: num
 /** The furthest ahead a meetup or a conference can be booked, in days. */
 export const MAX_EVENT_LEAD = 720
 
-export function scheduleEvent(s: GameState, type: EventType, venue: number, productId?: string, daysAhead = 30): string | null {
+export function scheduleEvent(s: GameState, type: EventType, venue: number, productId?: string, daysAhead = 30, extras: string[] = [], withOs = false): string | null {
   if (!lists(EVENTS, type)) return 'There is no such kind of event'
   if (!whole(venue)) return 'Pick a venue'
-  const blocked = locked(s, 'events') ?? eventBlocked(s, type, venue, productId)
+  const keynote = type === 'keynote'
+  const blocked = locked(s, 'events') ?? eventBlocked(s, type, venue, productId) ?? (keynote ? extrasBlocked(s, productId, extras) : null)
   if (blocked) return blocked
   const v = EVENTS[type].venues[venue]
   if (!canAfford(s, v.cost)) return `Not enough cash: the ${v.name.toLowerCase()} costs ${dollars(v.cost)}`
@@ -2530,7 +2536,7 @@ export function scheduleEvent(s: GameState, type: EventType, venue: number, prod
   const lead = clamp(num(daysAhead) ? Math.round(daysAhead) : 30, EVENT_LEAD, MAX_EVENT_LEAD)
   const day = type === 'keynote' ? s.day + (product?.devDaysLeft ?? 0) : type === 'expo' ? nextFair(s.day).day : s.day + lead
   spend(s, v.cost, 'marketing')
-  s.events.push({ id: `v${s.nextId++}`, type, venue, day, productId: type === 'keynote' ? productId : undefined, cost: v.cost, done: false })
+  s.events.push({ id: `v${s.nextId++}`, type, venue, day, productId: keynote ? productId : undefined, cost: v.cost, done: false, ...(keynote && extras.length ? { extraIds: [...extras] } : {}), ...(keynote && withOs && s.os.own ? { withOs: true } : {}) })
   return null
 }
 
