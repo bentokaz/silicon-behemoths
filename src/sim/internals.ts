@@ -1800,6 +1800,10 @@ function layoutTower(g: Gen) {
   const cpuQ = bq1 - boardQ * (small ? 0.36 : 0.26)
   put('chip', 'chip', cpuP - 20, cpuP + 20, cpuQ - 20, cpuQ + 20, 6.6, 9, { specs: ['chip'], label: g.chip.name, figure: 'Processor', v: 2, text: g.chip.name })
   let frontRad = false
+  const odd = io.includes('odd')
+  // a radiator behind the front stands below an optical drive
+  const frontTop = odd ? q1 - 50 : q1
+  const frontMid = (q0 + frontTop) / 2
   const coolIx = s.cooling ?? 0
   const cooler = PC_COOLERS[coolIx] ?? PC_COOLERS[0]
   const low = rMax < 172
@@ -1814,7 +1818,7 @@ function layoutTower(g: Gen) {
     const top = p1 - p0 - front - 10 >= len && !flat && !io.includes('odd')
     const comp = top
       ? put('radiator', 'feature', p1 - front - 6 - len, p1 - front - 6, q1 - 2 - thick, q1 - 2, Math.max(30, rMax / 2 - fan / 2), Math.max(30, rMax / 2 - fan / 2) + fan, { model: 'radiator', label: `${coolIx === 3 ? '360' : '240'} mm radiator`, figure: `${n} fans`, specs: ['cooling'], n, glow: glow('fans'), axis: 1 })
-      : put('radiator', 'feature', p1 - 2 - thick, p1 - 2, (q0 + q1) / 2 - len / 2, (q0 + q1) / 2 + len / 2, rMax / 2 - fan / 2, rMax / 2 + fan / 2, { model: 'radiator', label: `${coolIx === 3 ? '360' : '240'} mm radiator`, figure: `${n} fans, at the front`, specs: ['cooling'], n, glow: glow('fans'), axis: 0, fits: (q1 - q0) >= len })
+      : put('radiator', 'feature', p1 - 2 - thick, p1 - 2, frontMid - len / 2, frontMid + len / 2, rMax / 2 - fan / 2, rMax / 2 + fan / 2, { model: 'radiator', label: `${coolIx === 3 ? '360' : '240'} mm radiator`, figure: `${n} fans, at the front`, specs: ['cooling'], n, glow: glow('fans'), axis: 0, fits: frontTop - q0 >= len })
     comp.text = top ? 'top' : 'front'
     frontRad = !top
     // the two hoses from the block to the radiator
@@ -1830,17 +1834,20 @@ function layoutTower(g: Gen) {
   }
   // ---- the graphics card, out of its slot below the processor
   const gpu = s.gpu ?? 0
-  const slotQ = cpuQ - (small ? 70 : 104)
+  // a lying-down case has the room beside the board, not below it: the card goes there, flat on a riser
+  const slotQ = flat ? bq1 + 6 + [0, 40, 52, 64][s.gpu ?? 0] : cpuQ - (small ? 70 : 104)
+  const ssdQ = flat ? cpuQ - 76 : slotQ
   if (gpu > 0) {
     const len = GPU_LENGTH[gpu]
     const thick = [0, 40, 52, 64][gpu]
     const tall = [0, 112, 126, 138][gpu]
-    const room = p1 - front - 6 - (bp0 - 4)
+    // a radiator behind the front takes its own thickness out of the card's room
+    const room = p1 - (frontRad ? 2 + 52 : front) - 6 - (bp0 - 4)
     put('gpu', 'feature', bp0 - 4, bp0 - 4 + len, slotQ - thick, slotQ, 8, 8 + Math.min(tall, rMax - 10), { model: 'gpu', specs: ['gpu'], label: ['', 'Entry graphics card', 'Performance graphics card', 'Enthusiast graphics card'][gpu], figure: `${len} mm long, ${[0, 2, 2.5, 3.2][gpu]} slots`, v: gpu, n: gpu === 1 ? 2 : 3, glow: glow('gpu'), fits: len <= room && tall <= rMax - 6 })
   }
   // the solid-state drive in its slot between them, under a heat spreader
   // on a small board it goes on the back, behind the tray
-  put('ssd', 'stick', cpuP - 40, cpuP + 40, slotQ + 14, slotQ + 36, small ? 1 : 6.6, small ? 3.8 : 9.4, { specs: ['storage'], label: 'Solid-state drive', figure: storageLabel(s.storage), v: 1, text: storageLabel(s.storage) })
+  put('ssd', 'stick', cpuP - 40, cpuP + 40, ssdQ + 14, ssdQ + 36, small ? 1 : 6.6, small ? 3.8 : 9.4, { specs: ['storage'], label: 'Solid-state drive', figure: storageLabel(s.storage), v: 1, text: storageLabel(s.storage) })
   // ---- the power supply on the floor at the back, under its shroud
   const psu = PSUS[s.psu ?? 1] ?? PSUS[1]
   const sfx = small
@@ -1851,7 +1858,7 @@ function layoutTower(g: Gen) {
   if (shroud) put('shroud', 'feature', p0, p1 - front - 2, q0, q0 + shroud, 0, rMax, { model: 'shroud', label: 'Power-supply shroud', over: true, glow: glow('floor'), layer: 1 })
   // ---- drive bays and the optical drive
   if (io.includes('bays')) for (let i = 0; i < 2; i++) put(`bay${i}`, 'drive', p1 - front - 156, p1 - front - 6, q0 + 6 + i * 30, q0 + 32 + i * 30, rMax / 2 - 51, rMax / 2 + 51, { specs: ['io:bays'], label: 'Hot-swap drive', figure: 'Hard disk', v: 0 })
-  const odd = io.includes('odd')
+  // (odd, the optical drive, is known from the start: a front radiator stays below it)
   if (odd) put('odd', 'drive', p1 - 172, p1 - 2, q1 - 46, q1 - 4, rMax / 2 - 74, rMax / 2 + 74, { specs: ['io:odd'], label: 'Optical drive', v: 1, fits: rMax >= 150 })
   // ---- the fans: intakes behind the front, an exhaust at the back
   // a radiator behind the front brings its own fans
@@ -1873,6 +1880,20 @@ function layoutTower(g: Gen) {
     const end = W(bp0 + GPU_LENGTH[gpu] * 0.7, slotQ + 2, 8 + 90)
     put('cable8', 'cable', 0, 0, 0, 0, 0, 0, { label: 'Graphics power cable', specs: ['psu', 'gpu'], v: 0, n: 5, over: true, path: [psuC, W(bp0 + GPU_LENGTH[gpu] * 0.7, q0 + 70, 80), end] })
     void card
+  }
+  // nothing is drawn through the walls: a part with room to spare is slid back inside, and one that is bigger than
+  // the inside of the case in some direction does not fit (the teardown shows it red, and the issues say so)
+  const inner: [number, number][] = [[x0, x1], [y0, y1], [p0, p1]]
+  for (const comp of g.out) {
+    if (comp.kind === 'cable' || comp.zone !== 'main') continue
+    for (let i = 0; i < 3; i++) {
+      const [lo, hi] = inner[i]
+      const s = comp.box.s[i]
+      if (s > hi - lo + 0.01) {
+        comp.fits = false
+        comp.box.c[i] = (lo + hi) / 2
+      } else comp.box.c[i] = clamp(comp.box.c[i], lo + s / 2, hi - s / 2)
+    }
   }
   // a box round each harness, so that it can be picked like anything else
   for (const comp of g.out) {
