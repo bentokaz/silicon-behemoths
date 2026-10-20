@@ -1105,6 +1105,7 @@ describe('copying a store layout', () => {
   /** A high-street store with a stockroom, glass, a curved forum, paint and its own cladding. */
   function fitted(s: GameState) {
     expect(openStore(s, 1)).toBeNull()
+    s.stores[s.stores.length - 1].site.items.length = 2
     const store = s.stores[s.stores.length - 1]
     const ref = `store:${store.id}`
     // the starter sales floor is tiles 1..12 x 1..9: trim it back and build a stockroom and a round forum
@@ -1136,6 +1137,7 @@ describe('copying a store layout', () => {
     const s = rich()
     const model = fitted(s)
     expect(openStore(s, 2)).toBeNull()
+    s.stores[s.stores.length - 1].site.items.length = 2
     const flagship = s.stores[1]
     expect(placeItem(s, `store:${flagship.id}`, 'forum', 5, 8, 0)).toMatch(/goes in/)
     expect(placeItem(s, `store:${flagship.id}`, 'support', 5, 8, 0)).toBeNull()
@@ -1223,6 +1225,7 @@ describe('copying a store layout', () => {
     const model = fitted(s)
     expect(openStore(s, 0)).toBeNull()
     expect(openStore(s, 2)).toBeNull()
+    for (const st of s.stores.slice(1)) st.site.items.length = 2
     const [, mall, flagship] = s.stores
     const before = JSON.stringify(s.stores)
     // 13 x 11 m of layout (the street tree would be left behind) cannot go in a 10 x 8 m mall unit
@@ -1259,6 +1262,7 @@ describe('copying a store layout', () => {
     expect(openStore(small, 0)).toBeNull()
     expect(openStore(small, 1)).toBeNull()
     const [unit, shop] = small.stores
+    for (const st of small.stores) st.site.items.length = 2
     // cut the shop back to tiles 1..8 x 1..5 (its checkout goes with the part knocked down, so give it another)
     clearZone(small, `store:${shop.id}`, 9, 1, 12, 9)
     clearZone(small, `store:${shop.id}`, 1, 6, 12, 9)
@@ -1302,9 +1306,12 @@ describe('copying a store layout', () => {
     expect(openStore(s, 1, undefined, model.id)).toMatch(/Not enough cash: the plot and the fit-out come to \$[\d,]+/)
     expect(s.cash).toBe(cash)
     expect(s.stores).toHaveLength(3)
-    // without a layout it opens as it always did
+    // without a layout it opens with the standard fit-out, which is charged with the plot
+    s.cash = 5e6
     expect(openStore(s, 1)).toBeNull()
-    expect(s.stores[3].site.items.map((i) => i.kind)).toEqual(['table', 'counter'])
-    expect(s.cash).toBe(cash - SITE_TIERS.store[1].cost)
+    const std = s.stores[3].site.items.map((i) => i.kind)
+    expect(std.slice(0, 2)).toEqual(['table', 'counter'])
+    expect(std.filter((k) => k === 'table').length).toBeGreaterThan(2)
+    expect(s.cash).toBeLessThan(5e6 - SITE_TIERS.store[1].cost)
   })
 })

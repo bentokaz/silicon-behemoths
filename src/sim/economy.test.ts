@@ -131,16 +131,61 @@ describe('stores', () => {
     expect(openStores(s, 0, [s.config.home ?? 'na'], 2)).toBeNull()
     expect(s.stores).toHaveLength(2)
     const [plain, fitted] = s.stores
-    // fill the second with tables and decor
-    const put = (kind: string, x: number, y: number) => fitted.site.items.push({ id: `t${x}-${y}`, kind, x, y, rot: 0 })
-    put('table', 5, 3), put('table', 3, 5), put('demo', 6, 5), put('plant', 1, 1), put('plant', 8, 1), put('logowall', 1, 5), put('tree', 8, 5)
+    // the first is stripped to a table and a checkout; the second keeps the standard fit-out
+    plain.site.items.length = 2
     const t = storeTrade(s, fitted)
     expect(t.profit).toBeGreaterThan(0)
+    expect(storeTrade(s, plain).profit).toBeLessThan(0)
     const m = storeMonth(s, fitted.id)
     expect(m.profit).toBeCloseTo(m.revenue - m.cogs - m.costs, 6)
     expect(storeAdvice(s, plain).map((a) => a.id)).toContain('appeal')
     expect(openStores(s, 0, ['na'], 99)).toMatch(/At most/)
     expect(openStores(s, 0, ['nowhere'], 1)).toMatch(/no such region/)
+  })
+})
+
+describe('store balance', () => {
+  const stocked = () => {
+    const s = game()
+    launch(s, 2e6, 300000)
+    return s
+  }
+  it('a store opened with the standard fit-out and good stock clearly pays its way, at every kind of location', () => {
+    for (const tier of [0, 1, 2]) {
+      const s = stocked()
+      expect(openStores(s, tier, [s.config.home ?? 'na'], 1)).toBeNull()
+      const t = storeTrade(s, s.stores[0])
+      expect(t.stats.open, `tier ${tier}`).toBe(true)
+      // a profit of at least a third of what the rent and wages come to, within a month
+      expect(t.profit, `tier ${tier}`).toBeGreaterThan(t.costs.total * 0.3)
+    }
+  })
+
+  it('loses money with empty shelves, with overstaffing and with poor devices, and says which', () => {
+    const s = stocked()
+    expect(openStores(s, 1, [s.config.home ?? 'na'], 1)).toBeNull()
+    const st = s.stores[0]
+    const good = storeTrade(s, st)
+    expect(good.profit).toBeGreaterThan(0)
+    expect(storeAdvice(s, st, good).map((a) => a.id)).not.toContain('staff')
+    // overstaffed: a support bar and a repair bench per checkout, six times over
+    for (let i = 0; i < 6; i++) st.site.items.push({ id: `x${i}s`, kind: 'support', x: 1 + i * 2, y: 1, rot: 0 }, { id: `x${i}r`, kind: 'repair', x: 1 + i * 2, y: 2, rot: 0 })
+    const staffed = storeTrade(s, st)
+    expect(staffed.costs.wages).toBeGreaterThan(good.costs.wages * 3)
+    // empty shelves
+    const p = s.products.find((x) => x.companyId === 'player')!
+    const stock = p.stock
+    p.stock = 0
+    const empty = storeTrade(s, st)
+    expect(empty.units).toBe(0)
+    expect(empty.profit).toBeLessThan(0)
+    expect(storeAdvice(s, st, empty).map((a) => a.id)).toContain('stock')
+    expect(storeAdvice(s, st, empty).map((a) => a.id)).toContain('staff')
+    p.stock = stock
+    // a device nobody wants
+    p.launchDay -= 3000
+    const poor = storeTrade(s, st)
+    expect(poor.units).toBeLessThan(good.units / 2)
   })
 })
 

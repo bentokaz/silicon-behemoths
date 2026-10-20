@@ -5,7 +5,7 @@
 import { DAYS_PER_MONTH } from '../data/catalog'
 import { bestSegment, lifecycle, tierAverages } from './market'
 import { homeRegion, regionIncome } from './regions'
-import { type StoreStats, TILE_UPKEEP, builtTiles, storeStats, tierOf } from './sites'
+import { STORE_WAGE, type StoreStats, TILE_UPKEEP, builtTiles, storeStats, tierOf } from './sites'
 import { execFx } from './staff'
 import { type GameState, type Product, type Store } from './types'
 
@@ -13,8 +13,8 @@ import { type GameState, type Product, type Store } from './types'
 export const PULL_MIN = 0.35
 /** Share of the people at the door that the least appealing store still lets in. */
 export const DOOR_MIN = 0.6
-/** Visitors who buy a device, in a store of full appeal selling devices people want. */
-export const CONVERSION = 0.04
+/** Visitors who buy a device, in a store of full appeal selling devices people want (6 in 100: shoppers browse far more than they buy, but a store of the right size still pays its way). */
+export const CONVERSION = 0.06
 /** Accessories sold with each device, for each accessory wall up to three. */
 export const ACCESSORY = 6
 
@@ -121,6 +121,6 @@ export function storeAdvice(s: GameState, st: Store, t = storeTrade(s, st)): Sto
   if (t.stocked && t.draw < 0.5) out.push({ id: 'devices', text: 'Visitors are not keen on what is on the shelves: the devices in stock fit their buyers poorly or are old. A newer or better-priced device sells more.' })
   if (t.stocked && t.perUnit > 0 && t.costPerUnit > t.perUnit * 0.85) out.push({ id: 'margin', text: `Each device sold here brings in ${Math.round(t.perUnit)} and cost ${Math.round(t.costPerUnit)} to build: too thin a margin to pay for a shop. Raise prices or build cheaper.` })
   if (t.profit < 0 && t.costs.rent > t.gross * 0.6) out.push({ id: 'rent', text: `Rent is ${Math.round(t.costs.rent / 1e3)}k a month against ${Math.round(Math.max(0, t.gross) / 1e3)}k left after the devices are paid for. ${st.site.tier > 0 ? 'A cheaper site with the same layout, or ' : ''}more visitors (fixtures, awareness) would cover it.` })
-  if (t.profit < 0 && t.costs.wages > t.costs.rent && t.costs.wages > t.gross * 0.4) out.push({ id: 'staff', text: 'Checkouts, support bars and repair benches each need staff: more of them than the store\'s trade needs costs more than it brings in.' })
+  if (t.profit < 0 && t.costs.wages > t.costs.total * 0.4 && t.costs.wages > t.gross * 0.4) out.push({ id: 'staff', text: `Staff cost ${Math.round(t.costs.wages / 1e3)}k a month: every checkout, support bar and repair bench needs someone (${Math.round(STORE_WAGE / 1e3 * 10) / 10}k each), and more of them than the store's trade needs costs more than it brings in.` })
   return out
 }

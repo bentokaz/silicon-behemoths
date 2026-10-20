@@ -369,6 +369,7 @@ describe('people and places', () => {
     startProduct(s, order(s, { quantity: 200000 }))
     tick(s, 80)
     expect(openStore(s, 1)).toBeNull()
+    s.stores[0].site.items.length = 2
     const store = s.stores[0]
     expect(storeStats(store.site).open).toBe(true)
     expect(placeItem(s, `store:${store.id}`, 'table', 5, 5, 0)).toBeNull()
