@@ -40,6 +40,8 @@ import { buildSpots, seatAisles } from './site/spots'
 import { Shoppers, StoreItem } from './site/store'
 import { Batch, CUT_H, Ground, STOREY, Structure, type ViewMode, WALL_T, wallTop } from './site/structure'
 import { Climb, Storeys, holesOn } from './site/storeys'
+import { MeetingLife } from './site/MeetingLife'
+import { tableJoins } from './site/meetings'
 import { planKey } from './site/plankey'
 import { Walk } from './site/walk'
 import { Heartbeat, type Pulse, useTick } from './site/tick'
@@ -249,6 +251,8 @@ const PICK_TALL: Record<string, number> = { otree: 4.4, bamboo: 3.8, tree: 2.2, 
 const BOARD_ROOMS = new Set(['lab', 'eng', 'studio', 'media', 'support', 'server', 'meeting', 'soft'])
 
 interface ItemCtx {
+  /** Office meeting tables: joined to another at the left and right ends. */
+  join?: [boolean, boolean]
   glow: number
   /** Venue: clear height of the hall the item stands in; missing in the open air. */
   ceiling?: number
@@ -291,7 +295,7 @@ function ItemKind({ kind, item, c }: { kind: SiteKind; item: string; c: ItemCtx 
   if (item === 'bamboo') return <Bamboo seed={c.seed} fit={c.fit} />
   // stairs, lifts and escalators look the same in every kind of building
   if (kind !== 'office' && (item === 'stairs' || item === 'lift' || item === 'escalator')) return <Climb kind={item} />
-  if (kind === 'office') return <OfficeItem kind={item} c={{ who: c.who, glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, devices: c.devices, on: c.on, live: c.live, progress: c.progress, busy: c.busy }} />
+  if (kind === 'office') return <OfficeItem kind={item} c={{ who: c.who, glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, devices: c.devices, on: c.on, live: c.live, progress: c.progress, busy: c.busy, join: c.join }} />
   if (kind === 'factory') return <FactoryItem kind={item} c={{ running: !!c.running, flow: c.flow, glow: c.glow, seed: c.seed, fill: c.fill, away: c.away, live: c.live }} />
   if (kind === 'store') return <StoreItem kind={item} c={{ products: c.products, glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, soldOut: c.soldOut }} />
   return <VenueItem kind={item} c={{ glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, crowd: c.show?.crowd ?? 0, cheer: c.show?.cheer ?? false, show: !!c.show, screen: c.show?.screen, products: c.products, aisles: c.aisles, live: c.live, ceiling: c.ceiling }} />
@@ -1210,6 +1214,7 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
     }
     return [Math.max(0.3, reach), n ? STOREY - 0.3 : 99]
   }
+  const joins = useMemo(() => (site.kind === 'office' ? tableJoins(site) : new Map<string, [boolean, boolean]>()), [site, site.rev, site.items.length]) // eslint-disable-line react-hooks/exhaustive-deps
   const ctxFor = (item: { id?: string; kind: string; x?: number; y?: number }, seed: number, flow?: [number, number], glow = M.glow): ItemCtx => {
     const on = shown.get(item.id ?? '')
     return {
@@ -1234,6 +1239,7 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
       aisles: site.kind === 'venue' && 'x' in item ? seatAisles(site, item as SiteItem) : 0,
       ceiling: site.kind === 'venue' && 'x' in item && gridAt(site, (item as SiteItem).x, (item as SiteItem).y) > 0 ? ceilingAt(site, (item as SiteItem).x, (item as SiteItem).y) : undefined,
       sparing,
+      join: item.kind === 'meeting' && item.id ? joins.get(item.id) : undefined,
       fit: item.kind === 'otree' || item.kind === 'bamboo' ? fitOf(item) : undefined,
     }
   }
@@ -1242,7 +1248,7 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
       .map(({ item }) => {
         const who = occupant.get(item.id)
         const on = shown.get(item.id)
-        return `${item.id}:${item.x},${item.y},${item.rot}:${who ? who.look + who.color : liveSeats.has(item.id) ? 'L' : ''}:${line?.linked.has(item.id) ? 1 : 0}${line?.flow.get(item.id)?.join('') ?? ''}${on ? on.devices.map((p) => p.id).join('') + (on.progress ?? '') : ''}${yard.managed.has(item.id) ? 'A' : ''}${site.kind === 'venue' ? seatAisles(site, item) || '' : ''}${item.kind === 'otree' || item.kind === 'bamboo' ? `f${fitOf(item)?.map((v) => v.toFixed(2)).join('/')}` : ''}`
+        return `${item.id}:${item.x},${item.y},${item.rot}:${who ? who.look + who.color : liveSeats.has(item.id) ? 'L' : ''}:${line?.linked.has(item.id) ? 1 : 0}${line?.flow.get(item.id)?.join('') ?? ''}${on ? on.devices.map((p) => p.id).join('') + (on.progress ?? '') : ''}${yard.managed.has(item.id) ? 'A' : ''}${site.kind === 'venue' ? seatAisles(site, item) || '' : ''}${joins.get(item.id)?.join('') ?? ''}${item.kind === 'otree' || item.kind === 'bamboo' ? `f${fitOf(item)?.map((v) => v.toFixed(2)).join('/')}` : ''}`
       })
       .join('|') + `#${Math.round(glow * 10)}${running ? 'r' : ''}${site.kind === 'factory' ? `${Math.round(busy * 5)}${crowdOn ? 'w' : ''}` : ''}${company}${logo?.length ?? 0}${color}${productKey}${soldKey}${liveKinds ? 'v' : ''}${crowdOn ? 'c' : ''}${researching ? 'R' : ''}${showcaseList[0]?.id ?? ''}${staged ? `s${staged.screen?.uuid ?? ''}` : ''}${sparing ? 'S' : ''}${site.kind === 'venue' ? `F${site.floors}` : ''}`
 
@@ -2039,6 +2045,7 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
         )}
         {/* every door has a leaf that swings, whichever way the building is being looked at */}
         <Doors site={standing} crowd={crowd} height={wallHeight(mode)} />
+        {site.kind === 'office' && crowd instanceof Crowd && <MeetingLife site={site} crowd={crowd} office={office} palette={palette} glow={M.glow} height={wallTop(mode)} showText={mode !== 'full'} />}
         {places.length > 0 && office && <RoomBoards places={places} cut={cut} text={(p) => roomText(p.type, p.room)} palette={palette} glow={M.glow} />}
         {office &&
           screens.map((item) => {

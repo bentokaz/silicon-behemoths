@@ -252,6 +252,19 @@ export class Crowd {
   protected byKey = new Map<string, Spot>()
   protected wanderTiles: number[] = []
   private tables: Spot[][] = []
+
+  /** The meetings going on right now: each table with a team sat at it, and how many of them are there. */
+  meetingsNow(): { table: Site['items'][number]; team: number; people: number }[] {
+    const at = new Map<number, { team: number; people: number }>()
+    for (const b of this.bodies) {
+      if (b.act !== Act.Meet || b.mode !== Mode.Do || b.team < 0 || !this.tables.length) continue
+      const t = meetingSlot(b.team, this.tables.length).table
+      const m = at.get(t)
+      if (m) m.people++
+      else at.set(t, { team: b.team, people: 1 })
+    }
+    return [...at].flatMap(([t, m]) => (this.tables[t]?.[0] ? [{ table: this.tables[t][0].item, ...m }] : []))
+  }
   protected keepOff = (tile: number) => this.keepClear[tile] === 1
   private lobby = new Set<number>()
   /** The places behind the reception desks. */
@@ -819,10 +832,11 @@ export class Crowd {
     this.plan(b, day)
     const s = b.sched
     if (hour < s[0] || hour >= s[1]) return Act.Home
-    if (!b.seat) return Act.Wander
     // the first thing anyone does on their first morning is find their desk
-    if (b.carry) return Act.Desk
+    if (b.seat && b.carry) return Act.Desk
+    // a team meets whether or not each of them has a desk yet
     if (hour >= s[10] && hour < s[11]) return Act.Meet
+    if (!b.seat) return Act.Wander
     if (hour >= s[2] && hour < s[3]) return Act.Lunch
     if (hour >= s[8] && hour < s[9]) return Act.Gym
     if ((hour >= s[4] && hour < s[5]) || (hour >= s[6] && hour < s[7])) return Act.Coffee
