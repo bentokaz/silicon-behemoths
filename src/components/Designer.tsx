@@ -347,6 +347,9 @@ function BodyPanel({ simple }: { simple: boolean }) {
       {(!T.noScreen || (type === 'speaker' && body.screen)) && (
         <Group title={type === 'watch' ? 'Watch face' : type === 'tv' || type === 'speaker' || type === 'handheld' ? 'On screen' : 'Wallpaper'}>
           <div className="flex gap-1">
+            <Btn small className="flex-1" active={d.wallpaper < 0} title="Use the wallpaper of your operating system's look" onClick={() => setDraft({ wallpaper: -1 })}>
+              System
+            </Btn>
             {[0, 1, 2, 3, 4, 5].map((i) => (
               <Btn key={i} small className="flex-1" active={d.wallpaper === i} onClick={() => setDraft({ wallpaper: i })}>
                 {i + 1}

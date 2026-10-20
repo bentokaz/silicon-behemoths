@@ -62,14 +62,15 @@ export function panelLook(level: number, lcd: boolean) {
  * `detail` below 1 gives a smaller canvas for thumbnails.
  */
 export function screenTexture(type: DeviceType, wallpaper: number, width: number, height: number, detail = 1, panel?: ScreenInfo, look?: OsLook): THREE.CanvasTexture {
-  const index = ((wallpaper % WALLPAPERS.length) + WALLPAPERS.length) % WALLPAPERS.length
+  // a negative wallpaper means "the system's own": the OS look's wallpaper where there is one, else the first
+  const index = wallpaper < 0 ? 0 : wallpaper % WALLPAPERS.length
   // aspect in 3% steps: close enough that nothing looks stretched, coarse enough to cache
   const step = Math.round(Math.log(width / height) / 0.03)
   // an operating system's look replaces the home screen of the devices that show one
   const kind = OS_SCREEN_OF[type]
   const own = look && kind ? look : undefined
   // the device's own wallpaper wins over the system's default one
-  const os = own ? { ...own, wallpaper: WALLPAPERS[index][0], wallpaper2: WALLPAPERS[index][1], wallStyle: 'linear' as const } : undefined
+  const os = own && wallpaper < 0 ? own : own ? { ...own, wallpaper: WALLPAPERS[index][0], wallpaper2: WALLPAPERS[index][1], wallStyle: 'linear' as const } : undefined
   const key = `${type}|${index}|${step}|${detail < 1 ? 's' : 'l'}|${panel ? `${panel.name}@${panel.hz}:${panel.level ?? ''}` : ''}|${os ? JSON.stringify(os) : ''}`
   const hit = cache.get(key)
   if (hit) {
