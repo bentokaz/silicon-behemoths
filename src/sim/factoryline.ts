@@ -16,7 +16,7 @@
 // line's pace. Then the plant as a whole: shifts, power, the crew's rooms,
 // breakdowns against servicing, and faults against testing.
 import type { Site, SiteItem } from './types'
-import { ITEMS, type Part, ROOFS, type Stage, itemTiles } from './sites'
+import { ITEMS, type Part, ROOFS, SOLAR_ROOF_KW, type Stage, UG_SPAN, itemTiles } from './sites'
 
 /** East, south, west, north as tile steps; a turn of one quarter moves one along. */
 export const DIRS: readonly [number, number][] = [
@@ -152,6 +152,8 @@ export interface PlantReport {
   /** kW wanted by everything on working lines, and kW to be had. */
   demand: number
   supply: number
+  /** kW of that supply from a solar roof over the halls. */
+  solar: number
   /** Share of the wanted power there is, 0-1. */
   power: number
   /** Workers a shift the working lines need, and how many the crew rooms take. */
@@ -334,6 +336,35 @@ function maxFlow(nodes: string[], cap: (id: string) => number, edges: [string, s
   return { total, on }
 }
 
+/** Kits a day the forklifts add to a line: those beside a lane that reaches both a receiving dock and a shipping dock of it. */
+function forkCarry(site: Site, group: SiteItem[]): number {
+  const lanes = new Set(site.items.filter((i) => i.kind === 'lane').map((i) => `${i.x},${i.y}`))
+  if (!lanes.size) return 0
+  const touching = (it: SiteItem) => itemTiles(site, it).flatMap(([x, y]) => DIRS.map(([dx, dy]) => `${x + dx},${y + dy}`))
+  const seen = new Set<string>()
+  let total = 0
+  for (const start of lanes) {
+    if (seen.has(start)) continue
+    const comp = [start]
+    seen.add(start)
+    for (let i = 0; i < comp.length; i++) {
+      const [x, y] = comp[i].split(',').map(Number)
+      for (const [dx, dy] of DIRS) {
+        const k = `${x + dx},${y + dy}`
+        if (lanes.has(k) && !seen.has(k)) {
+          seen.add(k)
+          comp.push(k)
+        }
+      }
+    }
+    const set = new Set(comp)
+    const near = (it: SiteItem) => touching(it).some((k) => set.has(k))
+    if (!group.some((b) => b.kind === 'dock_in' && near(b)) || !group.some((b) => b.kind === 'dock_out' && near(b))) continue
+    for (const it of site.items) if (it.kind === 'forklift' && near(it)) total += ITEMS.factory.forklift.carry ?? 0
+  }
+  return total
+}
+
 /** Every item on every floor of a site. */
 const allItems = (site: Site) => [site, ...(site.upper ?? [])].flatMap((f) => f.items)
 
@@ -349,6 +380,22 @@ function compute(site: Site): LineStats {
   const next = new Map<string, string[]>()
   for (const a of blocks) {
     const ports = portsOf(stageOf(site, a), a.rot)
+    if (a.kind === 'ug_in') {
+      // an underground belt: parts go under whatever lies ahead to the exit facing the same way, up to UG_SPAN tiles on
+      const d = ((a.rot % 4) + 4) % 4
+      let exit: SiteItem | undefined
+      for (let k = 2; k <= UG_SPAN && !exit; k++) {
+        const o = owner.get(`${a.x + DIRS[d][0] * k},${a.y + DIRS[d][1] * k}`)
+        if (o && o.kind === 'ug_out' && ((o.rot % 4) + 4) % 4 === d) exit = o
+      }
+      const x = a.x + 0.5 + DIRS[d][0] * 0.5
+      const y = a.y + 0.5 + DIRS[d][1] * 0.5
+      if (exit) {
+        joints.push({ from: a.id, to: exit.id, x, y, dir: d, ok: true })
+        next.set(a.id, [...(next.get(a.id) ?? []), exit.id])
+      } else joints.push({ from: a.id, x, y, dir: d, ok: false, why: `The underground belt entry has no exit ahead of it: place an exit facing the same way within ${UG_SPAN} tiles.` })
+      continue
+    }
     for (const d of ports.outs) {
       const met = new Map<SiteItem, [number, number][]>()
       for (const [x, y] of faceCells(boxOf(site, a), d)) {
@@ -484,7 +531,7 @@ function compute(site: Site): LineStats {
       for (const a of nodes) for (const b of next.get(a) ?? []) if (onPath.has(b)) edges.push([a, b])
       const sinks = new Set(nodes.filter((id) => stageById(id) === 'out'))
       const flow = maxFlow(nodes, capOf, edges, nodes.filter((id) => stageById(id) === 'in'), sinks)
-      logistics = flow.total
+      logistics = flow.total + forkCarry(site, group)
       // what actually flows at the line's pace: the machines' pace when the belts could carry more
       const pace = Math.min(prod, logistics)
       const k = logistics > 0 ? pace / logistics : 0
@@ -567,7 +614,8 @@ function compute(site: Site): LineStats {
     if (it.kind === 'console' || it.kind === 'qa') watch++
   }
   // a solar roof over the halls
-  if (ROOFS[site.roof]?.id === 'solar') supply += site.grid.filter((n) => n > 0).length * 0.12
+  const solar = ROOFS[site.roof]?.id === 'solar' ? site.grid.filter((n) => n > 0).length * SOLAR_ROOF_KW : 0
+  supply += solar
   const power = demand > 0 ? Math.min(1, supply / demand) : 1
   const crewEff = crew <= housed + FREE_CREW ? 1 : 0.55 + (0.45 * (housed + FREE_CREW)) / crew
   const wear = machines ? wearSum / machines : 0
@@ -590,7 +638,7 @@ function compute(site: Site): LineStats {
   }
   const wages = crew * shifts * SHIFT_WAGE
   const energy = Math.min(demand, supply) * 8 * shifts * KWH
-  const plant: PlantReport = { shifts, demand, supply, power, crew, housed, crewEff, machines, serviced: Math.min(machines, serviced), uptime: 1 - down, rawDefect, caught, scrap, wages, energy, fuel }
+  const plant: PlantReport = { shifts, demand, supply, solar, power, crew, housed, crewEff, machines, serviced: Math.min(machines, serviced), uptime: 1 - down, rawDefect, caught, scrap, wages, energy, fuel }
 
   const caps = zeroCaps()
   for (const l of working.length ? working : lines) for (const k of Object.keys(caps) as CapStage[]) caps[k] += l.caps[k]

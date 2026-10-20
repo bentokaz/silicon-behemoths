@@ -38,6 +38,8 @@ export interface ItemDef {
   /** Factory: power drawn at full output, kW; workers it needs on each shift. */
   kw?: number
   crew?: number
+  /** Factory: kits a day a forklift carries along a lane. */
+  carry?: number
   /** Factory belts: kits a day one tile carries. Receiving docks: kits a day it takes in. */
   belt?: number
   /** Factory: power it supplies (kW). */
@@ -118,6 +120,8 @@ export const ITEMS: Record<SiteKind, Record<string, ItemDef>> = {
     dock_in: d('Receiving dock', 20000, 2, 1, 'Line', ['hall'], 'Raw materials and bought-in parts arrive here: 3,000 kits a day. A line starts at a receiving dock.', { stage: 'in', belt: 3000, kw: 10, crew: 2 }),
     dock_out: d('Shipping dock', 20000, 2, 1, 'Line', ['hall'], 'Finished devices leave here. A line ends at a shipping dock.', { stage: 'out', kw: 10, crew: 2 }),
     conveyor: d('Conveyor', 1200, 1, 1, 'Logistics', ['hall'], 'Carries 2,400 kits a day. Takes parts in at the back or either side.', { stage: 'belt', belt: 2400, kw: 1 }),
+    ug_in: d('Underground belt entry', 2500, 1, 1, 'Logistics', ['hall'], 'Takes parts in at the back or sides and sends them under whatever lies ahead, to an exit facing the same way up to 6 tiles on. Carries 2,400 kits a day.', { stage: 'belt', belt: 2400, kw: 1 }),
+    ug_out: d('Underground belt exit', 2500, 1, 1, 'Logistics', ['hall'], 'Where an underground belt comes up. Place it in line with an entry, facing the same way, within 6 tiles.', { stage: 'belt', belt: 2400, kw: 1 }),
     conveyor_2: d('Fast conveyor', 3500, 1, 1, 'Logistics', ['hall'], 'Carries 6,000 kits a day.', { stage: 'belt', belt: 6000, kw: 2 }),
     conveyor_3: d('Express conveyor', 9000, 1, 1, 'Logistics', ['hall'], 'Carries 15,000 kits a day.', { stage: 'belt', belt: 15000, kw: 4 }),
     splitter: d('Splitter', 6000, 1, 1, 'Logistics', ['hall'], 'Takes parts in at the back and sends them out of its front and both sides, to feed machines in parallel.', { stage: 'split', belt: 15000, kw: 2 }),
@@ -137,7 +141,8 @@ export const ITEMS: Record<SiteKind, Record<string, ItemDef>> = {
     pack: d('Packaging line', 60000, 2, 1, 'Machines', ['hall'], 'Boxes devices. 900 units a day.', { stage: 'pack', cap: 900, run: 300, kw: 40, crew: 1 }),
     rack: d('Storage rack', 5000, 2, 1, 'Storage', ['store', 'hall'], 'Tall shelving for parts.'),
     pallets: d('Pallet stack', 500, 1, 1, 'Storage', ['store', 'hall', OUT], 'Boxes on a pallet.'),
-    forklift: d('Forklift', 18000, 1, 2, 'Storage', ['store', 'hall', OUT], 'Parked, for now.'),
+    forklift: d('Forklift', 18000, 1, 2, 'Storage', ['store', 'hall', OUT], 'Drives a forklift lane touching a dock and a rack or machine, and adds 900 kits a day to what the line can carry.', { carry: 900, kw: 2 }),
+    lane: d('Forklift lane', 300, 1, 1, 'Storage', ['store', 'hall', OUT], 'A painted path for forklifts. Draw it from a dock to racks and machines; a forklift beside it runs it.'),
     console: d('Control desk', 30000, 2, 1, 'Control', ['control'], 'Operators watch the line from here: each desk cuts faults a little and keeps 8 machines from breaking down.', { service: 8 }),
     workshop: d('Maintenance workshop', 45000, 2, 1, 'Control', ['control', 'store', 'crew'], 'Technicians service the machines: each workshop keeps 14 from breaking down.', { service: 14 }),
     qa: d('Inspection bench', 16000, 2, 1, 'Control', ['control'], 'Samples are checked by hand. Each bench cuts faults a little.'),
@@ -1121,6 +1126,35 @@ export function courtyardFor(site: Site, tiles: [number, number][]): Courtyard |
 }
 
 /** Tiles an item covers, given its anchor tile and rotation. */
+/** Longest run of an underground belt, entry to exit, in tiles. */
+export const UG_SPAN = 6
+/** kW of power a tile of solar roof gives on average. */
+export const SOLAR_ROOF_KW = 2.5
+
+/**
+ * A dock stands in the outer wall: moved to the nearest plot edge, a shipping
+ * dock facing out and a receiving dock facing in. Returns the new place.
+ */
+export function snapDock(site: Site, kind: string, x: number, y: number, rot: number): { x: number; y: number; rot: number } {
+  const def = ITEMS[site.kind]?.[kind]
+  if (site.kind !== 'factory' || !def || (kind !== 'dock_in' && kind !== 'dock_out')) return { x, y, rot }
+  const t = tilesOf(def, x, y, rot)
+  const fw = Math.max(...t.map((c) => c[0])) - x + 1
+  const fh = Math.max(...t.map((c) => c[1])) - y + 1
+  // [distance to the edge, outward direction index (east 0, south 1, west 2, north 3)]
+  const outs: [number, number][] = [[x, 2], [site.w - (x + fw), 0], [y, 3], [site.h - (y + fh), 1]]
+  const [, dir] = outs.reduce((a, b) => (b[0] < a[0] ? b : a))
+  const r = kind === 'dock_out' ? dir : (dir + 2) % 4
+  const tr = tilesOf(def, 0, 0, r)
+  const w = Math.max(...tr.map((c) => c[0])) + 1
+  const h = Math.max(...tr.map((c) => c[1])) + 1
+  const cl = (v: number, hi: number) => Math.max(0, Math.min(hi, v))
+  if (dir === 2) return { x: 0, y: cl(y, site.h - h), rot: r }
+  if (dir === 0) return { x: site.w - w, y: cl(y, site.h - h), rot: r }
+  if (dir === 3) return { x: cl(x, site.w - w), y: 0, rot: r }
+  return { x: cl(x, site.w - w), y: site.h - h, rot: r }
+}
+
 export function tilesOf(def: Pick<ItemDef, 'w' | 'h'>, x: number, y: number, rot: number): [number, number][] {
   const turned = rot % 2 === 1
   const w = turned ? def.h : def.w

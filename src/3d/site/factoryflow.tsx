@@ -173,6 +173,64 @@ function Parts({ runs, speed }: { runs: Run[]; speed: number }) {
   )
 }
 
+/** Forklifts driving back and forth along their lane: one instanced mesh, held still when the game is paused. */
+function Forklifts({ site, speed }: { site: Site; speed: number }) {
+  const ref = useRef<THREE.InstancedMesh>(null)
+  const time = useRef(0)
+  const paths = useMemo(() => {
+    const lanes = new Set(site.items.filter((i) => i.kind === 'lane').map((i) => `${i.x},${i.y}`))
+    return site.items
+      .filter((i) => i.kind === 'forklift')
+      .map((f) => {
+        const start = DIRS.map(([dx, dy]) => `${f.x + dx},${f.y + dy}`).concat(`${f.x},${f.y + 2}`).find((k) => lanes.has(k))
+        if (!start) return null
+        // walk the lane away from the forklift, tile by tile, then back
+        const seen = new Set([start])
+        const path = [start]
+        for (let i = 0; i < path.length; i++) {
+          const [x, y] = path[i].split(',').map(Number)
+          for (const [dx, dy] of DIRS) {
+            const k = `${x + dx},${y + dy}`
+            if (lanes.has(k) && !seen.has(k)) {
+              seen.add(k)
+              path.push(k)
+            }
+          }
+        }
+        return path.slice(0, 24).map((k) => k.split(',').map(Number) as [number, number])
+      })
+      .filter((p): p is [number, number][] => !!p)
+  }, [site.items]) // eslint-disable-line react-hooks/exhaustive-deps
+  const m = useMemo(() => new THREE.Matrix4(), [])
+  useFrame((_, dt) => {
+    const mesh = ref.current
+    if (!mesh) return
+    // on the game's clock: paused, speed is 0 and the forklifts stand
+    time.current += Math.min(0.1, dt) * Math.min(4, Math.max(0, speed))
+    paths.forEach((p, i) => {
+      const n = p.length
+      const span = Math.max(1, n - 1)
+      const t = (time.current * 1.2 + i * 1.7) % (span * 2)
+      const u = t < span ? t : span * 2 - t
+      const a = Math.min(n - 1, Math.floor(u))
+      const b = Math.min(n - 1, a + 1)
+      const f = u - a
+      const x = p[a][0] + (p[b][0] - p[a][0]) * f + 0.5 - site.w / 2
+      const z = p[a][1] + (p[b][1] - p[a][1]) * f + 0.5 - site.h / 2
+      m.makeTranslation(x, 0.45, z)
+      mesh.setMatrixAt(i, m)
+    })
+    mesh.instanceMatrix.needsUpdate = true
+  })
+  if (!paths.length) return null
+  return (
+    <instancedMesh key={paths.length} ref={ref} args={[undefined, undefined, paths.length]} castShadow frustumCulled={false} userData={{ live: true }}>
+      <boxGeometry args={[0.6, 0.7, 0.8]} />
+      <meshStandardMaterial color="#e0b23a" roughness={0.5} />
+    </instancedMesh>
+  )
+}
+
 export function FactoryFlow({ site, line, running, speed = 1, labels = true }: { site: Site; line: LineStats; running: boolean; speed?: number; labels?: boolean }) {
   // one pulse for every blocked joint, which share the material
   useFrame(({ clock }) => {
@@ -255,6 +313,7 @@ export function FactoryFlow({ site, line, running, speed = 1, labels = true }: {
       <Arrows arrows={view.arrows} out={false} />
       <Arrows arrows={view.arrows} out />
       {running && <Parts runs={view.runs} speed={speed} />}
+      <Forklifts site={site} speed={speed} />
       <Overlay site={site} line={line} />
     </group>
   )

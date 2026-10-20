@@ -561,6 +561,16 @@ function FactoryModel({ kind, c }: { kind: string; c: FactoryCtx }) {
           ))}
         </>
       )
+    case 'ug_in':
+    case 'ug_out':
+      return (
+        <>
+          <BeltRun len={1} />
+          <B p={[kind === 'ug_in' ? 0.3 : -0.3, 0.2, 0]} s={[0.4, 0.34, 0.9]} c="#3a3d42" r={0.02} rough={0.6} />
+        </>
+      )
+    case 'lane':
+      return <B p={[0, 0.008, 0]} s={[0.94, 0.012, 0.94]} c={YELLOW} r={0} rough={0.8} cast={false} />
     case 'forklift':
       return (
         <>

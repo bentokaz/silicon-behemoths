@@ -22,7 +22,7 @@ import { ACCESSORY, footfall, storeBuyers, storeTrade } from './retail'
 import { contractBlocked, offerContracts, stepContracts } from './contracts'
 import { bayStands, curveAt, curveTiles, onCurve } from './curves'
 import { MAX_MODS, MODULES, type Module, TIER, fixLayout, lineStats, tierOf as machineTier } from './factoryline'
-import { FACADES, FLOOR_COST, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, VENUE_PRESETS, type VenuePreset, rigFloors, venueLayout, RIG_TOP, STOREY_M, tilesOf, climbBlocked, wellsOn, rigNeed, GROUND_ROOMS, GROUND_ONLY, roomTiles, edgeSides, levelOf, blankLevel, linkedLevels, CLIMB, cutAt, type Shape, type ShapeOpts, SHORT_WALL, UNKNOWN_ITEM, areaOf, areaTiles, autoDoor, builtTiles, canPartition, canPlace, courtyardFor, curveFor, defaultGround, doorFits, fillError, gridAt, groundsFor, hasGround, inPlot, isBoundary, itemAllowed, itemAt, itemTiles, mergeRooms, newSite, openRooms, pocketAt, roomOf, rowSpots, shapeCuts, starterLine, storeStats, syncLevels, tidy, tierOf, touching, upkeep, partAt, venueStats, wallAt, zone } from './sites'
+import { FACADES, FLOOR_COST, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, VENUE_PRESETS, type VenuePreset, rigFloors, venueLayout, RIG_TOP, STOREY_M, tilesOf, snapDock, climbBlocked, wellsOn, rigNeed, GROUND_ROOMS, GROUND_ONLY, roomTiles, edgeSides, levelOf, blankLevel, linkedLevels, CLIMB, cutAt, type Shape, type ShapeOpts, SHORT_WALL, UNKNOWN_ITEM, areaOf, areaTiles, autoDoor, builtTiles, canPartition, canPlace, courtyardFor, curveFor, defaultGround, doorFits, fillError, gridAt, groundsFor, hasGround, inPlot, isBoundary, itemAllowed, itemAt, itemTiles, mergeRooms, newSite, openRooms, pocketAt, roomOf, rowSpots, shapeCuts, starterLine, storeStats, syncLevels, tidy, tierOf, touching, upkeep, partAt, venueStats, wallAt, zone } from './sites'
 import { capOfChannel, locked, refreshExecs, siteLocked, stepProgress } from './progress'
 import { EXECS, HEADHUNT_COST, HOURS, TEAM_SPAN, dropFromTeams, execFx, inTraining, monthlySalaries, monthlyStaff, newPolicy, perksCost, refreshCandidates, staffEffects, stepStaff, trainingCost } from './staff'
 import { CHIP_BUDGET, OS_FEATURES, OS_TYPES, chipAdoption, cleanLook, licenceBlocked, licenceInfo, licenceSwitchCost, osRoyalty, osRunCost, releaseNameFor, chipBlocked, chipProjectCost, chipProjectDays, finishChip, newOs, osBlocked, osProjectCost, osProjectDays, osShipQuality, servicesPerMonth, softwareBonus } from './tech'
@@ -1461,7 +1461,13 @@ const quarterTurns = (rot: number) => (num(rot) ? ((Math.round(rot) % 4) + 4) % 
 export function placeItem(s: GameState, ref: string, kind: string, x: number, y: number, rot: number): string | null {
   const site = siteOf(s, ref)
   if (!site) return NO_SITE
-  const turn = quarterTurns(rot)
+  let turn = quarterTurns(rot)
+  if (!site.level && (kind === 'dock_in' || kind === 'dock_out') && Number.isInteger(x) && Number.isInteger(y)) {
+    const sn = snapDock(site, kind, x, y, turn)
+    x = sn.x
+    y = sn.y
+    turn = sn.rot
+  }
   const err = canPlace(site, kind, x, y, turn, wellsFor(s, ref)) ?? siteLocked(s, site.kind, 'item', kind) ?? climbFor(s, ref, kind, tilesOf(ITEMS[site.kind][kind], x, y, turn))
   if (err) return err
   const cost = ITEMS[site.kind][kind].cost
