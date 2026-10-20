@@ -5,6 +5,7 @@ import { sfx } from '../audio/sfx'
 import { DAYS_PER_MONTH } from '../data/catalog'
 import { setEra, startYear } from '../data/eras'
 import { TYPES } from '../data/devices'
+import { inHouseColours } from '../data/palette'
 import { clampPart, isCoverCam, newPart, nextPartId, notchStyle, turnPart } from '../sim/geometry'
 import { migrate, newGame, player, starterDesign, tick } from '../sim/game'
 import { type CapId, type Where, capOf, capOfTab, has, isNear, locked, stepProgress } from '../sim/progress'
@@ -516,7 +517,7 @@ export const useStore = create<Store>((set, get) => {
         meta = opts.variant === 'next' ? { family: freeFamily(g, m ? `${m[1]}${Number(m[2]) + 1}` : `${from.family} 2`, from.variant), variant: from.variant } : { family: freeFamily(g, `${from.family} copy`), variant: "" }
       } else {
         const type = opts.type ?? 'phone'
-        draft = starterDesign(g, type)
+        draft = inHouseColours(starterDesign(g, type), g.products, type)
         const base = player(g).name.split(' ')[0]
         const count = own.filter((p) => p.type === type && !p.variant).length + 1
         meta = { family: freeFamily(g, defaultName(base, type, count)), variant: '' }
@@ -534,7 +535,7 @@ export const useStore = create<Store>((set, get) => {
       const g = get().game
       if (!g || get().draft?.type === type) return
       if (!hasType(g, type)) return get().say(`Your company does not make ${TYPES[type].plural.toLowerCase()} yet. Open that line under Research.`, 'bad')
-      const draft = starterDesign(g, type)
+      const draft = inHouseColours(starterDesign(g, type), g.products, type)
       const base = player(g).name.split(' ')[0]
       const count = g.products.filter((p) => p.companyId === 'player' && p.type === type && !p.variant).length + 1
       set({ draft, simple: readLayout(draft, g), selectedPart: null, past: [], future: [], meta: { family: freeFamily(g, defaultName(base, type, count)), variant: '' } })

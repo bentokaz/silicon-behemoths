@@ -22,6 +22,7 @@ import { hasType } from '../sim/world'
 import { useGame, useStore } from '../store/game'
 import { LaunchPlan, type LaunchState, MarginRow } from './DesignerPlan'
 import { FeatureList } from './FeatureList'
+import { DEVICE_PALETTE, colourName, houseColours } from '../data/palette'
 import { PART_NOTES, featurePart } from '../data/featureParts'
 import { MAX_PRICE } from './format'
 import { Icon, typeIcon } from './icons'
@@ -57,9 +58,20 @@ const storageLabel = (gb: number) => (gb >= 1024 ? `${gb / 1024} TB` : `${gb} GB
 /** The label of an option that is stored in lower case. */
 const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1)
 
+/** The device colours to choose from: the company's own, most recent first, then the named palette in its families. */
+function useDevicePalette() {
+  const products = useGame().products
+  return useMemo(() => {
+    const house = houseColours(products)
+    const named = (hex: string) => ({ hex, name: colourName(hex) })
+    return { house, palette: [{ title: 'Your colours', colours: house.map(named) }, ...DEVICE_PALETTE] }
+  }, [products])
+}
+
 /** A colour: a chip of what is chosen, which opens the swatches and the free picker in place. Once opened it stays open. */
 function ColorPick({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   const [open, setOpen] = useKept<boolean>(`designer:colour:${label}`, false)
+  const { house, palette } = useDevicePalette()
   return (
     <div className="py-1">
       <div className="flex items-center justify-between gap-2">
@@ -70,12 +82,22 @@ function ColorPick({ label, value, onChange }: { label: string; value: string; o
         </button>
       </div>
       {open && (
-        <div className="mt-1 flex items-center gap-[3px]">
-          {SWATCHES.map((c) => (
-            <button key={c} type="button" title={c} aria-label={`${label}: ${c}`} aria-pressed={value === c} onClick={() => onChange(c)} className={`h-6 flex-1 border ${value === c ? 'border-accent' : 'border-line2 hover:border-fg'}`} style={{ background: c }} />
-          ))}
-          <ColorField label={`${label}: any colour`} value={value} onChange={onChange} presets={SWATCHES} className="ml-1" />
-        </div>
+        <>
+          <div className="mt-1 flex items-center gap-[3px]">
+            {SWATCHES.map((c) => (
+              <button key={c} type="button" title={colourName(c) ? `${colourName(c)} ${c}` : c} aria-label={`${label}: ${colourName(c) ?? c}`} aria-pressed={value === c} onClick={() => onChange(c)} className={`h-6 flex-1 border ${value === c ? 'border-accent' : 'border-line2 hover:border-fg'}`} style={{ background: c }} />
+            ))}
+            <ColorField label={`${label}: any colour`} value={value} onChange={onChange} groups={palette} className="ml-1" />
+          </div>
+          {house.length > 0 && (
+            <div className="mt-1 flex items-center gap-[3px]">
+              <span className="w-20 shrink-0 text-[11px] text-faint">Your colours</span>
+              {house.slice(0, 8).map((c) => (
+                <button key={c} type="button" title={`Used on your devices: ${colourName(c) ?? c}`} aria-label={`${label}: your colour ${c}`} aria-pressed={value === c} onClick={() => onChange(c)} className={`h-5 min-w-0 flex-1 border ${value === c ? 'border-accent' : 'border-line2 hover:border-fg'}`} style={{ background: c, maxWidth: 26 }} />
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   )
@@ -646,6 +668,7 @@ function InternalsPanel({ maxBattery }: { maxBattery: number }) {
 // ---------------------------------------------------------------- colours
 
 function ColoursPanel({ preview, setPreview }: { preview: number; setPreview: (i: number) => void }) {
+  const { palette } = useDevicePalette()
   const d = useStore((s) => s.draft!)
   const { setDraft } = useStore.getState()
   const colors = d.colors ?? []
@@ -667,10 +690,10 @@ function ColoursPanel({ preview, setPreview }: { preview: number; setPreview: (i
             </div>
             <div className="mt-1 grid grid-cols-2 gap-2">
               <label className="flex items-center justify-between text-[11px] text-dim">
-                Body <ColorField label={`${c.name || 'Colour'}: body`} value={c.back} presets={SWATCHES} onChange={(v) => (update(i, { back: v }), setPreview(i))} />
+                Body <ColorField label={`${c.name || 'Colour'}: body`} value={c.back} groups={palette} presets={SWATCHES} onChange={(v) => (update(i, { back: v }), setPreview(i))} />
               </label>
               <label className="flex items-center justify-between text-[11px] text-dim">
-                Frame <ColorField label={`${c.name || 'Colour'}: frame`} value={c.frame} presets={SWATCHES} onChange={(v) => (update(i, { frame: v }), setPreview(i))} />
+                Frame <ColorField label={`${c.name || 'Colour'}: frame`} value={c.frame} groups={palette} presets={SWATCHES} onChange={(v) => (update(i, { frame: v }), setPreview(i))} />
               </label>
             </div>
           </div>
