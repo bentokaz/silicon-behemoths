@@ -11,7 +11,7 @@ import type { OfficeLife } from '../../sim/life'
 import { ITEMS, gridAt } from '../../sim/sites'
 import type { Site, SiteItem } from '../../sim/types'
 import { Face, type Palette } from './boards'
-import { campus, dayOf } from './clock'
+import { campus, dayOf, hourOf } from './clock'
 import type { Crowd } from './crowd'
 import { type MeetingNow, type Topic, glassOf, meetingTopic } from './meetings'
 
@@ -63,7 +63,7 @@ export function MeetingLife({ site, crowd, office, palette, glow, height, showTe
     setNow(list)
   })
   const day = dayOf(campus.t)
-  const topics = useMemo(() => new Map<string, Topic>(now.map((m) => [m.table.id, meetingTopic(office, m.team, day)])), [now, office, day])
+  const topics = useMemo(() => new Map<string, Topic>(now.map((m, i) => [m.table.id, meetingTopic(office, m.team, day, Math.floor(hourOf(campus.t) / 3), i)])), [now, office, day])
   const secretRooms = useMemo(() => [...new Set(now.filter((m) => topics.get(m.table.id)?.secret).map((m) => gridAt(site, m.table.x, m.table.y)))].filter((n) => n > 0), [now, topics, site])
   // a room stays in the list once frosted, so its glass can clear rather than vanish
   const all = useMemo(() => [...new Set([...frosted, ...secretRooms])], [frosted, secretRooms])

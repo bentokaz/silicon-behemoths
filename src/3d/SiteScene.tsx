@@ -41,7 +41,7 @@ import { Shoppers, StoreItem } from './site/store'
 import { Batch, CUT_H, Ground, STOREY, Structure, type ViewMode, WALL_T, wallTop } from './site/structure'
 import { Ceilings, Climb, Storeys, holesOn } from './site/storeys'
 import { MeetingLife } from './site/MeetingLife'
-import { tableJoins } from './site/meetings'
+import { meetingChains, tableJoins } from './site/meetings'
 import { planKey } from './site/plankey'
 import { type Flight, type LiftStop, Walk } from './site/walk'
 import { Heartbeat, type Pulse, useTick } from './site/tick'
@@ -1642,7 +1642,7 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
 
   // ---- what the rooms say, and what can be clicked
   const places = useMemo(() => (lively && site.kind === 'office' && mode !== 'full' ? boardPlaces(site, BOARD_ROOMS) : []), [site, site.rev, lively, mode]) // eslint-disable-line react-hooks/exhaustive-deps
-  const meetingTables = useMemo(() => site.items.filter((i) => i.kind === 'meeting'), [site, site.rev]) // eslint-disable-line react-hooks/exhaustive-deps
+  const meetingTables = useMemo(() => meetingChains(site).map((c) => c[0]), [site, site.rev]) // eslint-disable-line react-hooks/exhaustive-deps
   const led = office?.teams.filter((t) => t.leadId && t.members.length >= 2) ?? []
   /** Which of several rooms of one kind this is, so two labs show two different projects. */
   const nth = (roomN: number, type: string) => site.rooms.filter((r) => r.type === type).findIndex((r) => r.n === roomN)
