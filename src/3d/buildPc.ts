@@ -12,8 +12,41 @@ import { cutGeometry, drawComps } from './teardown'
 
 const noPick = (o: THREE.Object3D) => o.traverse((x) => (x.raycast = () => {}))
 
-/** A see-through panel: smoked tempered glass. */
-const glass = () => new THREE.MeshPhysicalMaterial({ color: '#1a1f27', metalness: 0, roughness: 0.04, transparent: true, opacity: 0.2, clearcoat: 1, clearcoatRoughness: 0.03, depthWrite: false, side: THREE.DoubleSide })
+/**
+ * A see-through panel: tinted tempered glass, four millimetres thick. Light passes through it (transmission, with a
+ * smoky tint that deepens with thickness) and the studio's lamps reflect off its clear face, so it reads as a sheet
+ * of glass and never as a missing panel.
+ */
+const glass = () =>
+  new THREE.MeshPhysicalMaterial({ color: '#c9d3df', metalness: 0, roughness: 0.03, transmission: 0.92, thickness: 4, ior: 1.52, attenuationColor: '#8a96a6', attenuationDistance: 12, specularIntensity: 1, clearcoat: 1, clearcoatRoughness: 0.02, envMapIntensity: 1.4, transparent: true, opacity: 1 })
+/** A slab of glass w by h with its rounded corners, its clear face at z = 0 and its back 4 mm in. */
+function glassPane(w: number, h: number, r: number): THREE.Mesh {
+  const geo = slab(w, h, r, 4, 0.6, 2)
+  geo.translate(0, 0, -2)
+  const o = mesh(geo, glass(), false)
+  o.castShadow = false
+  return o
+}
+
+/**
+ * A steel mesh panel: a fine perforated sheet in a solid border, with a dark dust filter just behind it, so that it
+ * reads as mesh (light through it, the parts behind it dimmed) and not as an open frame.
+ */
+function meshPanel(w: number, h: number, r: number, color: string, pitch = 3): THREE.Group {
+  const g = new THREE.Group()
+  const border = Math.min(12, Math.min(w, h) * 0.06)
+  g.add(meshSheet(w - border, h - border, Math.max(0.5, r - border / 2), color, pitch))
+  const steel = new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.7 })
+  for (const [bw, bh, x, y] of [[w, border, 0, h / 2 - border / 2], [w, border, 0, -h / 2 + border / 2], [border, h - 2 * border, w / 2 - border / 2, 0], [border, h - 2 * border, -w / 2 + border / 2, 0]]) {
+    const o = mesh(new THREE.BoxGeometry(bw, bh, 1.6), steel)
+    o.position.set(x, y, -0.4)
+    g.add(o)
+  }
+  const filter = mesh(plate(w - border, h - border, Math.max(0.5, r - border / 2)), new THREE.MeshStandardMaterial({ color: '#07080a', roughness: 1, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide }), false)
+  filter.position.z = -1.6
+  g.add(filter)
+  return g
+}
 
 const holeTex = new Map<string, THREE.CanvasTexture>()
 /** A tiling pattern of round holes as an alpha map: white is metal, black is open. Kept, one for each pattern. */
@@ -26,7 +59,8 @@ function holes(kind: 'round' | 'hex'): THREE.CanvasTexture {
   g.fillStyle = '#fff'
   g.fillRect(0, 0, 64, 64)
   g.fillStyle = '#000'
-  const r = kind === 'hex' ? 12 : 10
+  // about a third open: it reads as a sheet with holes in it, not as holes
+  const r = kind === 'hex' ? 9 : 8
   for (const [x, y] of kind === 'hex' ? [[16, 16], [48, 16], [0, 48], [32, 48], [64, 48]] : [[16, 16], [48, 16], [16, 48], [48, 48]]) {
     g.beginPath()
     if (kind === 'hex') for (let i = 0; i < 6; i++) g.lineTo(x + Math.cos(Math.PI / 6 + (i * Math.PI) / 3) * r, y + Math.sin(Math.PI / 6 + (i * Math.PI) / 3) * r)
@@ -69,6 +103,10 @@ function animateGlow(root: THREE.Object3D, host: THREE.Object3D, d: DeviceDesign
     }
     m.material = mine
   })
+  // the coloured lamp inside a case follows the lighting too
+  const lamps: THREE.PointLight[] = []
+  root.traverse((o) => o.userData.rgbLight && lamps.push(o as THREE.PointLight))
+  const lampK = lamps.map((l) => l.intensity)
   if (rgb.effect === 'static' || !own.size) return
   const a = new THREE.Color(rgb.color)
   const b = new THREE.Color(rgb.color2)
@@ -80,6 +118,7 @@ function animateGlow(root: THREE.Object3D, host: THREE.Object3D, d: DeviceDesign
     if (rgb.effect === 'breathe') {
       const k = 0.25 + 0.75 * (0.5 + 0.5 * Math.sin(t * 2.2))
       for (const m of own.values()) m.emissiveIntensity = 1.8 * k
+      lamps.forEach((l, i) => (l.intensity = lampK[i] * k))
       return
     }
     if (rgb.effect === 'cycle') c.setHSL((hsl.h + t * 0.08) % 1, Math.max(0.6, hsl.s), Math.min(0.6, Math.max(0.45, hsl.l)))
@@ -88,6 +127,7 @@ function animateGlow(root: THREE.Object3D, host: THREE.Object3D, d: DeviceDesign
       m.color.copy(c)
       m.emissive.copy(c)
     }
+    for (const l of lamps) l.color.copy(c)
   }
 }
 
@@ -101,6 +141,8 @@ export function buildTower(d: DeviceDesign, c: Ctx): THREE.Group {
   const m = c.m
   const root = new THREE.Group()
   const pc = caseOf(b)
+  // the panels (mesh, a solid door, a solid front) take the body colour; the chassis round them, the frame colour
+  const panelColor = `#${((m.back as THREE.MeshStandardMaterial).color ?? new THREE.Color('#1b1d21')).getHexString()}`
   const flat = towerForm(b) === 'htpc'
   const lit = rgbOn(b)
   const rgb = rgbOf(b)
@@ -125,7 +167,7 @@ export function buildTower(d: DeviceDesign, c: Ctx): THREE.Group {
   // the inside: powder-coated black walls, and everything the layout puts in it, lit by its RGB
   const inside = new THREE.Group()
   inside.userData.tear = 'hide'
-  const liner = new THREE.MeshStandardMaterial({ color: '#2c2f35', roughness: 0.75, metalness: 0.2 })
+  const liner = new THREE.MeshStandardMaterial({ color: '#33363d', roughness: 0.7, metalness: 0.25 })
   const inner = (w: number, h: number, x: number, y: number, z: number, rx: number, ry: number) => {
     const o = mesh(new THREE.PlaneGeometry(w, h), liner, false)
     o.position.set(x, y, z)
@@ -139,7 +181,21 @@ export function buildTower(d: DeviceDesign, c: Ctx): THREE.Group {
   inner(W - 2 * t, H - 2 * t, 0, 0, -D / 2 + t, 0, 0)
   inner(W - 2 * t, D - 2 * t, 0, H / 2 - t, 0, Math.PI / 2, 0)
   if (!flat) inner(W - 2 * t, D - 2 * t, 0, -H / 2 + t, 0, -Math.PI / 2, 0)
-  if (windowed || openFront) inside.add(drawComps(layoutInternals(d)))
+  if (windowed || openFront) {
+    inside.add(drawComps(layoutInternals(d)))
+    // the case's own lighting: a soft white bar under the roof near the window, and a fill lower down, so that the
+    // card, the cooler and the memory read clearly through it; with RGB on, a coloured wash from the floor as well
+    const span = Math.max(W, H, D)
+    const lamp = (color: string, k: number, x: number, y: number, z: number) => {
+      const o = new THREE.PointLight(color, k * span, span * 0.8, 1)
+      o.position.set(x, y, z)
+      inside.add(o)
+      return o
+    }
+    lamp('#fff4e8', 1.1, flat ? 0 : W * 0.22, flat ? H * 0.3 : H / 2 - Math.min(40, H * 0.1), D * 0.12)
+    lamp('#dfe8f5', 0.45, flat ? 0 : W * 0.2, flat ? -H * 0.2 : -H * 0.15, D * 0.3)
+    if (lit) lamp(rgb.color, 0.9, flat ? 0 : W * 0.15, flat ? -H * 0.3 : -H / 2 + Math.min(60, H * 0.15), 0).userData.rgbLight = true
+  }
   root.add(inside)
 
   // the side panel: smoked glass in a black border, or perforated steel
@@ -148,18 +204,24 @@ export function buildTower(d: DeviceDesign, c: Ctx): THREE.Group {
   const side = new THREE.Group()
   side.userData.tear = 'cover'
   if (pc.side === 'glass') {
-    const pane = mesh(plate(sw, sh, Math.max(0.5, r * 0.6)), glass(), false)
-    pane.castShadow = false
+    const pane = glassPane(sw, sh, Math.max(0.5, r * 0.6))
     const band = 10
     // the black band round the edge of the glass, where it is bonded to its frame
     for (const [w, h, x, y] of [[sw, band, 0, sh / 2 - band / 2], [sw, band, 0, -sh / 2 + band / 2], [band, sh - 2 * band, sw / 2 - band / 2, 0], [band, sh - 2 * band, -sw / 2 + band / 2, 0]]) {
       const o = mesh(new THREE.PlaneGeometry(w, h), darkMatte(), false)
-      o.position.set(x, y, 0.05)
+      // printed on the inner face of the glass, seen through it
+      o.position.set(x, y, -3.9)
       side.add(o)
     }
     side.add(pane)
-  } else if (pc.side === 'mesh') side.add(meshSheet(sw, sh, Math.max(0.5, r * 0.6), '#1b1d21', 4, 'round'))
-  if (windowed) {
+  } else if (pc.side === 'mesh') side.add(meshPanel(sw, sh, Math.max(0.5, r * 0.6), panelColor, 2.6))
+  else {
+    // a solid steel door in the body colour, set into the frame
+    const door = mesh(slab(sw, sh, Math.max(0.5, r * 0.6), 1.2, 0.5, 2), m.back, false)
+    door.position.z = 1.25
+    side.add(door)
+  }
+  if (windowed || pc.side === 'solid') {
     if (flat) {
       side.rotation.x = -Math.PI / 2
       side.position.set(0, H / 2 - 1.2, 0)
@@ -175,9 +237,10 @@ export function buildTower(d: DeviceDesign, c: Ctx): THREE.Group {
   const fh = H - 2 * bevel
   const front = new THREE.Group()
   front.position.z = D / 2 - 0.6
-  if (pc.front === 'mesh') front.add(meshSheet(fw, fh, Math.max(0.5, r - bevel), '#15171a', 3.2))
+  if (pc.front === 'mesh') front.add(meshPanel(fw, fh, Math.max(0.5, r - bevel), panelColor, 2.4))
   else if (pc.front === 'glass') {
-    const pane = mesh(plate(fw, fh, Math.max(0.5, r - bevel)), glass(), false)
+    const pane = glassPane(fw, fh, Math.max(0.5, r - bevel))
+    pane.position.z = 0.6
     front.add(pane)
   } else if (pc.front === 'slats') {
     // wooden slats down the front, with dark mesh behind the gaps
@@ -338,42 +401,69 @@ export function mouseShape(d: DeviceDesign) {
   return { L, n, mExp, height, half, crest, tilt, desk, top, sideX }
 }
 
-function shellGeometry(d: DeviceDesign): THREE.BufferGeometry {
-  const sh = mouseShape(d)
-  const rings = 64
-  const arc = 36
-  const base = 6
-  const pos: number[] = []
-  for (let i = 0; i <= rings; i++) {
-    const t = i / rings
+/**
+ * A piece of the mouse's shell, lofted along its length: the cross-section at each station is the superellipse of
+ * mouseShape, swept from angle `th0` to `th1` (pi is the left foot, pi/2 the crown, 0 the right foot). Rings come
+ * closer together at the nose and the tail, where the shape turns fastest, and the normals are those of the smooth
+ * surface (worked out from its neighbours, not from the facets), so it shades as one moulding.
+ */
+function shellPart(sh: ReturnType<typeof mouseShape>, th0: number, th1: number, arc: number, lift = 0, t0 = 0, t1 = 1): THREE.BufferGeometry {
+  const rings = 120
+  const at = (t: number, th: number) => {
     const z = -sh.L / 2 + t * sh.L
-    const w = sh.half(t)
-    const h = sh.height(t)
-    const cx = sh.crest(t)
+    const cs = Math.cos(th)
+    const sn = Math.sin(th)
+    const s = Math.sign(cs) * Math.pow(Math.abs(cs), 2 / sh.n)
+    const y = sh.desk + Math.max(0.6, sh.height(t) * Math.pow(Math.abs(sn), 2 / sh.mExp) * sh.tilt(s))
+    return new THREE.Vector3(sh.crest(t) + sh.half(t) * s, y, z)
+  }
+  const pos: number[] = []
+  const nor: number[] = []
+  const e = 1e-3
+  for (let i = 0; i <= rings; i++) {
+    // cosine spacing: fine at both ends
+    const u = (1 - Math.cos((i / rings) * Math.PI)) / 2
+    const t = Math.min(1 - e, Math.max(e, t0 + (t1 - t0) * u))
     for (let k = 0; k <= arc; k++) {
-      const th = Math.PI - (k / arc) * Math.PI
-      const cs = Math.cos(th)
-      const sn = Math.sin(th)
-      const s = Math.sign(cs) * Math.pow(Math.abs(cs), 2 / sh.n)
-      pos.push(cx + w * s, sh.desk + Math.max(0.6, h * Math.pow(Math.abs(sn), 2 / sh.mExp) * sh.tilt(s)), z)
+      const th = th0 + ((th1 - th0) * k) / arc
+      const p = at(t, th)
+      const n = new THREE.Vector3().crossVectors(at(t, th + e).sub(at(t, th - e)), at(Math.min(1, t + e), th).sub(at(Math.max(0, t - e), th))).normalize()
+      if (!Number.isFinite(n.x) || n.lengthSq() < 0.5) n.set(0, 1, 0)
+      p.addScaledVector(n, lift)
+      pos.push(p.x, p.y, p.z)
+      nor.push(n.x, n.y, n.z)
     }
-    for (let k = 1; k < base; k++) pos.push(cx + w - (2 * w * k) / base, sh.desk, z)
   }
-  const per = arc + base
   const idx: number[] = []
-  for (let i = 0; i < rings; i++) {
-    for (let k = 0; k < per; k++) {
+  const per = arc + 1
+  for (let i = 0; i < rings; i++)
+    for (let k = 0; k < arc; k++) {
       const a = i * per + k
-      const b2 = i * per + ((k + 1) % per)
-      const c = (i + 1) * per + k
-      const e = (i + 1) * per + ((k + 1) % per)
-      idx.push(a, c, b2, b2, c, e)
+      idx.push(a, a + per, a + 1, a + 1, a + per, a + per + 1)
     }
-  }
   const g = new THREE.BufferGeometry()
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3))
   g.setIndex(idx)
-  g.computeVertexNormals()
+  return g
+}
+
+/** The flat underside: the outline of the foot of the shell, filled. */
+function baseGeometry(sh: ReturnType<typeof mouseShape>): THREE.BufferGeometry {
+  const pts: THREE.Vector2[] = []
+  const n = 64
+  for (let i = 0; i <= n; i++) {
+    const t = Math.min(0.999, Math.max(0.001, i / n))
+    pts.push(new THREE.Vector2(sh.crest(t) + sh.half(t), -sh.L / 2 + t * sh.L))
+  }
+  for (let i = n; i >= 0; i--) {
+    const t = Math.min(0.999, Math.max(0.001, i / n))
+    pts.push(new THREE.Vector2(sh.crest(t) - sh.half(t), -sh.L / 2 + t * sh.L))
+  }
+  const g = new THREE.ShapeGeometry(new THREE.Shape(pts), 1)
+  // lie it down on the desk, facing down
+  g.rotateX(Math.PI / 2)
+  g.translate(0, sh.desk + 0.4, 0)
   return g
 }
 
@@ -391,49 +481,69 @@ export function buildMouse(d: DeviceDesign, c: Ctx): THREE.Group {
   const lit = rgbOn(b)
   const rgb = rgbOf(b)
   const io = d.specs.io ?? []
-  const shell = mesh(shellGeometry(d), c.m.frame)
-  shell.userData.body = true
-  shell.userData.carrier = 'body'
-  root.add(shell)
-  const seam = new THREE.MeshStandardMaterial({ color: '#0a0b0d', roughness: 0.8 })
-  const crestAt = (t: number) => sh.crest(t)
-  const zAt = (t: number) => -sh.L / 2 + t * sh.L
-  // the seam down the middle between the two buttons, and across behind them
-  const along: THREE.Vector3[] = []
-  for (let t = 0.56; t <= 0.985; t += 0.035) along.push(new THREE.Vector3(crestAt(t), sh.top(crestAt(t), zAt(t)) + 0.15, zAt(t)))
-  const wheelT = 0.74
-  const gap = along.filter((p) => Math.abs(p.z - zAt(wheelT)) > 9)
-  const fore = gap.filter((p) => p.z > zAt(wheelT))
-  const aft = gap.filter((p) => p.z < zAt(wheelT))
-  if (fore.length > 1) root.add(ribbon(fore, 0.7, seam))
-  if (aft.length > 1) root.add(ribbon(aft, 0.7, seam))
-  const across: THREE.Vector3[] = []
-  const t0 = 0.56
-  for (let s = -0.86; s <= 0.861; s += 0.086) {
-    const x = crestAt(t0) + s * sh.half(t0)
-    across.push(new THREE.Vector3(x, sh.top(x, zAt(t0)) + 0.15, zAt(t0)))
+  // the shell in three mouldings: the top cover in the body colour, the side skirts in the frame colour, a dark base
+  const SKIRT = 0.62
+  const top = mesh(shellPart(sh, Math.PI - SKIRT, SKIRT, 64, 0, 0, 0.56), c.m.back)
+  const skirtL = mesh(shellPart(sh, Math.PI, Math.PI - SKIRT, 14), c.m.frame)
+  const skirtR = mesh(shellPart(sh, SKIRT, 0, 14), c.m.frame)
+  const baseMat = new THREE.MeshStandardMaterial({ color: '#141518', roughness: 0.8, metalness: 0.1 })
+  const base = mesh(baseGeometry(sh), baseMat, false)
+  for (const o of [top, skirtL, skirtR, base]) {
+    o.userData.body = true
+    o.userData.carrier = 'body'
+    root.add(o)
   }
-  root.add(ribbon(across, 0.7, seam))
-  // the wheel, set into its slot
+  const shell = top
+  const seam = new THREE.MeshStandardMaterial({ color: '#0a0b0d', roughness: 0.8 })
+  const zAt = (t: number) => -sh.L / 2 + t * sh.L
+  // the two main buttons: separate mouldings over the front of the top, split down the middle, a hair proud of it
+  const split = 0.05
+  const buttonL = mesh(shellPart(sh, Math.PI - SKIRT, Math.PI / 2 + split, 30, 0, 0.56, 1), c.m.back)
+  const buttonR = mesh(shellPart(sh, Math.PI / 2 - split, SKIRT, 30, 0, 0.56, 1), c.m.back)
+  root.add(buttonL, buttonR)
+  // the shadow lines round them: down the middle (broken by the wheel), and across behind them
+  const wheelT = 0.74
+  const crestAt = (t: number) => sh.crest(t)
+  const along: THREE.Vector3[] = []
+  for (let t = 0.56; t <= 0.985; t += 0.02) along.push(new THREE.Vector3(crestAt(t), sh.top(crestAt(t), zAt(t)) + 0.05, zAt(t)))
+  const fore = along.filter((p) => p.z > zAt(wheelT) + 9)
+  const aft = along.filter((p) => p.z < zAt(wheelT) - 9)
+  if (fore.length > 1) root.add(ribbon(fore, 1.1, seam))
+  if (aft.length > 1) root.add(ribbon(aft, 1.1, seam))
+  const across: THREE.Vector3[] = []
+  for (let s = -0.8; s <= 0.801; s += 0.05) {
+    const x = crestAt(0.56) + s * sh.half(0.56)
+    across.push(new THREE.Vector3(x, sh.top(x, zAt(0.56)) + 0.05, zAt(0.56)))
+  }
+  root.add(ribbon(across, 0.9, seam))
+  // the wheel, set into its slot: a rubber tyre with a ribbed tread on a hub
   const wz = zAt(wheelT)
   const wx = crestAt(wheelT)
   const wTop = sh.top(wx, wz)
   const wd = Math.min(20, b.height * 0.48)
-  const slot = mesh(plate(9, 20, 3.5), darkMatte(), false)
+  const slot = mesh(plate(9, 22, 3.5), darkMatte(), false)
   slot.rotation.x = -Math.PI / 2
   slot.position.set(wx, wTop + 0.12, wz)
   root.add(slot)
   const wheel = new THREE.Group()
   wheel.position.set(wx, wTop - wd * 0.22, wz)
-  const tyre = mesh(new THREE.CylinderGeometry(wd / 2, wd / 2, 7, 36), rubber('#17181b'))
+  const free = io.includes('free')
+  const tyre = mesh(new THREE.CylinderGeometry(wd / 2, wd / 2, 6.6, 48), free ? new THREE.MeshStandardMaterial({ color: '#9da2a8', roughness: 0.3, metalness: 0.9 }) : rubber('#17181b'))
   tyre.rotation.z = Math.PI / 2
   wheel.add(tyre)
-  for (let i = 0; i < 28; i++) {
-    const an = (i / 28) * Math.PI * 2
-    const rib = mesh(new THREE.BoxGeometry(6.6, 0.6, 0.8), rubber('#0d0e10'), false)
-    rib.position.set(0, Math.sin(an) * wd * 0.5, Math.cos(an) * wd * 0.5)
-    rib.rotation.x = -an
-    wheel.add(rib)
+  const tread = new THREE.InstancedMesh(new THREE.BoxGeometry(5.6, 0.5, 0.7), rubber('#0d0e10'), 32)
+  const m4 = new THREE.Matrix4()
+  for (let i = 0; i < 32; i++) {
+    const an = (i / 32) * Math.PI * 2
+    m4.makeRotationX(-an).setPosition(0, Math.sin(an) * wd * 0.5, Math.cos(an) * wd * 0.5)
+    tread.setMatrixAt(i, m4)
+  }
+  wheel.add(tread)
+  for (const sx of [-1, 1]) {
+    const flange = mesh(new THREE.CylinderGeometry(wd * 0.44, wd * 0.44, 0.4, 32), darkMatte(), false)
+    flange.rotation.z = Math.PI / 2
+    flange.position.x = sx * 3.4
+    wheel.add(flange)
   }
   if (lit && rgb.zones.includes('wheel')) {
     const core = mesh(new THREE.CylinderGeometry(wd * 0.36, wd * 0.36, 7.4, 32), new THREE.MeshStandardMaterial({ color: rgb.color, emissive: rgb.color, emissiveIntensity: 1.8, toneMapped: false }), false)
@@ -442,32 +552,92 @@ export function buildMouse(d: DeviceDesign, c: Ctx): THREE.Group {
     wheel.add(core)
   }
   root.add(wheel)
+  // the sensitivity button behind the wheel, with its three level lamps
+  if (io.includes('dpi')) {
+    const dz = wz - wd * 0.5 - 7
+    const dpi = mesh(slab(7, 9, 2.4, 2, 0.8, 3), c.m.frame)
+    dpi.rotation.x = -Math.PI / 2
+    dpi.position.set(crestAt(0.6), sh.top(crestAt(0.6), dz) + 0.6, dz)
+    root.add(dpi)
+    for (let i = 0; i < 3; i++) {
+      const lamp = mesh(new THREE.CircleGeometry(0.5, 12), new THREE.MeshBasicMaterial({ color: i < 2 ? '#8dffa8' : '#2a2c30', toneMapped: false }), false)
+      lamp.rotation.x = -Math.PI / 2
+      const lx = crestAt(0.6) + 5.5
+      lamp.position.set(lx, sh.top(lx, dz - 3 + i * 3) + 0.2, dz - 3 + i * 3)
+      root.add(lamp)
+    }
+  }
+  // two thumb buttons on the thumb side, set into the skirt
+  if (io.includes('side')) {
+    const y = sh.desk + b.height * 0.42
+    for (const [t, len] of [[0.47, 15], [0.63, 13]] as const) {
+      const z = zAt(t)
+      const x = sh.sideX(y, z, 1)
+      const btn = mesh(slab(len, 6, 2.6, 2.4, 1, 4), c.m.frame)
+      btn.rotation.y = Math.PI / 2
+      // turned to lie along the side, its face outwards
+      btn.position.set(x + 0.4, y, z)
+      root.add(btn)
+    }
+  }
   // the light strips along each lower side, and the glow of the badge
   if (lit && rgb.zones.includes('strip')) {
     const glowMat = new THREE.MeshStandardMaterial({ color: rgb.color, emissive: rgb.color, emissiveIntensity: 1.8, toneMapped: false })
     glowMat.userData.glow = true
     for (const sign of [-1, 1]) {
       const pts: THREE.Vector3[] = []
-      for (let t = 0.12; t <= 0.86; t += 0.06) pts.push(new THREE.Vector3(sh.sideX(sh.desk + 3.2, zAt(t), sign) + sign * 0.15, sh.desk + 3.2, zAt(t)))
+      for (let t = 0.12; t <= 0.86; t += 0.04) pts.push(new THREE.Vector3(sh.sideX(sh.desk + 3.2, zAt(t), sign) + sign * 0.15, sh.desk + 3.2, zAt(t)))
       root.add(ribbon(pts, 1.2, glowMat))
     }
   }
-  // gliding feet under the nose and the tail
+  // underneath: the gliding feet at nose and tail, and the sensor's window with its lens in the middle
   const ptfe = new THREE.MeshStandardMaterial({ color: '#f1f1ee', roughness: 0.25 })
-  for (const t of [0.12, 0.88]) {
+  for (const t of [0.1, 0.9]) {
     const foot = mesh(plate(sh.half(t) * 1.3, 6, 3), ptfe, false)
     foot.rotation.x = Math.PI / 2
     foot.position.set(sh.crest(t), sh.desk - 0.3, zAt(t))
     root.add(foot)
   }
-  // a wired mouse trails its braided cable from the nose
-  if (!io.includes('wireless') && !io.includes('bt')) {
-    const nose = new THREE.Vector3(0, sh.desk + b.height * 0.2, sh.L / 2 - 1)
-    const curve = new THREE.CatmullRomCurve3([nose, nose.clone().add(new THREE.Vector3(0, 2, 25)), nose.clone().add(new THREE.Vector3(14, -2, 70)), new THREE.Vector3(30, sh.desk + 1.8, sh.L / 2 + 140)])
-    const cable = mesh(new THREE.TubeGeometry(curve, 48, 1.8, 10, false), new THREE.MeshStandardMaterial({ color: '#1d1f23', roughness: 0.95 }))
+  const ring = mesh(new THREE.RingGeometry(3.2, 5.6, 32), ptfe, false)
+  ring.rotation.x = Math.PI / 2
+  ring.position.set(sh.crest(0.5), sh.desk - 0.25, zAt(0.5))
+  const lens = mesh(new THREE.CircleGeometry(3.2, 32), new THREE.MeshPhysicalMaterial({ color: '#2a0d10', roughness: 0.1, clearcoat: 1, emissive: '#ff2030', emissiveIntensity: 0.25 }), false)
+  lens.rotation.x = Math.PI / 2
+  lens.position.set(sh.crest(0.5), sh.desk - 0.2, zAt(0.5))
+  root.add(ring, lens)
+  const wireless = io.includes('wireless') || io.includes('bt')
+  if (wireless) {
+    // the power switch under it
+    const sw = mesh(plate(4, 8, 1), darkMatte(), false)
+    sw.rotation.x = Math.PI / 2
+    sw.position.set(sh.crest(0.3), sh.desk - 0.2, zAt(0.3))
+    root.add(sw)
+  }
+  if (io.includes('wireless')) {
+    // the receiver that comes with it, on the desk beside the nose
+    const dongle = new THREE.Group()
+    const body = mesh(slab(14, 8, 2.5, 5, 1, 3), darkPlastic())
+    body.position.z = -2.5
+    const plug = mesh(new THREE.BoxGeometry(12, 4.5, 9), new THREE.MeshStandardMaterial({ color: '#b9bcc2', roughness: 0.35, metalness: 0.9 }))
+    plug.position.set(0, 0, 0)
+    plug.position.y = 6
+    dongle.add(body, plug)
+    dongle.rotation.x = -Math.PI / 2
+    dongle.position.set(b.width * 0.9, sh.desk + 2.5, sh.L * 0.32)
+    root.add(dongle)
+  } else if (!wireless) {
+    // a wired mouse trails its braided cable from the nose, with a strain relief where it leaves
+    const nose = new THREE.Vector3(sh.crest(1), sh.desk + b.height * 0.2, sh.L / 2 - 1)
+    const relief = mesh(new THREE.CylinderGeometry(2.6, 2.2, 7, 20), rubber('#151619'))
+    relief.rotation.x = Math.PI / 2
+    relief.position.copy(nose).add(new THREE.Vector3(0, 0, 3))
+    root.add(relief)
+    const curve = new THREE.CatmullRomCurve3([nose.clone().add(new THREE.Vector3(0, 0, 5)), nose.clone().add(new THREE.Vector3(0, 1, 28)), nose.clone().add(new THREE.Vector3(14, -2, 70)), new THREE.Vector3(30, sh.desk + 1.8, sh.L / 2 + 140)])
+    const cable = mesh(new THREE.TubeGeometry(curve, 64, 1.8, 12, false), new THREE.MeshStandardMaterial({ color: '#1d1f23', roughness: 0.95 }))
     root.add(cable)
   }
-  noPick(root)
+  // only the shell itself answers the pointer, so that a part can be dragged over it
+  root.traverse((x) => !x.userData.body && (x.raycast = () => {}))
   // the placed parts, each brought down onto the curve of the shell where it sits
   const before = new Set(root.children)
   const shown: DeviceDesign = lit && rgb.zones.includes('logo') ? { ...d, parts: d.parts.map((p) => (p.kind === 'logo' ? { ...p, useImage: false } : p)) } : d
