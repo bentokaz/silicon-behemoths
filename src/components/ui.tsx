@@ -1077,7 +1077,7 @@ export function Pick<T extends string | number>({ label, value, options, onChang
 /** A row of filter chips: one is on. Use for a handful of filters ("Needs you", "All"); for many, use `Pick`. */
 export function Filters<T extends string>({ value, options, onChange, label }: { value: T; options: { value: T; label: string; count?: number; alert?: boolean }[]; onChange: (v: T) => void; label?: string }) {
   return (
-    <div role="group" aria-label={label ?? 'Filter'} className="flex min-w-0 items-center gap-1">
+    <div role="group" aria-label={label ?? 'Filter'} className="flex min-w-0 flex-wrap items-center gap-1">
       {options.map((o) => (
         <button key={o.value} type="button" aria-pressed={value === o.value} onClick={() => onChange(o.value)} className={`flex h-8 items-center gap-2 whitespace-nowrap border px-3 text-xs ${value === o.value ? 'border-accent bg-accent/10 text-accent' : 'border-line2 text-dim hover:border-fg hover:text-fg'}`}>
           {o.label}
