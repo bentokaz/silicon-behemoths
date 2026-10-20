@@ -249,6 +249,7 @@ const nameOf = (site: Site, it: SiteItem) => ITEMS[site.kind][it.kind]?.name ?? 
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1)
 const fmt = (n: number) => Math.round(n).toLocaleString('en-US')
 
+const BY_SIG = new Map<string, { grid: string; rooms: string; stats: LineStats }>()
 const MEMO = new WeakMap<Site, { rev: number; items: SiteItem[]; n: number; sig: string; stats: LineStats }>()
 
 /** Works out what a factory floor can produce from which faces meet which, and how the plant around it holds up. */
@@ -256,7 +257,16 @@ export function lineStats(site: Site): LineStats {
   const sig = site.items.map((i) => `${i.x},${i.y},${i.rot},${i.tier ?? 1}${i.mods?.join('') ?? ''}`).join(';') + `|${site.shifts ?? 1}|${site.roof}|${(site.upper ?? []).map((u) => `${u.rev}:${u.items.length}`).join(',')}`
   const m = MEMO.get(site)
   if (m && m.rev === site.rev && m.items === site.items && m.n === site.items.length && m.sig === sig) return m.stats
+  // a copy of a site already worked out (the game state is copied every day): the same answer, without the max-flow again
+  const key = site.items.map((i) => i.id + i.kind).join(';') + sig
+  const seen = BY_SIG.get(key)
+  if (seen && seen.grid === site.grid.join('') && seen.rooms === JSON.stringify(site.rooms)) {
+    MEMO.set(site, { rev: site.rev, items: site.items, n: site.items.length, sig, stats: seen.stats })
+    return seen.stats
+  }
   const stats = compute(site)
+  if (BY_SIG.size > 16) BY_SIG.clear()
+  BY_SIG.set(key, { grid: site.grid.join(''), rooms: JSON.stringify(site.rooms), stats })
   MEMO.set(site, { rev: site.rev, items: site.items, n: site.items.length, sig, stats })
   return stats
 }

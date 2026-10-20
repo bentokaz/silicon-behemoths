@@ -12,12 +12,12 @@ import { ITEMS, itemTiles } from '../../sim/sites'
 import { useFactoryOverlay } from './overlay'
 import type { Site, SiteItem } from '../../sim/types'
 import { PORT_IN, PORT_OUT } from './factory'
-import { B, STEEL } from './kit'
+import { B, Baked, STEEL } from './kit'
 
 const BELT = 0.8
 const SPEED = 0.7
 const GAP = 0.85
-const MAX_PARTS = 1200
+const MAX_PARTS = 6000
 
 /**
  * What rides the line out of each kind of block, so a belt says what it carries: a grey tray of raw parts, a green
@@ -100,19 +100,16 @@ function Bridge({ j, site }: { j: Joint; site: Site }) {
 }
 
 /** A joint where an output meets something it cannot feed. */
+const BLOCK_WALL = new THREE.MeshBasicMaterial({ color: '#e5484d', transparent: true, opacity: 0.5, depthWrite: false })
+const WALL_X = new THREE.BoxGeometry(0.04, 0.5, 0.7)
+const WALL_Z = new THREE.BoxGeometry(0.7, 0.5, 0.04)
+
 function Blocked({ j, site, label }: { j: Joint; site: Site; label: boolean }) {
-  const ref = useRef<THREE.Mesh>(null)
-  useFrame(({ clock }) => {
-    if (ref.current) (ref.current.material as THREE.MeshBasicMaterial).opacity = 0.3 + 0.25 * (0.5 + 0.5 * Math.sin(clock.elapsedTime * 4))
-  })
   const vertical = j.dir % 2 === 1
   return (
     <group position={[j.x - site.w / 2, 0, j.y - site.h / 2]}>
       <mesh geometry={PLANE} material={BLOCK_FLOOR} position={[0, 0.025, 0]} scale={vertical ? [0.9, 1, 0.5] : [0.5, 1, 0.9]} renderOrder={5} userData={{ live: true }} />
-      <mesh ref={ref} position={[0, BELT + 0.15, 0]} renderOrder={5} userData={{ live: true }}>
-        <boxGeometry args={vertical ? [0.7, 0.5, 0.04] : [0.04, 0.5, 0.7]} />
-        <meshBasicMaterial color="#e5484d" transparent opacity={0.5} depthWrite={false} />
-      </mesh>
+      <mesh geometry={vertical ? WALL_Z : WALL_X} material={BLOCK_WALL} position={[0, BELT + 0.15, 0]} renderOrder={5} userData={{ live: true }} />
       {label && (
         <Html position={[0, 2.3, 0]} center zIndexRange={[25, 15]} style={{ pointerEvents: 'none' }}>
           <div className="whitespace-nowrap border border-neg bg-panel/95 px-1.5 py-[2px] text-[10px] font-semibold uppercase tracking-wider text-neg" title={j.why}>
@@ -125,8 +122,10 @@ function Blocked({ j, site, label }: { j: Joint; site: Site; label: boolean }) {
 }
 
 /** Parts riding every working path of the line: one instanced mesh, moved each frame. */
-function Parts({ runs }: { runs: Run[] }) {
+function Parts({ runs, speed }: { runs: Run[]; speed: number }) {
   const ref = useRef<THREE.InstancedMesh>(null)
+  const time = useRef(0)
+  const drawn = useRef(-1)
   const total = Math.min(MAX_PARTS, runs.reduce((a, r) => a + r.n, 0))
   const m = useMemo(() => new THREE.Matrix4(), [])
   const q = useMemo(() => new THREE.Quaternion(), [])
@@ -141,11 +140,16 @@ function Parts({ runs }: { runs: Run[] }) {
     for (const r of runs)
       for (let i = 0; i < r.n && k < total; i++, k++) mesh.setColorAt(k, col.set(CARGO[r.cargo].c))
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+    drawn.current = -1
   }, [runs, total])
-  useFrame(({ clock }) => {
+  useFrame((_, dt) => {
     const mesh = ref.current
     if (!mesh) return
-    const t = clock.elapsedTime * SPEED
+    // the parts ride the game's own clock: paused, they hold still and nothing is recomputed or re-uploaded
+    time.current += Math.min(0.1, dt) * Math.min(4, Math.max(0, speed))
+    if (time.current === drawn.current) return
+    drawn.current = time.current
+    const t = time.current * SPEED
     let k = 0
     for (const r of runs) {
       const cargo = CARGO[r.cargo]
@@ -169,7 +173,11 @@ function Parts({ runs }: { runs: Run[] }) {
   )
 }
 
-export function FactoryFlow({ site, line, running, labels = true }: { site: Site; line: LineStats; running: boolean; labels?: boolean }) {
+export function FactoryFlow({ site, line, running, speed = 1, labels = true }: { site: Site; line: LineStats; running: boolean; speed?: number; labels?: boolean }) {
+  // one pulse for every blocked joint, which share the material
+  useFrame(({ clock }) => {
+    BLOCK_WALL.opacity = 0.3 + 0.25 * (0.5 + 0.5 * Math.sin(clock.elapsedTime * 4))
+  })
   const view = useMemo(() => {
     const byId = new Map(site.items.map((i) => [i.id, i]))
     const stage = (it: SiteItem | undefined) => (it ? ITEMS.factory[it.kind]?.stage : undefined)
@@ -230,24 +238,47 @@ export function FactoryFlow({ site, line, running, labels = true }: { site: Site
       if (len < 0.01) continue
       runs.push({ ax, az, bx, bz, len, n: Math.max(1, Math.round(len / GAP)), cargo: carry.get(j.from) ?? 0, phase: (a.x * 7 + a.y * 3) % 5 })
     }
-    return { bridges, blocked, arrows, runs }
+    const bridgeSig = bridges.map((j) => `${j.x},${j.y},${j.dir}`).join(';')
+    return { bridges, bridgeSig, blocked, arrows, runs }
   }, [site, site.rev, line]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <group>
-      {view.bridges.map((j) => (
-        <Bridge key={`b${j.from}${j.to}`} j={j} site={site} />
-      ))}
+      <Baked sig={view.bridgeSig}>
+        {view.bridges.map((j) => (
+          <Bridge key={`b${j.from}${j.to}`} j={j} site={site} />
+        ))}
+      </Baked>
       {view.blocked.map((j, i) => (
         <Blocked key={`x${j.from}${j.to}`} j={j} site={site} label={labels && i < 12} />
       ))}
-      {view.arrows.map((a, i) => (
-        <mesh key={i} geometry={ARROW} material={a.out ? ARROW_OUT : ARROW_IN} position={[a.x, 0.022, a.z]} rotation-y={Math.atan2(-DIRS[a.dir][1], DIRS[a.dir][0])} renderOrder={4} userData={{ live: true }} />
-      ))}
-      {running && <Parts runs={view.runs} />}
+      <Arrows arrows={view.arrows} out={false} />
+      <Arrows arrows={view.arrows} out />
+      {running && <Parts runs={view.runs} speed={speed} />}
       <Overlay site={site} line={line} />
     </group>
   )
+}
+
+/** The painted arrows of one kind: one instanced mesh, placed once per layout. */
+function Arrows({ arrows, out }: { arrows: { x: number; z: number; dir: number; out: boolean }[]; out: boolean }) {
+  const ref = useRef<THREE.InstancedMesh>(null)
+  const mine = useMemo(() => arrows.filter((a) => a.out === out), [arrows, out])
+  useLayoutEffect(() => {
+    const mesh = ref.current
+    if (!mesh) return
+    const o = new THREE.Object3D()
+    mine.forEach((a, i) => {
+      o.position.set(a.x, 0.022, a.z)
+      o.rotation.set(0, Math.atan2(-DIRS[a.dir][1], DIRS[a.dir][0]), 0)
+      o.updateMatrix()
+      mesh.setMatrixAt(i, o.matrix)
+    })
+    mesh.instanceMatrix.needsUpdate = true
+    mesh.computeBoundingSphere()
+  }, [mine])
+  if (!mine.length) return null
+  return <instancedMesh key={mine.length} ref={ref} args={[ARROW, out ? ARROW_OUT : ARROW_IN, mine.length]} renderOrder={4} userData={{ live: true }} />
 }
 
 /** The rates on the joints, when asked for, and the blocks that hold a line back, marked. */
