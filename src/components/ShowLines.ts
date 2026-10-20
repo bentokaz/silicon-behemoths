@@ -28,3 +28,22 @@ export function pressLines(wow: number, points: string[], name: string): [string
     [`The ${best.toLowerCase()} had better be good: there is not much else in the leaks.`, 'Signal and Noise'],
   ]
 }
+
+/** First impressions from the hands-on area after the show, by the press score (0-100). Made-up outlets. */
+export function handsOnLines(press: number, name: string, best: string): [string, string][] {
+  const b = best.toLowerCase()
+  if (press >= 75)
+    return [
+      [`Ten minutes with ${name} and we did not want to hand it back.`, 'The Circuit'],
+      [`The ${b} is every bit as good as the stage made it look.`, 'Byte Weekly'],
+    ]
+  if (press >= 50)
+    return [
+      [`${name} feels well made. The ${b} is the highlight.`, 'The Circuit'],
+      [`Good in the hand, though we will want more time with it.`, 'Signal and Noise'],
+    ]
+  return [
+    [`${name} did not win the room at the demo tables.`, 'Byte Weekly'],
+    [`The ${b} is fine. Not much else stood out.`, 'Signal and Noise'],
+  ]
+}

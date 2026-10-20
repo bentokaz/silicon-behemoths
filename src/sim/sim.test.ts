@@ -415,6 +415,23 @@ describe('growth and technology', () => {
     expect(s.news.some((n) => n.kind === 'event')).toBe(true)
   })
 
+  it('unveils several devices at one keynote, with figures for each and the press nudging reviews', () => {
+    const s = rich()
+    expect(startProduct(s, order(s))).toBeNull()
+    expect(startProduct(s, order(s, { variant: 'Pro' }))).toBeNull()
+    const [a, b] = mine(s)
+    expect(scheduleEvent(s, 'keynote', 0, a.id, 30, [a.id])).toMatch(/once/)
+    expect(scheduleEvent(s, 'keynote', 0, a.id, 30, [b.id])).toBeNull()
+    expect(scheduleEvent(s, 'keynote', 0, b.id)).toMatch(/already has a keynote/)
+    tick(s, 260)
+    const k = s.events.find((e) => e.type === 'keynote')!
+    expect(k.done).toBe(true)
+    expect(k.stats!.lines.map((l) => l.id)).toEqual([a.id, b.id])
+    expect(k.stats!.viewers).toBeGreaterThan(0)
+    for (const l of k.stats!.lines) expect(l.press).toBeGreaterThanOrEqual(0)
+    expect(s.products.find((p) => p.id === b.id)!.pressNudge).toBeUndefined()
+  })
+
   it('designs a custom chip that devices can use', () => {
     const s = rich()
     expect(startChip(s, 'B1', 0.5, 0.5, 0.5)).toMatch(/hardware engineer/)

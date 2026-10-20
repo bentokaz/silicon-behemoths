@@ -139,6 +139,31 @@ export const VENUE_SEATS = [0, 420, 1400]
 /** How far a keynote carries from a given venue. */
 export const keynoteReach = (s: GameState, venue: number) => (venue === OWN_VENUE && s.venue ? venueStats(s.venue).reach : EVENTS.keynote.venues[venue].reach)
 
+/** The keynote still to come that unveils a device, as its headline or one of the others. */
+export const keynoteFor = (s: GameState, id?: string) => s.events.find((e) => e.type === 'keynote' && !e.done && (e.productId === id || !!e.extraIds?.includes(id ?? '')))
+/** Most devices one keynote unveils besides the headline one. */
+export const MAX_KEYNOTE_EXTRAS = 3
+
+/** Why the other devices cannot join a keynote for `productId`, or null if they can. */
+export function extrasBlocked(s: GameState, productId: string | undefined, extras: string[]): string | null {
+  if (!Array.isArray(extras)) return 'List the other devices'
+  if (extras.length > MAX_KEYNOTE_EXTRAS) return `A keynote unveils at most ${MAX_KEYNOTE_EXTRAS + 1} devices`
+  if (new Set(extras).size !== extras.length || extras.includes(productId ?? '')) return 'Each device appears once'
+  for (const id of extras) {
+    const p = s.products.find((x) => x.id === id)
+    if (!p || p.companyId !== 'player' || p.status !== 'dev') return 'Only your devices still in development can be unveiled'
+    if (keynoteFor(s, id)) return `${p.name} already has a keynote booked`
+  }
+  return null
+}
+
+/** Moves a device's reviews by the hands-on area's verdict; the average follows. */
+export function applyPress(p: Product, nudge: number) {
+  if (!p.reviews?.length || !nudge) return
+  for (const r of p.reviews) r.score = clamp(r.score + nudge, 1, 10)
+  p.reviewAvg = p.reviews.reduce((a, r) => a + r.score, 0) / p.reviews.length
+}
+
 /** Why an event cannot be booked, or null if it can. */
 export function eventBlocked(s: GameState, type: EventType, venue: number, productId?: string): string | null {
   if (!Object.hasOwn(EVENTS, type)) return 'There is no such kind of event'
@@ -146,7 +171,7 @@ export function eventBlocked(s: GameState, type: EventType, venue: number, produ
   if (type === 'keynote') {
     const p = s.products.find((x) => x.id === productId)
     if (!p || p.companyId !== 'player' || p.status !== 'dev') return 'A keynote needs a device that is still in development'
-    if (s.events.some((e) => e.type === 'keynote' && e.productId === productId && !e.done)) return 'This device already has a keynote booked'
+    if (keynoteFor(s, productId)) return 'This device already has a keynote booked'
     if (venue === OWN_VENUE && !hasStage(s)) return s.venue ? 'Your venue is not ready. ' + (venueStats(s.venue).problem ?? '') : 'Build a venue of your own first'
   }
   if (type === 'fanfest' && s.fans < 20e3) return 'You need at least 20,000 fans'
@@ -180,9 +205,29 @@ export function resolveEvent(s: GameState, e: GameEvent): string {
     // a full house at a venue that carries further than any hired hall still cannot make more than total hype
     p.hype = clamp((score / 100) * (0.5 + 0.5 * v.reach), 0, 1)
     addAwareness(s, 0.05 * v.reach * (score / 100))
-    e.beats = { wow, reach: v.reach, crew, luck, seats: e.venue === OWN_VENUE && s.venue ? sumOf(s.venue, 'crowd') : (VENUE_SEATS[e.venue] ?? 0) }
+    const seats = e.venue === OWN_VENUE && s.venue ? sumOf(s.venue, 'crowd') : (VENUE_SEATS[e.venue] ?? 0)
+    e.beats = { wow, reach: v.reach, crew, luck, seats }
+    // the other devices on the bill: each judged on its own, and a strong one lifts the night a little
+    const others = (e.extraIds ?? []).map((id) => s.products.find((x) => x.id === id)).filter((x): x is Product => !!x && x.status !== 'ended')
+    const wows = others.map((x) => clamp(bestSegment(x, me, s.day).u / 1.15, 0, 1))
+    if (others.length) score = Math.min(100, score + 6 * Math.max(0, wows.reduce((a, w) => a + w, 0) / wows.length - 0.4) + 2 * others.length + (e.withOs && s.os.own ? 2 : 0))
+    const viewers = Math.round(seats + 4000 + 400000 * Math.min(1, v.reach) * (0.4 + wow) * (1 + 0.15 * others.length))
+    const lines = [p, ...others].map((x, i) => {
+      const w = i === 0 ? wow : wows[i - 1]
+      const press = Math.round(clamp(100 * (0.6 * w + 0.15 * crew + 0.25 * luck) + (i === 0 ? 0 : -4), 0, 100))
+      const hype = i === 0 ? clamp((score / 100) * (0.5 + 0.5 * v.reach), 0, 1) : clamp((score / 100) * (0.35 + 0.4 * v.reach) * (0.5 + 0.5 * w), 0, 1)
+      x.hype = Math.max(i === 0 ? 0 : x.hype, hype)
+      // the hands-on area: up to about half a point either way on every review, now or when they come in
+      const nudge = ((press - 50) / 50) * 0.5
+      if (x.status !== 'dev') applyPress(x, nudge)
+      else x.pressNudge = nudge
+      const preorders = Math.round((s.fans * (0.01 + 0.06 * w) + viewers * 0.004 * w) * (0.4 + hype) * (i === 0 ? 1 : 0.7))
+      return { id: x.id, wow: w, press, preorders, hype }
+    })
+    p.hype = lines[0].hype
+    e.stats = { viewers, press: Math.round(lines.reduce((a, l) => a + l.press, 0) / lines.length), lines }
     s.fans += s.fans * 0.04 * (score / 100) + 3000 * v.reach * (score / 100)
-    detail = `${p.name} was unveiled at the ${v.name.toLowerCase()}.`
+    detail = others.length ? `${p.name} and ${others.length} more ${others.length === 1 ? 'device were' : 'devices were'} unveiled at the ${v.name.toLowerCase()}.` : `${p.name} was unveiled at the ${v.name.toLowerCase()}.`
   } else if (e.type === 'expo') {
     const quality = mine.length ? mine.reduce((a, p) => a + clamp(bestSegment(p, me, s.day).u, 0, 1.2), 0) / mine.length / 1.2 : 0.2
     score = 100 * (0.4 * v.reach + 0.3 * quality + 0.15 * crew + 0.15 * rand(s))
