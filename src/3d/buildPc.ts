@@ -119,7 +119,7 @@ function animateGlow(root: THREE.Object3D, host: THREE.Object3D, d: DeviceDesign
     const t = performance.now() / 1000
     if (rgb.effect === 'breathe') {
       const k = 0.25 + 0.75 * (0.5 + 0.5 * Math.sin(t * 2.2))
-      for (const m of own.values()) m.emissiveIntensity = 1.8 * k
+      for (const m of own.values()) if (m.emissive) m.emissiveIntensity = 1.8 * k; else m.opacity = 0.32 * k
       lamps.forEach((l, i) => (l.intensity = lampK[i] * k))
       return
     }
@@ -127,7 +127,7 @@ function animateGlow(root: THREE.Object3D, host: THREE.Object3D, d: DeviceDesign
     else c.copy(a).lerp(b, 0.5 + 0.5 * Math.sin(t * 1.6))
     for (const m of own.values()) {
       m.color.copy(c)
-      m.emissive.copy(c)
+      m.emissive?.copy(c)
     }
     for (const l of lamps) l.color.copy(c)
   }
