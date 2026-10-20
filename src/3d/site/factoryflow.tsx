@@ -155,9 +155,11 @@ function Parts({ runs }: { runs: Run[] }) {
 export function FactoryFlow({ site, line, running, labels = true }: { site: Site; line: LineStats; running: boolean; labels?: boolean }) {
   const view = useMemo(() => {
     const byId = new Map(site.items.map((i) => [i.id, i]))
-    const stage = (it: SiteItem) => ITEMS.factory[it.kind]?.stage
-    const bridges = line.joints.filter((j) => j.ok && j.to && stage(byId.get(j.from)!) !== 'belt' && stage(byId.get(j.to)!) !== 'belt')
-    const blocked = line.joints.filter((j) => !j.ok)
+    const stage = (it: SiteItem | undefined) => (it ? ITEMS.factory[it.kind]?.stage : undefined)
+    // an upper floor shows only its own items: joints between machines on another floor are not drawn here
+    const here = (j: { from: string; to?: string | null }) => byId.has(j.from) && (!j.to || byId.has(j.to))
+    const bridges = line.joints.filter((j) => here(j) && j.ok && j.to && stage(byId.get(j.from)) !== 'belt' && stage(byId.get(j.to)) !== 'belt')
+    const blocked = line.joints.filter((j) => here(j) && !j.ok)
     // floor arrows at faces that meet nothing yet: where parts would go in, and where they would come out
     const taken = new Set<string>()
     for (const it of site.items) if (ITEMS[site.kind][it.kind]) for (const [x, y] of itemTiles(site, it)) taken.add(`${x},${y}`)
@@ -189,7 +191,7 @@ export function FactoryFlow({ site, line, running, labels = true }: { site: Site
     for (let pass = 0; pass < order.length + 1; pass++) {
       let moved = false
       for (const j of line.joints) {
-        if (!j.ok || !j.to || !live.has(j.from) || !live.has(j.to) || !carry.has(j.from)) continue
+        if (!here(j) || !j.ok || !j.to || !live.has(j.from) || !live.has(j.to) || !carry.has(j.from)) continue
         const r = Math.max(carry.get(j.from)!, RANK[stage(byId.get(j.to)!)!])
         if ((carry.get(j.to) ?? -1) < r) {
           carry.set(j.to, r)
@@ -200,7 +202,7 @@ export function FactoryFlow({ site, line, running, labels = true }: { site: Site
     }
     const runs: Run[] = []
     for (const j of line.joints) {
-      if (!j.ok || !j.to || !live.has(j.from) || !live.has(j.to)) continue
+      if (!here(j) || !j.ok || !j.to || !live.has(j.from) || !live.has(j.to)) continue
       const a = byId.get(j.from)!
       const b = byId.get(j.to)!
       const [ax, az] = centre(site, a)
