@@ -36,8 +36,13 @@ export function footfall(stats: Pick<StoreStats, 'capacity' | 'appeal'>, traffic
   return { passers: traffic, drawn, capacity: stats.capacity, visitors }
 }
 
-/** Buyers a day out of `visitors`, given how much the devices on the shelves draw on average (0-1.3). */
-export const storeBuyers = (visitors: number, appeal: number, draw: number) => visitors * CONVERSION * appeal * Math.min(1.2, draw)
+/**
+ * Buyers a day out of `visitors`, given how much the devices on the shelves
+ * draw on average (0-1.3). The draw counts by its square root: a shopper who
+ * walked in to look at devices is already half sold, so an ageing device
+ * still sells in a store, if less well than a new one.
+ */
+export const storeBuyers = (visitors: number, appeal: number, draw: number) => visitors * CONVERSION * appeal * Math.min(1.2, Math.sqrt(Math.max(0, draw)))
 
 /** How strongly a device of ours draws a store's visitors today. */
 export const storeDraw = (s: GameState, p: Product) => Math.max(0, Math.min(1.3, bestSegment(p, s.companies[0], s.day).u)) * lifecycle(s.day - p.launchDay)
@@ -74,13 +79,18 @@ export interface StoreTrade {
   costPerUnit: number
 }
 
-/** A store's trade at today's footfall, stock, prices and costs, from the same formula the tick uses. */
-export function storeTrade(s: GameState, st: Store): StoreTrade {
+/**
+ * A store's trade at today's footfall, stock, prices and costs, from the same
+ * formula the tick uses. With `assumeStock`, every device on sale counts as
+ * on the shelves: what the store would make if it never ran out (for a store
+ * not opened yet, or to show what running out costs).
+ */
+export function storeTrade(s: GameState, st: Store, assumeStock = false): StoreTrade {
   const stats = storeStats(st.site)
   const costs = storeCosts(s, st, stats)
   const local = s.regions[st.region] ?? s.regions[homeRegion(s)]
   const flow = stats.open ? footfall(stats, tierOf(st.site).traffic ?? 0, local?.awareness ?? 0) : { passers: tierOf(st.site).traffic ?? 0, drawn: 0, capacity: stats.capacity, visitors: 0 }
-  const stocked = s.products.filter((p) => p.companyId === 'player' && p.status === 'sale' && p.stock > 0)
+  const stocked = s.products.filter((p) => p.companyId === 'player' && p.status === 'sale' && (assumeStock || p.stock > 0))
   const w = stocked.map((p) => storeDraw(s, p))
   const total = w.reduce((a, b) => a + b, 0)
   const draw = stocked.length ? total / stocked.length : 0
@@ -113,7 +123,11 @@ export interface StoreAdvice {
 export function storeAdvice(s: GameState, st: Store, t = storeTrade(s, st)): StoreAdvice[] {
   const out: StoreAdvice[] = []
   if (!t.stats.open) return [{ id: 'closed', text: t.stats.problem ?? 'The store is not trading.' }]
-  if (!t.stocked) out.push({ id: 'stock', text: 'Nothing is in stock: a store with empty shelves sells nothing. Order a production run under Devices.' })
+  if (!t.stocked) out.push({ id: 'stock', text: 'Nothing is in stock: a store with empty shelves sells nothing, and the rent and wages are still paid. Order a production run under Devices, and set a reorder point so it does not run dry again.' })
+  else {
+    const left = s.products.filter((p) => p.companyId === 'player' && p.status === 'sale').reduce((a, p) => a + p.stock, 0)
+    if (t.buyers > 0 && left < t.buyers * s.stores.length * 14) out.push({ id: 'stock', text: `Stock is nearly gone: what is left covers under two weeks of what your stores sell. Order more under Devices before the shelves empty.` })
+  }
   if (t.flow.capacity < t.flow.drawn * 0.9) out.push({ id: 'capacity', text: `${Math.round(t.flow.drawn)} people a day would come in, and the fixtures serve ${Math.round(t.flow.capacity)}. Add display tables (70 each) or demo pods (30) on the sales floor.` })
   const aware = s.regions[st.region]?.awareness ?? 0
   if (aware < 0.3 && t.flow.capacity >= t.flow.drawn * 0.9) out.push({ id: 'awareness', text: `Only ${Math.round(aware * 100)}% of people here know your name, so most walk past. Campaigns in this region bring more of them in.` })

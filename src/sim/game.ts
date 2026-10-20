@@ -18,7 +18,7 @@ import { clampPart, coverScreen, isCoverCam, isFlip } from './geometry'
 import { evaluate, selfieMinDia } from './scoring'
 import { designProblem } from './validate'
 import { cleanRule, defaultReorder, reorderLocked, reordersDue } from './reorder'
-import { ACCESSORY, footfall, storeBuyers } from './retail'
+import { ACCESSORY, footfall, storeBuyers, storeTrade } from './retail'
 import { contractBlocked, offerContracts, stepContracts } from './contracts'
 import { bayStands, curveAt, curveTiles, onCurve } from './curves'
 import { fixLayout, lineStats } from './factoryline'
@@ -33,6 +33,8 @@ import { stockOf, type ChannelId, type Company, type Corner, type CostKey, type 
 // 9: plots of the office grew (old ones are widened, see growPlot); products may reorder by themselves, OSes are licensed, contracts
 export const SAVE_VERSION = 11
 export const RETAIL_CUT = 0.15
+/** Days of the company's own stores' sales held back from retailers, so the stores' shelves are not emptied by the market. */
+export const STORE_RESERVE_DAYS = 14
 
 // ---------------------------------------------------------------- what an action will take
 // Every action checks what it is handed before it touches the game: a number
@@ -1608,9 +1610,9 @@ export function autoLine(s: GameState): string | null {
 
 /** Fixtures of the standard fit-out beyond the first table and the checkout, for each kind of location: tables, then accessory walls and decor. */
 const STANDARD_FIT = [
-  { table: 1, shelf: 1, plant: 2, logowall: 1 },
-  { table: 4, shelf: 2, plant: 4, logowall: 1, tree: 1 },
-  { table: 11, shelf: 3, plant: 8, logowall: 2, tree: 3, counter: 3 },
+  { table: 2, shelf: 1, plant: 2, logowall: 1 },
+  { table: 7, shelf: 2, plant: 5, logowall: 1, tree: 1 },
+  { table: 22, shelf: 3, plant: 10, logowall: 2, tree: 4, counter: 3 },
 ]
 
 /**
@@ -1719,6 +1721,92 @@ export function openStores(s: GameState, tier: number, regions: string[], count:
       const err = openStore(s, tier, r, layoutFrom)
       if (err) return err
     }
+  return null
+}
+
+/** What one new store costs to open: the plot and its fit-out (the standard one, or a copy of `layoutFrom`). Null if that layout cannot be built there. */
+export function storeOpenCost(s: GameState, tier: number, layoutFrom?: string): number | null {
+  const def = SITE_TIERS.store[tier]
+  if (!def) return null
+  const model = layoutFrom ? storeOf(s, layoutFrom) : undefined
+  if (layoutFrom && !model) return null
+  const plan = model ? layoutPlan(s, model.site, newSite('store', tier), false) : null
+  if (plan && (plan.error || !plan.site)) return null
+  return def.cost + (plan ? plan.cost : standardStore(tier).cost)
+}
+
+/** What a store of this kind and layout would make in a month in `region`, if its shelves stay stocked with what is on sale today. */
+export interface StoreOutlook {
+  region: string
+  /** Each store: the month's revenue less the devices' cost, the rent, the upkeep and the wages. */
+  profit: number
+  revenue: number
+  costs: number
+  visitors: number
+  /** Months for the profit to pay back the opening cost; null if it never does. */
+  payback: number | null
+}
+
+/** The same for each open region, best first. */
+export function storeOutlook(s: GameState, tier: number, layoutFrom?: string): StoreOutlook[] {
+  if (!SITE_TIERS.store[tier]) return []
+  const model = layoutFrom ? storeOf(s, layoutFrom) : undefined
+  const plan = model ? layoutPlan(s, model.site, newSite('store', tier), false) : null
+  const site = plan?.site ?? standardStore(tier).site
+  const cost = storeOpenCost(s, tier, layoutFrom) ?? 0
+  return REGIONS.filter((r) => s.regions[r.id]?.open)
+    .map((r) => {
+      const t = storeTrade(s, { id: 'preview', name: '', location: '', region: r.id, site, openedDay: s.day, unitsTotal: 0, monthUnits: 0, lastVisitors: 0 }, true)
+      return { region: r.id, profit: t.profit, revenue: t.revenue, costs: t.costs.total, visitors: t.flow.visitors, payback: t.profit > 0 ? cost / t.profit : null }
+    })
+    .sort((a, b) => b.profit - a.profit)
+}
+
+/** What rebuilding a store to the standard fit-out of its kind of site would cost, and whether it would sell more than it does now. */
+export interface FitOutQuote {
+  error: string | null
+  /** What is charged: the fit-out less what the fittings cleared away sell for. */
+  cost: number
+  build: number
+  resale: number
+  /** Profit a month now and after, with the shelves stocked. */
+  before: number
+  after: number
+  /** True when the fit-out makes clearly more than the store as it stands. */
+  better: boolean
+}
+
+export function fitOutQuote(s: GameState, storeId: string): FitOutQuote {
+  const st = storeOf(s, storeId)
+  const none = { error: 'There is no such store', cost: 0, build: 0, resale: 0, before: 0, after: 0, better: false }
+  if (!st) return none
+  const plan = layoutPlan(s, standardStore(st.site.tier).site, st.site)
+  if (plan.error || !plan.site) return { ...none, error: plan.error ?? 'The standard fit-out does not fit this plot' }
+  const before = storeTrade(s, st, true).profit
+  const after = storeTrade(s, { ...st, site: plan.site }, true).profit
+  return { error: plan.same ? 'This store already has the standard fit-out' : null, cost: plan.cost, build: plan.build, resale: plan.resale, before, after, better: !plan.same && after > before + Math.max(2000, Math.abs(before) * 0.1) }
+}
+
+/**
+ * Rebuild a store to the standard fit-out of its kind of site: a sales floor
+ * with a door, checkouts, tables, accessory walls and plants. Like copying a
+ * layout, what stands there now is cleared and its furniture sold for half
+ * price; the fit-out is charged at what it costs to build.
+ */
+export function fitOutStore(s: GameState, storeId: string): string | null {
+  const st = storeOf(s, storeId)
+  if (!st) return 'There is no such store'
+  const plan = layoutPlan(s, standardStore(st.site.tier).site, st.site)
+  if (plan.error || !plan.site) return plan.error ?? 'The standard fit-out does not fit this plot'
+  if (plan.same) return 'This store already has the standard fit-out'
+  if (!canAfford(s, plan.cost)) return `Not enough cash: the fit-out comes to ${dollars(plan.cost)}`
+  spend(s, plan.build, 'facilities')
+  s.cash += plan.resale
+  s.cur.facilities -= plan.resale
+  reissue(s, plan.site)
+  plan.site.rev = st.site.rev + 1
+  st.site = plan.site
+  news(s, 'finance', `${st.name} was refitted with the standard fit-out.`)
   return null
 }
 
@@ -2071,6 +2159,45 @@ function stepSales(s: GameState) {
   /** Sales weighted by how much each one gets the company noticed. */
   const regionTalk: Record<string, number> = {}
   let mineToday = 0
+  const draw = (p: Product) => clamp(bestSegment(p, me, s.day).u, 0, 1.3) * lifecycle(s.day - p.launchDay)
+
+  // ---- your own stores sell direct, at full price. They are served first:
+  // the warehouse ships to the company's own shelves before it fills
+  // retailers' orders, so a store never stands empty while its devices sell
+  // elsewhere at a retailer's cut.
+  let storeSupport = 0
+  /** What the stores sell of each device in a day, for the stock held back for them. */
+  const held = new Map<string, number>()
+  for (const st of s.stores) {
+    const stats = storeStats(st.site)
+    const def = tierOf(st.site)
+    const local = s.regions[st.region] ?? s.regions[home]
+    spend(s, ((upkeep(st.site) + stats.wages) / DAYS_PER_MONTH) * top.outposts, 'facilities')
+    if (stats.hasSupport) storeSupport++
+    st.lastVisitors = 0
+    if (!stats.open) continue
+    const visitors = footfall(stats, def.traffic ?? 0, local.awareness).visitors
+    st.lastVisitors = Math.round(visitors)
+    addAwareness(s, (visitors / 3e6) * gain, st.region)
+    const stocked = onSale.filter((p) => p.companyId === 'player' && p.stock > 0)
+    if (!stocked.length) continue
+    const w = stocked.map(draw)
+    const total = w.reduce((a, b) => a + b, 0)
+    if (total <= 0) continue
+    const buyers = storeBuyers(visitors, stats.appeal, total / stocked.length)
+    stocked.forEach((p, i) => {
+      held.set(p.id, (held.get(p.id) ?? 0) + (buyers * w[i]) / total)
+      const units = Math.floor((buyers * w[i]) / total + rand(s))
+      const sold = sell(s, p, me, units, p.segment ?? 'store', true, regionIncome(s, st.region))
+      if (!sold) return
+      mineToday += sold
+      regionUnits[st.region] = (regionUnits[st.region] ?? 0) + sold
+      st.unitsTotal += sold
+      st.monthUnits += sold
+      // accessories ride along with each device sold
+      earn(s, sold * ACCESSORY * Math.min(stats.shelves, 3))
+    })
+  }
 
   // ---- every segment in every region chooses between everything on sale for its device type
   for (const seg of SEGMENTS) {
@@ -2111,14 +2238,15 @@ function stepSales(s: GameState) {
       const whole = Math.floor(p.carry)
       if (whole <= 0) return
       const c = makers[i]
-      const sold = sell(s, p, c, whole, seg.id, false, c.isPlayer ? kept[i] / alloc[i] : 1)
+      // the stores' own shelves are kept stocked: retailers get what is left after them
+      const room = c.isPlayer ? Math.max(0, p.stock - Math.ceil((held.get(p.id) ?? 0) * STORE_RESERVE_DAYS)) : whole
+      const sold = sell(s, p, c, Math.min(whole, room), seg.id, false, c.isPlayer ? kept[i] / alloc[i] : 1)
       p.carry -= Math.min(p.carry, whole)
       if (c.isPlayer) mineToday += sold
     })
   }
 
   const mine = onSale.filter((p) => p.companyId === 'player' && p.stock > 0)
-  const draw = (p: Product) => clamp(bestSegment(p, me, s.day).u, 0, 1.3) * lifecycle(s.day - p.launchDay)
 
   // ---- fans buy again, and line up for anything new
   let refurbishing: boolean | undefined
@@ -2146,38 +2274,6 @@ function stepSales(s: GameState) {
           s.care.month.refurbIncome += back
         }
       }
-    })
-  }
-
-  // ---- your own stores sell direct, at full price
-  let storeSupport = 0
-  for (const st of s.stores) {
-    const stats = storeStats(st.site)
-    const def = tierOf(st.site)
-    const local = s.regions[st.region] ?? s.regions[home]
-    spend(s, ((upkeep(st.site) + stats.wages) / DAYS_PER_MONTH) * top.outposts, 'facilities')
-    if (stats.hasSupport) storeSupport++
-    st.lastVisitors = 0
-    if (!stats.open) continue
-    const visitors = footfall(stats, def.traffic ?? 0, local.awareness).visitors
-    st.lastVisitors = Math.round(visitors)
-    addAwareness(s, (visitors / 3e6) * gain, st.region)
-    const stocked = mine.filter((p) => p.stock > 0)
-    if (!stocked.length) continue
-    const w = stocked.map(draw)
-    const total = w.reduce((a, b) => a + b, 0)
-    if (total <= 0) continue
-    const buyers = storeBuyers(visitors, stats.appeal, total / stocked.length)
-    stocked.forEach((p, i) => {
-      const units = Math.floor((buyers * w[i]) / total + rand(s))
-      const sold = sell(s, p, me, units, p.segment ?? 'store', true, regionIncome(s, st.region))
-      if (!sold) return
-      mineToday += sold
-      regionUnits[st.region] = (regionUnits[st.region] ?? 0) + sold
-      st.unitsTotal += sold
-      st.monthUnits += sold
-      // accessories ride along with each device sold
-      earn(s, sold * ACCESSORY * Math.min(stats.shelves, 3))
     })
   }
 

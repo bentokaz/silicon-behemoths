@@ -19,6 +19,7 @@ import { type Product, SUBS } from '../sim/types'
 import { useGame, useStore } from '../store/game'
 import type { IconName } from './icons'
 import { specLines, thumbKey } from './Inspector'
+import { clockText, pressLines } from './ShowLines'
 import { Btn, Head, IconBtn, Lead, Meter, int, pct, price, reducedMotion, useLayer } from './ui'
 
 type Phase = 'doors' | 'dark' | 'walkon' | 'reveal' | 'specs' | 'price' | 'available' | 'verdict'
@@ -54,6 +55,59 @@ interface Deck {
   available: string
   where: string
   event: string
+  /** The venue is still coming up on screen: the run of show has not started, so there is no clock to count down. */
+  waiting: boolean
+}
+
+/**
+ * While the doors are open: the hype rising, the live audience and the fans
+ * waiting to buy ticking up, and a line from the press every few seconds. All
+ * of it is for show, from figures the game already has; the game is paused.
+ */
+function PreShow({ hype, viewers, fans, quotes, start, waiting, where }: { hype: number; viewers: number; fans: number; quotes: [string, string][]; start: () => void; waiting: boolean; where?: [string, string] }) {
+  const t0 = useRef(performance.now())
+  const [t, setT] = useState(0)
+  useEffect(() => {
+    const id = window.setInterval(() => setT((performance.now() - t0.current) / 1000), 100)
+    return () => window.clearInterval(id)
+  }, [])
+  const k = 1 - Math.exp(-t / 2.2)
+  const quote = quotes[Math.floor(t / 3.2) % quotes.length]
+  return (
+    <div className="sb-lower pointer-events-auto absolute right-6 top-[calc(6vh+52px)] w-[300px] max-w-[calc(100%-3rem)] border border-line2 bg-carbon/90 p-3">
+      <Head icon="trendUp" className="text-faint">
+        Before the show
+      </Head>
+      {where && (
+        <div className="mt-1 text-[12px] leading-snug">
+          <div className="text-fg">{where[0]}</div>
+          <div className="text-[11px] text-dim">{where[1]}</div>
+        </div>
+      )}
+      <div className="mt-1 flex items-baseline justify-between text-[11px]">
+        <span className="text-dim">Hype</span>
+        <span className="num text-accent">+{pct(hype * k, 0)}</span>
+      </div>
+      <Meter value={Math.min(1, hype * k * 2)} tone="accent" />
+      <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
+        <div>
+          <div className="text-dim">Watching live</div>
+          <div className="num text-[13px] text-fg">{int(viewers * k)}</div>
+        </div>
+        <div>
+          <div className="text-dim">Fans waiting to buy</div>
+          <div className="num text-[13px] text-fg">{int(fans * k)}</div>
+        </div>
+      </div>
+      <div key={quote[1]} className="sb-lower mt-2 border-l-2 border-accent pl-2 text-[12px] leading-snug text-fg">
+        &ldquo;{quote[0]}&rdquo;
+        <div className="mt-0.5 text-[11px] text-faint">{quote[1]}</div>
+      </div>
+      <Btn small tone="primary" icon="play" className="mt-3 w-full" title="Start the keynote now (Enter)" onClick={start}>
+        {waiting ? 'Start the show' : 'Skip to the keynote'}
+      </Btn>
+    </div>
+  )
 }
 
 const clamp01 = (k: number) => Math.max(0, Math.min(1, k))
@@ -91,8 +145,8 @@ function drawSlide(g: CanvasRenderingContext2D, phase: Phase, t: number, d: Deck
     case 'doors': {
       text(d.company.toUpperCase(), SW / 2, SH / 2 - 40, 112)
       text(d.event, SW / 2, SH / 2 + 52, 34, d.color, 400)
-      const left = Math.max(0, Math.ceil(BEATS[0][1] + BEATS[1][1] - t))
-      text(`STARTING IN 00:0${left}`, SW / 2, SH - 90, 26, '#9aa0a6', 400)
+      // the clock runs to the lights going down, the end of this beat; until the run of show starts there is none
+      text(d.waiting ? 'THE STREAM STARTS SHORTLY' : `STARTING IN ${clockText(BEATS[0][1] - t)}`, SW / 2, SH - 90, 26, '#9aa0a6', 400)
       break
     }
     case 'dark': {
@@ -276,6 +330,10 @@ export function LaunchShow({ eventId }: { eventId: string }) {
   }, [run])
   // the show starts once the venue is on screen (or after a few seconds whatever happens), not while it loads
   const [ready, setReady] = useState(false)
+  /** The beat the show opens on: the doors, or straight to the lights going down when the player would not wait. */
+  const [opening, setOpening] = useState(0)
+  const readyRef = useRef(false)
+  useEffect(() => void (readyRef.current = ready), [ready])
   useEffect(() => {
     if (ready) return
     const id = window.setTimeout(() => setReady(true), 9000)
@@ -283,7 +341,7 @@ export function LaunchShow({ eventId }: { eventId: string }) {
   }, [ready, run])
   useEffect(() => {
     if (!ready) return
-    playFrom(0)
+    playFrom(opening)
     return stopShow
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [run, score, ready])
@@ -316,6 +374,7 @@ export function LaunchShow({ eventId }: { eventId: string }) {
       available: p.launchDay > e.day ? fmtDate(p.launchDay) : 'TODAY',
       where: stores ? `Online and in ${int(stores)} ${stores === 1 ? 'store' : 'stores'}` : 'Online and from carriers everywhere',
       event: `${p.family} launch event`,
+      waiting: true,
     }
   }, [p, e, me.name, me.color, points, g.stores?.length])
   useEffect(() => {
@@ -330,6 +389,7 @@ export function LaunchShow({ eventId }: { eventId: string }) {
       if (now - last > 33) {
         last = now
         deck.image = image.current
+        deck.waiting = !readyRef.current
         const t = (now - clock.current.at) / 1000
         drawSlide(ctx, clock.current.phase, still ? 9 : t, deck)
         tex.needsUpdate = true
@@ -372,7 +432,8 @@ export function LaunchShow({ eventId }: { eventId: string }) {
     specs: ['What it does best', points.join(', ') + '.'],
     price: ['The price', `${price(p.price)}${p.tiers?.length ? `, more for more storage` : ''}`],
   }
-  const caption = lower[phase]
+  // (at the doors the pre-show card says where and when)
+  const caption = phase === 'doors' ? undefined : lower[phase]
   const parts: [string, number, string, IconName][] = [
     ['The device itself', b.wow, 'How strong it is in its best segment. Nearly half the score.', 'devices'],
     ['The venue', Math.min(1, b.reach), 'How far a show from this stage carries.', 'venue'],
@@ -427,6 +488,18 @@ export function LaunchShow({ eventId }: { eventId: string }) {
           <IconBtn icon="close" tone="ghost" title={phase === 'verdict' ? 'Close the keynote (Esc)' : 'Close the keynote'} onClick={() => (stopShow(), watch(null))} />
         </div>
       </div>
+      {phase === 'doors' && (
+        <PreShow
+          key={run}
+          hype={p.hype}
+          viewers={Math.round(seats * fill + 4000 + 400000 * Math.min(1, b.reach) * (0.4 + b.wow))}
+          fans={Math.round(g.fans * (0.03 + 0.12 * b.wow))}
+          quotes={pressLines(b.wow, points, p.name)}
+          waiting={!ready}
+          where={lower.doors}
+          start={() => (ready ? onward() : (setOpening(1), setReady(true)))}
+        />
+      )}
       {caption && (
         <div key={phase} className="sb-lower pointer-events-none absolute bottom-[calc(6vh+20px)] left-6 max-w-[60%] border-l-4 border-accent bg-carbon/85 py-2 pl-4 pr-6">
           <div className="text-2xl font-semibold text-fg">{caption[0]}</div>
@@ -487,7 +560,7 @@ export function LaunchShow({ eventId }: { eventId: string }) {
             </div>
           </div>
           <div className="mt-3 flex gap-1">
-            <Btn className="flex-1" onClick={() => (setReady(false), setRun((r) => r + 1))}>
+            <Btn className="flex-1" onClick={() => (setReady(false), setOpening(0), setRun((r) => r + 1))}>
               Watch again
             </Btn>
             <Btn className="flex-1" onClick={() => (watch(null), focus(p.id))}>

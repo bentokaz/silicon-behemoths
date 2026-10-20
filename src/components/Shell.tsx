@@ -4,6 +4,7 @@
 // messenger strip. Over that, never more than one of each: a drawer (at the
 // right, over the feed), a dialog, a lock card. Also runs the game loop.
 import { useEffect, useRef, useState } from 'react'
+import { type Mood, setMusicMood } from '../audio/music'
 import { type Ambience, setAmbience, setAmbienceLevel, sfx } from '../audio/sfx'
 import { fmtDate, player } from '../sim/game'
 import { factoryLine, pendingUnits } from '../sim/ops'
@@ -41,6 +42,9 @@ import { Dashboard } from './Overview'
 import { System } from './System'
 import { Icon, type IconName } from './icons'
 import { Btn, IconBtn, Tabs, modalOpen, money, moneyDelta, num, pressable, useLayer } from './ui'
+
+/** The mood of the music on each screen; anything not named is calm. */
+const MOOD_OF: Partial<Record<Tab, Mood>> = { office: 'focus', staff: 'focus', research: 'focus', labs: 'focus', products: 'focus', factory: 'drive', market: 'drive', rivals: 'drive', stores: 'bright', marketing: 'bright', city: 'bright', world: 'bright', care: 'bright', venue: 'show' }
 
 const SPEEDS: { speed: Speed; label: string; icon: IconName }[] = [
   { speed: 0, label: 'Pause', icon: 'pause' },
@@ -381,6 +385,11 @@ export function Shell() {
   }, [tab, designing, showing, ambience])
   // it stops when the game is left
   useEffect(() => () => setAmbience('none'), [])
+  // and the music takes the mood of the screen (a keynote brings its own sound)
+  useEffect(() => {
+    const mood: Mood | 'none' = showing ? 'none' : designing ? 'focus' : MOOD_OF[tab] ?? 'calm'
+    setMusicMood(mood)
+  }, [tab, designing, showing])
   const me = player(g)
   const view = views[tab]
   const here = destOfTab(tab, view)

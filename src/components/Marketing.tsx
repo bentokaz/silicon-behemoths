@@ -457,7 +457,7 @@ function Events() {
   return (
     <>
       <Panel title="Booked" icon="calendar" count={upcoming.length || undefined} className="shrink-0">
-        <Table label="Booked events" cols={booked} rows={upcoming} rowKey={(e) => e.id} keep="marketing:booked" firstMin={190} onRow={(e) => e.productId && focus(e.productId)} rowTitle={(e) => (e.productId ? `Open ${nameOf(e)?.name ?? 'the device'}` : undefined)} empty="Nothing is booked." />
+        <Table label="Booked events" cols={booked} rows={upcoming} rowKey={(e) => e.id} keep="marketing:booked" firstMin={190} onRow={(e) => e.productId && focus(e.productId)} canRow={(e) => !!nameOf(e)} rowTitle={(e) => (e.productId ? `Open ${nameOf(e)?.name ?? 'the device'}` : undefined)} empty="Nothing is booked." />
       </Panel>
       <Panel
         title="Book an event"

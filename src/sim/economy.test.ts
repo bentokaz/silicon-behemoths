@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { marketLevel } from '../data/catalog'
 import { setEra, typeOpen } from '../data/eras'
-import { acceptContract, defaultConfig, devPlan, dateOf, hireExec, migrate, newGame, openStores, orderProduction, setOsLicence, setOsLook, setReorder, starterDesign, startProduct, tick } from './game'
+import { acceptContract, defaultConfig, fitOutQuote, fitOutStore, storeOpenCost, storeOutlook, devPlan, dateOf, hireExec, migrate, newGame, openStores, orderProduction, setOsLicence, setOsLook, setReorder, starterDesign, startProduct, tick } from './game'
 import { demandEstimate, storeMonth } from './insight'
 import { prototypeVerdicts, testPrototype } from './prototype'
 import { storeAdvice, storeTrade } from './retail'
@@ -186,6 +186,51 @@ describe('store balance', () => {
     p.launchDay -= 3000
     const poor = storeTrade(s, st)
     expect(poor.units).toBeLessThan(good.units / 2)
+  })
+})
+
+describe('stores in a running company', () => {
+  it('a bare store from an older save is offered a fit-out that turns it to profit', () => {
+    const s = game()
+    launch(s, 2e6, 300000)
+    expect(openStores(s, 1, [s.config.home ?? 'na'], 1)).toBeNull()
+    const st = s.stores[0]
+    // as stores opened before the standard fit-out: one table and a checkout
+    st.site.items = st.site.items.filter((i) => i.kind === 'counter').slice(0, 1).concat(st.site.items.filter((i) => i.kind === 'table').slice(0, 1))
+    expect(storeTrade(s, st).profit).toBeLessThan(0)
+    const q = fitOutQuote(s, st.id)
+    expect(q.error).toBeNull()
+    expect(q.better).toBe(true)
+    expect(q.cost).toBeGreaterThan(0)
+    const cash = s.cash
+    expect(fitOutStore(s, st.id)).toBeNull()
+    expect(s.cash).toBeCloseTo(cash - q.cost, 0)
+    expect(storeTrade(s, st).profit).toBeGreaterThan(0)
+    expect(fitOutQuote(s, st.id).better).toBe(false)
+  })
+
+  it('stores keep their shelves stocked when retailers would empty the warehouse', () => {
+    const s = game()
+    const p = launch(s, 2e6, 3000)
+    expect(openStores(s, 1, [s.config.home ?? 'na'], 1)).toBeNull()
+    tick(s, 20)
+    expect(s.stores[0].unitsTotal).toBeGreaterThan(50)
+    expect(p.stock).toBeGreaterThanOrEqual(0)
+  })
+
+  it('the outlook for a new store is positive in every open region at every kind of site, and costs what opening charges', () => {
+    const s = game()
+    launch(s, 2e6, 300000)
+    // regions entered a while ago, where a fair share of people know the name
+    for (const r of Object.values(s.regions)) (r.open = true), (r.awareness = Math.max(r.awareness, 0.25))
+    for (const tier of [0, 1, 2]) {
+      const out = storeOutlook(s, tier)
+      expect(out.length).toBeGreaterThan(3)
+      for (const o of out) expect(o.profit, `tier ${tier} ${o.region}`).toBeGreaterThan(0)
+      const cash = s.cash
+      expect(openStores(s, tier, [out[0].region, out[1].region], 2)).toBeNull()
+      expect(cash - s.cash).toBeCloseTo(storeOpenCost(s, tier)! * 4, 0)
+    }
   })
 })
 
