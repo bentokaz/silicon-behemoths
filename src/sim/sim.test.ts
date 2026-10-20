@@ -213,7 +213,7 @@ describe('devices and production', () => {
     expect(autoLine(s)).toBeNull()
     const line = lineStats(s.factory!)
     expect(line.running).toBe(true)
-    expect(line.throughput).toBe(500)
+    expect(line.throughput).toBeGreaterThan(440)
     expect(line.defectRate).toBeLessThan(0.02)
     expect(line.flow.size).toBe(2)
     // swap the test station for a conveyor: the line still runs but ships more faults

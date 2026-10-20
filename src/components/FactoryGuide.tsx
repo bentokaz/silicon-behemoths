@@ -127,6 +127,15 @@ export function FactoryGuide({ open, onClose, example, onExample, fix, onFix }: 
           <li>Blocks of one kind in a row pass parts through and share the work: three board lines back to back build three times as many boards.</li>
           <li>The slowest stage sets the output. An output that meets a side, another output or a rack is marked <span className="text-neg">Logistics blocked</span>.</li>
         </ol>
+        <div className="t-title mt-1 text-fg">Scaling up</div>
+        <ol className="flex list-decimal flex-col gap-1.5 pl-4">
+          <li>Components: chips, displays, cells, casings, cameras and power supplies are bought in ready-made unless a machine on the line makes them. Making them yourself cuts the cost of every unit; the Components panel shows what each line makes.</li>
+          <li>Belts carry 2,400 kits a day, fast ones 6,000 and express ones 15,000. Splitters feed machines side by side; arms lift kits round a corner; buffers ride out breakdowns. Rates shows what flows through every joint, and Show marks what holds a line back.</li>
+          <li>Machines go up to tier II and III in place, and take two modules: speed, quality or efficiency.</li>
+          <li>Every machine draws power: past 800 kW add substations, generators or solar arrays. Two or three shifts nearly treble output, at a wage for every worker; crew rooms upstairs give them somewhere to change and eat.</li>
+          <li>Control desks and maintenance workshops keep machines from breaking down; test stations catch faults before they ship.</li>
+          <li>For millions a month: bigger sites, plants in other regions, lines set to the device they build, and blueprints that place a whole line again in one go.</li>
+        </ol>
       </div>
     </Drawer>
   )

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DAYS_PER_MONTH } from '../data/catalog'
 import { type LaunchOrder, autoLine, autoVenue, buildFactory, buildVenue, defaultConfig, discontinue, fundingRound, hire, newGame, openStore, orderProduction, scheduleEvent, startCampaign, startProduct, starterDesign, tick, toggleResearch } from './game'
 import { SMALLEST_RUN, type Attention, attention, demandEstimate, plates, productProfit, productTrend, reorderQuote, storeMonth, storesMonth, suggestReorder, unitCostParts, whyLines } from './insight'
-import { CONTRACT, buildCost, pendingUnits } from './ops'
+import { CONTRACT, buildCost, contractPerDay, factoryLine, pendingUnits } from './ops'
 import type { DeviceType, GameState } from './types'
 
 const fresh = (seed = 7, extra: Partial<ReturnType<typeof defaultConfig>> = {}) => newGame({ ...defaultConfig(), seed, ...extra })
@@ -211,7 +211,7 @@ describe('devices', () => {
     expect(q.refused).toBeUndefined()
     expect(q.unitCost).toBeCloseTo(buildCost(s, seller, 'contract'), 2)
     expect(q.cost).toBeCloseTo(20000 * q.unitCost, 4)
-    expect(q.days).toBe(CONTRACT.leadDays - 1 + 20000 / CONTRACT.perDay)
+    expect(q.days).toBe(CONTRACT.leadDays - 1 + Math.ceil(20000 / contractPerDay(s)))
     expect(reorderQuote(s, seller, 0).refused).toBe('Enter a quantity')
     // the simulation agrees on the day the last unit arrives
     const built = () => seller.stock + seller.unitsSold
@@ -228,7 +228,7 @@ describe('devices', () => {
     const f = reorderQuote(s, seller, 5000)
     expect(f.mode).toBe('factory')
     expect(f.unitCost).toBeLessThan(reorderQuote(fresh(), seller, 5000).unitCost)
-    expect(f.days).toBe(10)
+    expect(f.days).toBe(Math.ceil(5000 / Math.floor(factoryLine(s)!.throughput)))
     const had = built()
     orderProduction(s, seller.id, 5000, 'factory')
     tick(s, f.days - 1)

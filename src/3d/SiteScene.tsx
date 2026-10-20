@@ -256,6 +256,9 @@ interface ItemCtx {
   glow: number
   /** Venue: clear height of the hall the item stands in; missing in the open air. */
   ceiling?: number
+  /** Factory: the machine's tier, and how many modules it has. */
+  tier?: number
+  mods?: number
   company: string
   logo?: string
   color: string
@@ -296,7 +299,7 @@ function ItemKind({ kind, item, c }: { kind: SiteKind; item: string; c: ItemCtx 
   // stairs, lifts and escalators look the same in every kind of building
   if (kind !== 'office' && (item === 'stairs' || item === 'lift' || item === 'escalator')) return <Climb kind={item} />
   if (kind === 'office') return <OfficeItem kind={item} c={{ who: c.who, glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, devices: c.devices, on: c.on, live: c.live, progress: c.progress, busy: c.busy, join: c.join }} />
-  if (kind === 'factory') return <FactoryItem kind={item} c={{ running: !!c.running, flow: c.flow, glow: c.glow, seed: c.seed, fill: c.fill, away: c.away, live: c.live }} />
+  if (kind === 'factory') return <FactoryItem kind={item} c={{ running: !!c.running, flow: c.flow, glow: c.glow, seed: c.seed, fill: c.fill, away: c.away, live: c.live, tier: c.tier, mods: c.mods }} />
   if (kind === 'store') return <StoreItem kind={item} c={{ products: c.products, glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, soldOut: c.soldOut }} />
   return <VenueItem kind={item} c={{ glow: c.glow, company: c.company, logo: c.logo, color: c.color, seed: c.seed, crowd: c.show?.crowd ?? 0, cheer: c.show?.cheer ?? false, show: !!c.show, screen: c.show?.screen, products: c.products, aisles: c.aisles, live: c.live, ceiling: c.ceiling }} />
 }
@@ -1237,6 +1240,8 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
       fill: Math.round(busy * 5) / 5,
       away: !!item.id && yard.managed.has(item.id),
       aisles: site.kind === 'venue' && 'x' in item ? seatAisles(site, item as SiteItem) : 0,
+      tier: 'x' in item ? (item as SiteItem).tier : undefined,
+      mods: 'x' in item ? (item as SiteItem).mods?.length : undefined,
       ceiling: site.kind === 'venue' && 'x' in item && gridAt(site, (item as SiteItem).x, (item as SiteItem).y) > 0 ? ceilingAt(site, (item as SiteItem).x, (item as SiteItem).y) : undefined,
       sparing,
       join: item.kind === 'meeting' && item.id ? joins.get(item.id) : undefined,
@@ -1248,7 +1253,7 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
       .map(({ item }) => {
         const who = occupant.get(item.id)
         const on = shown.get(item.id)
-        return `${item.id}:${item.x},${item.y},${item.rot}:${who ? who.look + who.color : liveSeats.has(item.id) ? 'L' : ''}:${line?.linked.has(item.id) ? 1 : 0}${line?.flow.get(item.id)?.join('') ?? ''}${on ? on.devices.map((p) => p.id).join('') + (on.progress ?? '') : ''}${yard.managed.has(item.id) ? 'A' : ''}${site.kind === 'venue' ? seatAisles(site, item) || '' : ''}${joins.get(item.id)?.join('') ?? ''}${item.kind === 'otree' || item.kind === 'bamboo' ? `f${fitOf(item)?.map((v) => v.toFixed(2)).join('/')}` : ''}`
+        return `${item.id}:${item.x},${item.y},${item.rot}${item.tier ?? ''}${item.mods?.join('') ?? ''}:${who ? who.look + who.color : liveSeats.has(item.id) ? 'L' : ''}:${line?.linked.has(item.id) ? 1 : 0}${line?.flow.get(item.id)?.join('') ?? ''}${on ? on.devices.map((p) => p.id).join('') + (on.progress ?? '') : ''}${yard.managed.has(item.id) ? 'A' : ''}${site.kind === 'venue' ? seatAisles(site, item) || '' : ''}${joins.get(item.id)?.join('') ?? ''}${item.kind === 'otree' || item.kind === 'bamboo' ? `f${fitOf(item)?.map((v) => v.toFixed(2)).join('/')}` : ''}`
       })
       .join('|') + `#${Math.round(glow * 10)}${running ? 'r' : ''}${site.kind === 'factory' ? `${Math.round(busy * 5)}${crowdOn ? 'w' : ''}` : ''}${company}${logo?.length ?? 0}${color}${productKey}${soldKey}${liveKinds ? 'v' : ''}${crowdOn ? 'c' : ''}${researching ? 'R' : ''}${showcaseList[0]?.id ?? ''}${staged ? `s${staged.screen?.uuid ?? ''}` : ''}${sparing ? 'S' : ''}${site.kind === 'venue' ? `F${site.floors}` : ''}`
 
