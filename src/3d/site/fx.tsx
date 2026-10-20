@@ -361,7 +361,7 @@ export function WallFx({ pieces, falling, height, sparks, onDone }: { pieces: Wa
 }
 
 /** How tall the walls stand in each view. */
-export const wallHeight = (mode: 'cut' | 'walls' | 'full') => (mode === 'cut' ? CUT_H : STOREY - 0.1)
+export const wallHeight = (mode: 'down' | 'cut' | 'walls' | 'full') => (mode === 'down' ? 0.14 : mode === 'cut' ? CUT_H : STOREY - 0.1)
 
 // ---------------------------------------------------------------- doors
 

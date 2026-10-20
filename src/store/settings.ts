@@ -79,7 +79,7 @@ export const ACTIONS: Action[] = [
   { id: 'rotate', group: 'Building', label: 'Turn the item being placed', keys: ['KeyR'] },
   { id: 'cancel', group: 'Building', label: 'Put the tool away', keys: ['Escape'] },
   { id: 'sell', group: 'Building', label: 'Sell item tool', keys: ['Delete'] },
-  { id: 'viewNext', group: 'Building', label: 'Next view (cutaway, walls, outside)', keys: ['KeyV'] },
+  { id: 'viewNext', group: 'Building', label: 'Next view (walls down, cutaway, walls up, outside)', keys: ['KeyV'] },
   { id: 'buildMenu', group: 'Building', label: 'Open or close the build menu', keys: ['KeyB'] },
   // (Ctrl+Z and Ctrl+Shift+Z always work as well; these are the keys of your own choosing)
   { id: 'undo', group: 'Building', label: 'Undo the last change to the building', keys: ['KeyU'] },

@@ -49,6 +49,7 @@ const PATHS = {
   grounds: 'M12 21v-9M12 12c-5 0-7-3-7-7 4 0 7 2 7 7zM12 14c0-4 2-6 6-6 0 4-2 6-6 6zM4 21h16',
   look: 'M3 21h18M6 21V8l6-5 6 5v13M6 12h12M6 16h12',
   cutaway: 'M3 20h18M4 20v-5h16v5M4 15l3-3h10l3 3',
+  wallsDown: 'M3 20h18M4 20v-2h16v2M4 18l3-3h10l3 3',
   wallsUp: 'M3 20h18M4 20V7h16v13M4 7l3-3h10l3 3',
   outside: 'M3 20h18M4 20V9l8-6 8 6v11M4 9h16M10 20v-6h4v6',
   walk: 'M12 2.500a1.800 1.800 0 100 3.600 1.800 1.800 0 000-3.600zM11 8l-3 4 2 1M11 8l2 5-2 4-1 4M13 13l3 3v5M11 8l4 2 2 3',

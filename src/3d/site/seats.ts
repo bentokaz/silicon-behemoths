@@ -2,7 +2,7 @@
 // which one is theirs is decided here, for the 3D view, and remembered so
 // that nobody changes desks just because a colleague left. People are given
 // a desk in a room that suits their job where there is one.
-import { ITEMS, reachable, roomAt } from '../../sim/sites'
+import { ITEMS, reachable, roomAt, storeysOf } from '../../sim/sites'
 import type { Employee, Role, Site } from '../../sim/types'
 
 const HOME: Record<Role, string[]> = { engineer: ['eng'], software: ['soft', 'server'], designer: ['studio'], researcher: ['lab'], marketer: ['media'], support: ['support'] }
@@ -28,6 +28,9 @@ export function seatOwners(site: Site, seated: Employee[]): Map<string, Employee
   if (site.kind !== 'office') return map
   const seats = reachable(site).filter((i) => ITEMS.office[i.kind]?.seats)
   const valid = new Map(seats.map((s) => [s.id, s]))
+  // a seat upstairs is in a room of its own floor
+  const floorOf = new Map<string, Site>()
+  for (const l of storeysOf(site)) for (const it of l.items) floorOf.set(it.id, l)
   const here = new Set(seated.map((e) => e.id))
   for (const id of [...memory.keys()]) if (!here.has(id)) memory.delete(id)
   const waiting: Employee[] = []
@@ -41,7 +44,7 @@ export function seatOwners(site: Site, seated: Employee[]): Map<string, Employee
     let bestScore = -Infinity
     for (const s of seats) {
       if (map.has(s.id)) continue
-      const score = fit(site, e, s)
+      const score = fit(floorOf.get(s.id) ?? site, e, s)
       if (score > bestScore) {
         bestScore = score
         best = s

@@ -44,8 +44,13 @@ export interface Nav {
   tileAt(x: number, z: number): number
 }
 
-/** Builds the walking map of a site as it stands. */
-export function buildNav(site: Site): Nav {
+/**
+ * Builds the walking map of a site as it stands. An upper floor is walked
+ * only in its rooms, and is come into by the stairs or a lift: `arrive` names
+ * the tiles they come up on, and people appear there rather than at the edge
+ * of the plot.
+ */
+export function buildNav(site: Site, arrive?: number[]): Nav {
   const { w, h } = site
   const n = w * h
   const walk = new Uint8Array(n).fill(1)
@@ -56,6 +61,7 @@ export function buildNav(site: Site): Nav {
     for (let x = 0; x < w; x++) {
       const i = y * w + x
       if (cutAt(site, x, y)) walk[i] = 0
+      else if (site.level && !site.grid[i]) walk[i] = 0
       else if (!site.grid[i] && site.floor[`${x},${y}`] === 'water') walk[i] = 0
     }
   }
@@ -171,6 +177,12 @@ export function buildNav(site: Site): Nav {
     const wz = y - h / 2 + 0.5
     consider(0, y, open(0, y, 'w'), -w / 2 - 5, wz, (h - y) + w)
     consider(w - 1, y, open(w, y, 'w'), w / 2 + 5, wz, (h - y) + w)
+  }
+  // upstairs nobody comes in from the street: they come up the stairs, and appear at the top of them
+  if (site.level) {
+    entry = -1
+    best = Infinity
+    for (const i of arrive ?? []) consider(i % w, Math.floor(i / w), true, (i % w) - w / 2 + 0.5, Math.floor(i / w) - h / 2 + 0.5, 0)
   }
 
   // ---- which tiles join up, and which of them can be reached from the way in

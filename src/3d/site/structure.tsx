@@ -11,10 +11,15 @@ import { hash } from './kit'
 import { planKey } from './plankey'
 
 /** How much of the building is drawn: low cut-away walls, full-height walls, or the outside with a roof. */
-export type ViewMode = 'cut' | 'walls' | 'full'
+/** Walls down to a kerb, cut to waist height, standing a full storey, or the whole building from outside with its roof. */
+export type ViewMode = 'down' | 'cut' | 'walls' | 'full'
 
 export const WALL_T = 0.16
 export const CUT_H = 0.9
+/** Walls down: just a kerb where each wall stands. */
+export const DOWN_H = 0.14
+/** The height walls are drawn to in a view. */
+export const wallTop = (mode: ViewMode) => (mode === 'down' ? DOWN_H : mode === 'cut' ? CUT_H : STOREY - 0.1)
 export const STOREY = 3
 const DOOR_H = 2.1
 /** A stretch of straight wall shorter than this, in metres, between a grid corner and a curved wall gets no post of its own at the curve. */
@@ -253,7 +258,7 @@ export function surface(key: string, glow = 0): { material: THREE.Material; cast
   return { material: m, cast: key !== 'glass' && !key.startsWith('floor') && key !== 'water' }
 }
 
-function useMeshes(make: () => THREE.Mesh[], deps: unknown[]) {
+export function useMeshes(make: () => THREE.Mesh[], deps: unknown[]) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const meshes = useMemo(make, deps)
   useEffect(() => () => meshes.forEach((m) => m.geometry.dispose()), [meshes])
@@ -342,10 +347,11 @@ function Water({ tiles, w, h, dim }: { tiles: [number, number][]; w: number; h: 
 }
 
 /** Floors of every room and the open ground of the plot. */
-export function Ground({ site, dim, upper = false }: { site: Site; dim: number; /** An upper floor: only the rooms' floors, no ground. */ upper?: boolean }) {
+export function Ground({ site, dim, upper = false, holes }: { site: Site; dim: number; /** An upper floor: only the rooms' floors, no ground. */ upper?: boolean; /** Tiles left open: the stairwells coming up from the floor below. */ holes?: ReadonlySet<number> }) {
   // the floors and the open ground follow the plan, not the furniture: a desk put down leaves them as they are
   const key = planKey(site)
-  const built = useMemo(() => groundMeshes(site, dim, upper), [key, dim, upper]) // eslint-disable-line react-hooks/exhaustive-deps
+  const holeKey = holes ? [...holes].join(',') : ''
+  const built = useMemo(() => groundMeshes(site, dim, upper, holes), [key, dim, upper, holeKey]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => built.meshes.forEach((m) => m.geometry.dispose()), [built])
   return (
     <>
@@ -358,7 +364,7 @@ export function Ground({ site, dim, upper = false }: { site: Site; dim: number; 
 }
 
 /** The meshes of the room floors and the open ground. */
-export function groundMeshes(site: Site, dim: number, upper = false): { meshes: THREE.Mesh[]; water: [number, number][] } {
+export function groundMeshes(site: Site, dim: number, upper = false, holes?: ReadonlySet<number>): { meshes: THREE.Mesh[]; water: [number, number][] } {
   {
     const b = new Batch()
     const rooms = new Map<number, Room>(site.rooms.map((r) => [r.n, r]))
@@ -380,6 +386,7 @@ export function groundMeshes(site: Site, dim: number, upper = false): { meshes: 
     const shift = (p: Pt[]): Pt[] => p.map(([px, pz]) => [px + ox, pz + oz])
     for (let y = 0; y < site.h; y++) {
       for (let x = 0; x < site.w; x++) {
+        if (holes?.has(y * site.w + x)) continue
         const room = rooms.get(site.grid[y * site.w + x])
         const jitter = (0.78 + hash(x * 31 + y * 17) * 0.1) * dim
         if (room) {
@@ -452,7 +459,9 @@ export function structureMeshes(site: Site, mode: ViewMode, glow: number, leaves
     const ox = -site.w / 2
     const oz = -site.h / 2
     const full = mode === 'full'
-    const H = mode === 'cut' ? CUT_H : STOREY - 0.1
+    const H = wallTop(mode)
+    /** Walls cut low or down: no windows, no door leaves. */
+    const low = mode === 'cut' || mode === 'down'
     const WALL_TOP = H
     const top = full ? site.floors * STOREY : H
     const half = WALL_T / 2
@@ -584,7 +593,7 @@ export function structureMeshes(site: Site, mode: ViewMode, glow: number, leaves
         const jambTop = Math.min(H, DOOR_H)
         onEdge('trim', x, y, side, 0.04, 0.08, 0, jambTop, WALL_T + 0.02, '#e9e6e0')
         onEdge('trim', x, y, side, 0.96, 0.08, 0, jambTop, WALL_T + 0.02, '#e9e6e0')
-        if (mode !== 'cut') {
+        if (!low) {
           // wall above the door, and the leaf standing open into the room
           if (ra) slab('wall', x, y, side, 1, DOOR_H, H, styleOf(site, ra).wall, 1)
           else outer(x, y, side, 1, DOOR_H, H, seed)
@@ -607,13 +616,13 @@ export function structureMeshes(site: Site, mode: ViewMode, glow: number, leaves
         if (ra) slab('trim', x, y, side, 1, 0, 0.09, styleOf(site, ra).trim, 1, 0.012, half, u0, u1)
         if (rc) slab('trim', x, y, side, -1, 0, 0.09, styleOf(site, rc).trim, 1, 0.012, half, u0, u1)
         // a window in the outside wall, where the wall is tall enough to have one
-        if (exterior && whole && mode !== 'cut' && hash(seed + 3) > 0.25) {
+        if (exterior && whole && !low && hash(seed + 3) > 0.25) {
           const toward = a ? -1 : 1
           slab(hash(seed + 9) > 0.45 ? litFor(ra ?? rc) : 'pane', x, y, side, toward, 0.95, 2.3, '#27353f', 1, 0.014, half)
         }
       }
       // the cut line: a dark cap along the top of every wall
-      if (kind !== 'open' && !(kind === 'door' && mode === 'cut') && !full) onEdge('trim', x, y, side, mid, len, H, H + 0.03, WALL_T, CAP)
+      if (kind !== 'open' && !(kind === 'door' && low) && !full) onEdge('trim', x, y, side, mid, len, H, H + 0.03, WALL_T, CAP)
 
       // ---- upper storeys, outside view only
       if (full && exterior) {
@@ -746,7 +755,7 @@ export function structureMeshes(site: Site, mode: ViewMode, glow: number, leaves
           }
           if (kind === 'door') {
             strip('trim', f, t0, t1, -half, half, 0, 0.012, 't', CAP)
-            if (mode !== 'cut') {
+            if (!low) {
               // wall above the door
               strip('wall', f, t0, t1, -half, 0, DOOR_H, H, 'ib', style.wall)
               if (farStyle) strip('wall', f, t0, t1, 0, half, DOOR_H, H, 'ob', farStyle.wall)
@@ -766,10 +775,10 @@ export function structureMeshes(site: Site, mode: ViewMode, glow: number, leaves
             } else {
               clad(f, t0, t1, 0, H, seed)
               // a window to the bay, lit or not with the room behind it like any other
-              if (mode !== 'cut' && whole && hash(seed + 3) > 0.25) strip(hash(seed + 9) > 0.45 ? litFor(room) : 'pane', f, t0, t1, half, half + 0.014, 0.95, 2.3, 'otb', '#27353f', 1, false)
+              if (!low && whole && hash(seed + 3) > 0.25) strip(hash(seed + 9) > 0.45 ? litFor(room) : 'pane', f, t0, t1, half, half + 0.014, 0.95, 2.3, 'otb', '#27353f', 1, false)
             }
           }
-          if (!(kind === 'door' && mode === 'cut') && !full) strip('trim', f, t0, t1, -half, half, H, H + 0.03, 'oit', CAP)
+          if (!(kind === 'door' && low) && !full) strip('trim', f, t0, t1, -half, half, H, H + 0.03, 'oit', CAP)
           if (!full || farStyle) continue
           // ---- upper storeys and the parapet
           for (let fl = 1; fl < site.floors; fl++) {
@@ -811,7 +820,7 @@ export function structureMeshes(site: Site, mode: ViewMode, glow: number, leaves
           const jambTop = Math.min(H, DOOR_H)
           stile(first, 0.04 / first.len, 0, jambTop, 0.08, WALL_T + 0.02, '#e9e6e0')
           stile(last, 1 - 0.04 / last.len, 0, jambTop, 0.08, WALL_T + 0.02, '#e9e6e0')
-          if (mode !== 'cut') {
+          if (!low) {
             b.boxRot('trim', ox + bay.x, DOOR_H - 0.02, oz + bay.y, bay.len - 0.12, 0.04, WALL_T + 0.02, rot, '#e9e6e0')
             if (leaves) {
               // the leaf stands open into the room, hinged at the start of the bay

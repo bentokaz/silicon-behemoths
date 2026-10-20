@@ -16,7 +16,7 @@ import { REGIONS, entryBlocked, regionIncome, regionOverheads, rivalReach, world
 import { execFx, meetingFactor, monthlySalaries, perksCost, staffEffects, teamBonus, unmanaged } from '../staff'
 import { founderStake, holdingIncome, ipoBlocked, issueBlocked, marketCap, netWorth, raiseBlocked, rivalValue, roundQuote, stakePrice, takeoverPrice, trailing, valuation } from '../stock'
 import { chipAdoption, chipProjectCost, chipProjectDays, industryOs, osProjectDays, osShipQuality, servicesPerMonth, softwareBonus } from '../tech'
-import { FACADES, GROUNDS, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, canPartition, cutAt, doorFits, gridAt, inPlot, isBoundary, itemTiles, lineStats, storeStats, typeAt, venueStats } from '../sites'
+import { FACADES, GROUNDS, ITEMS, MAX_FLOORS, ROOFS, ROOMS, SITE_TIERS, canPartition, cutAt, doorFits, gridAt, inPlot, isBoundary, itemTiles, lineStats, storeStats, typeAt, venueStats, wellsOn } from '../sites'
 import { INCIDENTS, economyNow, typeDemand, unlockBlocked, unlockCost } from '../world'
 import { COST_KEYS, DEVICE_TYPES, EXEC_IDS, type GameState, type MonthReport, ROLES, type Site, SUPPLY_CATS, TRACKS, monthCosts, wasReleased } from '../types'
 
@@ -460,7 +460,9 @@ export function checkState(s: GameState, opts: CheckOpts = {}): string[] {
     up.forEach((l, i) => {
       out.push(...checkSite(l, `office@${i + 1}`))
       if (l.level !== i + 1) bad('site-levels', `office@${i + 1} says it is floor ${l.level}`)
-      if (l.grid.some((n, t) => n && !s.office.grid[t])) bad('site-levels', `office@${i + 1} has rooms over open ground`)
+      // rooms upstairs may stand over open ground: they are carried on columns
+      if (l.w !== s.office.w || l.h !== s.office.h) bad('site-levels', `office@${i + 1} is not the size of the plot`)
+      for (const it of l.items) if (wellsOn(s.office, i + 1).has(it.y * l.w + it.x)) bad('site-levels', `office@${i + 1} has ${it.kind} standing in a stairwell`)
     })
     if (s.factory) out.push(...checkSite(s.factory, 'factory'))
     if (s.venue) out.push(...checkSite(s.venue, 'venue'))

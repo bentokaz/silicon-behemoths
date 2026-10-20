@@ -93,8 +93,8 @@ export const ITEMS: Record<SiteKind, Record<string, ItemDef>> = {
     parking: d('Parking bay', 1500, 3, 5, 'Grounds', [OUT], 'Marked space for one car.', { comfort: 0.3 }),
     bikes: d('Bike rack', 700, 2, 1, 'Grounds', [OUT], 'A row of hoops and a few bikes.', { comfort: 0.4 }),
     flag: d('Flagpole', 1200, 1, 1, 'Grounds', [OUT], 'Your colours, flying.', { prestige: 0.8 }),
-    stairs: d('Staircase', 6000, 1, 3, 'Floors', OFFICE_IN, 'Joins a floor to the one below. Every upper floor needs stairs or a lift, and so does each floor under it.'),
-    lift: d('Lift', 24000, 2, 2, 'Floors', OFFICE_IN, 'Joins a floor to the one below, as stairs do. Adds a little prestige.', { prestige: 0.5 }),
+    stairs: d('Staircase', 6000, 1, 3, 'Floors', OFFICE_IN, 'Rises to the floor above and opens a stairwell through it. Build a room over it up there to arrive in.'),
+    lift: d('Lift', 24000, 2, 2, 'Floors', OFFICE_IN, 'Its shaft runs up through every floor above with a room over it, stopping at each. Adds a little prestige.', { prestige: 0.5 }),
     sign: d('Entrance sign', 6000, 3, 1, 'Grounds', [OUT], 'A stone sign with your name on it.', { prestige: 2.5 }),
   },
   factory: {
@@ -417,7 +417,8 @@ export const TILE_UPKEEP = 18
 export const STORE_WAGE = 3500
 export const STORE_MANAGER = 4000
 export const builtTiles = (site: Site) => site.grid.reduce((a, n) => a + (n ? 1 : 0), 0)
-export const upkeep = (site: Site) => tierOf(site).rent + builtTiles(site) * TILE_UPKEEP * site.floors
+/** Rent and running costs: each storey of an office by what is built on it, any other building by its footprint times its height. */
+export const upkeep = (site: Site) => tierOf(site).rent + TILE_UPKEEP * (site.upper?.length ? storeysOf(site).reduce((a, l) => a + builtTiles(l), 0) : builtTiles(site) * site.floors)
 
 // ---------------------------------------------------------------- tiles and rooms
 
@@ -835,7 +836,8 @@ export function autoDoor(site: Site, n: number) {
   // a door needs a whole metre of straight wall with the room on one side of it
   const wall = (x: number, y: number, side: 'n' | 'w', score: number) => {
     const run = doorRun(site, x, y, side, curved)
-    if (run && (run.a === n || run.c === n)) edges.push({ x, y, side, score })
+    // upstairs a door to the outside would open onto a drop: only doors between rooms there
+    if (run && (run.a === n || run.c === n) && (!site.level || (run.a && run.c))) edges.push({ x, y, side, score })
   }
   for (let y = 0; y < site.h; y++) {
     for (let x = 0; x < site.w; x++) {
@@ -870,7 +872,7 @@ export function autoDoor(site: Site, n: number) {
   })
   bays.sort((a, b) => a.score - b.score)
   const e = edges[0]
-  const bay = bays[0]
+  const bay = site.level ? undefined : bays[0]
   if (bay && (!e || bay.score <= e.score)) {
     ;(site.curves![bay.curve].walls ??= {})[bay.key] = 'door'
     site.rev++
@@ -1121,7 +1123,10 @@ export function roomNames(kind: SiteKind, def: ItemDef): string {
 /** What is said of something that is not in the list of things a plot can hold. */
 export const UNKNOWN_ITEM = 'There is no such thing to place on this kind of plot'
 
-export function canPlace(site: Site, kind: string, x: number, y: number, rot: number): string | null {
+/** What is said of a tile the stairs or a lift from below come up through. */
+export const WELL_HERE = 'The stairs or a lift from the floor below come up here'
+
+export function canPlace(site: Site, kind: string, x: number, y: number, rot: number, wells?: ReadonlyMap<number, unknown>): string | null {
   // only what the list itself names: "constructor" is a property of every object, and not a piece of furniture
   const def = typeof kind === 'string' && Object.hasOwn(ITEMS[site.kind], kind) ? ITEMS[site.kind][kind] : undefined
   if (!def) return UNKNOWN_ITEM
@@ -1140,6 +1145,7 @@ export function canPlace(site: Site, kind: string, x: number, y: number, rot: nu
     if (room >= 0 && n !== room) return 'It cannot straddle a wall'
     room = n
     if (itemAt(site, a, b)) return 'Something is already there'
+    if (wells?.has(b * site.w + a)) return WELL_HERE
   }
   return null
 }
@@ -1150,26 +1156,19 @@ export const countItems = (site: Site, kind: string) => site.items.filter((i) =>
 
 /** What is said of open space on an upper floor. */
 export const UPSTAIRS_OPEN = 'Upstairs, everything stands in a room: build one here first'
-/** Staircases and lifts: what joins a storey to the one under it. */
+/** Staircases and lifts: what joins a storey to the one above it. */
 export const CLIMB: ReadonlySet<string> = new Set(['stairs', 'lift'])
 
 /**
  * The storeys above the ground floor, one for each floor the building has
- * over the first: plans of their own, laid over the ground floor's
- * footprint. Made to match the number of floors; only offices have them.
+ * over the first: plans of their own, the size of the plot. Made to match
+ * the number of floors; only offices have them.
  */
 export function syncLevels(site: Site): Site[] {
   if (site.kind !== 'office' || site.level) return []
   const want = Math.max(0, site.floors - 1)
   const up = site.upper ?? []
-  while (up.length < want) {
-    const l = newSite(site.kind, site.tier)
-    l.w = site.w
-    l.h = site.h
-    l.grid = new Array(site.w * site.h).fill(0)
-    l.level = up.length + 1
-    up.push(l)
-  }
+  while (up.length < want) up.push(blankLevel(site, up.length + 1))
   up.length = want
   for (const l of up) {
     l.facade = site.facade
@@ -1180,36 +1179,110 @@ export function syncLevels(site: Site): Site[] {
   return up
 }
 
-/** A storey of a building: 0 is the ground floor itself. */
-export const levelOf = (site: Site, floor: number): Site | undefined => (floor > 0 ? site.upper?.[floor - 1] : site)
-
-const climbs = (site: Site, open?: ReadonlySet<number>) =>
-  site.items.some((i) => {
-    if (!CLIMB.has(i.kind)) return false
-    const n = gridAt(site, i.x, i.y)
-    return !!n && (!open || open.has(n))
-  })
-
-/**
- * How many storeys above the ground floor people can get up to. Each floor
- * needs a staircase or a lift, and so does every floor under it; on the
- * ground floor it has to stand in a room with a way in.
- */
-export function linkedLevels(site: Site): number {
-  if (!site.upper?.length || !climbs(site, openRooms(site))) return 0
-  let k = 0
-  for (const l of site.upper) {
-    if (!climbs(l)) break
-    k++
-  }
-  return k
+/** A bare storey over a building: nothing built on it yet. */
+export function blankLevel(ground: Site, floor: number): Site {
+  const l = newSite(ground.kind, ground.tier)
+  l.w = ground.w
+  l.h = ground.h
+  l.grid = new Array(ground.w * ground.h).fill(0)
+  l.level = floor
+  l.facade = ground.facade
+  l.roof = ground.roof
+  return l
 }
 
-/** Rooms on an upper floor people can get into once they are up there: the ones with the stairs or a lift, and those with a door. */
-function levelOpen(level: Site): Set<number> {
+/** A storey of a building: 0 is the ground floor itself. */
+export const levelOf = (site: Site, floor: number): Site | undefined => (floor > 0 ? site.upper?.[floor - 1] : site)
+/** Every storey of a building, the ground floor first. */
+export const storeysOf = (site: Site): Site[] => (site.upper?.length ? [site, ...site.upper] : [site])
+
+/** Whether every tile of an item has a room over it on a storey. */
+const roomedOver = (level: Site | undefined, tiles: [number, number][]) => !!level && tiles.every(([x, y]) => gridAt(level, x, y) > 0)
+
+/** How far up a lift on a storey runs: the highest floor its shaft reaches, through every storey above with a room over it. */
+function liftTop(floors: Site[], from: number, item: SiteItem): number {
+  const tiles = itemTiles(floors[from], item)
+  let top = from
+  while (roomedOver(floors[top + 1], tiles)) top++
+  return top
+}
+
+/** A stairwell or lift shaft coming up through a floor: what it is, and whether it arrives in a room there. */
+export interface Well {
+  kind: string
+  lands: boolean
+}
+
+/**
+ * Where the stairs and lifts of the storeys below come up through a floor,
+ * by tile index. Stairs on a storey rise to the one above it; a lift's shaft
+ * runs on up through every storey that has a room over it. Nothing else can
+ * stand on these tiles, and only one with a room over it is a way up.
+ */
+export function wellsOn(ground: Site, floor: number): Map<number, Well> {
+  const out = new Map<number, Well>()
+  if (floor < 1) return out
+  const floors = storeysOf(ground)
+  const here = floors[floor] as Site | undefined
+  for (let f = 0; f < floor && f < floors.length; f++) {
+    for (const it of floors[f].items) {
+      if (!CLIMB.has(it.kind)) continue
+      // stairs come up one floor; a lift only as far as its shaft runs, and one floor past that
+      if (it.kind === 'stairs' ? f !== floor - 1 : liftTop(floors, f, it) < floor - 1) continue
+      const tiles = itemTiles(floors[f], it)
+      const lands = roomedOver(here, tiles)
+      for (const [x, y] of tiles) out.set(y * ground.w + x, { kind: it.kind, lands })
+    }
+  }
+  return out
+}
+
+/** The tiles a staircase or lift would come up through on the floors above, by floor: what stands there has to go first. */
+export function climbBlocked(ground: Site, floor: number, kind: string, tiles: [number, number][]): string | null {
+  if (!CLIMB.has(kind)) return null
+  const floors = storeysOf(ground)
+  for (let f = floor + 1; f < floors.length; f++) {
+    const l = floors[f]
+    if (tiles.some(([x, y]) => itemAt(l, x, y))) return `Something stands over it on ${f === 1 ? 'the first floor' : `floor ${f}`}: move it first`
+    if (kind === 'stairs' || !roomedOver(l, tiles)) break
+  }
+  return null
+}
+
+/** Rooms on a storey people can get into once they are on it: on the ground floor those with a way in, upstairs those the stairs or a lift come up in, and those with a door. */
+function storeyOpen(floors: Site[], f: number): Set<number> {
+  if (!f) return openRooms(floors[0])
+  const level = floors[f]
   const open = new Set(openRooms(level))
-  for (const i of level.items) if (CLIMB.has(i.kind)) open.add(gridAt(level, i.x, i.y))
+  for (const [i, w] of wellsOn(floors[0], f)) if (w.lands && level.grid[i]) open.add(level.grid[i])
   return open
+}
+
+/**
+ * How many storeys above the ground floor people can get up to: a floor is
+ * reached when stairs from a room people can get into on the floor below
+ * (or a lift from any floor under it) come up in one of its rooms.
+ */
+export function linkedLevels(site: Site): number {
+  if (!site.upper?.length) return 0
+  const floors = storeysOf(site)
+  let k = 0
+  for (let f = 1; f < floors.length; f++) {
+    let reached = false
+    for (let m = 0; m < f && !reached; m++) {
+      const open = storeyOpen(floors, m)
+      for (const it of floors[m].items) {
+        if (!CLIMB.has(it.kind) || !open.has(gridAt(floors[m], it.x, it.y))) continue
+        if (it.kind === 'stairs' ? m === f - 1 && roomedOver(floors[f], itemTiles(floors[m], it)) : liftTop(floors, m, it) >= f) {
+          reached = true
+          break
+        }
+      }
+    }
+    if (!reached) break
+    k = f
+  }
+  return k
 }
 
 /** Rooms on a storey nobody can get into: no door, or (upstairs) no stairs or lift reaching that floor. */
@@ -1218,7 +1291,7 @@ export function sealedOn(site: Site, floor: number): Room[] {
   if (!level) return []
   if (!floor) return sealedRooms(site)
   if (floor > linkedLevels(site)) return level.rooms
-  const open = levelOpen(level)
+  const open = storeyOpen(storeysOf(site), floor)
   return level.rooms.filter((r) => !open.has(r.n))
 }
 
@@ -1236,15 +1309,22 @@ export function reachable(site: Site): SiteItem[] {
   if (!site.upper?.length) return own
   const k = linkedLevels(site)
   if (!k) return own
-  const key = `${site.rev}:${own.length}:${k}:${site.upper.map((l) => `${l.rev}.${l.items.length}`).join(',')}`
+  const key = `${site.rev}:${own.length}:${k}:${site.upper.map((l) => `${l.rev}.${l.items.length}.${plotMark(l)}`).join(',')}`
   const hit = UP_REACH.get(site)
   if (hit && hit.key === key) return hit.items
-  const items = own.concat(...site.upper.slice(0, k).map((l) => reachable(l)))
+  const floors = storeysOf(site)
+  const items = own.slice()
+  for (let f = 1; f <= k; f++) {
+    const open = storeyOpen(floors, f)
+    for (const it of floors[f].items) if (ITEMS[site.kind][it.kind] && open.has(gridAt(floors[f], it.x, it.y))) items.push(it)
+  }
   UP_REACH.set(site, { key, items })
   return items
 }
 function findReachable(site: Site): SiteItem[] {
-  const open = site.level ? levelOpen(site) : openRooms(site)
+  // a storey on its own, without the floors under it: the rooms with a door, or with stairs or a lift in them
+  const open = new Set(openRooms(site))
+  if (site.level) for (const i of site.items) if (CLIMB.has(i.kind)) open.add(gridAt(site, i.x, i.y))
   return site.items.filter((it) => {
     const n = gridAt(site, it.x, it.y)
     return ITEMS[site.kind][it.kind] && (!n || open.has(n))
@@ -1259,7 +1339,9 @@ export function sumOf(site: Site, key: 'comfort' | 'prestige' | 'visitors' | 'me
 /** Prestige of a site: its fittings plus the building itself. */
 export function sitePrestige(site: Site): number {
   const tiles = builtTiles(site)
-  return sumOf(site, 'prestige', reachable(site)) + (site.floors - 1) * (tiles / 150) + Math.sqrt(tiles) * 0.12 + (FACADES[site.facade]?.cost ? 1 : 0)
+  // an office counts what is built on each storey above; another building its height over its footprint
+  const above = site.upper?.length ? site.upper.reduce((a, l) => a + builtTiles(l), 0) : (site.floors - 1) * tiles
+  return sumOf(site, 'prestige', reachable(site)) + above / 150 + Math.sqrt(tiles) * 0.12 + (FACADES[site.facade]?.cost ? 1 : 0)
 }
 
 /** Rooms that have no way in, for warnings. */

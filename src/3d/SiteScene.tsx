@@ -10,7 +10,7 @@ import { type Pt, bayRun, bayStands, curveTiles, nearestBay } from '../sim/curve
 import { money, moneyDelta, num, pct } from '../components/format'
 import { EDGE_COST, edgePrice, keepsDoors, partitionRun, roomCost, zonePlan } from '../sim/game'
 import type { FactoryLife, OfficeLife, StoreLife, VenueLife } from '../sim/life'
-import { ITEMS, type LineStats, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, areaOf, areaTiles, canPartition, canPlace, ceilingOf, curveFor, cutAt, doorFits, fillError, gridAt, inPlot, isBoundary, hasGround, isStage, itemAt, itemTiles, pocketAt, reachable, roomOf, rowSpots, stageOf, tilesOf, wallAt } from '../sim/sites'
+import { type Well, blankLevel, storeysOf, wellsOn, ITEMS, type LineStats, ROOMS, SITE_TIERS, type Shape, type ShapeOpts, areaOf, areaTiles, canPartition, canPlace, ceilingOf, curveFor, cutAt, doorFits, fillError, gridAt, inPlot, isBoundary, hasGround, isStage, itemAt, itemTiles, pocketAt, reachable, roomOf, rowSpots, stageOf, tilesOf, wallAt } from '../sim/sites'
 import { ROLE_INFO, inTraining, jobTitle } from '../sim/staff'
 import type { Employee, Product, Site, SiteItem, SiteKind } from '../sim/types'
 import { QUALITY, type Quality, isHeld, useSettings } from '../store/settings'
@@ -37,7 +37,8 @@ import { type Target, itemBox, itemTarget, placeBeside, rayBox } from './site/pi
 import { seatOwners } from './site/seats'
 import { buildSpots, seatAisles } from './site/spots'
 import { Shoppers, StoreItem } from './site/store'
-import { Batch, CUT_H, Ground, STOREY, Structure, type ViewMode, WALL_T } from './site/structure'
+import { Batch, CUT_H, Ground, STOREY, Structure, type ViewMode, WALL_T, wallTop } from './site/structure'
+import { Storeys, holesOn } from './site/storeys'
 import { planKey } from './site/plankey'
 import { Walk } from './site/walk'
 import { Heartbeat, type Pulse, useTick } from './site/tick'
@@ -838,13 +839,20 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
   /** The camera is the walker's: from the glide down to eye height until the glide back up. */
   const [walking, setWalking] = useState(false)
   // ---- an upper floor: its own plan, lifted to its height, with the floors under it drawn beneath
-  const level = floor > 0 ? ground.upper?.[floor - 1] : undefined
+  // the floor just over the top one is bare until a room is built on it, which puts the floor up
+  const blank = useMemo(() => (floor > (ground.upper?.length ?? 0) ? blankLevel(ground, floor) : undefined), [ground.w, ground.h, ground.tier, floor, ground.upper?.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  const level = floor > 0 ? (ground.upper?.[floor - 1] ?? blank) : undefined
   /** The plan the view works on: what is built, picked and drawn with tools. */
   const site = level ?? ground
   const lift = level ? floor * STOREY : 0
+  /** Where the stairs and lifts from the floors below come up through this one. */
+  const wells = useMemo(() => (level ? wellsOn(ground, floor) : new Map<number, Well>()), [level, floor, ground, ground.rev, level?.rev]) // eslint-disable-line react-hooks/exhaustive-deps
+  const stairHoles = useMemo(() => new Set([...wells].filter(([, w]) => w.kind === 'stairs').map(([i]) => i)), [wells])
   // low cut walls are no use to someone walking about: the walls stand full height, under a roof if the outside was being shown;
-  // upstairs the outside is the floor's own walls, with no roof over them to hide the rooms
-  const mode: ViewMode = (walking && chosen === 'cut') || (level && chosen === 'full') ? 'walls' : chosen
+  // a venue's hall is walked under its own roof, raised over the rigging; upstairs the outside is the floor's own walls, with no roof over them to hide the rooms
+  const mode: ViewMode = walking && ground.kind === 'venue' ? 'full' : (walking && (chosen === 'cut' || chosen === 'down')) || (level && chosen === 'full') ? 'walls' : chosen
+  /** An office of several storeys seen from outside: each floor is drawn as built, the ground floor one storey high, each with its roof over what is not built on above. */
+  const stacked = mode === 'full' && !level && !!ground.upper?.length
   const endWalk = useCallback(() => onWalkEnd?.(), [onWalkEnd])
   const prefs = useSettings((s) => s.settings)
   const Q = QUALITY[prefs.quality]
@@ -894,7 +902,7 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
   /** The site shows what the company is doing: clocks run, screens are live, things can be clicked. */
   const lively = !!life && !autoRotate && !level
   const office = site.kind === 'office' ? life?.office : undefined
-  const cut = mode === 'cut'
+  const cut = mode === 'cut' || mode === 'down'
   const opts = tool && 'shape' in tool ? tool.opts : undefined
   const optsKey = `${opts?.thick ?? ''}|${opts?.sweep ?? ''}|${opts?.turn ?? ''}`
 
@@ -923,7 +931,7 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
 
   // ---- who sits where, and who is drawn walking about
   const seatedKey = seated.map((e) => e.id).join(',')
-  const owners = useMemo(() => seatOwners(site, seated), [site, site.rev, seatedKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  const owners = useMemo(() => seatOwners(ground, seated), [ground, site, site.rev, ground.rev, seatedKey]) // eslint-disable-line react-hooks/exhaustive-deps
   // what each person is called: an executive goes by the seat they hold, not their desk job
   const titles = useMemo(() => new Map([...seated, ...idle].map((e) => [String(e.id), jobTitle(e)])), [seatedKey, idle.length]) // eslint-disable-line react-hooks/exhaustive-deps
   const crowdOn = lively && prefs.walkers && (site.kind !== 'factory' || !!life?.factory)
@@ -932,7 +940,7 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
   const [turn, setTurn] = useState<{ working: boolean; phase: Phase }>({ working: true, phase: 'closed' })
   const onTurn = useCallback((working: boolean, phase: Phase) => setTurn({ working, phase }), [])
   const [darkRooms, setDarkRooms] = useState<ReadonlySet<number>>(() => new Set())
-  const nav = useMemo(() => buildNav(site), [site, site.rev]) // eslint-disable-line react-hooks/exhaustive-deps
+  const nav = useMemo(() => buildNav(site, level ? [...wells].filter(([, w]) => w.lands).map(([i]) => i) : undefined), [site, site.rev, wells]) // eslint-disable-line react-hooks/exhaustive-deps
   const spots = useMemo(() => (crowdOn ? buildSpots(site, nav) : []), [site, nav, crowdOn])
   const cutOff = useMemo(() => {
     if (!crowdOn) return 0
@@ -1108,14 +1116,21 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
   // the walls follow the plan, not the furniture: a desk put down leaves the building standing as it is
   const plan = planKey(site)
   const groundPlan = planKey(ground)
-  /** Upstairs: the bare floor over the building below, where rooms can still be marked out. */
-  const voidTiles = useMemo(() => {
-    const out: [number, number][] = []
-    if (!level) return out
-    for (let i = 0; i < ground.grid.length; i++) if (ground.grid[i] && !level.grid[i]) out.push([i % ground.w, Math.floor(i / ground.w)])
-    return out
-  }, [level, plan, groundPlan]) // eslint-disable-line react-hooks/exhaustive-deps
-  const snap = useMemo(() => snapshot(site), [site, plan]) // eslint-disable-line react-hooks/exhaustive-deps
+  /** Changes whenever any storey of the building does: what the columns and stairwell rails are drawn from. */
+  const storeysSig = `${groundPlan}|${ground.items.length}|${(ground.upper ?? []).map((l) => `${planKey(l)}.${l.items.length}`).join(',')}`
+  /** Lifts on the floors below whose shafts come up through this one: their doors are drawn here too. */
+  const shafts = useMemo(() => {
+    if (!level || ![...wells.values()].some((w) => w.kind === 'lift')) return []
+    return storeysOf(ground)
+      .slice(0, floor)
+      .flatMap((l) => l.items.filter((it) => it.kind === 'lift' && wells.get(it.y * ground.w + it.x)?.kind === 'lift'))
+  }, [level, wells, ground, floor])
+  const snap = useMemo(() => {
+    const shot = snapshot(site)
+    // with storeys of their own over it, the ground floor stands one storey high
+    if (stacked) shot.floors = 1
+    return shot
+  }, [site, plan, stacked]) // eslint-disable-line react-hooks/exhaustive-deps
   const [standing, setStanding] = useState(snap)
   const [wallFx, setWallFx] = useState<{ pieces: WallPiece[]; falling: boolean; then: Site; id: number } | null>(null)
   const fxId = useRef(0)
@@ -1392,7 +1407,7 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
       let poor = 0
       let why: string | undefined
       const spots = (drag ? rowSpots(def, drag.x, drag.y, hover.x, hover.y, tool.rot) : ([[hover.x, hover.y]] as [number, number][])).map(([x, y]) => {
-        const no = canPlace(site, tool.kind, x, y, tool.rot)
+        const no = canPlace(site, tool.kind, x, y, tool.rot, wells)
         why ??= no ?? undefined
         const free = !no
         const ok = free && fits < can
@@ -1501,7 +1516,7 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
   // every stretch of wall the wall tool would change: straight edges as boxes, curved bays in their own shape
   let edgeCursor: React.ReactNode = null
   if (hover && tool?.type === 'edge' && preview && 'wall' in preview && preview.wall) {
-    const eh = mode === 'cut' ? CUT_H : STOREY - 0.1
+    const eh = wallTop(mode)
     const tone = (ok: boolean, same: boolean) => (!ok ? neg : same ? '#9aa0a6' : accent)
     edgeCursor = (
       <>
@@ -1520,7 +1535,7 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
   // while a tool is being dragged, a tag at the pointer says how many and how much
   const runTag =
     hover && drag && runInfo && (runInfo.count > 1 || runInfo.blocked > 0) ? (
-      <Html position={[hover.x - w / 2 + 0.5, mode === 'cut' ? 1.7 : STOREY + 0.4, hover.y - h / 2 + 0.5]} center zIndexRange={[30, 20]} style={{ pointerEvents: 'none' }}>
+      <Html position={[hover.x - w / 2 + 0.5, cut ? 1.7 : STOREY + 0.4, hover.y - h / 2 + 0.5]} center zIndexRange={[30, 20]} style={{ pointerEvents: 'none' }}>
         <div className="pointer-events-none -translate-y-full whitespace-nowrap border border-accent bg-panel/95 px-2 py-[3px] text-center">
           <div className="num text-[11px] text-fg">
             {runInfo.count} x {runInfo.tool === 'remove' ? '+' : ''}
@@ -1827,23 +1842,42 @@ export function SiteScene({ site: ground, floor = 0, mode: chosen, mood, tool, c
 
       <Environs env={tier.env} w={w} h={h} mood={mood} />
       <Ground site={ground} dim={indoor ? M.ground : mood === 'night' ? 0.6 : mood === 'dusk' ? 0.85 : 1} />
-      {/* upstairs: the floors under the one being built on, cut low and seen through its bare floor */}
+      {/* upstairs: the floors under the one being built on, cut low and faded, seen through the open parts of this one */}
       {level &&
         Array.from({ length: floor }, (_, f) => {
           const plan = f ? ground.upper?.[f - 1] : ground
           if (!plan) return null
           return (
             <group key={`lower${f}`} position-y={f * STOREY}>
-              {f > 0 && <Ground site={plan} dim={0.8} upper />}
+              {f > 0 && <Ground site={plan} dim={0.8} upper holes={holesOn(ground, f)} />}
               <Structure site={plan} mode="cut" glow={0} leaves={false} />
               <Chunk sig={`${f}|${plan.rev}|${plan.items.length}|${glowKey}`} render={() => plan.items.filter((i) => ITEMS[plan.kind][i.kind]).map((i) => model(i, M.glow))} />
             </group>
           )
         })}
+      {/* from outside, an office of several storeys: every floor as built, each with its roof over what nothing stands on */}
+      {stacked &&
+        ground.upper!.map((plan, i) => (
+          <group key={`upper${i}`} position-y={(i + 1) * STOREY}>
+            <Ground site={plan} dim={1} upper holes={holesOn(ground, i + 1)} />
+            <Structure site={plan} mode="full" glow={mood === 'day' ? 0 : M.glow * 0.6} leaves={false} />
+            <Chunk sig={`u${i}|${plan.rev}|${plan.items.length}|${glowKey}`} render={() => plan.items.filter((it) => ITEMS[plan.kind][it.kind]).map((it) => model(it, M.glow))} />
+          </group>
+        ))}
+      {/* columns and slabs under rooms built out over open ground, and rails round the stairwells */}
+      {(level || stacked) && <Storeys ground={ground} from={1} to={level ? floor : (ground.upper?.length ?? 0)} sig={storeysSig} />}
       <group position-y={lift}>
-      {level && <Ground site={level} dim={1} upper />}
-      {level && voidTiles.length > 0 && <Tint tiles={voidTiles} w={w} h={h} color="#8d9095" opacity={0.42} y={-0.02} inset={0} />}
-      <Structure site={standing} mode={mode} glow={mood === 'day' ? 0 : M.glow * 0.6} leaves={false} dark={mode === 'cut' ? undefined : darkRooms} />
+      {level && <Ground site={level} dim={1} upper holes={stairHoles} />}
+      {/* the floors below are faded under this one, as seen through its open parts */}
+      {level && (
+        <mesh rotation-x={-Math.PI / 2} position={[0, -0.06, 0]} renderOrder={2}>
+          <planeGeometry args={[w + 6, h + 6]} />
+          <meshBasicMaterial color={sky} transparent opacity={0.45} depthWrite={false} />
+        </mesh>
+      )}
+      {/* a lift's doors on every floor its shaft reaches */}
+      {shafts.map((it) => model(it, M.glow))}
+      <Structure site={standing} mode={mode} glow={mood === 'day' ? 0 : M.glow * 0.6} leaves={false} dark={cut ? undefined : darkRooms} />
 
       {/* pick surface over the whole plot: found by the pointer, never drawn */}
       <mesh
