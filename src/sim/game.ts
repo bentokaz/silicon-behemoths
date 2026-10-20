@@ -1606,10 +1606,60 @@ export function autoLine(s: GameState): string | null {
   return null
 }
 
+/** Fixtures of the standard fit-out beyond the first table and the checkout, for each kind of location: tables, then accessory walls and decor. */
+const STANDARD_FIT = [
+  { table: 1, shelf: 1, plant: 2, logowall: 1 },
+  { table: 4, shelf: 2, plant: 4, logowall: 1, tree: 1 },
+  { table: 11, shelf: 3, plant: 8, logowall: 2, tree: 3, counter: 3 },
+]
+
 /**
- * Open a store. It comes with a sales floor and the minimum it needs to
- * trade, or, with `layoutFrom`, fitted out as a copy of the store with that
- * id, charged on top of the plot at what the copy would cost to build.
+ * A new store as it opens: a sales floor with a door, a checkout and enough
+ * tables, accessory walls and plants for the kind of location (a mall unit
+ * needs less than a plaza), laid out so the floor does not feel crowded.
+ * `cost` is what the fixtures beyond the first table and checkout come to.
+ */
+function standardStore(tier: number): { site: Site; cost: number } {
+  const site = newSite('store', tier)
+  const { room } = zone(site, 'sales', areaTiles(1, 1, site.w - 2, site.h - 3))
+  if (room) autoDoor(site, room.n)
+  let n = 0
+  const put = (kind: string, x: number, y: number) => site.items.push({ id: `o${++n}`, kind, x, y, rot: 0 })
+  put('table', 3, 3)
+  put('counter', site.w - 3, 2)
+  let cost = 0
+  const mid = Math.floor(site.w / 2)
+  const fit = STANDARD_FIT[Math.min(tier, STANDARD_FIT.length - 1)]
+  const spots = (step: [number, number], from: [number, number]) => {
+    const out: [number, number][] = []
+    for (let y = from[1]; y < site.h - 2; y += step[1]) for (let x = from[0]; x < site.w - 1; x += step[0]) out.push([x, y])
+    return out
+  }
+  const add = (kind: string, count: number, at: [number, number][]) => {
+    for (const [x, y] of at) {
+      if (!count) return
+      // keep the walk in from the street door clear
+      if (y >= site.h - 4 && x < mid + 2 && x + ITEMS.store[kind].w > mid - 2) continue
+      if (canPlace(site, kind, x, y, 0)) continue
+      put(kind, x, y)
+      cost += ITEMS.store[kind].cost
+      count--
+    }
+  }
+  add('table', fit.table, spots([4, 3], [3, 5]).concat(spots([4, 3], [5, 3])))
+  add('counter', fit.counter ?? 0, spots([1, 2], [site.w - 3, 4]))
+  add('shelf', fit.shelf, spots([3, 4], [1, 1]))
+  add('logowall', fit.logowall, spots([4, 5], [1, site.h - 3]).concat(spots([1, 1], [1, 1])))
+  add('tree', fit.tree ?? 0, spots([5, 6], [site.w - 2, 2]))
+  add('plant', fit.plant, spots([2, 6], [1, site.h - 3]).concat(spots([3, 5], [2, 2])))
+  return { site, cost }
+}
+
+/**
+ * Open a store. It comes with a sales floor and the standard fit-out for the
+ * location (charged with the plot), or, with `layoutFrom`, fitted out as a
+ * copy of the store with that id, charged on top of the plot at what the copy
+ * would cost to build.
  */
 export function openStore(s: GameState, tier: number, region?: string, layoutFrom?: string): string | null {
   const def = whole(tier) ? SITE_TIERS.store[tier] : undefined
@@ -1623,20 +1673,13 @@ export function openStore(s: GameState, tier: number, region?: string, layoutFro
   if (layoutFrom && !model) return 'There is no such store to copy'
   const plan = model ? layoutPlan(s, model.site, newSite('store', tier), false) : null
   if (plan && (plan.error || !plan.site)) return plan.error ?? 'That layout cannot be copied'
-  const total = def.cost + (plan?.cost ?? 0)
-  if (!canAfford(s, total)) return plan ? `Not enough cash: the plot and the fit-out come to ${dollars(total)}` : `Not enough cash: a ${def.name.toLowerCase()} costs ${dollars(total)}`
+  const standard = plan ? null : standardStore(tier)
+  const total = def.cost + (plan?.cost ?? standard?.cost ?? 0)
+  if (!canAfford(s, total)) return plan ? `Not enough cash: the plot and the fit-out come to ${dollars(total)}` : `Not enough cash: a ${def.name.toLowerCase()} with its fit-out costs ${dollars(total)}`
   spend(s, total, 'facilities')
   const free = regionInfo(where).cities.filter((c) => !s.stores.some((st) => st.name === c))
-  let site = newSite('store', tier)
-  if (plan?.site) {
-    site = plan.site
-    reissue(s, site)
-  } else {
-    // a new store opens with a sales floor and the minimum it needs to trade
-    const { room } = zone(site, 'sales', areaTiles(1, 1, site.w - 2, site.h - 3))
-    if (room) autoDoor(site, room.n)
-    site.items.push({ id: `o${s.nextId++}`, kind: 'table', x: 3, y: 3, rot: 0 }, { id: `o${s.nextId++}`, kind: 'counter', x: site.w - 3, y: 2, rot: 0 })
-  }
+  const site = plan?.site ?? standard!.site
+  reissue(s, site)
   const store = { id: `s${s.nextId++}`, name: free.length ? pick(s, free) : `${regionInfo(where).name} ${s.stores.length + 1}`, location: def.name, region: where, site, openedDay: s.day, unitsTotal: 0, monthUnits: 0, lastVisitors: 0 }
   s.stores.push(store)
   news(s, 'finance', `A new store opened: ${store.name} (${def.name.toLowerCase()}, ${regionInfo(where).name}).`)
@@ -1669,7 +1712,7 @@ export function openStores(s: GameState, tier: number, regions: string[], count:
   if (layoutFrom && !model) return 'There is no such store to copy'
   const plan = model ? layoutPlan(s, model.site, newSite('store', tier), false) : null
   if (plan && (plan.error || !plan.site)) return plan.error ?? 'That layout cannot be copied'
-  const each = def.cost + (plan ? plan.cost : 0)
+  const each = def.cost + (plan ? plan.cost : standardStore(tier).cost)
   if (!canAfford(s, each * total)) return `Not enough cash: ${total} ${def.name.toLowerCase()}s come to ${dollars(each * total)}`
   for (const r of where)
     for (let i = 0; i < count; i++) {

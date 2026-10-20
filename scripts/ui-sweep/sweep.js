@@ -29,7 +29,11 @@ const settle = async (ms = 12) => {
   await sleep(S.slow ? ms * 4 : ms)
   await yieldNow()
 }
-const st = () => W.sb.getState()
+// the dev build puts the store on window (src/main.tsx); fail with a clear message when the page is not one
+const st = () => {
+  if (!W.sb) throw new Error('sweep: window.sb is missing. Run this in the page of a dev server (npx vite), after the app has mounted.')
+  return W.sb.getState()
+}
 const G = () => W.sbGame
 
 // ------------------------------------------------------------------ recording

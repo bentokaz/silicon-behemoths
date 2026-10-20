@@ -705,6 +705,7 @@ export function NumInput({ value, onChange, className = '', min = 0, max = 1e9, 
       inputMode={whole ? 'numeric' : 'decimal'}
       spellCheck={false}
       autoComplete="off"
+      maxLength={20}
       {...rest}
       value={shown}
       onChange={(e) => {

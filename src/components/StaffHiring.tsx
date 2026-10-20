@@ -45,8 +45,12 @@ export function StaffHiring({ role, setRole }: { role: 'all' | Role; setRole: (r
     if (err) return say(err, 'bad')
     sfx.confirm()
     say(`${e.name} joined as ${aJob(e.role)}.`)
-    // the last of a job has been taken: the others are what there is to look at now
-    if (role !== 'all' && !g.candidates.some((c) => c.id !== e.id && c.role === role)) setRole('all')
+    // the filter stays, even when that was the last of the job: hire, headhunt, hire again without choosing it twice
+  }
+  const findMore = () => {
+    const err = act((s) => headhunt(s))
+    if (err) say(err, 'bad')
+    else say('A recruiter found a stronger batch of applicants.')
   }
   return (
     <PeoplePage>
@@ -63,11 +67,7 @@ export function StaffHiring({ role, setRole }: { role: 'all' | Role; setRole: (r
             <Btn
               icon="search"
               title="A recruiter replaces this list with a stronger batch at once"
-              onClick={() => {
-                const err = act((s) => headhunt(s))
-                if (err) say(err, 'bad')
-                else say('A recruiter found a stronger batch of applicants.')
-              }}
+              onClick={findMore}
             >
               Headhunt, {money(HEADHUNT_COST)}
             </Btn>
@@ -75,10 +75,18 @@ export function StaffHiring({ role, setRole }: { role: 'all' | Role; setRole: (r
         }
       >
         {g.candidates.length === 0 ? (
-          <Empty icon="hire" text="Everyone who applied this month has been seen. A new batch arrives next month, or a recruiter can find one now." />
+          <div className="flex flex-col items-center gap-3 py-2">
+            <Empty icon="hire" text="Everyone who applied this month has been seen. A new batch arrives next month, or a recruiter can find one now." />
+            <Btn icon="search" onClick={findMore}>
+              Headhunt more, {money(HEADHUNT_COST)}
+            </Btn>
+          </div>
         ) : list.length === 0 && role !== 'all' ? (
           <div className="flex flex-wrap items-center gap-3 px-3 py-3 text-xs text-dim" data-no-role>
-            <span>No {ROLE_INFO[role].name.toLowerCase()} is applying this month. A new batch arrives next month.</span>
+            <span>No {ROLE_INFO[role].name.toLowerCase()} is left among the applicants. A new batch arrives next month, or a recruiter can find one now.</span>
+            <Btn small icon="search" title={`A recruiter replaces the list with a stronger batch; the ${ROLE_INFO[role].name.toLowerCase()} filter stays`} onClick={findMore}>
+              Headhunt more, {money(HEADHUNT_COST)}
+            </Btn>
             <Btn small onClick={() => setRole('all')}>
               Show all roles
             </Btn>
