@@ -111,6 +111,18 @@ export function meetingTopic(office: OfficeLife | undefined, team: number, day: 
   if (office.support.load > 1) options.push({ text: 'Support is over capacity: hiring or tooling?', secret: false })
   if (office.applicants > 0) options.push({ text: `Hiring: ${office.applicants} applicants to review`, secret: false })
   if (office.budget > 0) options.push({ text: `Budget review: research at $${Math.round(office.budget).toLocaleString('en-US')} a month`, secret: false })
+  const f = office.factory
+  if (f) {
+    if (f.running && f.bottleneck) options.push({ text: pick([`Factory bottleneck: ${f.bottleneck}`, `Line output is held up at ${f.bottleneck}`], v(8)) ?? 'Factory line', secret: false })
+    if (f.defectRate > 0.01) options.push({ text: `Quality: ${(f.defectRate * 100).toFixed(1)}% defects on the line`, secret: false })
+    if (f.idle) options.push({ text: pick(['The line is standing idle: where are the orders?', 'Idle line: what to build next'], v(9)) ?? 'Idle line', secret: false })
+  }
+  const m = office.finance
+  if (m) {
+    if (m.runwayMonths !== undefined) options.push({ text: `Cash runway: ${m.runwayMonths.toFixed(1)} months at this burn`, secret: true })
+    if (m.monthProfit !== 0) options.push({ text: m.monthProfit > 0 ? `Last month: $${Math.round(m.monthProfit).toLocaleString('en-US')} profit` : `Last month: $${Math.round(-m.monthProfit).toLocaleString('en-US')} loss`, secret: true })
+    options.push({ text: m.raiseInDays > 0 ? `Funding: next round possible in ${m.raiseInDays} days` : 'Funding: investors are open to a new round', secret: true })
+  }
   if (teamName) options.push({ text: `${teamName} team: weekly sync`, secret: false })
   return pick(options, n) ?? { text: 'Weekly planning', secret: false }
 }

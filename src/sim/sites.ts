@@ -1450,13 +1450,14 @@ export { type LineStats, type LineReport, type Joint, lineStats, planFix, fixLay
 
 /** A ready-made hall and line for players who do not want to lay conveyors themselves. */
 export function starterLine(site: Site): { hall: [number, number, number, number]; items: { kind: string; x: number; y: number; rot: number }[] } | null {
-  const x0 = 3
+  // the receiving dock stands in the west outer wall, facing in
+  const x0 = 0
   const y0 = Math.max(2, Math.floor(site.h / 2) - 3)
   const hall: [number, number, number, number] = [x0, y0, x0 + 15, y0 + 5]
   if (hall[2] >= site.w - 1 || hall[3] >= site.h - 1) return null
   for (const [x, y] of areaTiles(...hall)) if (itemAt(site, x, y) || (gridAt(site, x, y) && typeAt(site, x, y) !== 'hall')) return null
   const y = y0 + 2
-  const x = x0 + 1
+  const x = x0
   return {
     hall,
     items: [

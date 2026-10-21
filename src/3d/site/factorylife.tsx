@@ -332,6 +332,29 @@ export function FactoryFloor({ site, life, sparks, plan }: { site: Site; life: F
   return (
     <>
       <primitive object={cartons} />
+      {docks.map((d, i) => {
+        const m = moves[i]
+        // a dock with no marked bay gets a paved apron outside the wall, with bay lines
+        if (!m || m.truck) return null
+        return (
+          <group key={`apron${d.id}`} position={[m.park[0], 0, m.park[1]]} rotation={[0, Math.atan2(m.out[0], m.out[1]), 0]}>
+            <mesh position={[0, 0.02, 0]} receiveShadow>
+              <boxGeometry args={[5.4, 0.04, 10.4]} />
+              <meshStandardMaterial color="#6d7176" roughness={0.95} />
+            </mesh>
+            {[-1.42, 1.42].map((x) => (
+              <mesh key={x} position={[x, 0.045, 0]}>
+                <boxGeometry args={[0.1, 0.01, 7.9]} />
+                <meshStandardMaterial color="#e3b52b" roughness={0.9} />
+              </mesh>
+            ))}
+            <mesh position={[0, 0.045, -3.9]}>
+              <boxGeometry args={[2.9, 0.01, 0.12]} />
+              <meshStandardMaterial color="#e3b52b" roughness={0.9} />
+            </mesh>
+          </group>
+        )
+      })}
       {docks.map((d, i) => (
         <group
           key={d.id}

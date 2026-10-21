@@ -8,7 +8,8 @@ import { factoryLine, orderLeft } from './ops'
 import { type LineStats, type VenueStats, storeStats, venueStats } from './sites'
 import { ROLE_INFO, output, staffEffects, teamBonus } from './staff'
 import { industryOs, servicesPerMonth } from './tech'
-import type { Employee, GameState, Product, Role } from './types'
+import { RAISE_GAP } from './stock'
+import { type Employee, type GameState, type Product, type Role, monthCosts } from './types'
 
 export interface ResearchLine {
   id: string
@@ -65,6 +66,10 @@ export interface OfficeLife {
   /** The most skilled people of each role, who get the specialist stations. */
   stationed: Map<Role, string[]>
   hours: GameState['policy']['hours']
+  /** A short summary of the factory, for what the teams talk about. */
+  factory?: { bottleneck?: string; defectRate: number; running: boolean; idle: boolean }
+  /** A short summary of the books. */
+  finance: { cash: number; monthProfit: number; runwayMonths?: number; raiseInDays: number }
 }
 
 const own = (s: GameState) => s.products.filter((p) => p.companyId === 'player')
@@ -130,7 +135,21 @@ export function officeLife(s: GameState): OfficeLife {
     shining: new Set(s.staff.filter((e) => isShining(e)).map((e) => e.id)),
     stationed,
     hours: s.policy.hours,
+    factory: s.factory ? factoryTalk(s) : undefined,
+    finance: financeTalk(s),
   }
+}
+
+function factoryTalk(s: GameState): NonNullable<OfficeLife['factory']> {
+  const line = factoryLine(s)
+  const first = line?.lines.find((l) => l.running)
+  return { bottleneck: first?.bottleneck ?? undefined, defectRate: line?.defectRate ?? 0, running: !!line?.running, idle: !line?.running || !s.orders.some((o) => o.mode === 'factory' && orderLeft(o) > 0) }
+}
+
+function financeTalk(s: GameState): OfficeLife['finance'] {
+  const r = s.reports[s.reports.length - 1]
+  const monthProfit = r ? r.revenue + r.other - monthCosts(r) : 0
+  return { cash: s.cash, monthProfit, runwayMonths: monthProfit < 0 ? s.cash / -monthProfit : undefined, raiseInDays: Math.max(0, RAISE_GAP - (s.day - s.stock.lastRaise)) }
 }
 
 /** Someone skilled and content enough that it shows. */
