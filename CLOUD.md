@@ -35,7 +35,14 @@ create table if not exists saves (
 );
 alter table saves enable row level security;
 create policy "own saves" on saves for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+-- Supabase stopped granting API access to new tables automatically on 30 October 2026:
+-- a table created after that date needs these grants, or the game gets "permission denied".
+grant select, insert, update, delete on public.saves to authenticated;
+grant select, insert, update, delete on public.saves to service_role;
 ```
+
+The `feedback` table only takes new rows from players. If it is ever recreated, grant
+`insert` on it to `anon` and `authenticated` (and everything to `service_role`), and nothing else.
 
 ## Running costs
 
