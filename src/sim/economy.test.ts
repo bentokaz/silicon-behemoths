@@ -252,9 +252,9 @@ describe('contracts and prototype tests', () => {
     const s = game()
     const p = launch(s, 0, 300000)
     tick(s, 360)
-    const offer = s.contracts?.find((c) => c.state === 'offer' && c.expires > s.day && c.minReview <= p.reviewAvg)
+    // offers ask for specific designs now: take the first one this device meets
+    const offer = s.contracts?.find((c) => c.state === 'offer' && c.expires > s.day && c.minReview <= p.reviewAvg && acceptContract(s, c.id, p.id) === null)
     if (!offer) return
-    expect(acceptContract(s, offer.id, p.id)).toBeNull()
     const cash = s.cash
     tick(s, 2)
     expect(s.contracts!.find((c) => c.id === offer.id)!.state).toBe('done')
