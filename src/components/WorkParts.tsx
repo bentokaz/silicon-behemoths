@@ -139,12 +139,12 @@ function ContractRow({ g, c }: { g: GameState; c: ContractJob }) {
 }
 
 /** The brief of the contract the designer is working to, with live pass or fail against the design on the bench. */
-export function ContractBrief({ design, lifeHours }: { design: DeviceDesign; lifeHours: number }) {
+export function ContractBrief({ design, lifeHours, weight }: { design: DeviceDesign; lifeHours: number; weight?: number }) {
   const g = useGame()
   const id = useStore((s) => s.brief)
   const c = id ? g.contracts?.find((x) => x.id === id) : undefined
   if (!c) return null
-  const { rows, met } = checkAll(c.reqs, design, { lifeHours })
+  const { rows, met } = checkAll(c.reqs, design, { lifeHours, weight })
   return (
     <div className="pointer-events-auto fixed bottom-3 left-3 z-30 w-72 rounded border border-line bg-panel p-2 shadow-lg">
       <div className="mb-1 flex items-center justify-between text-xs text-fg">

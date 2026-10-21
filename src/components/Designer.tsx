@@ -17,7 +17,7 @@ import { appeal, bestSegment, normalised } from '../sim/market'
 import { costNow, factoryLine } from '../sim/ops'
 import { type FingerprintStyle, type FrontStyle, LAYOUT_NAMES, NO_REFRESH } from '../sim/rivals'
 import { batteryLabel, chargeWatts, evaluate, foldedThickness, lifeLabel, minBezel, minThickness, panelName, selfieMinDia, thermal } from '../sim/scoring'
-import { CAMO_NAMES } from '../sim/contractReqs'
+import { CAMO_NAMES, CLOUD_EXTRAS } from '../sim/contractReqs'
 import { type Body, type Colorway, DEVICE_TYPES, type DeviceType, type Face, type Lens, type PlacedPart, SUBS, type Track } from '../sim/types'
 import { hasType } from '../sim/world'
 import { useGame, useStore } from '../store/game'
@@ -217,6 +217,8 @@ function BodyPanel({ simple }: { simple: boolean }) {
   // an earbud case is moulded or machined in one of the all-round materials
   const mats = (use: 'frame' | 'back') =>
     MATERIALS.filter((m) => (type === 'earbuds' && use === 'back' ? m.use === 'both' : m.use === use || m.use === 'both' || (oneShell && m.use === 'frame'))).map((m) => ({ value: m.id, label: m.name, locked: m.level > g.levels.materials }))
+  const briefId = useStore((s) => s.brief)
+  const clientName = g.contracts?.find((x) => x.id === briefId)?.reqs?.find((r) => r.kind === 'livery')?.text
   const lim = sizeLimits(type, body.fold)
   const sizes = T.sizes ?? [0.12, 0.42, 0.7, 0.95].map((f, i) => ({ name: ['Compact', 'Standard', 'Large', 'Max'][i], width: Math.round(lim.width[0] + (lim.width[1] - lim.width[0]) * f), height: Math.round(lim.height[0] + (lim.height[1] - lim.height[0]) * f), thickness: undefined as number | undefined }))
   /** Changing how a foldable folds changes its whole shape, so it starts from that form's usual size and its parts are laid out afresh. */
@@ -313,6 +315,38 @@ function BodyPanel({ simple }: { simple: boolean }) {
         <ColorPick label="Colour" value={body.backColor} onChange={(v) => setBody({ backColor: v })} />
         <Choice label="Camouflage" value={body.camo ?? 'none'} options={[{ value: 'none', label: 'None' }, ...Object.entries(CAMO_NAMES).map(([value, label]) => ({ value, label }))]} onChange={(v) => setBody({ camo: v === 'none' ? undefined : (v as Body['camo']) })} />
         {type !== 'speaker' && <Toggle label="Finish" value={body.backFinish} options={['gloss', 'matte'] as const} onChange={(backFinish) => setBody({ backFinish })} />}
+      </Group>
+      <Group title="Sector options">
+        <Toggle label="Rugged shell" value={body.rugged ? 'on' : 'off'} options={['off', 'on'] as const} onChange={(v) => setBody({ rugged: v === 'on' || undefined })} />
+        <Toggle label="Antimicrobial coating" value={body.coating ? 'on' : 'off'} options={['off', 'on'] as const} onChange={(v) => setBody({ coating: v === 'on' ? 'antimicrobial' : undefined })} />
+        <Toggle
+          label="Air-gapped (no cloud)"
+          value={body.airgap ? 'on' : 'off'}
+          options={['off', 'on'] as const}
+          onChange={(v) => {
+            setBody({ airgap: v === 'on' || undefined })
+            if (v === 'on') useStore.getState().setSpecs({ extras: d.specs.extras.filter((e) => !CLOUD_EXTRAS.includes(e)) })
+          }}
+        />
+        {clientName && (
+          <Toggle
+            label={`Co-brand: ${clientName}`}
+            value={body.coBrand ? 'on' : 'off'}
+            options={['off', 'on'] as const}
+            onChange={(v) => {
+              const st = useStore.getState()
+              if (v === 'off') {
+                setBody({ coBrand: undefined })
+                setDraft({ parts: d.parts.filter((p) => !(p.kind === 'logo' && p.text === clientName)) })
+                return
+              }
+              setBody({ coBrand: { name: clientName, color: '#1e6fd9' } })
+              st.addPart('logo')
+              const id = useStore.getState().selectedPart
+              if (id) st.patchPart(id, { text: clientName, useImage: false })
+            }}
+          />
+        )}
       </Group>
       {type === 'headset' && (
         <Group title="Head strap">
@@ -1302,7 +1336,7 @@ function Workbench() {
         </div>
       )}
 
-      <ContractBrief design={draft} lifeHours={ev.report.lifeHours} />
+      <ContractBrief design={draft} lifeHours={ev.report.lifeHours} weight={ev.report.weight} />
       {launching && <LaunchPlan plan={plan} patch={patch} back={() => setLaunching(false)} />}
     </div>
   )

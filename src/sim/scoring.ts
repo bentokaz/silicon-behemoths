@@ -128,6 +128,8 @@ export function deviceWeight(d: DeviceDesign): number {
   if (d.type === 'headset') w += (OPTICS[d.specs.optics ?? 0] ?? OPTICS[0]).weight + headStrap(b.strap).weight
   if (d.type === 'speaker') w += (SPEAKER_DRIVERS[d.specs.driver ?? 0] ?? SPEAKER_DRIVERS[0]).weight
   if (d.type === 'drone') w += droneMotors(b)
+  // bumpers and reinforced corners add rubber and ribs
+  if (b.rugged) w += frameVol * frame.density * 0.35 + 0.00004 * b.width * b.height * b.thickness
   return w
 }
 

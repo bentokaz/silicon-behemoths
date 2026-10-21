@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { checkReq, noiseDb, saturation } from './contractReqs'
-import { SECTORS, latePay, offerContracts, payFor, reqFor, rewardPerUnit, stepContracts, tierCap, unitsFor } from './contracts'
+import { FEATURES } from '../data/catalog'
+import { TYPES, sizeLimits } from '../data/devices'
+import { typeOpen } from '../data/eras'
+import { checkAll, reqLabel } from './contractReqs'
+import { solveDesign } from './contractSolve'
+import { SECTORS, latePay, offerContracts, payFor, reqFor, reqsFor, rewardPerUnit, stepContracts, tierCap, unitsFor } from './contracts'
 import { defaultConfig, newGame, starterDesign } from './game'
 import type { ContractJob, DeviceDesign } from './types'
 
@@ -103,7 +108,63 @@ describe('contract flow', () => {
     expect(offers.length).toBeGreaterThan(0)
     for (const c of offers) {
       expect(SECTORS.some((x) => x.client === c.client)).toBe(true)
-      expect(c.reqs!.length).toBe((c.tier ?? 0) + 1)
+      expect(c.reqs!.length).toBeLessThanOrEqual((c.tier ?? 0) + 1)
     }
+  })
+})
+
+function hashRoll(...xs: number[]): number {
+  let h = 2166136261
+  for (const x of xs) h = Math.imul(h ^ (x | 0), 16777619) ^ (h >>> 13)
+  h = Math.imul(h ^ (h >>> 16), 2246822519)
+  return ((h ^ (h >>> 13)) >>> 0) / 4294967296
+}
+
+describe('every contract can be met', () => {
+  const eras = [0, 1800, 3600, 5400, 7200]
+  const levelSets = [0, 2, 4, 8]
+  it("builds a design meeting every ask, at the designer's real limits", () => {
+    let checked = 0
+    let asks = 0
+    const hard: string[] = []
+    for (const day of eras) {
+      for (const lv of levelSets) {
+        const s = game()
+        s.day = day
+        s.levels = { display: lv, chipset: lv, camera: lv, battery: lv, charging: lv, materials: lv, design: lv } as typeof s.levels
+        s.features = lv >= 4 ? FEATURES.map((f) => f.id) : lv === 2 ? ['ip54', 'hz90', 'esim'] : []
+        for (const sector of SECTORS) {
+          for (const type of sector.types) {
+            if (!typeOpen(type, day)) continue
+            for (let tier = 0; tier <= 3; tier++) {
+              const reqs = reqsFor(sector, type, tier, (i) => hashRoll(day, lv, tier, i), s)
+              const { design, stats } = solveDesign(s, type, reqs)
+              const res = checkAll(reqs, design, stats)
+              checked++
+              asks += reqs.length
+              if (!res.ok) hard.push(`${sector.id} ${type} t${tier} d${day} L${lv}: ${res.rows.filter((x) => !x.ok).map((x) => `${reqLabel(x.req)} (${x.have})`).join('; ')}`)
+              const L = sizeLimits(type)
+              for (const r of reqs) {
+                // bounds that hold whatever the solver does
+                if (r.kind === 'maxLong') expect(r.value!, `${type} longest side`).toBeGreaterThanOrEqual(Math.max(L.width[0], L.height[0]))
+                if (r.kind === 'battery') expect(TYPES[type].mains, `${type} has no battery`).toBeFalsy()
+                if (r.kind === 'quiet') expect(['laptop', 'desktop', 'console', 'tower']).toContain(type)
+                // an ask that needs a feature the company lacks says so on the board
+                if (r.kind === 'ip' && !r.needs) expect(s.features.some((f) => f.startsWith('ip')), 'ip owned').toBe(true)
+                if (r.kind === 'refresh' && !r.needs) expect(s.features.some((f) => f === `hz${r.value}`), 'refresh owned').toBe(true)
+              }
+            }
+          }
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(500)
+    expect(asks).toBeGreaterThan(800)
+    expect(hard).toEqual([])
+  })
+  it('never asks a monitor for less than its shortest side, a laptop for less than 280 mm, or a console for battery life', () => {
+    expect(reqFor('maxLong', 'monitor', 3)!.value!).toBeGreaterThanOrEqual(470)
+    expect(reqFor('maxLong', 'laptop', 3)!.value!).toBeGreaterThanOrEqual(280)
+    expect(reqFor('battery', 'console', 0)).toBeNull()
   })
 })

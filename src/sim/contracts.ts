@@ -8,12 +8,14 @@
 //
 // Offers are drawn from the game's seed and the month, not from its dice, so
 // they never change what else happens in a game.
-import { DAYS_PER_MONTH } from '../data/catalog'
+import { DAYS_PER_MONTH, featureInfo, materialInfo } from '../data/catalog'
 import { segmentOpen, typeOpen } from '../data/eras'
 import { TYPES, segmentsOf, sizeLimits } from '../data/devices'
 import { clamp } from './rng'
 import { priceIndex, hasType } from './world'
-import { checkAll, reqApplies, reqLabel, type ReqKind } from './contractReqs'
+import { CONNECT_EXTRAS, IP_IDS, checkAll, reqApplies, reqLabel, type ReqKind } from './contractReqs'
+import { limitsFor, solveDesign } from './contractSolve'
+import { deviceWeight } from './scoring'
 import { type ContractJob, type ContractReq, DEVICE_TYPES, type DeviceType, type GameState, type Product } from './types'
 
 export interface Sector {
@@ -27,13 +29,17 @@ export interface Sector {
 
 export const SECTORS: Sector[] = [
   { id: 'office', name: 'Office fit-out', client: 'Halden & Rowe Interiors', types: ['desktop', 'tower', 'laptop', 'monitor'], pool: ['wood', 'calm', 'maxLong', 'quiet', 'matte'] },
-  { id: 'school', name: 'Education', client: 'Brookfield Academy', types: ['tablet', 'laptop', 'ereader'], pool: ['calm', 'battery', 'maxLong', 'secure'] },
-  { id: 'hospital', name: 'Healthcare', client: "St Aldric's Hospital", types: ['tablet', 'watch', 'laptop', 'monitor'], pool: ['secure', 'calm', 'battery', 'quiet', 'matte'] },
-  { id: 'airline', name: 'Aviation', client: 'Skyvane Airlines', types: ['tablet', 'headset', 'earbuds', 'ereader', 'laptop'], pool: ['battery', 'maxLong', 'calm', 'secure'] },
-  { id: 'military', name: 'Defence', client: 'Ironwatch Defence', types: ['drone', 'handheld', 'tablet', 'phone'], pool: ['camo', 'maxLong', 'flight', 'secure', 'matte'] },
-  { id: 'film', name: 'Film', client: 'Lumen Pictures Studio', types: ['actioncam', 'drone', 'monitor', 'tv'], pool: ['flight', 'matte', 'maxLong', 'calm'] },
-  { id: 'cafe', name: 'Hospitality', client: 'Pixel Perch Game Cafe', types: ['console', 'handheld', 'tower', 'monitor', 'mouse'], pool: ['rgb', 'quiet', 'maxLong', 'battery'] },
-  { id: 'carrier', name: 'Telecoms', client: 'Northline Mobile', types: ['phone', 'watch', 'tablet'], pool: ['battery', 'calm', 'maxLong', 'secure'] },
+  { id: 'school', name: 'Education', client: 'Brookfield Academy', types: ['tablet', 'laptop', 'ereader'], pool: ['rugged', 'bright', 'maxPrice', 'battery', 'maxLong', 'secure'] },
+  { id: 'hospital', name: 'Healthcare', client: "St Aldric's Hospital", types: ['tablet', 'watch', 'laptop', 'monitor'], pool: ['antimicrobial', 'ip', 'pale', 'secure', 'battery', 'quiet', 'matte'] },
+  { id: 'airline', name: 'Aviation', client: 'Skyvane Airlines', types: ['tablet', 'headset', 'earbuds', 'ereader', 'laptop'], pool: ['maxWeight', 'livery', 'battery', 'maxLong', 'secure'] },
+  { id: 'military', name: 'Defence', client: 'Ironwatch Defence', types: ['drone', 'handheld', 'tablet', 'phone', 'laptop'], pool: ['camo', 'rugged', 'airgap', 'matte', 'noLitLogo', 'noRgb', 'maxLong', 'flight', 'secure'] },
+  { id: 'film', name: 'Film', client: 'Lumen Pictures Studio', types: ['actioncam', 'drone', 'monitor', 'tv'], pool: ['panel', 'matte', 'noLogo', 'flight', 'maxLong', 'calm'] },
+  { id: 'cafe', name: 'Hospitality', client: 'Pixel Perch Game Cafe', types: ['console', 'handheld', 'tower', 'monitor', 'mouse'], pool: ['rgb', 'refresh', 'livery', 'quiet', 'maxLong', 'battery'] },
+  { id: 'carrier', name: 'Telecoms', client: 'Northline Mobile', types: ['phone', 'watch', 'tablet'], pool: ['livery', 'connect', 'exclusive', 'battery', 'calm', 'maxLong'] },
+  { id: 'construction', name: 'Construction', client: 'Granite Ridge Builders', types: ['tablet', 'phone', 'handheld', 'laptop', 'actioncam', 'drone'], pool: ['hivis', 'ip', 'rugged', 'battery', 'flight', 'matte'] },
+  { id: 'luxury', name: 'Luxury goods', client: 'Maison Aurelle', types: ['watch', 'phone', 'earbuds', 'headset', 'ring', 'speaker'], pool: ['gold', 'material', 'minPrice', 'exclusive', 'livery'] },
+  { id: 'government', name: 'Government', client: 'Department of Civic Systems', types: ['laptop', 'tablet', 'phone', 'desktop'], pool: ['noCamera', 'secure', 'airgap', 'matte', 'noLogo', 'calm'] },
+  { id: 'eco', name: 'Sustainability', client: 'Verdant Commons Co-op', types: ['laptop', 'phone', 'tablet', 'speaker', 'earbuds'], pool: ['wood', 'battery', 'calm', 'matte', 'maxWeight'] },
 ]
 export const sectorOf = (id: string | undefined) => SECTORS.find((x) => x.id === id)
 
@@ -83,33 +89,82 @@ export function rewardPerUnit(base: number, tier: number, asks: number, rep: num
 export const unitsFor = (roll: number, tier: number) => Math.max(100, Math.round(((500 + roll * 4500) / (1 + 0.25 * tier)) / 100) * 100)
 
 /** What an ask is set to for a kind of device and tier. Tighter with tier. */
-export function reqFor(kind: ReqKind, type: DeviceType, tier: number): ContractReq | null {
+export function reqFor(kind: ReqKind, type: DeviceType, tier: number, s?: GameState, roll = 1, client = ''): ContractReq | null {
   if (!reqApplies(kind, type)) return null
+  const lim = s ? limitsFor(s, type) : undefined
+  const owned = (id: string) => !!s?.features.includes(id)
+  /** The best researched option at or under the target; otherwise, now and then, the target itself with a research step still to take. */
+  const pick = (opts: { value: number; id: string }[], target: number): ContractReq | null => {
+    const have = opts.filter((o) => owned(o.id) && o.value <= target).sort((a, b) => b.value - a.value)[0]
+    const want = opts.filter((o) => !owned(o.id) && o.value <= target).sort((a, b) => a.value - b.value)[0]
+    if (want && (!have || roll < 0.25) && roll < 0.5) return { kind, value: want.value, needs: featureInfo(want.id)?.name ?? want.id }
+    return have ? { kind, value: have.value } : null
+  }
   switch (kind) {
     case 'maxLong': {
-      const h = sizeLimits(type).height
-      return { kind, value: Math.round((h[0] + (h[1] - h[0]) * (0.55 - 0.1 * tier)) / 5) * 5 }
+      // the longest side is the longer of the two dimensions, so it cannot go below the larger of their minimums
+      const L = sizeLimits(type)
+      const lo = Math.max(L.width[0], L.height[0]), hi = Math.max(L.width[1], L.height[1])
+      return { kind, value: Math.ceil((lo + (hi - lo) * Math.max(0.2, 0.55 - 0.1 * tier)) / 5) * 5 }
     }
-    case 'quiet':
-      return { kind, value: (type === 'tower' ? 32 : type === 'laptop' ? 34 : 36) - 2 * tier }
-    case 'flight':
-      return { kind, value: 15 + 4 * tier }
-    case 'battery':
-      return { kind, value: 8 + 2 * tier }
+    case 'quiet': {
+      const base = (type === 'tower' ? 32 : type === 'laptop' ? 34 : 36) - 2 * tier
+      return { kind, value: lim ? Math.max(base, lim.quietMin + 2) : base }
+    }
+    case 'flight': {
+      if (!lim) return { kind, value: 15 + 4 * tier }
+      const v = Math.floor(lim.lifeMax * 60 * (0.4 + 0.12 * tier))
+      return v >= 5 ? { kind, value: v } : null
+    }
+    case 'battery': {
+      if (!lim) return { kind, value: 8 + 2 * tier }
+      const raw = lim.lifeMax * (0.4 + 0.12 * tier)
+      const v = raw >= 4 ? Math.floor(raw * 2) / 2 : Math.floor(raw * 10) / 10
+      return v >= 0.5 ? { kind, value: v } : null
+    }
+    case 'ip': {
+      const T = TYPES[type]
+      return pick(Object.entries(IP_IDS).filter(([id]) => T.extras.includes(id)).map(([id, value]) => ({ id, value })), [54, 68, 68, 69][tier] ?? 69)
+    }
+    case 'refresh': return pick([90, 120, 144, 240].map((value) => ({ value, id: `hz${value}` })), [90, 120, 144, 144][tier] ?? 144)
+    case 'connect': {
+      const id = CONNECT_EXTRAS.find((e) => TYPES[type].extras.includes(e) && owned(e))
+      if (id) return { kind }
+      const next = CONNECT_EXTRAS.find((e) => TYPES[type].extras.includes(e))
+      return next && s && roll < 0.4 ? { kind, needs: featureInfo(next)?.name ?? next } : null
+    }
+    case 'panel': return s && s.levels.display >= 1 ? { kind, value: Math.min(3, s.levels.display) } : null
+    case 'maxWeight': return lim ? { kind, value: Math.ceil((lim.weightMin * (1.5 - 0.1 * tier)) / 10) * 10 } : null
+    case 'maxPrice': return s ? { kind, value: Math.round((basePrice(type, s.day) * (1.5 - 0.1 * tier)) / 5) * 5 } : null
+    case 'minPrice': return s ? { kind, value: Math.round((basePrice(type, s.day) * (2.2 + 0.4 * tier)) / 5) * 5 } : null
+    case 'material': {
+      const ids = ['ceramic', 'sapphire', 'titanium', 'steel'].filter((id) => s && materialInfo(id).level <= s.levels.materials && s.levels.materials >= 2)
+      return ids.length ? { kind, text: ids.join('|') } : null
+    }
+    case 'livery': return { kind, text: client || 'Client' }
     default:
       return { kind }
   }
 }
 
 /** The asks of a contract: tier + 1 of them, taken from the sector's pool in a seeded order. */
-export function reqsFor(sector: Sector, type: DeviceType, tier: number, roll: (i: number) => number): ContractReq[] {
+export function reqsFor(sector: Sector, type: DeviceType, tier: number, roll: (i: number) => number, s?: GameState): ContractReq[] {
   const order = sector.pool.map((k, i) => ({ k, o: roll(40 + i) })).sort((a, b) => a.o - b.o)
   const out: ContractReq[] = []
   for (const { k } of order) {
-    const r = reqFor(k, type, tier)
+    const r = reqFor(k, type, tier, s, roll(60 + out.length), sector.client)
     if (r && out.length < tier + 1) out.push(r)
   }
-  return out
+  if (!s) return out
+  // an ask goes only if some design can meet it along with the rest: build one and drop what it cannot do
+  let keep = out
+  for (let i = 0; i < 3; i++) {
+    const { design, stats } = solveDesign(s, type, keep)
+    const bad = checkAll(keep, design, stats).rows.filter((x) => !x.ok).map((x) => x.req)
+    if (!bad.length) break
+    keep = keep.filter((r) => !bad.includes(r))
+  }
+  return keep
 }
 
 /** New offers for the month that has just begun, up to MAX_OFFERS open at once. */
@@ -139,7 +194,7 @@ export function offerContracts(s: GameState) {
     const types = sector.types.filter((t) => open.includes(t))
     const type = types[Math.floor(r(2) * types.length)]
     const tier = Math.min(cap, Math.floor(r(7) * (cap + 1) + rep * 0.9))
-    const reqs = reqsFor(sector, type, tier, r)
+    const reqs = reqsFor(sector, type, tier, r, s)
     const days = Math.round((90 + r(6) * 120) / 10) * 10
     const job: ContractJob = {
       id: `k${s.nextId++}`,
@@ -163,7 +218,7 @@ export function offerContracts(s: GameState) {
 }
 
 /** The asks of a contract checked against a device, with what the design has. */
-export const contractChecks = (c: ContractJob, p: Product) => checkAll(c.reqs, p.design, { lifeHours: p.lifeHours })
+export const contractChecks = (c: ContractJob, p: Product) => checkAll(c.reqs, p.design, { lifeHours: p.lifeHours, weight: deviceWeight(p.design), price: p.price })
 
 /** Why a device cannot fill a contract, or null. */
 export function contractBlocked(s: GameState, c: ContractJob | undefined, p: Product | undefined): string | null {

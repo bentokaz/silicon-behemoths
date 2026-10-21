@@ -2258,7 +2258,7 @@ export function deviceFrame(d: DeviceDesign): { radius: number; bottom: number }
  * colorIndex >= 0 previews one of the design's extra colourways; detail below
  * 1 is for thumbnails.
  */
-export function buildDevice(d: DeviceDesign, selectedId?: string | null, logoUrl?: string, colorIndex = -1, detail = 1, look?: OsLook): THREE.Group {
+function buildBase(d: DeviceDesign, selectedId?: string | null, logoUrl?: string, colorIndex = -1, detail = 1, look?: OsLook): THREE.Group {
   const c: Ctx = { type: d.type, body: d.body, m: materials(d, colorIndex), specs: d.specs, selectedId, logoUrl, detail, chin: d.type === 'desktop' && d.body.bezelBottom >= CHIN_MIN, look }
   layerScale = Math.min(12, Math.max(1, deviceFrame(d).radius / 87))
   switch (d.type) {
@@ -2300,6 +2300,49 @@ export function buildDevice(d: DeviceDesign, selectedId?: string | null, logoUrl
       return root
     }
   }
+}
+
+/** Sector traits on the finished model: rugged bumpers, a germ-killing sheen, a client's livery band. */
+function addTraits(root: THREE.Group, d: DeviceDesign) {
+  const b = d.body
+  if (!b.rugged && !b.coating && !b.coBrand) return
+  const box = new THREE.Box3().setFromObject(root)
+  const size = box.getSize(new THREE.Vector3())
+  const mid = box.getCenter(new THREE.Vector3())
+  const small = Math.min(size.x, size.y, size.z)
+  if (b.coating) {
+    root.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.MeshPhysicalMaterial | undefined
+      if (m?.isMeshPhysicalMaterial && o.userData.body) {
+        m.sheen = 1
+        m.sheenColor = new THREE.Color('#7fe6d4')
+        m.sheenRoughness = 0.4
+        m.clearcoat = Math.max(m.clearcoat, 0.6)
+      }
+    })
+  }
+  if (b.coBrand) {
+    // a band of the client's colour round the foot of the shell
+    const band = mesh(new THREE.BoxGeometry(size.x + 0.5, size.y * 0.07, size.z + 0.5), new THREE.MeshPhysicalMaterial({ color: b.coBrand.color, roughness: 0.5 }))
+    band.position.set(mid.x, box.min.y + size.y * 0.035, mid.z)
+    root.add(band)
+  }
+  if (b.rugged) {
+    // soft bumpers wrapped over every corner of the shell, standing proud of it
+    const t = Math.max(0.8, Math.min(small * 0.9, Math.max(size.x, size.y, size.z) * 0.07))
+    const mat = rubber('#1b1c1e')
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
+      const c = mesh(new THREE.BoxGeometry(t * 1.6, t * 1.6, t * 1.6), mat)
+      c.position.set(mid.x + sx * (size.x / 2 - t * 0.5), mid.y + sy * (size.y / 2 - t * 0.5), mid.z + sz * (size.z / 2 - t * 0.5))
+      root.add(c)
+    }
+  }
+}
+
+export function buildDevice(d: DeviceDesign, selectedId?: string | null, logoUrl?: string, colorIndex = -1, detail = 1, look?: OsLook): THREE.Group {
+  const root = buildBase(d, selectedId, logoUrl, colorIndex, detail, look)
+  addTraits(root, d)
+  return root
 }
 
 export function disposeDevice(root: THREE.Object3D) {

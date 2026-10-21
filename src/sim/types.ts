@@ -72,6 +72,14 @@ export interface Body {
   grip?: 'ergo' | 'ambi'
   /** A camouflage pattern over the shell. Missing means a plain finish. */
   camo?: 'woodland' | 'desert' | 'urban' | 'arctic'
+  /** Rugged shell: bumpers and reinforced corners. */
+  rugged?: boolean
+  /** A surface coating that kills germs. */
+  coating?: 'antimicrobial'
+  /** Built with no cloud features: no cellular, satellite or account services. */
+  airgap?: boolean
+  /** A client's name and colour on the shell, a co-branding option (the logo part carries the name). */
+  coBrand?: { name: string; color: string }
 }
 
 /** RGB lighting: which zones light up, in what colours, and how they move. */
@@ -273,7 +281,13 @@ export interface Product {
 /** One thing a client asks of the design (see sim/contractReqs.ts). */
 export interface ContractReq {
   kind: 'wood' | 'calm' | 'camo' | 'matte' | 'maxLong' | 'maxVolume' | 'quiet' | 'flight' | 'battery' | 'secure' | 'rgb'
+    | 'rugged' | 'antimicrobial' | 'hivis' | 'airgap' | 'livery' | 'noCamera' | 'noRgb' | 'noLitLogo' | 'noLogo' | 'ip' | 'refresh' | 'connect'
+    | 'panel' | 'maxWeight' | 'maxPrice' | 'minPrice' | 'material' | 'gold' | 'pale' | 'bright' | 'exclusive'
   value?: number
+  /** Livery: the client's name. Material: ids, joined by |. */
+  text?: string
+  /** A feature the player has not yet researched that this ask needs: the board says so. */
+  needs?: string
 }
 
 /** A business asking for a batch of devices (see sim/contracts.ts). */
